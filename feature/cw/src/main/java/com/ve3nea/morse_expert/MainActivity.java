@@ -207,7 +207,7 @@ public class MainActivity {
             return true; // double-back: exit
         }
         this.f11038G = System.currentTimeMillis();
-        Toast.makeText(mActivity, R.string.tap_back_again_to_close, 0).show();
+        Toast.makeText(mActivity, R.string.tap_back_again_to_close, Toast.LENGTH_SHORT).show();
         return false;
     }
 

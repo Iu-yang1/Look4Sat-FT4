@@ -37,7 +37,7 @@
     <string name="pass_filter_deep_space">DeepSpace (período &gt;225min)</string>
     <string name="pass_modes_title">Tipo de modulación</string>
     <string name="pass_elevation">Elevación: %.1f°</string>
-    <string name="pass_altitude">Altitud: %.0f km</string>
+    <string name="pass_altitude">Altitud: %d km</string>
     <string name="pass_empty_list_message">
         Asegúrate de que tus filtros sean correctos y hayas seleccionado satélites</string>
     <string name="pass_error_message">No hay pases de satélite próximos para mostrar</string>

@@ -11,6 +11,7 @@ package com.rtbishop.look4sat.feature.ft4
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -20,6 +21,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
 import androidx.compose.material3.ElevatedCard
@@ -31,15 +33,17 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.res.stringResource
 import com.rtbishop.look4sat.core.domain.ft4.Ft4DecodeResult
 import com.rtbishop.look4sat.core.domain.ft4.Ft4TransmitState
 import com.rtbishop.look4sat.core.presentation.R
@@ -63,6 +67,14 @@ internal fun Ft4DecodePage(
 
 @Composable
 private fun DecodeTable(state: Ft4State, onAction: (Ft4Action) -> Unit) {
+    val durationMillis = (state.engineState as? com.rtbishop.look4sat.core.domain.ft4.Ft4EngineState.Receiving)
+        ?.lastDecodeDurationMillis
+    val listState = rememberLazyListState()
+    LaunchedEffect(state.decodeResults.firstOrNull()?.stableId) {
+        if (state.decodeResults.isNotEmpty() && !listState.isScrollInProgress) {
+            listState.animateScrollToItem(0)
+        }
+    }
     ElevatedCard(modifier = Modifier.fillMaxWidth()) {
         Column {
             Row(
@@ -74,12 +86,26 @@ private fun DecodeTable(state: Ft4State, onAction: (Ft4Action) -> Unit) {
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.padding(vertical = 10.dp)
                 )
-                TextButton(onClick = { onAction(Ft4Action.ClearDecodes) }) {
-                    Text(stringResource(R.string.ft4_clear_decodes))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = durationMillis?.let { stringResource(R.string.ft4_decode_duration, it) }
+                            ?: stringResource(R.string.ft4_decode_duration_pending),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 11.sp
+                    )
+                    TextButton(onClick = { onAction(Ft4Action.ClearDecodes) }) {
+                        Text(stringResource(R.string.ft4_clear_decodes))
+                    }
                 }
             }
             HorizontalDivider()
             DecodeTableHeader()
+            Text(
+                stringResource(R.string.ft4_decode_swipe_hint),
+                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = 10.sp
+            )
             if (state.decodeResults.isEmpty()) {
                 Text(
                     stringResource(R.string.ft4_decode_empty),
@@ -87,7 +113,10 @@ private fun DecodeTable(state: Ft4State, onAction: (Ft4Action) -> Unit) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             } else {
-                LazyColumn(modifier = Modifier.fillMaxWidth().heightIn(min = 128.dp, max = 300.dp)) {
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 128.dp, max = 300.dp)
+                ) {
                     items(state.decodeResults, key = Ft4DecodeResult::stableId) { result ->
                         DecodeRow(
                             result = result,
@@ -119,15 +148,38 @@ private fun DecodeTableHeader() {
 
 @Composable
 private fun DecodeRow(result: Ft4DecodeResult, highlighted: Boolean, onClick: () -> Unit) {
-    val background = when {
-        highlighted -> MaterialTheme.colorScheme.primaryContainer
-        result.text.startsWith("CQ ") -> MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.45f)
-        else -> Color.Transparent
+    val evenSlot = Math.floorMod(Math.floorDiv(result.slotUtcMillis, FT4_SLOT_MILLIS), 2L) == 0L
+    val slotColor = if (evenSlot) {
+        MaterialTheme.colorScheme.secondaryContainer
+    } else {
+        MaterialTheme.colorScheme.tertiaryContainer
     }
+    val background = slotColor.copy(
+        alpha = when {
+            highlighted -> 0.85f
+            result.text.startsWith("CQ ") -> 0.55f
+            else -> 0.28f
+        }
+    )
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .background(background)
+            .pointerInput(result.stableId) {
+                val threshold = 48.dp.toPx()
+                var distance = 0f
+                detectHorizontalDragGestures(
+                    onDragEnd = {
+                        if (kotlin.math.abs(distance) >= threshold) onClick()
+                        distance = 0f
+                    },
+                    onDragCancel = { distance = 0f },
+                    onHorizontalDrag = { change, amount ->
+                        change.consume()
+                        distance += amount
+                    }
+                )
+            }
             .clickable(onClick = onClick)
             .padding(horizontal = 8.dp, vertical = 6.dp)
     ) {
@@ -239,3 +291,5 @@ private fun LabeledValue(label: String, value: String, modifier: Modifier = Modi
 private fun formatDecodeUtc(millis: Long): String = SimpleDateFormat("HH:mm:ss", Locale.US).apply {
     timeZone = TimeZone.getTimeZone("UTC")
 }.format(Date(millis))
+
+private const val FT4_SLOT_MILLIS = 7_500L

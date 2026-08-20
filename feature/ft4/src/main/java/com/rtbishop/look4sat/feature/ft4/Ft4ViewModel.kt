@@ -99,8 +99,19 @@ class Ft4ViewModel(
                 mutableState.update { it.copy(targetCall = action.callsign.uppercase(Locale.US)) }
             }
             is Ft4Action.SelectDecode -> {
+                val sourceCall = action.result.sourceCall.trim().uppercase(Locale.US)
+                if (sourceCall.isBlank()) return
                 if (automationController.snapshot.phase.isRunning()) stopAutomation()
-                mutableState.update { it.copy(targetCall = action.result.sourceCall.uppercase(Locale.US)) }
+                val decodedParity = Math.floorMod(
+                    Math.floorDiv(action.result.slotUtcMillis, FT4_SLOT_MILLIS),
+                    2L
+                ).toInt()
+                mutableState.update {
+                    it.copy(
+                        targetCall = sourceCall,
+                        txSlotParity = 1 - decodedParity
+                    )
+                }
             }
             is Ft4Action.SetTxSlotParity -> mutableState.update {
                 it.copy(txSlotParity = action.parity.coerceIn(0, 1))
@@ -292,7 +303,7 @@ class Ft4ViewModel(
             !state.capability.receiveAvailable -> setError(state.capability.unavailableReason)
             !state.hasMicrophonePermission -> setError("Microphone permission is required")
             else -> ft4Service.startReceiving(
-                Ft4DecoderOptions(qsoFrequencyHz = state.selectedAudioFrequencyHz.toInt()),
+                state.decoderOptions(),
                 state.settings.operatorCallsign
             )
         }
@@ -306,7 +317,7 @@ class Ft4ViewModel(
             return
         }
         ft4Service.startReceiving(
-            Ft4DecoderOptions(qsoFrequencyHz = state.selectedAudioFrequencyHz.toInt()),
+            state.decoderOptions(),
             state.settings.operatorCallsign
         )
     }
@@ -365,7 +376,7 @@ class Ft4ViewModel(
         }.getOrElse { return setError(it.message.orEmpty()) }
         if (!state.isReceiving) {
             ft4Service.startReceiving(
-                Ft4DecoderOptions(qsoFrequencyHz = state.selectedAudioFrequencyHz.toInt()),
+                state.decoderOptions(),
                 state.settings.operatorCallsign
             )
         }
@@ -522,6 +533,14 @@ private fun Ft4AutomationPhase.isRunning(): Boolean = this !in setOf(
     Ft4AutomationPhase.IDLE,
     Ft4AutomationPhase.COMPLETE,
     Ft4AutomationPhase.ABORTED
+)
+
+private const val FT4_SLOT_MILLIS = 7_500L
+
+private fun Ft4State.decoderOptions() = Ft4DecoderOptions(
+    decodePassCount = settings.decodeDepth,
+    multiDecodeRoundCount = settings.decodeDepth,
+    qsoFrequencyHz = selectedAudioFrequencyHz.toInt()
 )
 
 private fun bandKey(frequencyHz: Long?): String = frequencyHz?.let { (it / 1_000_000L).toString() }.orEmpty()

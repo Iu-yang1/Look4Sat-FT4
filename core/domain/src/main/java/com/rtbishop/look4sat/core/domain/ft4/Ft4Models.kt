@@ -59,7 +59,8 @@ sealed interface Ft4EngineState {
         val activeSlotUtcMillis: Long?,
         val slotProgress: Float,
         val decodedSlots: Long,
-        val audioSampleRate: Int?
+        val audioSampleRate: Int?,
+        val lastDecodeDurationMillis: Long? = null
     ) : Ft4EngineState
 
     data class Failed(val reason: String) : Ft4EngineState

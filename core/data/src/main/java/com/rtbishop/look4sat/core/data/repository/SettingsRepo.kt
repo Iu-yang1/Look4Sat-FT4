@@ -94,6 +94,7 @@ class SettingsRepo(
     private val keyHighElevation = "highElevation"
     private val keyFt4OperatorCallsign = "ft4OperatorCallsign"
     private val keyFt4DecodeEnabled = "ft4DecodeEnabled"
+    private val keyFt4DecodeDepth = "ft4DecodeDepth"
     private val keyFt4NtpEnabled = "ft4NtpEnabled"
     private val keyFt4GnssEnabled = "ft4GnssEnabled"
     private val keyUseCustomTle = "useCustomTle"
@@ -408,6 +409,7 @@ class SettingsRepo(
             preferences.edit {
                 putString(keyFt4OperatorCallsign, updated.operatorCallsign)
                 putBoolean(keyFt4DecodeEnabled, updated.decodeEnabled)
+                putInt(keyFt4DecodeDepth, updated.decodeDepth.coerceIn(1, 3))
                 putBoolean(keyFt4NtpEnabled, updated.ntpSynchronizationEnabled)
                 putBoolean(keyFt4GnssEnabled, updated.gnssSynchronizationEnabled)
             }
@@ -419,6 +421,7 @@ class SettingsRepo(
         operatorCallsign = preferences.getString(keyFt4OperatorCallsign, null)
             .orEmpty().trim().uppercase(Locale.US),
         decodeEnabled = preferences.getBoolean(keyFt4DecodeEnabled, false),
+        decodeDepth = preferences.getInt(keyFt4DecodeDepth, 3).coerceIn(1, 3),
         ntpSynchronizationEnabled = preferences.getBoolean(keyFt4NtpEnabled, false),
         gnssSynchronizationEnabled = preferences.getBoolean(keyFt4GnssEnabled, false)
     )

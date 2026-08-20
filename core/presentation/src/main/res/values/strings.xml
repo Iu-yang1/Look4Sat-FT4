@@ -217,6 +217,10 @@
     <string name="prefs_ft4_grid">Maidenhead grid: %s</string>
     <string name="prefs_ft4_edit_grid">Edit grid</string>
     <string name="prefs_ft4_decode">Enable FT4 decoding</string>
+    <string name="prefs_ft4_decode_depth">Decoding strength</string>
+    <string name="prefs_ft4_decode_fast">Fast</string>
+    <string name="prefs_ft4_decode_balanced">Balanced</string>
+    <string name="prefs_ft4_decode_deep">Deep</string>
     <string name="prefs_ft4_ntp">Use NTP synchronization</string>
     <string name="prefs_ft4_gnss">Use GNSS synchronization</string>
     <string name="prefs_ft4_sync_now">Synchronize now</string>
@@ -348,11 +352,14 @@
     <string name="ft4_cat_ready">CAT ready</string>
     <string name="ft4_decode_empty">No FT4 messages decoded yet</string>
     <string name="ft4_decode_count">Decoded messages: %1$d</string>
+    <string name="ft4_decode_duration">Last decode: %1$d ms</string>
+    <string name="ft4_decode_duration_pending">Last decode: --</string>
     <string name="ft4_decode_utc">UTC</string>
     <string name="ft4_decode_snr">dB</string>
     <string name="ft4_decode_dt">DT</string>
     <string name="ft4_decode_hz">Hz</string>
     <string name="ft4_decode_message">Message</string>
+    <string name="ft4_decode_swipe_hint">Swipe a message to use its callsign in automatic operation</string>
     <string name="ft4_calling_controls">Call / transmit</string>
     <string name="ft4_operator_call">My callsign</string>
     <string name="ft4_target_call">Target callsign</string>

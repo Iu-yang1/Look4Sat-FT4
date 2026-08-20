@@ -177,6 +177,9 @@ class SettingsViewModel(
                     ft4AudioTransmitter.emergencyStop()
                 }
             }
+            is SettingsAction.SetFt4DecodeDepth -> settingsRepo.updateFt4Settings {
+                it.copy(decodeDepth = action.value.coerceIn(1, 3))
+            }
             is SettingsAction.ToggleNtpSynchronization -> {
                 settingsRepo.updateFt4Settings { it.copy(ntpSynchronizationEnabled = action.value) }
                 timeSynchronizationService.setNtpEnabled(action.value)

@@ -201,6 +201,7 @@ class Ft4Service(
         val assembler = Ft4SlotAssembler()
         val timeline = ResampledTimeline(clock)
         var decodedSlots = 0L
+        var lastDecodeDurationMillis: Long? = null
         try {
             val currentCapability = refreshCapability()
             if (!currentCapability.receiveAvailable || generation != sessionGeneration) return
@@ -211,6 +212,7 @@ class Ft4Service(
                 val output = timeline.process(chunk)
                 if (output.reset) assembler.reset()
                 for (slot in assembler.append(output.samples, output.firstSampleUtcNanos)) {
+                    val decodeStartedNanos = System.nanoTime()
                     val results = Ft4Native.decodeFt4Slot(
                         decoder = requireNotNull(decoder),
                         samples12k = slot.samples,
@@ -230,6 +232,7 @@ class Ft4Service(
                             messageHash = native.messageHash
                         )
                     }
+                    lastDecodeDurationMillis = (System.nanoTime() - decodeStartedNanos) / NANOS_PER_MILLISECOND
                     decodedSlots++
                     addResults(results)
                 }
@@ -238,7 +241,8 @@ class Ft4Service(
                     activeSlotUtcMillis = Math.floorDiv(now, SLOT_MILLIS) * SLOT_MILLIS,
                     slotProgress = Math.floorMod(now, SLOT_MILLIS).toFloat() / SLOT_MILLIS,
                     decodedSlots = decodedSlots,
-                    audioSampleRate = chunk.sampleRate
+                    audioSampleRate = chunk.sampleRate,
+                    lastDecodeDurationMillis = lastDecodeDurationMillis
                 )
             }
         } catch (cancelled: CancellationException) {

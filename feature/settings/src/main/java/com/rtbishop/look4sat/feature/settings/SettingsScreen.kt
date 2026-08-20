@@ -35,6 +35,7 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.material3.ElevatedCard
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -382,6 +383,29 @@ private fun Ft4SettingsCard(
                 checked = settings.decodeEnabled,
                 enabled = capability.receiveAvailable
             ) { onAction(SettingsAction.ToggleFt4Decode(it)) }
+            if (settings.decodeEnabled) {
+                Text(
+                    text = stringResource(R.string.prefs_ft4_decode_depth),
+                    style = MaterialTheme.typography.bodySmall
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    listOf(
+                        1 to R.string.prefs_ft4_decode_fast,
+                        2 to R.string.prefs_ft4_decode_balanced,
+                        3 to R.string.prefs_ft4_decode_deep
+                    ).forEach { (depth, label) ->
+                        FilterChip(
+                            selected = settings.decodeDepth == depth,
+                            onClick = { onAction(SettingsAction.SetFt4DecodeDepth(depth)) },
+                            label = { Text(stringResource(label)) },
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
+            }
             SwitchRow(R.string.prefs_ft4_ntp, settings.ntpSynchronizationEnabled) {
                 onAction(SettingsAction.ToggleNtpSynchronization(it))
             }

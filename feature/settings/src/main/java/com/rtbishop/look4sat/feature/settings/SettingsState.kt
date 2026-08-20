@@ -76,6 +76,7 @@ sealed interface SettingsAction {
     // FT4
     data class SetFt4Callsign(val value: String) : SettingsAction
     data class ToggleFt4Decode(val value: Boolean) : SettingsAction
+    data class SetFt4DecodeDepth(val value: Int) : SettingsAction
     data class ToggleNtpSynchronization(val value: Boolean) : SettingsAction
     data class ToggleGnssSynchronization(val value: Boolean) : SettingsAction
     data object SynchronizeTimeNow : SettingsAction

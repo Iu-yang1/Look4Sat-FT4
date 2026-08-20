@@ -28,6 +28,7 @@ import com.rtbishop.look4sat.core.data.framework.BluetoothReporter
 import com.rtbishop.look4sat.core.data.framework.NetworkReporter
 import com.rtbishop.look4sat.core.data.framework.RadioTrackingService
 import com.rtbishop.look4sat.core.data.ft4.Ft4Service
+import com.rtbishop.look4sat.core.data.ft4.Ft4AudioTransmitter
 import com.rtbishop.look4sat.core.data.repository.AmSatRepository
 import com.rtbishop.look4sat.core.data.repository.DatabaseRepo
 import com.rtbishop.look4sat.core.data.repository.SatelliteRepo
@@ -45,6 +46,7 @@ import com.rtbishop.look4sat.core.data.usecase.ShowToast
 import com.rtbishop.look4sat.core.domain.audio.IAudioHub
 import com.rtbishop.look4sat.core.domain.ft4.IFt4Service
 import com.rtbishop.look4sat.core.domain.ft4.IFt4TransmitCoordinator
+import com.rtbishop.look4sat.core.domain.ft4.IFt4AudioTransmitter
 import com.rtbishop.look4sat.core.domain.time.IDisciplinedClock
 import com.rtbishop.look4sat.core.domain.time.ITimeSynchronizationService
 import com.rtbishop.look4sat.core.domain.time.SystemDisciplinedClock
@@ -100,6 +102,9 @@ class MainContainer(private val context: Context) : IMainContainer {
     }
     override val radioTrackingService: IRadioTrackingService by lazy { sharedRadioTrackingService }
     override val ft4TransmitCoordinator: IFt4TransmitCoordinator by lazy { sharedRadioTrackingService }
+    override val ft4AudioTransmitter: IFt4AudioTransmitter by lazy {
+        Ft4AudioTransmitter(context, ft4Service, ft4TransmitCoordinator, disciplinedClock)
+    }
 
     private val _mutualPassData = MutableStateFlow(MutualPassData())
     override val mutualPassData: StateFlow<MutualPassData> = _mutualPassData.asStateFlow()

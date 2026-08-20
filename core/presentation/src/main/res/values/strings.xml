@@ -106,6 +106,8 @@
     <string name="radar_cw_start">Start</string>
     <string name="radar_cw_stop">Stop</string>
     <string name="radar_cw_reset">Clear</string>
+    <string name="radar_cw_kotlin_fallback">Morse Expert native decoder is unavailable on this ABI; using the built-in CW decoder.</string>
+    <string name="radar_cw_waiting">Waiting for CW audio…</string>
 
     <!-- Map screen -->
     <string name="map_prev">Prev</string>

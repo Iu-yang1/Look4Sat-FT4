@@ -97,6 +97,7 @@ import com.rtbishop.look4sat.core.presentation.CardButton
 import com.rtbishop.look4sat.core.presentation.R
 import com.rtbishop.look4sat.core.presentation.formatFrequency
 import com.rtbishop.look4sat.core.presentation.infiniteMarquee
+import com.rtbishop.look4sat.feature.cw.CwNativeCapability
 import com.rtbishop.look4sat.feature.cw.R as CwR
 import com.ve3nea.morse_expert.MainActivity
 import java.util.Locale
@@ -954,8 +955,12 @@ private fun CwDecoderPanel(
         }
 
         AnimatedVisibility(visible = cw.isExpanded) {
-            // PR #1 Morse Expert engine: mini layout with waterfall + decoded text.
-            // Keep the old Kotlin decoder state/actions as fallback code, but this panel no longer feeds it.
+            if (!CwNativeCapability.isAvailable) {
+                KotlinCwDecoderPanel(cw, onAction, requestMicPermission)
+                return@AnimatedVisibility
+            }
+
+            // Morse Expert engine: mini layout with waterfall + decoded text.
             val context = LocalContext.current
             val activity = remember(context) {
                 context as? Activity ?: error("CwDecoderPanel must be hosted in an Activity")
@@ -1039,6 +1044,59 @@ private fun CwDecoderPanel(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun KotlinCwDecoderPanel(
+    cw: CwSubState,
+    onAction: (RadarAction) -> Unit,
+    requestMicPermission: () -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(
+            text = stringResource(R.string.radar_cw_kotlin_fallback),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            fontSize = 12.sp
+        )
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            if (cw.status == CwStatus.Idle) {
+                Button(
+                    onClick = {
+                        if (cw.hasPermission) onAction(RadarAction.CwStartListening)
+                        else requestMicPermission()
+                    },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text(stringResource(R.string.radar_cw_start))
+                }
+            } else {
+                Button(
+                    onClick = { onAction(RadarAction.CwStopListening) },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text(stringResource(R.string.radar_cw_stop))
+                }
+            }
+            OutlinedButton(
+                onClick = { onAction(RadarAction.CwReset) },
+                modifier = Modifier.weight(1f)
+            ) {
+                Text(stringResource(R.string.radar_cw_reset))
+            }
+        }
+        Text(
+            text = cw.decodedText.ifBlank { stringResource(R.string.radar_cw_waiting) },
+            color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(96.dp)
+                .background(MaterialTheme.colorScheme.surfaceContainer)
+                .padding(8.dp)
+        )
     }
 }
 

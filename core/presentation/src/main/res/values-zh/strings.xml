@@ -83,6 +83,8 @@
     <string name="radar_cw_start">开始</string>
     <string name="radar_cw_stop">停止</string>
     <string name="radar_cw_reset">清空</string>
+    <string name="radar_cw_kotlin_fallback">此 ABI 不支持 Morse Expert 原生解码，已使用内置 CW 解码器。</string>
+    <string name="radar_cw_waiting">正在等待 CW 音频…</string>
 
     <!-- Map screen -->
     <string name="map_prev">上一个</string>

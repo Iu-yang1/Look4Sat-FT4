@@ -40,7 +40,10 @@ data class Ft4State(
     val manualTimeWarning: Boolean = false,
     val selectedPass: OrbitalPass? = null,
     val orbitalPosition: OrbitalPos? = null,
-    val satelliteTrack: List<OrbitalPos> = emptyList()
+    val satelliteTrack: List<OrbitalPos> = emptyList(),
+    val orientationValues: Pair<Float, Float> = 0f to 0f,
+    val shouldUseCompass: Boolean = false,
+    val shouldShowSweep: Boolean = false
 ) {
     val grid4: String
         get() = stationGrid.take(4).uppercase()

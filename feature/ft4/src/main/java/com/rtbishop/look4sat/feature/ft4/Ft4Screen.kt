@@ -15,6 +15,8 @@ import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -250,13 +252,15 @@ private fun Ft4Shell(
             modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 6.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            SatelliteRadioStatus(
-                state = state,
-                onAction = onAction,
-                connectRadios = connectRadios,
-                navigateToPasses = navigateUp,
-                modifier = Modifier.fillMaxWidth()
-            )
+            if (current != Ft4Page.Spectrum) {
+                SatelliteRadioStatus(
+                    state = state,
+                    onAction = onAction,
+                    connectRadios = connectRadios,
+                    navigateToPasses = navigateUp,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
             NavDisplay(
                 backStack = backStack,
                 onBack = navigateUp,
@@ -267,7 +271,25 @@ private fun Ft4Shell(
                 ),
                 entryProvider = entryProvider {
                     entry<Ft4Page.Spectrum> {
-                        Ft4SpectrumPage(state, viewModel, onAction, requestMicrophone)
+                        Column(
+                            modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            SatelliteRadioStatus(
+                                state = state,
+                                onAction = onAction,
+                                connectRadios = connectRadios,
+                                navigateToPasses = navigateUp,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            Ft4SpectrumPage(
+                                state = state,
+                                viewModel = viewModel,
+                                onAction = onAction,
+                                requestMicrophone = requestMicrophone,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
                     }
                     entry<Ft4Page.Decode> { Ft4DecodePage(state, onAction) }
                     entry<Ft4Page.Automatic> { Ft4AutomaticPage(state, onAction) }
@@ -320,59 +342,48 @@ private fun SatelliteRadioStatus(
                 )
             } else {
                 if (expanded) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        state.orbitalPosition?.let { position ->
-                            RadarViewCompose(
-                                item = position,
-                                items = state.satelliteTrack,
-                                azimElev = 0f to 0f,
-                                shouldShowSweep = radio.isActive,
-                                shouldUseCompass = false,
-                                modifier = Modifier.weight(0.85f)
-                            )
-                        }
-                        Column(
-                            modifier = Modifier.weight(1.15f),
-                            verticalArrangement = Arrangement.spacedBy(3.dp)
-                        ) {
-                            Text(
-                                stringResource(R.string.ft4_satellite_value, pass.name),
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                            Text(
-                                transponder.info,
-                                fontSize = 11.sp,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                            Text(
-                                stringResource(
-                                    R.string.ft4_radar_position,
-                                    state.orbitalPosition?.let { Math.toDegrees(it.azimuth) } ?: radio.azimuth,
-                                    state.orbitalPosition?.let { Math.toDegrees(it.elevation) } ?: radio.elevation
-                                ),
-                                fontSize = 11.sp
-                            )
-                            FrequencyStatus(state)
-                            Text(
-                                stringResource(
-                                    R.string.ft4_radio_compact,
-                                    radio.txMode ?: notSet,
-                                    radio.rxMode ?: notSet,
-                                    radio.pttState.name,
-                                    stringResource(
-                                        if (radio.commandBusy) R.string.ft4_cat_busy else R.string.ft4_cat_ready
-                                    )
-                                ),
-                                fontSize = 11.sp
-                            )
-                        }
+                    Text(
+                        stringResource(R.string.ft4_satellite_value, pass.name),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        transponder.info,
+                        fontSize = 11.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    state.orbitalPosition?.let { position ->
+                        RadarViewCompose(
+                            item = position,
+                            items = state.satelliteTrack,
+                            azimElev = state.orientationValues,
+                            shouldShowSweep = state.shouldShowSweep,
+                            shouldUseCompass = state.shouldUseCompass,
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp)
+                        )
                     }
+                    Text(
+                        stringResource(
+                            R.string.ft4_radar_position,
+                            state.orbitalPosition?.let { Math.toDegrees(it.azimuth) } ?: radio.azimuth,
+                            state.orbitalPosition?.let { Math.toDegrees(it.elevation) } ?: radio.elevation
+                        ),
+                        fontSize = 12.sp
+                    )
+                    FrequencyStatus(state)
+                    Text(
+                        stringResource(
+                            R.string.ft4_radio_compact,
+                            radio.txMode ?: notSet,
+                            radio.rxMode ?: notSet,
+                            radio.pttState.name,
+                            stringResource(
+                                if (radio.commandBusy) R.string.ft4_cat_busy else R.string.ft4_cat_ready
+                            )
+                        ),
+                        fontSize = 12.sp
+                    )
                     radio.lastCommandError?.let {
                         Text(it, color = MaterialTheme.colorScheme.error, fontSize = 11.sp, maxLines = 1)
                     }

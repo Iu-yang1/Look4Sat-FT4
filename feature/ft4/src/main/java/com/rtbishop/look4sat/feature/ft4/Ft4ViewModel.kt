@@ -39,6 +39,7 @@ class Ft4ViewModel(
     private val transmitter = container.ft4AudioTransmitter
     private val clock = container.disciplinedClock
     private val radioService = container.radioTrackingService
+    private val sensorsRepo = container.provideSensorsRepo()
     private val scheduler = DisciplinedFt4SlotScheduler()
     private val automationController = Ft4AutomationController()
     private var automationJob: Job? = null
@@ -67,6 +68,7 @@ class Ft4ViewModel(
 
     init {
         collectState()
+        collectPhoneOrientation()
         startTicker()
         startRadarTicker()
     }
@@ -75,6 +77,7 @@ class Ft4ViewModel(
         when (action) {
             is Ft4Action.MicrophonePermissionChanged -> {
                 mutableState.update { it.copy(hasMicrophonePermission = action.granted) }
+                if (container.settingsRepo.otherSettings.value.stateOfSensors) sensorsRepo.enableSensor()
                 if (!action.granted) cleanupScope.launch {
                     ft4Service.stopReceiving()
                     container.audioHub.stopAll()
@@ -133,6 +136,17 @@ class Ft4ViewModel(
         viewModelScope.launch {
             container.settingsRepo.stationPosition.collect { position ->
                 mutableState.update { it.copy(stationGrid = position.qthLocator) }
+            }
+        }
+        viewModelScope.launch {
+            container.settingsRepo.otherSettings.collect { settings ->
+                mutableState.update {
+                    it.copy(
+                        shouldUseCompass = settings.stateOfSensors,
+                        shouldShowSweep = settings.stateOfSweep
+                    )
+                }
+                if (settings.stateOfSensors) sensorsRepo.enableSensor() else sensorsRepo.disableSensor()
             }
         }
         viewModelScope.launch {
@@ -211,6 +225,15 @@ class Ft4ViewModel(
         }
         viewModelScope.launch {
             transmitter.state.collect { value -> mutableState.update { it.copy(transmitState = value) } }
+        }
+    }
+
+    private fun collectPhoneOrientation() = viewModelScope.launch {
+        sensorsRepo.sensorData.collect { orientation ->
+            val declination = sensorsRepo.getMagDeclination(container.settingsRepo.stationPosition.value)
+            mutableState.update {
+                it.copy(orientationValues = (orientation.first + declination) to orientation.second)
+            }
         }
     }
 
@@ -449,6 +472,7 @@ class Ft4ViewModel(
     private fun closeOperations() {
         automationJob?.cancel()
         manualTransmitJob?.cancel()
+        sensorsRepo.disableSensor()
         cleanupScope.launch {
             transmitter.emergencyStop()
             ft4Service.stopReceiving()

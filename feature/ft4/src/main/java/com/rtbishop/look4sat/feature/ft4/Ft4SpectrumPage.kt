@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.MaterialTheme
@@ -55,7 +56,8 @@ internal fun Ft4SpectrumPage(
     state: Ft4State,
     viewModel: Ft4ViewModel,
     onAction: (Ft4Action) -> Unit,
-    requestMicrophone: () -> Unit
+    requestMicrophone: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     val renderState = remember { SpectrumRenderState() }
     val shouldCollectSpectrum = state.settings.decodeEnabled &&
@@ -70,10 +72,10 @@ internal fun Ft4SpectrumPage(
     val frame = renderState.frame()
     val inputLevel = frame?.inputLevelDb ?: -120f
     Column(
-        modifier = Modifier.fillMaxSize(),
+        modifier = modifier,
         verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
-        ElevatedCard(modifier = Modifier.weight(1f)) {
+        ElevatedCard(modifier = Modifier.fillMaxWidth().height(420.dp)) {
             SpectrumWaterfall(
                 renderState = renderState,
                 selectedFrequencyHz = state.selectedAudioFrequencyHz,

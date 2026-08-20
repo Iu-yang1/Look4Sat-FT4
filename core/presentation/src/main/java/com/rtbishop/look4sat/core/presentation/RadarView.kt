@@ -15,7 +15,7 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
-package com.rtbishop.look4sat.feature.radar
+package com.rtbishop.look4sat.core.presentation
 
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloat
@@ -59,7 +59,6 @@ import com.rtbishop.look4sat.core.domain.predict.CelestialComputer
 import com.rtbishop.look4sat.core.domain.predict.OrbitalPos
 import com.rtbishop.look4sat.core.domain.predict.PI_2
 import com.rtbishop.look4sat.core.domain.utility.toRadians
-import com.rtbishop.look4sat.core.presentation.R
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.cos

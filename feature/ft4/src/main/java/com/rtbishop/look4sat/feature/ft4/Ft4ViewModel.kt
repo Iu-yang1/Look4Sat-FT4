@@ -25,6 +25,8 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -66,6 +68,7 @@ class Ft4ViewModel(
     init {
         collectState()
         startTicker()
+        startRadarTicker()
     }
 
     fun onAction(action: Ft4Action) {
@@ -133,6 +136,35 @@ class Ft4ViewModel(
             }
         }
         viewModelScope.launch {
+            combine(
+                container.satelliteRepo.passes,
+                container.satelliteRepo.selectedPass
+            ) { passes, selection ->
+                val (catalogNumber, aosTime) = selection
+                passes.firstOrNull { it.catNum == catalogNumber && it.aosTime == aosTime }
+                    ?: passes.firstOrNull { it.catNum == catalogNumber }
+            }.collectLatest { pass ->
+                mutableState.update {
+                    it.copy(selectedPass = pass, orbitalPosition = null, satelliteTrack = emptyList())
+                }
+                if (pass != null && !pass.isDeepSpace) {
+                    val track = runCatching {
+                        container.satelliteRepo.getTrack(
+                            pass.orbitalObject,
+                            container.settingsRepo.stationPosition.value,
+                            pass.aosTime,
+                            pass.losTime
+                        )
+                    }.getOrDefault(emptyList())
+                    mutableState.update { current ->
+                        if (current.trackingPass?.catNum == pass.catNum) {
+                            current.copy(satelliteTrack = track)
+                        } else current
+                    }
+                }
+            }
+        }
+        viewModelScope.launch {
             ft4Service.capability.collect { value -> mutableState.update { it.copy(capability = value) } }
         }
         viewModelScope.launch {
@@ -190,6 +222,28 @@ class Ft4ViewModel(
             mutableTimingState.value = Ft4TimingState(now, scheduler.progress(now), snapshot)
             if (tick++ % 10 == 0) mutableState.update { it.copy(clock = snapshot) }
             delay(100L)
+        }
+    }
+
+    private fun startRadarTicker() = viewModelScope.launch {
+        while (isActive) {
+            val pass = mutableState.value.trackingPass
+            if (pass != null) {
+                runCatching {
+                    container.satelliteRepo.getPosition(
+                        pass.orbitalObject,
+                        container.settingsRepo.stationPosition.value,
+                        clock.nowMillis()
+                    )
+                }.onSuccess { position ->
+                    mutableState.update { current ->
+                        if (current.trackingPass?.catNum == pass.catNum) {
+                            current.copy(orbitalPosition = position)
+                        } else current
+                    }
+                }
+            }
+            delay(1_000L)
         }
     }
 
@@ -362,11 +416,12 @@ class Ft4ViewModel(
     }
 
     private fun toggleTracking() {
-        val radio = mutableState.value.radio
+        val state = mutableState.value
+        val radio = state.radio
         if (radio.isActive) {
             radioService.stopTracking()
         } else {
-            val pass = radio.currentPass ?: return setError("Select a pass in Radar first")
+            val pass = state.trackingPass ?: return setError("Select a pass in Radar first")
             val transponder = radio.selectedTransponder ?: return setError("Select a transponder in Radar first")
             radioService.startTracking(pass, transponder, radio.txBaseFrequencyHz)
         }

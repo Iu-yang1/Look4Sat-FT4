@@ -18,12 +18,17 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -62,11 +67,9 @@ import com.rtbishop.look4sat.core.domain.repository.IContainerProvider
 import com.rtbishop.look4sat.core.presentation.CardButton
 import com.rtbishop.look4sat.core.presentation.IconCard
 import com.rtbishop.look4sat.core.presentation.R
+import com.rtbishop.look4sat.core.presentation.RadarViewCompose
+import kotlin.math.roundToInt
 import kotlinx.serialization.Serializable
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
-import java.util.TimeZone
 
 @Serializable
 private sealed interface Ft4Page : NavKey {
@@ -146,10 +149,32 @@ private fun Ft4Shell(
     val backStack = rememberNavBackStack(Ft4Page.Spectrum)
     val current = backStack.lastOrNull()
     val pages = listOf(Ft4Page.Spectrum, Ft4Page.Decode, Ft4Page.Automatic)
+    val timing by viewModel.timingState.collectAsStateWithLifecycle()
     Scaffold(
         modifier = Modifier.fillMaxSize().keepScreenOn(),
         topBar = {
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(6.dp)) {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+                modifier = Modifier.statusBarsPadding().padding(horizontal = 6.dp, vertical = 4.dp)
+            ) {
+                LinearProgressIndicator(
+                    progress = { timing.slotProgress },
+                    modifier = Modifier.fillMaxWidth().height(3.dp)
+                )
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text(
+                        stringResource(R.string.ft4_slot_progress, (timing.slotProgress * 100).roundToInt()),
+                        fontSize = 10.sp
+                    )
+                    Text(
+                        stringResource(
+                            R.string.ft4_time_source,
+                            clockSourceLabel(timing.clock.source),
+                            timing.clock.uncertaintyMillis
+                        ),
+                        fontSize = 10.sp
+                    )
+                }
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                     verticalAlignment = Alignment.CenterVertically
@@ -191,7 +216,10 @@ private fun Ft4Shell(
             }
         },
         bottomBar = {
-            NavigationBar {
+            NavigationBar(
+                modifier = Modifier.navigationBarsPadding().height(58.dp),
+                windowInsets = WindowInsets(0, 0, 0, 0)
+            ) {
                 pages.forEach { page ->
                     val label = when (page) {
                         Ft4Page.Spectrum -> stringResource(R.string.ft4_page_spectrum)
@@ -212,7 +240,7 @@ private fun Ft4Shell(
                             }
                         },
                         icon = { Icon(painterResource(icon), contentDescription = label) },
-                        label = { Text(label, maxLines = 1) }
+                        label = { Text(label, maxLines = 1, fontSize = 10.sp) }
                     )
                 }
             }
@@ -257,9 +285,9 @@ private fun SatelliteRadioStatus(
     navigateToPasses: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    var expanded by rememberSaveable { mutableStateOf(false) }
+    var expanded by rememberSaveable { mutableStateOf(true) }
     val radio = state.radio
-    val pass = radio.currentPass
+    val pass = state.trackingPass
     val transponder = radio.selectedTransponder
     val notSet = stringResource(R.string.ft4_not_set)
     ElevatedCard(modifier = modifier) {
@@ -291,47 +319,63 @@ private fun SatelliteRadioStatus(
                     modifier = Modifier.fillMaxWidth()
                 )
             } else {
-                Text(stringResource(R.string.ft4_satellite_value, pass.name), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(
-                    stringResource(
-                        R.string.ft4_transponder_value,
-                        transponder.info,
-                        transponder.uplinkMode ?: transponder.downlinkMode ?: notSet,
-                        stringResource(if (transponder.isInverted) R.string.ft4_yes else R.string.ft4_no)
-                    ),
-                    fontSize = 12.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
                 if (expanded) {
-                    Text(
-                        stringResource(
-                            R.string.ft4_pass_value,
-                            formatUtc(pass.aosTime),
-                            formatUtc(pass.losTime),
-                            formatRemaining(pass.losTime - state.clock.utcMillis)
-                        ), fontSize = 12.sp
-                    )
-                    Text(stringResource(R.string.ft4_position_value, radio.azimuth, radio.elevation, radio.distance), fontSize = 12.sp)
-                    FrequencyStatus(state)
-                    Text(
-                        stringResource(
-                            R.string.ft4_radio_value,
-                            stringResource(if (radio.txConnected) R.string.ft4_connected else R.string.ft4_disconnected),
-                            stringResource(if (radio.rxConnected) R.string.ft4_connected else R.string.ft4_disconnected),
-                            stringResource(if (radio.splitMode) R.string.ft4_split else R.string.ft4_dual_radio)
-                        ), fontSize = 12.sp
-                    )
-                    Text(
-                        stringResource(
-                            R.string.ft4_mode_value,
-                            radio.txMode ?: notSet,
-                            radio.rxMode ?: notSet,
-                            radio.pttState.name
-                        ), fontSize = 12.sp
-                    )
-                    if (radio.commandBusy) Text(stringResource(R.string.ft4_cat_busy), color = MaterialTheme.colorScheme.primary)
-                    radio.lastCommandError?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 12.sp) }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        state.orbitalPosition?.let { position ->
+                            RadarViewCompose(
+                                item = position,
+                                items = state.satelliteTrack,
+                                azimElev = 0f to 0f,
+                                shouldShowSweep = radio.isActive,
+                                shouldUseCompass = false,
+                                modifier = Modifier.weight(0.85f)
+                            )
+                        }
+                        Column(
+                            modifier = Modifier.weight(1.15f),
+                            verticalArrangement = Arrangement.spacedBy(3.dp)
+                        ) {
+                            Text(
+                                stringResource(R.string.ft4_satellite_value, pass.name),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                transponder.info,
+                                fontSize = 11.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                stringResource(
+                                    R.string.ft4_radar_position,
+                                    state.orbitalPosition?.let { Math.toDegrees(it.azimuth) } ?: radio.azimuth,
+                                    state.orbitalPosition?.let { Math.toDegrees(it.elevation) } ?: radio.elevation
+                                ),
+                                fontSize = 11.sp
+                            )
+                            FrequencyStatus(state)
+                            Text(
+                                stringResource(
+                                    R.string.ft4_radio_compact,
+                                    radio.txMode ?: notSet,
+                                    radio.rxMode ?: notSet,
+                                    radio.pttState.name,
+                                    stringResource(
+                                        if (radio.commandBusy) R.string.ft4_cat_busy else R.string.ft4_cat_ready
+                                    )
+                                ),
+                                fontSize = 11.sp
+                            )
+                        }
+                    }
+                    radio.lastCommandError?.let {
+                        Text(it, color = MaterialTheme.colorScheme.error, fontSize = 11.sp, maxLines = 1)
+                    }
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         CardButton(
                             onClick = if (radio.txConnected || radio.rxConnected) {
@@ -355,6 +399,18 @@ private fun SatelliteRadioStatus(
                         onClick = { onAction(Ft4Action.EmergencyStop) },
                         text = stringResource(R.string.ft4_emergency_stop),
                         modifier = Modifier.fillMaxWidth()
+                    )
+                } else {
+                    Text(
+                        stringResource(
+                            R.string.ft4_radar_summary,
+                            pass.name,
+                            state.orbitalPosition?.let { Math.toDegrees(it.azimuth) } ?: radio.azimuth,
+                            state.orbitalPosition?.let { Math.toDegrees(it.elevation) } ?: radio.elevation
+                        ),
+                        fontSize = 12.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
             }
@@ -389,7 +445,6 @@ private fun FrequencyStatus(state: Ft4State) {
             ), fontSize = 12.sp
         )
     }
-    Text(stringResource(R.string.ft4_audio_frequency, state.selectedAudioFrequencyHz), fontSize = 12.sp)
 }
 
 @Composable
@@ -400,13 +455,4 @@ private fun capabilityText(state: Ft4State): String = when {
         R.string.ft4_status_unavailable,
         state.capability.unavailableReason.ifBlank { state.capability.abi }
     )
-}
-
-private fun formatUtc(millis: Long): String = SimpleDateFormat("HH:mm:ss", Locale.US).apply {
-    timeZone = TimeZone.getTimeZone("UTC")
-}.format(Date(millis))
-
-private fun formatRemaining(millis: Long): String {
-    val total = (millis.coerceAtLeast(0L) / 1_000L)
-    return "%02d:%02d".format(Locale.US, total / 60L, total % 60L)
 }

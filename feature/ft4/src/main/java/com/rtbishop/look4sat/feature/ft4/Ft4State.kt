@@ -17,6 +17,8 @@ import com.rtbishop.look4sat.core.domain.ft4.Ft4EngineState
 import com.rtbishop.look4sat.core.domain.ft4.Ft4TransmitState
 import com.rtbishop.look4sat.core.domain.model.Ft4Settings
 import com.rtbishop.look4sat.core.domain.repository.RadioTrackingState
+import com.rtbishop.look4sat.core.domain.predict.OrbitalPass
+import com.rtbishop.look4sat.core.domain.predict.OrbitalPos
 import com.rtbishop.look4sat.core.domain.time.ClockSnapshot
 
 data class Ft4State(
@@ -35,13 +37,19 @@ data class Ft4State(
     val txSlotParity: Int = 0,
     val hasMicrophonePermission: Boolean = false,
     val error: String = "",
-    val manualTimeWarning: Boolean = false
+    val manualTimeWarning: Boolean = false,
+    val selectedPass: OrbitalPass? = null,
+    val orbitalPosition: OrbitalPos? = null,
+    val satelliteTrack: List<OrbitalPos> = emptyList()
 ) {
     val grid4: String
         get() = stationGrid.take(4).uppercase()
 
     val isReceiving: Boolean
         get() = engineState is Ft4EngineState.Receiving
+
+    val trackingPass: OrbitalPass?
+        get() = radio.currentPass ?: selectedPass
 }
 
 data class Ft4TimingState(

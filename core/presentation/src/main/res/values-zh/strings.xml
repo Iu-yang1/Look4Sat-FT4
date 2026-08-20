@@ -306,6 +306,11 @@
     <string name="ft4_microphone_required">需要麦克风权限</string>
     <string name="ft4_audio_owner_idle">音频输入空闲</string>
     <string name="ft4_audio_owner">音频 %1$d Hz · %2$s</string>
+    <string name="ft4_audio_system_silenced">麦克风正被其他应用占用</string>
+    <string name="ft4_radar_position">方位 %1$.1f° · 仰角 %2$.1f°</string>
+    <string name="ft4_radar_summary">%1$s · 方位 %2$.1f° · 仰角 %3$.1f°</string>
+    <string name="ft4_radio_compact">TX %1$s · RX %2$s · PTT %3$s · %4$s</string>
+    <string name="ft4_cat_ready">CAT 就绪</string>
     <string name="ft4_decode_empty">尚未解码到 FT4 消息</string>
     <string name="ft4_decode_row">%1$s  %2$+d dB  %3$.1f s  %4$.0f Hz\n%5$s</string>
     <string name="ft4_operator_call">本机呼号</string>

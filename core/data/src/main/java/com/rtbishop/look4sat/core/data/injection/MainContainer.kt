@@ -29,6 +29,7 @@ import com.rtbishop.look4sat.core.data.framework.Ft817Controller
 import com.rtbishop.look4sat.core.data.framework.Ic705Controller
 import com.rtbishop.look4sat.core.data.framework.NetworkReporter
 import com.rtbishop.look4sat.core.data.framework.RadioTrackingService
+import com.rtbishop.look4sat.core.data.ft4.Ft4Service
 import com.rtbishop.look4sat.core.data.repository.AmSatRepository
 import com.rtbishop.look4sat.core.data.repository.DatabaseRepo
 import com.rtbishop.look4sat.core.data.repository.SatelliteRepo
@@ -45,6 +46,7 @@ import com.rtbishop.look4sat.core.data.usecase.SaveImage
 import com.rtbishop.look4sat.core.data.usecase.ShowToast
 import com.rtbishop.look4sat.core.domain.model.RadioControlSettings
 import com.rtbishop.look4sat.core.domain.audio.IAudioHub
+import com.rtbishop.look4sat.core.domain.ft4.IFt4Service
 import com.rtbishop.look4sat.core.domain.time.IDisciplinedClock
 import com.rtbishop.look4sat.core.domain.time.ITimeSynchronizationService
 import com.rtbishop.look4sat.core.domain.time.SystemDisciplinedClock
@@ -85,6 +87,7 @@ class MainContainer(private val context: Context) : IMainContainer {
     override val databaseRepo = provideDatabaseRepo()
     override val amSatRepo by lazy { AmSatRepository(remoteSource) }
     override val audioHub: IAudioHub by lazy { SharedAudioHub(appScope) }
+    override val ft4Service: IFt4Service by lazy { Ft4Service(appScope, audioHub, disciplinedClock) }
     override val disciplinedClock: IDisciplinedClock by lazy {
         SystemDisciplinedClock(AndroidMonotonicTimeSource)
     }

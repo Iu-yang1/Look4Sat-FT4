@@ -18,6 +18,7 @@ include(":app")
 include(
     ":core:data",
     ":core:domain",
+    ":core:ft4-native",
     ":core:presentation"
 )
 include(

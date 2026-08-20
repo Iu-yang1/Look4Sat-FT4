@@ -1,0 +1,2 @@
+-keep class com.rtbishop.look4sat.core.ft4.Ft4NativeBindings { *; }
+-keep class com.rtbishop.look4sat.core.ft4.Ft4NativeDecodeResult { *; }

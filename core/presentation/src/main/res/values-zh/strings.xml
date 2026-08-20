@@ -315,6 +315,8 @@
     <string name="ft4_radar_position">方位 %1$.1f° · 仰角 %2$.1f°</string>
     <string name="ft4_radar_summary">%1$s · 方位 %2$.1f° · 仰角 %3$.1f°</string>
     <string name="ft4_radio_compact">TX %1$s · RX %2$s · PTT %3$s · %4$s</string>
+    <string name="ft4_frequency_detail">标称 %1$s MHz · 多普勒 %2$+d Hz</string>
+    <string name="ft4_radio_control_status">电台控制</string>
     <string name="ft4_cat_ready">CAT 就绪</string>
     <string name="ft4_decode_empty">尚未解码到 FT4 消息</string>
     <string name="ft4_decode_count">已解码消息：%1$d</string>
@@ -343,6 +345,13 @@
     <string name="ft4_automation_next">下一条：%1$s</string>
     <string name="ft4_automation_slots">RX %1$s · TX %2$s</string>
     <string name="ft4_automation_cq">连续 CQ：%1$d</string>
+    <string name="ft4_automation_state_label">状态</string>
+    <string name="ft4_automation_target_label">目标</string>
+    <string name="ft4_automation_current_label">当前消息</string>
+    <string name="ft4_automation_next_label">下一条消息</string>
+    <string name="ft4_automation_slots_label">时隙</string>
+    <string name="ft4_automation_slots_compact">RX %1$s · TX %2$s</string>
+    <string name="ft4_automation_cq_label">连续 CQ</string>
     <string name="ft4_automation_time_ok">允许自动程序操作</string>
     <string name="ft4_automation_time_blocked">自动 TX 已阻止：%1$s</string>
     <string name="ft4_arm">待机</string>

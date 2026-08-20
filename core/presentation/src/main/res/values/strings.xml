@@ -350,6 +350,11 @@
     <string name="ft4_radar_position">Az %1$.1f° · El %2$.1f°</string>
     <string name="ft4_radar_summary">%1$s · Az %2$.1f° · El %3$.1f°</string>
     <string name="ft4_radio_compact">TX %1$s · RX %2$s · PTT %3$s · %4$s</string>
+    <string name="ft4_frequency_detail">Nominal %1$s MHz · Doppler %2$+d Hz</string>
+    <string name="ft4_radio_control_status">Radio control</string>
+    <string name="ft4_tx_label" translatable="false">TX</string>
+    <string name="ft4_rx_label" translatable="false">RX</string>
+    <string name="ft4_ptt_status" translatable="false">PTT %1$s</string>
     <string name="ft4_cat_ready">CAT ready</string>
     <string name="ft4_decode_empty">No FT4 messages decoded yet</string>
     <string name="ft4_decode_count">Decoded messages: %1$d</string>
@@ -378,6 +383,13 @@
     <string name="ft4_automation_next">Next: %1$s</string>
     <string name="ft4_automation_slots">RX %1$s · TX %2$s</string>
     <string name="ft4_automation_cq">Consecutive CQ: %1$d</string>
+    <string name="ft4_automation_state_label">State</string>
+    <string name="ft4_automation_target_label">Target</string>
+    <string name="ft4_automation_current_label">Current message</string>
+    <string name="ft4_automation_next_label">Next message</string>
+    <string name="ft4_automation_slots_label">Slots</string>
+    <string name="ft4_automation_slots_compact">RX %1$s · TX %2$s</string>
+    <string name="ft4_automation_cq_label">Consecutive CQ</string>
     <string name="ft4_automation_time_ok">Automatic operation allowed</string>
     <string name="ft4_automation_time_blocked">Automatic TX blocked: %1$s</string>
     <string name="ft4_arm">Arm</string>
@@ -385,6 +397,7 @@
     <string name="ft4_slot_even">even</string>
     <string name="ft4_slot_odd">odd</string>
     <string name="ft4_not_set">not set</string>
+    <string name="ft4_slot_unset_compact" translatable="false">—</string>
     <string name="ft4_spectrum_description">%1$s, %2$s</string>
     <string name="main_tracking">Tracking: %1$s</string>
     <string name="ft4_clock_system">system</string>

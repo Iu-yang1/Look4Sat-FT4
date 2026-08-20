@@ -13,20 +13,22 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.Button
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
@@ -37,6 +39,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
@@ -46,6 +49,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.rtbishop.look4sat.core.domain.ft4.Ft4DecodeResult
 import com.rtbishop.look4sat.core.domain.ft4.Ft4TransmitState
+import com.rtbishop.look4sat.core.presentation.CardButton
 import com.rtbishop.look4sat.core.presentation.R
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -101,15 +105,20 @@ private fun DecodeTable(state: Ft4State, onAction: (Ft4Action) -> Unit) {
             HorizontalDivider()
             DecodeTableHeader()
             if (state.decodeResults.isEmpty()) {
-                Text(
-                    stringResource(R.string.ft4_decode_empty),
-                    modifier = Modifier.padding(16.dp),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 220.dp)
+                ) {
+                    Text(
+                        stringResource(R.string.ft4_decode_empty),
+                        modifier = Modifier.padding(16.dp),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             } else {
                 LazyColumn(
                     state = listState,
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 128.dp, max = 300.dp)
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 220.dp, max = 420.dp)
                 ) {
                     items(state.decodeResults, key = Ft4DecodeResult::stableId) { result ->
                         DecodeRow(
@@ -209,8 +218,9 @@ private fun CallingCard(state: Ft4State, onAction: (Ft4Action) -> Unit) {
     val transmitting = state.transmitState !is Ft4TransmitState.Idle &&
         state.transmitState !is Ft4TransmitState.Failed
     ElevatedCard(modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-            Text(stringResource(R.string.ft4_calling_controls), fontWeight = FontWeight.Bold)
+        Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+            SectionHeader(R.drawable.ic_radio_tower, stringResource(R.string.ft4_calling_controls))
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 LabeledValue(stringResource(R.string.ft4_operator_call), myCall.ifBlank { notSet }, Modifier.weight(1f))
                 LabeledValue(stringResource(R.string.ft4_grid), state.grid4.ifBlank { notSet }, Modifier.weight(1f))
@@ -226,30 +236,47 @@ private fun CallingCard(state: Ft4State, onAction: (Ft4Action) -> Unit) {
                 ),
                 modifier = Modifier.fillMaxWidth()
             )
-            Text(stringResource(R.string.ft4_selected_frequency, state.selectedAudioFrequencyHz), fontSize = 12.sp)
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text(
+                    stringResource(R.string.ft4_tx_audio),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 12.sp
+                )
+                Text(
+                    stringResource(R.string.ft4_selected_frequency, state.selectedAudioFrequencyHz),
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.Bold
+                )
+            }
             Slider(
                 value = state.selectedAudioFrequencyHz,
                 onValueChange = { onAction(Ft4Action.SelectAudioFrequency(it)) },
                 valueRange = 200f..2_800f,
                 steps = 25
             )
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 FilterChip(
                     selected = state.txSlotParity == 0,
                     onClick = { onAction(Ft4Action.SetTxSlotParity(0)) },
-                    label = { Text(stringResource(R.string.ft4_even_slot)) }
+                    label = { Text(stringResource(R.string.ft4_even_slot)) },
+                    modifier = Modifier.weight(1f)
                 )
                 FilterChip(
                     selected = state.txSlotParity == 1,
                     onClick = { onAction(Ft4Action.SetTxSlotParity(1)) },
-                    label = { Text(stringResource(R.string.ft4_odd_slot)) }
+                    label = { Text(stringResource(R.string.ft4_odd_slot)) },
+                    modifier = Modifier.weight(1f)
                 )
             }
             Text(
                 stringResource(R.string.ft4_message_preview, preview),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                fontWeight = FontWeight.Medium
+                fontWeight = FontWeight.Medium,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(MaterialTheme.colorScheme.surfaceContainer)
+                    .padding(horizontal = 8.dp, vertical = 7.dp)
             )
             if (state.manualTimeWarning) {
                 Text(
@@ -259,16 +286,18 @@ private fun CallingCard(state: Ft4State, onAction: (Ft4Action) -> Unit) {
                 )
             }
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                Button(
+                CardButton(
                     onClick = { onAction(Ft4Action.ManualTransmit) },
+                    text = stringResource(R.string.ft4_transmit_next_slot),
                     enabled = !transmitting && state.settings.decodeEnabled && state.capability.transmitAvailable,
                     modifier = Modifier.weight(1f)
-                ) { Text(stringResource(R.string.ft4_transmit_next_slot)) }
-                Button(
+                )
+                CardButton(
                     onClick = { onAction(Ft4Action.StopTransmit) },
+                    text = stringResource(R.string.ft4_stop_transmit),
                     enabled = transmitting,
                     modifier = Modifier.weight(1f)
-                ) { Text(stringResource(R.string.ft4_stop_transmit)) }
+                )
             }
         }
     }
@@ -278,7 +307,27 @@ private fun CallingCard(state: Ft4State, onAction: (Ft4Action) -> Unit) {
 private fun LabeledValue(label: String, value: String, modifier: Modifier = Modifier) {
     Column(modifier = modifier) {
         Text(label, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text(value, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(
+            value,
+            color = MaterialTheme.colorScheme.primary,
+            fontSize = 18.sp,
+            fontWeight = FontWeight.Bold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+    }
+}
+
+@Composable
+private fun SectionHeader(iconRes: Int, title: String) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Icon(
+            painter = painterResource(iconRes),
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(20.dp)
+        )
+        Text(title, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 6.dp))
     }
 }
 

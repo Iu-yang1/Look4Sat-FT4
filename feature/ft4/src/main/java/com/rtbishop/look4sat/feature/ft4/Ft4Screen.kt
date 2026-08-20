@@ -14,21 +14,28 @@ import android.content.pm.PackageManager
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ElevatedCard
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -45,11 +52,13 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.keepScreenOn
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -65,11 +74,15 @@ import androidx.navigation3.runtime.entryProvider
 import androidx.navigation3.runtime.rememberNavBackStack
 import androidx.navigation3.runtime.rememberSaveableStateHolderNavEntryDecorator
 import androidx.navigation3.ui.NavDisplay
+import com.rtbishop.look4sat.core.domain.predict.OrbitalPos
+import com.rtbishop.look4sat.core.domain.repository.PttState
+import com.rtbishop.look4sat.core.domain.repository.RadioTrackingState
 import com.rtbishop.look4sat.core.domain.repository.IContainerProvider
 import com.rtbishop.look4sat.core.presentation.CardButton
 import com.rtbishop.look4sat.core.presentation.IconCard
 import com.rtbishop.look4sat.core.presentation.R
 import com.rtbishop.look4sat.core.presentation.RadarViewCompose
+import com.rtbishop.look4sat.core.presentation.formatFrequency
 import kotlin.math.roundToInt
 import kotlinx.serialization.Serializable
 
@@ -309,7 +322,6 @@ private fun SatelliteRadioStatus(
     val radio = state.radio
     val pass = state.trackingPass
     val transponder = radio.selectedTransponder
-    val notSet = stringResource(R.string.ft4_not_set)
     ElevatedCard(modifier = modifier) {
         Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
             Row(
@@ -347,41 +359,18 @@ private fun SatelliteRadioStatus(
                     )
                     Text(
                         transponder.info,
-                        fontSize = 11.sp,
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
                     state.orbitalPosition?.let { position ->
-                        RadarViewCompose(
-                            item = position,
-                            items = state.satelliteTrack,
-                            azimElev = state.orientationValues,
-                            shouldShowSweep = state.shouldShowSweep,
-                            shouldUseCompass = state.shouldUseCompass,
-                            modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp)
-                        )
+                        SatelliteRadar(state, position)
                     }
-                    Text(
-                        stringResource(
-                            R.string.ft4_radar_position,
-                            state.orbitalPosition?.let { Math.toDegrees(it.azimuth) } ?: radio.azimuth,
-                            state.orbitalPosition?.let { Math.toDegrees(it.elevation) } ?: radio.elevation
-                        ),
-                        fontSize = 12.sp
-                    )
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                     FrequencyStatus(state)
-                    Text(
-                        stringResource(
-                            R.string.ft4_radio_compact,
-                            radio.txMode ?: notSet,
-                            radio.rxMode ?: notSet,
-                            radio.pttState.name,
-                            stringResource(
-                                if (radio.commandBusy) R.string.ft4_cat_busy else R.string.ft4_cat_ready
-                            )
-                        ),
-                        fontSize = 12.sp
-                    )
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    RadioControlStatus(radio)
                     radio.lastCommandError?.let {
                         Text(it, color = MaterialTheme.colorScheme.error, fontSize = 11.sp, maxLines = 1)
                     }
@@ -430,28 +419,225 @@ private fun SatelliteRadioStatus(
 @Composable
 private fun FrequencyStatus(state: Ft4State) {
     val radio = state.radio
-    val tx = radio.txFrequencyHz
-    val nominalTx = radio.nominalTxFrequencyHz
-    if (tx != null && nominalTx != null) {
-        Text(
-            stringResource(
-                R.string.ft4_tx_frequency,
-                tx / 1_000_000.0,
-                nominalTx / 1_000_000.0,
-                radio.txDopplerCorrectionHz ?: 0L
-            ), fontSize = 12.sp
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Ft4FrequencyRow(
+            label = stringResource(R.string.ft4_tx_label),
+            frequencyHz = radio.txFrequencyHz ?: radio.nominalTxFrequencyHz,
+            nominalHz = radio.nominalTxFrequencyHz,
+            correctionHz = radio.txDopplerCorrectionHz,
+            connected = radio.txConnected
+        )
+        Ft4FrequencyRow(
+            label = stringResource(R.string.ft4_rx_label),
+            frequencyHz = radio.rxFrequencyHz ?: radio.nominalRxFrequencyHz,
+            nominalHz = radio.nominalRxFrequencyHz,
+            correctionHz = radio.rxDopplerCorrectionHz,
+            connected = radio.rxConnected
         )
     }
-    val rx = radio.rxFrequencyHz
-    val nominalRx = radio.nominalRxFrequencyHz
-    if (rx != null && nominalRx != null) {
+}
+
+@Composable
+private fun SatelliteRadar(state: Ft4State, position: OrbitalPos) {
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp)
+    ) {
+        RadarViewCompose(
+            item = position,
+            items = state.satelliteTrack,
+            azimElev = state.orientationValues,
+            shouldShowSweep = state.shouldShowSweep,
+            shouldUseCompass = state.shouldUseCompass,
+            modifier = Modifier.fillMaxWidth()
+        )
+        SatellitePositionOverlay(position, Modifier.matchParentSize())
+    }
+}
+
+@Composable
+private fun SatellitePositionOverlay(position: OrbitalPos, modifier: Modifier = Modifier) {
+    Column(
+        verticalArrangement = Arrangement.SpaceBetween,
+        modifier = modifier.padding(horizontal = 6.dp, vertical = 4.dp)
+    ) {
+        Row(
+            horizontalArrangement = Arrangement.SpaceBetween,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            SatellitePositionLabel(
+                value = stringResource(R.string.radar_az_value, Math.toDegrees(position.azimuth)),
+                label = stringResource(R.string.radar_az_text),
+                alignment = Alignment.Start,
+                labelFirst = false
+            )
+            SatellitePositionLabel(
+                value = stringResource(R.string.radar_el_value, Math.toDegrees(position.elevation)),
+                label = stringResource(R.string.radar_el_text),
+                alignment = Alignment.End,
+                labelFirst = false
+            )
+        }
+        Row(
+            horizontalArrangement = Arrangement.SpaceBetween,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            SatellitePositionLabel(
+                value = stringResource(R.string.radar_alt_value, position.altitude),
+                label = stringResource(R.string.radar_alt_text),
+                alignment = Alignment.Start,
+                labelFirst = true
+            )
+            SatellitePositionLabel(
+                value = stringResource(R.string.radar_dist_value, position.distance),
+                label = stringResource(R.string.radar_dist_text),
+                alignment = Alignment.End,
+                labelFirst = true
+            )
+        }
+    }
+}
+
+@Composable
+private fun SatellitePositionLabel(
+    value: String,
+    label: String,
+    alignment: Alignment.Horizontal,
+    labelFirst: Boolean
+) {
+    Column(horizontalAlignment = alignment) {
+        if (labelFirst) {
+            Text(text = label, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(text = value, fontSize = 16.sp)
+        } else {
+            Text(text = value, fontSize = 16.sp)
+            Text(text = label, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+@Composable
+private fun Ft4FrequencyRow(
+    label: String,
+    frequencyHz: Long?,
+    nominalHz: Long?,
+    correctionHz: Long?,
+    connected: Boolean
+) {
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
         Text(
-            stringResource(
-                R.string.ft4_rx_frequency,
-                rx / 1_000_000.0,
-                nominalRx / 1_000_000.0,
-                radio.rxDopplerCorrectionHz ?: 0L
-            ), fontSize = 12.sp
+            text = "$label:",
+            fontSize = 13.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.width(30.dp)
+        )
+        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f)) {
+            Text(
+                text = frequencyHz?.let(::formatFrequency) ?: stringResource(R.string.radar_no_link),
+                color = MaterialTheme.colorScheme.primary,
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.Center,
+                maxLines = 1
+            )
+            if (nominalHz != null) {
+                Text(
+                    text = stringResource(
+                        R.string.ft4_frequency_detail,
+                        formatFrequency(nominalHz),
+                        correctionHz ?: 0L
+                    ),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 10.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+        ConnectionDot(connected, Modifier.width(30.dp))
+    }
+}
+
+@Composable
+private fun RadioControlStatus(radio: RadioTrackingState) {
+    val notSet = stringResource(R.string.ft4_not_set)
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                painter = painterResource(R.drawable.ic_radios),
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(20.dp)
+            )
+            Text(
+                text = stringResource(R.string.ft4_radio_control_status),
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.padding(start = 6.dp)
+            )
+        }
+        RadioConnectionRow(stringResource(R.string.ft4_tx_label), radio.txMode ?: notSet, radio.txConnected)
+        RadioConnectionRow(stringResource(R.string.ft4_rx_label), radio.rxMode ?: notSet, radio.rxConnected)
+        Row(
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text(
+                text = stringResource(if (radio.splitMode) R.string.ft4_split else R.string.ft4_dual_radio),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = 11.sp
+            )
+            Text(
+                text = stringResource(R.string.ft4_ptt_status, radio.pttState.name),
+                color = when (radio.pttState) {
+                    PttState.OFF -> MaterialTheme.colorScheme.onSurfaceVariant
+                    PttState.ARMING -> MaterialTheme.colorScheme.primary
+                    PttState.ON, PttState.ERROR -> MaterialTheme.colorScheme.error
+                },
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Medium
+            )
+            Text(
+                text = stringResource(if (radio.commandBusy) R.string.ft4_cat_busy else R.string.ft4_cat_ready),
+                color = if (radio.commandBusy) MaterialTheme.colorScheme.primary
+                else MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = 11.sp
+            )
+        }
+    }
+}
+
+@Composable
+private fun RadioConnectionRow(label: String, mode: String, connected: Boolean) {
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+        Text(
+            text = "$label:",
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            fontSize = 13.sp,
+            modifier = Modifier.width(30.dp)
+        )
+        Text(text = mode, fontSize = 14.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
+        Text(
+            text = stringResource(if (connected) R.string.ft4_connected else R.string.ft4_disconnected),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            fontSize = 11.sp
+        )
+        Spacer(modifier = Modifier.width(6.dp))
+        ConnectionDot(connected)
+    }
+}
+
+@Composable
+private fun ConnectionDot(connected: Boolean, modifier: Modifier = Modifier) {
+    Box(contentAlignment = Alignment.Center, modifier = modifier) {
+        Box(
+            modifier = Modifier
+                .size(8.dp)
+                .clip(CircleShape)
+                .background(
+                    if (connected) MaterialTheme.colorScheme.primary
+                    else MaterialTheme.colorScheme.outlineVariant
+                )
         )
     }
 }

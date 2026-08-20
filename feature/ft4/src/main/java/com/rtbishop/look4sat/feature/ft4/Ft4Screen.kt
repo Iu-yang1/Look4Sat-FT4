@@ -186,20 +186,13 @@ private fun Ft4Shell(
                 ) {
                     IconCard(action = navigateUp, resId = R.drawable.ic_back)
                     ElevatedCard(modifier = Modifier.weight(1f)) {
-                        Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)) {
-                            Text(
-                                stringResource(R.string.ft4_title),
-                                fontWeight = FontWeight.Bold,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                            Text(
-                                capabilityText(state),
-                                fontSize = 12.sp,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
+                        Text(
+                            stringResource(R.string.ft4_title),
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp)
+                        )
                     }
                 }
                 if (state.error.isNotBlank()) {
@@ -231,7 +224,7 @@ private fun Ft4Shell(
                         Ft4Page.Decode -> stringResource(R.string.ft4_page_decode)
                     }
                     val icon = when (page) {
-                        Ft4Page.Spectrum -> R.drawable.ic_radio_tower
+                        Ft4Page.Spectrum -> R.drawable.ic_spectrum_ft8cn
                         Ft4Page.Decode -> R.drawable.ic_radios
                     }
                     NavigationBarItem(
@@ -461,14 +454,4 @@ private fun FrequencyStatus(state: Ft4State) {
             ), fontSize = 12.sp
         )
     }
-}
-
-@Composable
-private fun capabilityText(state: Ft4State): String = when {
-    !state.settings.decodeEnabled -> stringResource(R.string.ft4_status_disabled)
-    state.capability.receiveAvailable -> stringResource(R.string.ft4_status_ready, state.capability.abi)
-    else -> stringResource(
-        R.string.ft4_status_unavailable,
-        state.capability.unavailableReason.ifBlank { state.capability.abi }
-    )
 }

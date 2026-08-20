@@ -225,7 +225,8 @@
     <string name="prefs_ft4_gnss">Use GNSS synchronization</string>
     <string name="prefs_ft4_sync_now">Synchronize now</string>
     <string name="prefs_ft4_synchronizing">Synchronizing…</string>
-    <string name="prefs_ft4_time_status">Time: %1$s · offset %2$+.0f ms · uncertainty %3$.0f ms</string>
+    <string name="prefs_ft4_time_synced">Time synchronized · offset %1$+.0f ms</string>
+    <string name="prefs_ft4_time_unsynced">Time not synchronized · offset %1$+.0f ms</string>
     <string name="prefs_ft4_time_error">Time synchronization: %s</string>
     <string name="prefs_ft4_time_system">System</string>
     <string name="prefs_ft4_time_ntp" translatable="false">NTP</string>
@@ -310,7 +311,7 @@
     <string name="ft4_collapse_status">Collapse satellite and radio status</string>
     <string name="ft4_satellite_radio">Satellite and radio</string>
     <string name="ft4_no_pass">No pass or transponder selected</string>
-    <string name="ft4_select_pass_hint">Select them on the Passes / Radar screen first</string>
+    <string name="ft4_select_pass_hint">Select them on the Passes screen first</string>
     <string name="ft4_go_to_passes">Back to passes</string>
     <string name="ft4_satellite_value">Satellite: %1$s</string>
     <string name="ft4_transponder_value">Transponder: %1$s · %2$s · inverted %3$s</string>
@@ -359,7 +360,6 @@
     <string name="ft4_decode_dt">DT</string>
     <string name="ft4_decode_hz">Hz</string>
     <string name="ft4_decode_message">Message</string>
-    <string name="ft4_decode_swipe_hint">Swipe a message to use its callsign in automatic operation</string>
     <string name="ft4_calling_controls">Call / transmit</string>
     <string name="ft4_operator_call">My callsign</string>
     <string name="ft4_target_call">Target callsign</string>
@@ -378,7 +378,7 @@
     <string name="ft4_automation_next">Next: %1$s</string>
     <string name="ft4_automation_slots">RX %1$s · TX %2$s</string>
     <string name="ft4_automation_cq">Consecutive CQ: %1$d</string>
-    <string name="ft4_automation_time_ok">Automatic TX time gate ready</string>
+    <string name="ft4_automation_time_ok">Automatic operation allowed</string>
     <string name="ft4_automation_time_blocked">Automatic TX blocked: %1$s</string>
     <string name="ft4_arm">Arm</string>
     <string name="ft4_stop_automation">Stop</string>

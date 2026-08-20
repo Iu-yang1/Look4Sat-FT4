@@ -100,12 +100,6 @@ private fun DecodeTable(state: Ft4State, onAction: (Ft4Action) -> Unit) {
             }
             HorizontalDivider()
             DecodeTableHeader()
-            Text(
-                stringResource(R.string.ft4_decode_swipe_hint),
-                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 10.sp
-            )
             if (state.decodeResults.isEmpty()) {
                 Text(
                     stringResource(R.string.ft4_decode_empty),

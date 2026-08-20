@@ -316,29 +316,10 @@ private fun Ft4SettingsCard(
     val capability = state.ft4Capability
     val clock = state.clockSnapshot
     val synchronization = state.timeSynchronizationState
-    val timeStatus = if (synchronization.lastError.isNotBlank()) {
-        stringResource(R.string.prefs_ft4_time_error, synchronization.lastError)
+    val timeStatus = if (clock.healthy && clock.source != ClockSource.SYSTEM) {
+        stringResource(R.string.prefs_ft4_time_synced, clock.offsetMillis)
     } else {
-        stringResource(
-            R.string.prefs_ft4_time_status,
-            clockSourceLabel(clock.source),
-            clock.offsetMillis,
-            clock.uncertaintyMillis
-        )
-    }
-    val selfTest = when (capability.nativeSelfTestPassed) {
-        true -> stringResource(R.string.prefs_ft4_self_test_passed)
-        false -> stringResource(R.string.prefs_ft4_self_test_failed)
-        null -> stringResource(R.string.prefs_ft4_self_test_pending)
-    }
-    val nativeStatus = if (capability.officialCoreAvailable) {
-        stringResource(R.string.prefs_ft4_native_supported, capability.abi, selfTest)
-    } else {
-        stringResource(
-            R.string.prefs_ft4_native_unsupported,
-            capability.abi,
-            capability.unavailableReason
-        )
+        stringResource(R.string.prefs_ft4_time_unsynced, clock.offsetMillis)
     }
 
     ElevatedCard(modifier = Modifier.fillMaxWidth()) {
@@ -422,20 +403,9 @@ private fun Ft4SettingsCard(
                 modifier = Modifier.fillMaxWidth()
             )
             Text(text = timeStatus, style = MaterialTheme.typography.bodySmall)
-            Text(text = nativeStatus, style = MaterialTheme.typography.bodySmall)
         }
     }
 }
-
-@Composable
-private fun clockSourceLabel(source: ClockSource): String = stringResource(
-    when (source) {
-        ClockSource.SYSTEM -> R.string.prefs_ft4_time_system
-        ClockSource.NTP -> R.string.prefs_ft4_time_ntp
-        ClockSource.GNSS -> R.string.prefs_ft4_time_gnss
-        ClockSource.HOLDOVER -> R.string.prefs_ft4_time_holdover
-    }
-)
 
 @Preview(showBackground = true)
 @Composable

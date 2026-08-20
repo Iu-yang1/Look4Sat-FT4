@@ -12,6 +12,7 @@ typedef struct {
     int is_valid;
     int snr;
     int score;
+    float sync;
     float time_sec;
     float freq_hz;
     int i3;

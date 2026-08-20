@@ -213,22 +213,42 @@ jstring native_self_test(JNIEnv *env, jclass) {
 #if FT4_OFFICIAL_CORE
     constexpr const char *message = "CQ K1ABC FN42";
     uint8_t payload[FTX_PAYLOAD_BYTES]{};
+    uint8_t encoded_tones[FTX_FT4_TONE_COUNT]{};
     char unpacked[FTX_MAX_TEXT_LENGTH]{};
-    int tones[105]{};
-    std::vector<float> wave(60480);
+    int bridge_tones[FTX_FT4_TONE_COUNT]{};
     std::lock_guard<std::mutex> lock(native_mutex);
     if (ftx_pack_message(message, payload) != 0) return env->NewStringUTF("pack failed");
     if (ftx_unpack_message(payload, unpacked, sizeof(unpacked)) != 0) return env->NewStringUTF("unpack failed");
     if (std::strcmp(message, unpacked) != 0) return env->NewStringUTF("pack/unpack mismatch");
-    if (ft4_bridge_generate_tones(message, tones, 105) != 105) return env->NewStringUTF("tone count mismatch");
-    for (int index = 0; index < 105; ++index) {
-        if (tones[index] < 0 || tones[index] > 3) return env->NewStringUTF("invalid tone");
+    if (ftx_encode_tones(FTX_MODE_FT4, payload, encoded_tones, FTX_FT4_TONE_COUNT)
+            != FTX_FT4_TONE_COUNT
+            || ft4_bridge_generate_tones(message, bridge_tones, FTX_FT4_TONE_COUNT)
+            != FTX_FT4_TONE_COUNT) {
+        return env->NewStringUTF("tone count mismatch");
     }
-    if (ft4_bridge_generate_wave(message, 12000, 1500.0f, wave.data(), 60480) != 60480) {
-        return env->NewStringUTF("wave length mismatch");
+    for (int index = 0; index < FTX_FT4_TONE_COUNT; ++index) {
+        if (bridge_tones[index] < 0 || bridge_tones[index] > 3
+                || bridge_tones[index] != encoded_tones[index]) {
+            return env->NewStringUTF("tone mismatch");
+        }
     }
-    for (float sample : wave) {
-        if (!std::isfinite(sample) || std::fabs(sample) > 1.001f) return env->NewStringUTF("invalid waveform");
+    for (const int sample_rate : {12000, 24000, 48000}) {
+        const int count = sample_rate * 504 / 100;
+        std::vector<float> wave(static_cast<size_t>(count));
+        std::vector<float> repeat(static_cast<size_t>(count));
+        if (ft4_bridge_generate_wave(message, sample_rate, 1500.0f, wave.data(), count) != count
+                || ft4_bridge_generate_wave(message, sample_rate, 1500.0f, repeat.data(), count) != count) {
+            return env->NewStringUTF("wave length mismatch");
+        }
+        if (wave != repeat || std::fabs(wave.front()) >= 0.01f
+                || std::fabs(wave.back()) >= 0.01f) {
+            return env->NewStringUTF("wave determinism mismatch");
+        }
+        for (float sample : wave) {
+            if (!std::isfinite(sample) || std::fabs(sample) > 1.001f) {
+                return env->NewStringUTF("invalid waveform");
+            }
+        }
     }
     return env->NewStringUTF("");
 #else

@@ -95,6 +95,7 @@ static void fill_result(ftx_decoder_t *decoder, const ft4_bridge_result_t *bridg
     candidate.is_valid = 1;
     candidate.snr = bridge_result->snr;
     candidate.score = (int) (bridge_result->sync * 10.0f);
+    candidate.sync = bridge_result->sync;
     candidate.time_sec = bridge_result->dt;
     candidate.freq_hz = bridge_result->freq;
     copy_text(candidate.text, sizeof(candidate.text), bridge_result->decoded);

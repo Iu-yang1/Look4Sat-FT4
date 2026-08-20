@@ -23,7 +23,7 @@ import j1.C1646n;
  * onCreate(Activity, ConstraintLayout) for Compose AndroidView integration. Ads (d1.*),
  * billing (I2.a), premium/rate menu removed per user. h3.b.r (recursive findViewById),
  * K1.a.M (immersive status bar), B.i (permissions) replaced with equivalent standard APIs.
- * Decoder logic (H2.a audio, H2.b core, pas engine) untouched.
+ * H2.b 与 Pascal 解码核心保持不变；H2.a 改为接收应用级共享音频，避免创建第二个 AudioRecord。
  */
 public class MainActivity {
 
@@ -124,7 +124,7 @@ public class MainActivity {
         }
     }
 
-    /** Original v(): audio capture + decoder core init (logic unchanged) */
+    /** 初始化原始 Morse Expert 解码核心；音频由 SharedAudioHub 从外部送入。 */
     public void v() {
         this.f11036E = new a();
         b bVar = new b(mActivity.getApplicationContext());
@@ -152,11 +152,6 @@ public class MainActivity {
         }
         a aVar = this.f11036E;
         if (aVar != null) {
-            android.media.AudioRecord audioRecord = aVar.f596g;
-            audioRecord.startRecording();
-            if (audioRecord.getState() != 1) {
-                android.util.Log.e("AudioRecord", "cannot start");
-            }
             aVar.f598i.set(true);
         }
         ((WaterfallSurfaceView) this.f11035D.f11892k).onResume();
@@ -168,11 +163,7 @@ public class MainActivity {
         a aVar = this.f11036E;
         if (aVar != null) {
             aVar.f598i.set(false);
-            android.media.AudioRecord audioRecord = aVar.f596g;
-            audioRecord.stop();
-            if (audioRecord.getState() != 1) {
-                android.util.Log.e("AudioRecord", "cannot stop");
-            }
+            aVar.b();
         }
         ((WaterfallSurfaceView) this.f11035D.f11892k).onPause();
     }
@@ -182,12 +173,7 @@ public class MainActivity {
         a aVar = this.f11036E;
         if (aVar != null) {
             aVar.f598i.set(false);
-            try {
-                aVar.f596g.stop();
-                aVar.f596g.release();
-            } catch (Exception ignored) {
-            }
-            aVar.f597h.shutdownNow();
+            aVar.b();
         }
         this.f11036E = null;
         this.f11037F = null;
@@ -228,5 +214,13 @@ public class MainActivity {
     /** Start decoding after permission granted (original onRequestPermissionsResult success) */
     public void onPermissionGranted() {
         v();
+    }
+
+    /** 接收已经重采样为 8 kHz 的 Float PCM。 */
+    public void feedAudioSamples(float[] samples) {
+        a audioInput = this.f11036E;
+        if (audioInput != null) {
+            audioInput.a(samples);
+        }
     }
 }

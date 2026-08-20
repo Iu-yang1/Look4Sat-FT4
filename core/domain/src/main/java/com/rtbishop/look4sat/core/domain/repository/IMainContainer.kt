@@ -17,8 +17,8 @@
  */
 package com.rtbishop.look4sat.core.domain.repository
 import com.rtbishop.look4sat.core.domain.model.SatRadio
+import com.rtbishop.look4sat.core.domain.audio.IAudioHub
 import com.rtbishop.look4sat.core.domain.usecase.IAddToCalendar
-import com.rtbishop.look4sat.core.domain.usecase.IAudioCapture
 import com.rtbishop.look4sat.core.domain.usecase.ISaveImage
 import com.rtbishop.look4sat.core.domain.usecase.IShowToast
 import kotlinx.coroutines.CoroutineScope
@@ -31,6 +31,7 @@ interface IMainContainer {
     val satelliteRepo: ISatelliteRepo
     val databaseRepo: IDatabaseRepo
     val amSatRepo: IAmSatRepository
+    val audioHub: IAudioHub
     val radioTrackingService: IRadioTrackingService
     val mutualPassData: StateFlow<MutualPassData>
     fun setMutualPassData(data: MutualPassData)
@@ -41,7 +42,6 @@ interface IMainContainer {
     fun provideSensorsRepo(): ISensorsRepo
     fun provideTxRadioController(): IRadioController
     fun provideRxRadioController(): IRadioController
-    fun provideAudioCapture(): IAudioCapture
     fun provideSaveImage(): ISaveImage
 }
 

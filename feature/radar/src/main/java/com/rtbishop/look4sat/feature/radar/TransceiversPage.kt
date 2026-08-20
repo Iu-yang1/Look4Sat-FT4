@@ -90,6 +90,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.constraintlayout.widget.ConstraintLayout
+import com.rtbishop.look4sat.core.domain.audio.IAudioHub
 import com.rtbishop.look4sat.core.domain.model.SatRadio
 import com.rtbishop.look4sat.core.domain.predict.OrbitalPos
 import com.rtbishop.look4sat.core.domain.utility.DopplerFrequencyCalculator
@@ -98,6 +99,7 @@ import com.rtbishop.look4sat.core.presentation.R
 import com.rtbishop.look4sat.core.presentation.formatFrequency
 import com.rtbishop.look4sat.core.presentation.infiniteMarquee
 import com.rtbishop.look4sat.feature.cw.CwNativeCapability
+import com.rtbishop.look4sat.feature.cw.MorseExpertAudioBridge
 import com.rtbishop.look4sat.feature.cw.R as CwR
 import com.ve3nea.morse_expert.MainActivity
 import java.util.Locale
@@ -146,6 +148,7 @@ fun CalculatorPage(
     selectedUuid: String?,
     orbitalPos: OrbitalPos?,
     cw: CwSubState,
+    audioHub: IAudioHub,
     onAction: (RadarAction) -> Unit,
     requestMicPermission: () -> Unit = {},
     modifier: Modifier = Modifier
@@ -207,6 +210,7 @@ fun CalculatorPage(
 
         CwDecoderPanel(
             cw = cw,
+            audioHub = audioHub,
             onAction = onAction,
             requestMicPermission = requestMicPermission,
             modifier = Modifier.fillMaxWidth()
@@ -922,6 +926,7 @@ private fun DopplerFrequencyCalculator(
 @Composable
 private fun CwDecoderPanel(
     cw: CwSubState,
+    audioHub: IAudioHub,
     onAction: (RadarAction) -> Unit,
     requestMicPermission: () -> Unit = {},
     modifier: Modifier = Modifier
@@ -972,9 +977,21 @@ private fun CwDecoderPanel(
             var initialized by remember { mutableStateOf(false) }
             var listening by remember { mutableStateOf(false) }
 
+            LaunchedEffect(listening, initialized) {
+                if (listening && initialized) {
+                    try {
+                        MorseExpertAudioBridge(audioHub, controller).collect()
+                    } finally {
+                        listening = false
+                        onAction(RadarAction.CwNativeSessionChanged(false))
+                    }
+                }
+            }
+
             // 重要: 不在展开时初始化控制器(避免"一展开就崩溃")。
             // controller.onCreate/onResume/onPermissionGranted 全部推迟到用户点 Start 才执行。
             fun startDecoding() {
+                onAction(RadarAction.CwNativeSessionChanged(true))
                 if (!initialized) {
                     controller.onCreate(activity, rootView)
                     controller.onPermissionGranted()
@@ -992,6 +1009,7 @@ private fun CwDecoderPanel(
                         controller.onPause()
                         controller.onDestroy()
                     }
+                    onAction(RadarAction.CwNativeSessionChanged(false))
                 }
             }
 
@@ -1018,6 +1036,7 @@ private fun CwDecoderPanel(
                             onClick = {
                                 controller.onPause()
                                 listening = false
+                                onAction(RadarAction.CwNativeSessionChanged(false))
                             },
                             modifier = Modifier.weight(1f)
                         ) {

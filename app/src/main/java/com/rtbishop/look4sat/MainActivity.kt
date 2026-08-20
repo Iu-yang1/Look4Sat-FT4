@@ -53,6 +53,12 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onStop() {
+        val mainContainer = (applicationContext as IContainerProvider).getMainContainer()
+        mainContainer.appScope.launch { mainContainer.audioHub.stopAll() }
+        super.onStop()
+    }
+
     private fun observeNightFilterState() {
         val mainContainer = (applicationContext as IContainerProvider).getMainContainer()
         lifecycleScope.launch {

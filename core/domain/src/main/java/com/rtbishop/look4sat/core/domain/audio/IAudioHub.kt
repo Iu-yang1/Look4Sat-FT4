@@ -47,7 +47,8 @@ sealed interface AudioHubState {
     data class Capturing(
         val sampleRate: Int,
         val format: AudioSampleFormat,
-        val consumers: Set<AudioConsumer>
+        val consumers: Set<AudioConsumer>,
+        val systemSilenced: Boolean = false
     ) : AudioHubState
 
     data class Failed(val reason: String) : AudioHubState

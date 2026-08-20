@@ -14,6 +14,7 @@ import android.media.AudioFormat
 import android.media.AudioRecord
 import android.media.AudioTimestamp
 import android.media.MediaRecorder
+import android.os.Build
 import android.os.SystemClock
 import com.rtbishop.look4sat.core.domain.audio.AudioConsumer
 import com.rtbishop.look4sat.core.domain.audio.AudioDelivery
@@ -136,7 +137,8 @@ class SharedAudioHub(private val scope: CoroutineScope) : IAudioHub {
         } catch (error: Exception) {
             if (currentCoroutineContext().isActive) {
                 _state.value = AudioHubState.Failed(error.message ?: error.javaClass.simpleName)
-                subscribers.values.forEach { it.channel.close(error) }
+                // 录音资源暂不可用是可恢复状态，不能把异常抛入界面收集协程导致应用退出。
+                subscribers.values.forEach { it.channel.close() }
                 subscribers.clear()
             }
         } finally {
@@ -164,6 +166,7 @@ class SharedAudioHub(private val scope: CoroutineScope) : IAudioHub {
             }
             check(count >= 0) { "AudioRecord.read 失败: $count" }
             if (count == 0) continue
+            updateSystemSilenced(recorder)
 
             val samples = if (candidate.format == AudioSampleFormat.PCM_FLOAT) {
                 floatBuffer.copyOf(count)
@@ -266,6 +269,17 @@ class SharedAudioHub(private val scope: CoroutineScope) : IAudioHub {
         val current = _state.value
         if (current is AudioHubState.Capturing) {
             _state.value = current.copy(consumers = activeConsumers())
+        }
+    }
+
+    private fun updateSystemSilenced(recorder: AudioRecord) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return
+        val silenced = runCatching {
+            recorder.activeRecordingConfiguration?.isClientSilenced == true
+        }.getOrDefault(false)
+        val current = _state.value
+        if (current is AudioHubState.Capturing && current.systemSilenced != silenced) {
+            _state.value = current.copy(systemSilenced = silenced)
         }
     }
 

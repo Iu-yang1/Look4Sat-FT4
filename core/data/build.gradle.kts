@@ -4,6 +4,9 @@ plugins {
 
 android {
     namespace = "com.rtbishop.look4sat.core.data"
+    defaultConfig {
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
     testOptions.unitTests.isReturnDefaultValues = true
 }
 

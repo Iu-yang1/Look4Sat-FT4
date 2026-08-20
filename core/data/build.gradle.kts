@@ -4,6 +4,7 @@ plugins {
 
 android {
     namespace = "com.rtbishop.look4sat.core.data"
+    testOptions.unitTests.isReturnDefaultValues = true
 }
 
 dependencies {

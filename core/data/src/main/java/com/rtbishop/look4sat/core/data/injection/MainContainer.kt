@@ -25,8 +25,6 @@ import android.location.LocationManager
 import androidx.room.Room
 import com.rtbishop.look4sat.core.data.database.Look4SatDb
 import com.rtbishop.look4sat.core.data.framework.BluetoothReporter
-import com.rtbishop.look4sat.core.data.framework.Ft817Controller
-import com.rtbishop.look4sat.core.data.framework.Ic705Controller
 import com.rtbishop.look4sat.core.data.framework.NetworkReporter
 import com.rtbishop.look4sat.core.data.framework.RadioTrackingService
 import com.rtbishop.look4sat.core.data.ft4.Ft4Service
@@ -44,15 +42,14 @@ import com.rtbishop.look4sat.core.data.time.AndroidMonotonicTimeSource
 import com.rtbishop.look4sat.core.data.time.AndroidTimeSynchronizationService
 import com.rtbishop.look4sat.core.data.usecase.SaveImage
 import com.rtbishop.look4sat.core.data.usecase.ShowToast
-import com.rtbishop.look4sat.core.domain.model.RadioControlSettings
 import com.rtbishop.look4sat.core.domain.audio.IAudioHub
 import com.rtbishop.look4sat.core.domain.ft4.IFt4Service
+import com.rtbishop.look4sat.core.domain.ft4.IFt4TransmitCoordinator
 import com.rtbishop.look4sat.core.domain.time.IDisciplinedClock
 import com.rtbishop.look4sat.core.domain.time.ITimeSynchronizationService
 import com.rtbishop.look4sat.core.domain.time.SystemDisciplinedClock
 import com.rtbishop.look4sat.core.domain.repository.IDatabaseRepo
 import com.rtbishop.look4sat.core.domain.repository.IMainContainer
-import com.rtbishop.look4sat.core.domain.repository.IRadioController
 import com.rtbishop.look4sat.core.domain.repository.IRadioTrackingService
 import com.rtbishop.look4sat.core.domain.repository.IReporter
 import com.rtbishop.look4sat.core.domain.repository.ISatelliteRepo
@@ -97,10 +94,12 @@ class MainContainer(private val context: Context) : IMainContainer {
             service.setNtpEnabled(settings.ntpSynchronizationEnabled)
             service.setGnssEnabled(settings.gnssSynchronizationEnabled)
         }
-    override val radioTrackingService: IRadioTrackingService by lazy {
+    private val sharedRadioTrackingService: RadioTrackingService by lazy {
         val manager = context.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
         RadioTrackingService(appScope, manager, satelliteRepo, settingsRepo)
     }
+    override val radioTrackingService: IRadioTrackingService by lazy { sharedRadioTrackingService }
+    override val ft4TransmitCoordinator: IFt4TransmitCoordinator by lazy { sharedRadioTrackingService }
 
     private val _mutualPassData = MutableStateFlow(MutualPassData())
     override val mutualPassData: StateFlow<MutualPassData> = _mutualPassData.asStateFlow()
@@ -136,28 +135,6 @@ class MainContainer(private val context: Context) : IMainContainer {
             rc.frequencyPort.toIntOrNull() ?: 0,
             rc.frequencyOffsetHz
         )
-    }
-
-    override fun provideTxRadioController(): IRadioController {
-        val manager  = context.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
-        val settings = settingsRepo.radioControlSettings.value
-        val address  = settings.txRadioAddress
-        return if (settings.radioModel == RadioControlSettings.MODEL_ICOM_IC705) {
-            Ic705Controller(manager, address)
-        } else {
-            Ft817Controller(manager, address)
-        }
-    }
-
-    override fun provideRxRadioController(): IRadioController {
-        val manager  = context.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
-        val settings = settingsRepo.radioControlSettings.value
-        val address  = settings.rxRadioAddress
-        return if (settings.radioModel == RadioControlSettings.MODEL_ICOM_IC705) {
-            Ic705Controller(manager, address)
-        } else {
-            Ft817Controller(manager, address)
-        }
     }
 
     override fun provideSensorsRepo(): ISensorsRepo {

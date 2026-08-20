@@ -18,10 +18,14 @@
 package com.rtbishop.look4sat.feature.settings
 
 import com.rtbishop.look4sat.core.domain.model.DataSourcesSettings
+import com.rtbishop.look4sat.core.domain.ft4.Ft4Capability
+import com.rtbishop.look4sat.core.domain.model.Ft4Settings
 import com.rtbishop.look4sat.core.domain.model.OtherSettings
 import com.rtbishop.look4sat.core.domain.model.RCSettings
 import com.rtbishop.look4sat.core.domain.model.RadioControlSettings
 import com.rtbishop.look4sat.core.domain.predict.GeoPos
+import com.rtbishop.look4sat.core.domain.time.ClockSnapshot
+import com.rtbishop.look4sat.core.domain.time.TimeSynchronizationState
 
 data class PositionSettings(
     val isUpdating: Boolean, val stationPos: GeoPos, val messageResId: Int
@@ -39,6 +43,10 @@ data class SettingsState(
     val positionSettings: PositionSettings,
     val dataSettings: DataSettings,
     val otherSettings: OtherSettings,
+    val ft4Settings: Ft4Settings,
+    val ft4Capability: Ft4Capability,
+    val clockSnapshot: ClockSnapshot,
+    val timeSynchronizationState: TimeSynchronizationState,
     val rcSettings: RCSettings,
     val radioControlSettings: RadioControlSettings,
     val dataSourcesSettings: DataSourcesSettings
@@ -64,6 +72,14 @@ sealed interface SettingsAction {
     data class ToggleSensor(val value: Boolean) : SettingsAction
     data class ToggleLightTheme(val value: Boolean) : SettingsAction
     data class ToggleNightMode(val value: Boolean) : SettingsAction
+
+    // FT4
+    data class SetFt4Callsign(val value: String) : SettingsAction
+    data class ToggleFt4Decode(val value: Boolean) : SettingsAction
+    data class SetFt4DecodeDepth(val value: Int) : SettingsAction
+    data class ToggleNtpSynchronization(val value: Boolean) : SettingsAction
+    data class ToggleGnssSynchronization(val value: Boolean) : SettingsAction
+    data object SynchronizeTimeNow : SettingsAction
 
     // Remote control
     data class UpdateRC(val settings: RCSettings) : SettingsAction

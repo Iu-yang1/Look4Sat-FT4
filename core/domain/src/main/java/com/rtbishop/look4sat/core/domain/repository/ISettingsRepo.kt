@@ -19,6 +19,7 @@ package com.rtbishop.look4sat.core.domain.repository
 
 import com.rtbishop.look4sat.core.domain.model.DataSourcesSettings
 import com.rtbishop.look4sat.core.domain.model.DatabaseState
+import com.rtbishop.look4sat.core.domain.model.Ft4Settings
 import com.rtbishop.look4sat.core.domain.model.OtherSettings
 import com.rtbishop.look4sat.core.domain.model.PassesSettings
 import com.rtbishop.look4sat.core.domain.model.RCSettings
@@ -66,6 +67,11 @@ interface ISettingsRepo {
     fun updateOtherSettings(transform: (OtherSettings) -> OtherSettings)
     fun setWarningDismissed() = updateOtherSettings { it.copy(shouldSeeWarning = false) }
     fun setWhatsNewDismissed() = updateOtherSettings { it.copy(shouldSeeWhatsNew = false) }
+    //endregion
+
+    //region # FT4 settings
+    val ft4Settings: StateFlow<Ft4Settings>
+    fun updateFt4Settings(transform: (Ft4Settings) -> Ft4Settings)
     //endregion
 
     //region # Transceivers settings

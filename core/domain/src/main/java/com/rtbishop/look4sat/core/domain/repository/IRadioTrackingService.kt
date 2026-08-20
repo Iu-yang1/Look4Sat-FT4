@@ -22,6 +22,13 @@ import com.rtbishop.look4sat.core.domain.predict.OrbitalObject
 import com.rtbishop.look4sat.core.domain.predict.OrbitalPass
 import kotlinx.coroutines.flow.StateFlow
 
+enum class PttState {
+    OFF,
+    ARMING,
+    ON,
+    ERROR
+}
+
 data class RadioTrackingState(
     val isActive: Boolean = false,
     val txConnected: Boolean = false,
@@ -37,7 +44,17 @@ data class RadioTrackingState(
     val azimuth: Double = 0.0,
     val elevation: Double = 0.0,
     val distance: Double = 0.0,
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
+    val pttState: PttState = PttState.OFF,
+    val commandBusy: Boolean = false,
+    val lastCommandError: String? = null,
+    val txLeaseId: Long? = null,
+    val txLeaseGeneration: Long = 0L,
+    val splitMode: Boolean = false,
+    val nominalTxFrequencyHz: Long? = null,
+    val nominalRxFrequencyHz: Long? = null,
+    val txDopplerCorrectionHz: Long? = null,
+    val rxDopplerCorrectionHz: Long? = null
 )
 
 interface IRadioTrackingService {

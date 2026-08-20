@@ -37,7 +37,7 @@
     <string name="pass_filter_deep_space">DeepSpace (період &gt;225хв)</string>
     <string name="pass_modes_title">Виберіть тип модуляції</string>
     <string name="pass_elevation">Піднес.: %.1f°</string>
-    <string name="pass_altitude">Висота: %.0f км</string>
+    <string name="pass_altitude">Висота: %d км</string>
     <string name="pass_empty_list_message">
         Переконайтеся, що ваші фільтри правильні, і ви вибрали супутники</string>
     <string name="pass_error_message">Немає майбутніх прольотів супутників</string>

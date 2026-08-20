@@ -33,10 +33,13 @@ sealed class Screen(val iconResId: Int, val titleResId: Int) : NavKey {
     data object Map : Screen(R.drawable.ic_map, R.string.nav_map)
 
     @Serializable
-    data object Mutual : Screen(R.drawable.ic_radio_tower, R.string.nav_mutual)
+    data object Mutual : Screen(R.drawable.ic_match, R.string.nav_mutual)
 
     @Serializable
     data object AMSAT : Screen(R.drawable.ic_satellite_alt, R.string.nav_amsat)
+
+    @Serializable
+    data object Ft4 : Screen(R.drawable.ic_radio_tower, R.string.nav_ft4)
 
     @Serializable
     data object Settings : Screen(R.drawable.ic_settings, R.string.nav_prefs)

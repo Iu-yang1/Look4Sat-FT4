@@ -18,10 +18,12 @@ include(":app")
 include(
     ":core:data",
     ":core:domain",
+    ":core:ft4-native",
     ":core:presentation"
 )
 include(
     ":feature:cw",
+    ":feature:ft4",
     ":feature:map",
     ":feature:mutual",
     ":feature:passes",

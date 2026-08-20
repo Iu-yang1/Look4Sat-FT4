@@ -26,6 +26,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import java.io.InputStream
 import java.io.OutputStream
 import java.util.UUID
@@ -92,6 +93,7 @@ class Ic705Controller(
     override suspend fun disconnect() {
         withContext(Dispatchers.IO) {
             try {
+                if (isConnected) withTimeoutOrNull(PTT_OFF_TIMEOUT_MS) { pttOff() }
                 inputStream?.close()
                 outputStream?.close()
                 socket?.close()
@@ -156,13 +158,11 @@ class Ic705Controller(
     }
 
     override suspend fun pttOn(): Boolean = withContext(Dispatchers.IO) {
-        Log.w(tag, "pttOn: not used for IC-705")
-        true
+        ioMutex.withLock { setPttAndConfirm(enabled = true) }
     }
 
     override suspend fun pttOff(): Boolean = withContext(Dispatchers.IO) {
-        Log.w(tag, "pttOff: not used for IC-705")
-        true
+        ioMutex.withLock { setPttAndConfirm(enabled = false) }
     }
 
     // ── IRadioController – IC-705 extended operations ───────────────────────
@@ -270,8 +270,10 @@ class Ic705Controller(
     private suspend fun sendAndWaitAck(cmd: ByteArray): Boolean {
         if (!write(cmd)) return false
         delay(WRITE_SETTLE_MS)
-        val buf = drainWithTimeout(ACK_TIMEOUT_MS)
-        val ok  = IcomCivProtocol.containsAck(buf)
+        val buf = drainWithTimeout(ACK_TIMEOUT_MS) {
+            IcomCivProtocol.ackStatus(it) != null
+        }
+        val ok  = IcomCivProtocol.ackStatus(buf) == true
         if (!ok) Log.w(tag, "ACK not found in ${buf.size} bytes: ${IcomCivProtocol.toHex(buf)}")
         return ok
     }
@@ -284,7 +286,9 @@ class Ic705Controller(
     private suspend fun sendAndReadResponse(cmd: ByteArray, expectCmd: Byte): ByteArray? {
         if (!write(cmd)) return null
         delay(WRITE_SETTLE_MS)
-        val buf      = drainWithTimeout(ACK_TIMEOUT_MS)
+        val buf      = drainWithTimeout(ACK_TIMEOUT_MS) {
+            IcomCivProtocol.parseResponse(it, expectCmd) != null
+        }
         val response = IcomCivProtocol.parseResponse(buf, expectCmd)
         if (response == null) {
             Log.w(tag, "No response for cmd 0x${String.format("%02X", expectCmd.toInt() and 0xFF)} " +
@@ -293,13 +297,32 @@ class Ic705Controller(
         return response?.payload
     }
 
+    private suspend fun setPttAndConfirm(enabled: Boolean): Boolean {
+        val command = IcomCivProtocol.buildPttCommand(enabled)
+        Log.d(tag, "CMD PTT ${if (enabled) "ON" else "OFF"} → ${IcomCivProtocol.toHex(command)}")
+        if (!sendAndWaitAck(command)) return false
+        val response = sendAndReadResponse(
+            IcomCivProtocol.buildReadPttCommand(),
+            IcomCivProtocol.CMD_TRANSCEIVER_STATUS
+        ) ?: return false
+        val confirmed = IcomCivProtocol.parsePttState(response)
+        if (confirmed != enabled) {
+            Log.e(tag, "PTT readback mismatch: requested=$enabled read=$confirmed")
+            return false
+        }
+        return true
+    }
+
     /**
      * Drain whatever bytes the radio has buffered within a [timeoutMs] window.
      * Exits early as soon as a complete CI-V frame addressed to us is present
      * in the buffer (i.e., FE FE E0 A4 … FD), so we don't waste the remaining
      * timeout on responses that already arrived.
      */
-    private suspend fun drainWithTimeout(timeoutMs: Long): ByteArray {
+    private suspend fun drainWithTimeout(
+        timeoutMs: Long,
+        responseComplete: (ByteArray) -> Boolean
+    ): ByteArray {
         val result   = mutableListOf<Byte>()
         val deadline = System.currentTimeMillis() + timeoutMs
         val stream   = inputStream ?: return ByteArray(0)
@@ -311,8 +334,7 @@ class Ic705Controller(
                     val read  = stream.read(chunk)
                     if (read > 0) {
                         result.addAll(chunk.take(read))
-                        // Exit early once we have a complete frame for us
-                        if (hasCompleteFrameForUs(result)) break
+                        if (responseComplete(result.toByteArray())) break
                     }
                 } else {
                     delay(POLL_INTERVAL_MS)
@@ -326,39 +348,20 @@ class Ic705Controller(
         return result.toByteArray()
     }
 
-    /**
-     * Returns true if [buf] contains a complete CI-V frame addressed to the
-     * controller (FE FE [ADDR_CTRL] [ADDR_IC705] … FD).
-     * CI-V data bytes cannot be 0xFD, so the first 0xFD after the header is
-     * always the frame terminator.
-     */
-    private fun hasCompleteFrameForUs(buf: List<Byte>): Boolean {
-        var i = 0
-        while (i < buf.size - 4) {
-            if (buf[i]     == IcomCivProtocol.PREAMBLE    &&
-                buf[i + 1] == IcomCivProtocol.PREAMBLE    &&
-                buf[i + 2] == IcomCivProtocol.ADDR_CTRL   &&
-                buf[i + 3] == IcomCivProtocol.ADDR_IC705
-            ) {
-                for (k in i + 4 until buf.size) {
-                    if (buf[k] == IcomCivProtocol.END_OF_MSG) return true
-                }
-                return false  // header found but no FD yet
-            }
-            i++
-        }
-        return false
-    }
-
     private fun write(bytes: ByteArray): Boolean {
         return try {
-            outputStream?.write(bytes)
-            outputStream?.flush()
+            val stream = outputStream ?: return false
+            stream.write(bytes)
+            stream.flush()
             true
         } catch (e: Exception) {
             Log.e(tag, "Write error: ${e.message}")
             isConnected = false
             false
         }
+    }
+
+    private companion object {
+        const val PTT_OFF_TIMEOUT_MS = 1_500L
     }
 }

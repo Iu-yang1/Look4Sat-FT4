@@ -66,6 +66,14 @@ data class OtherSettings(
     val highElevation: Double = 45.0
 )
 
+data class Ft4Settings(
+    val operatorCallsign: String = "",
+    val decodeEnabled: Boolean = false,
+    val decodeDepth: Int = 3,
+    val ntpSynchronizationEnabled: Boolean = false,
+    val gnssSynchronizationEnabled: Boolean = false
+)
+
 data class DataSourcesSettings(
     val satelliteUrls: List<String>,
     val transceiversUrls: List<String>

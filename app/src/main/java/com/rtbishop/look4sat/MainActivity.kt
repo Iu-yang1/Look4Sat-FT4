@@ -17,8 +17,6 @@
  */
 package com.rtbishop.look4sat
 
-import android.content.Context
-import android.content.res.Configuration
 import android.graphics.ColorMatrix
 import android.graphics.ColorMatrixColorFilter
 import android.graphics.Paint
@@ -37,12 +35,6 @@ import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
 
-    override fun attachBaseContext(newBase: Context?) {
-        val config = Configuration(newBase?.resources?.configuration)
-        applyOverrideConfiguration(config.apply { fontScale = 1.0f })
-        super.attachBaseContext(newBase)
-    }
-
     override fun onCreate(savedInstanceState: Bundle?) {
         installSplashScreen()
         enableEdgeToEdge()
@@ -51,6 +43,16 @@ class MainActivity : ComponentActivity() {
         setContent {
             MainTheme(isDarkTheme = true) { NavRoot() }
         }
+    }
+
+    override fun onStop() {
+        val mainContainer = (applicationContext as IContainerProvider).getMainContainer()
+        mainContainer.appScope.launch {
+            mainContainer.audioHub.stopAll()
+            mainContainer.ft4AudioTransmitter.emergencyStop()
+            mainContainer.ft4TransmitCoordinator.emergencyPttOff()
+        }
+        super.onStop()
     }
 
     private fun observeNightFilterState() {

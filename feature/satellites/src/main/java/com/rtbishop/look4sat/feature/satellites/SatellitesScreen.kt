@@ -72,19 +72,20 @@ import com.rtbishop.look4sat.core.presentation.isVerticalLayout
 import com.rtbishop.look4sat.core.presentation.layoutPadding
 
 @Composable
-fun SatellitesDestination(navigateUp: () -> Unit) {
+fun SatellitesDestination(navigateUp: () -> Unit, navigateToAmSat: () -> Unit) {
     val context = LocalContext.current
     val container = (context.applicationContext as IContainerProvider).getMainContainer()
     val viewModel: SatellitesViewModel = viewModel(factory = SatellitesViewModel.factory(container))
     val uiState = viewModel.uiState.collectAsStateWithLifecycle().value
-    SatellitesScreen(uiState, viewModel::onAction, navigateUp)
+    SatellitesScreen(uiState, viewModel::onAction, navigateUp, navigateToAmSat)
 }
 
 @Composable
 private fun SatellitesScreen(
     uiState: SatellitesState,
     onAction: (SatellitesAction) -> Unit,
-    navigateUp: () -> Unit
+    navigateUp: () -> Unit,
+    navigateToAmSat: () -> Unit
 ) {
     if (uiState.isDialogShown) {
         MultiTypesDialog(
@@ -118,6 +119,7 @@ private fun SatellitesScreen(
     val primCardCd = stringResource(R.string.btn_accept)
     val clearAllCd = stringResource(R.string.sat_clear_all)
     val selectAllCd = stringResource(R.string.sat_select_all)
+    val amsatCd = stringResource(R.string.sat_amsat_status)
 
     Column(modifier = Modifier.layoutPadding(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         if (isVerticalLayout()) {
@@ -126,6 +128,11 @@ private fun SatellitesScreen(
                     types = uiState.currentTypes,
                     onClick = { onAction(SatellitesAction.ToggleTypesDialog) },
                     modifier = Modifier.weight(1f)
+                )
+                IconCard(
+                    action = navigateToAmSat,
+                    resId = R.drawable.ic_satellite_alt,
+                    modifier = Modifier.semantics { contentDescription = amsatCd }
                 )
                 PrimaryIconCard(
                     onClick = saveAndNavigateUp,
@@ -160,6 +167,11 @@ private fun SatellitesScreen(
                     types = uiState.currentTypes,
                     onClick = { onAction(SatellitesAction.ToggleTypesDialog) },
                     modifier = Modifier.weight(1f)
+                )
+                IconCard(
+                    action = navigateToAmSat,
+                    resId = R.drawable.ic_satellite_alt,
+                    modifier = Modifier.semantics { contentDescription = amsatCd }
                 )
                 SearchBar(
                     onQueryChange = { onAction(SatellitesAction.SearchFor(it)) },

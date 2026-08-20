@@ -59,11 +59,13 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.constraintlayout.widget.ConstraintLayout
+import com.rtbishop.look4sat.core.domain.repository.IContainerProvider
 import com.ve3nea.morse_expert.MainActivity
 
 @Composable
 fun CwDecodeScreen(navigateUp: () -> Unit = {}) {
     val context = LocalContext.current
+    val audioHub = (context.applicationContext as IContainerProvider).getMainContainer().audioHub
     val activity = remember(context) {
         context as? Activity ?: error("CwDecodeScreen must be hosted in an Activity")
     }
@@ -98,11 +100,16 @@ fun CwDecodeScreen(navigateUp: () -> Unit = {}) {
     // 权限授予后启动解码核心; "首次进入已授权" 与 "弹窗回调授权" 两条路径统一走这里
     LaunchedEffect(permissionGranted) {
         if (permissionGranted && !initialized) {
-            controller.onPermissionGranted() // = v(): 创建音频采集 + 解码核心
-            // v() 只创建核心; 页面此刻已处于 resumed, 需再走一次 onResume 立即启动录音
-            // (AudioRecord 是新建的, startRecording 不会重复; GLSurfaceView.onResume 幂等)
+            controller.onPermissionGranted() // = v(): 创建解码核心
+            // 页面已经 resumed，再恢复一次瀑布图和共享音频输入。
             controller.onResume()
             initialized = true
+        }
+    }
+
+    LaunchedEffect(permissionGranted, initialized) {
+        if (permissionGranted && initialized) {
+            MorseExpertAudioBridge(audioHub, controller).collect()
         }
     }
 

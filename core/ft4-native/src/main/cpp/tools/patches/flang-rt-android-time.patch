@@ -1,0 +1,26 @@
+diff --git a/flang-rt/lib/runtime/time-intrinsic.cpp b/flang-rt/lib/runtime/time-intrinsic.cpp
+--- a/flang-rt/lib/runtime/time-intrinsic.cpp
++++ b/flang-rt/lib/runtime/time-intrinsic.cpp
+@@ -302,6 +302,10 @@ static count_t GetSystemClockCount(int kind, fallback_implementation) {
+   struct timespec tspec;
+
++#if defined(__ANDROID__)
++  if (clock_gettime(CLOCK_REALTIME, &tspec) != 0) {
++#else
+   if (timespec_get(&tspec, TIME_UTC) < 0) {
++#endif
+     // Return -HUGE(COUNT) to represent failure.
+     return -static_cast<count_t>(GetHUGE(kind));
+   }
+diff --git a/flang-rt/lib/quadmath/CMakeLists.txt b/flang-rt/lib/quadmath/CMakeLists.txt
+--- a/flang-rt/lib/quadmath/CMakeLists.txt
++++ b/flang-rt/lib/quadmath/CMakeLists.txt
+@@ -105,7 +105,7 @@ if (FLANG_RUNTIME_F128_MATH_LIB)
+       "${FLANG_RT_SOURCE_DIR}/lib/flang_rt"
+       )
+   endif ()
+-elseif (HAVE_LDBL_MANT_DIG_113)
++elseif (HAVE_LDBL_MANT_DIG_113 AND NOT ANDROID)
+   # We can use 'long double' versions from libc.
+   check_library_exists(m sinl "" FOUND_LIBM)
+   if (FOUND_LIBM)

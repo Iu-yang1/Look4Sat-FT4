@@ -124,4 +124,5 @@ sealed interface RadarAction {
     data class CwSetToneFreq(val freq: Float) : RadarAction
     data class CwToggleExpanded(val expanded: Boolean) : RadarAction
     data class CwPermissionResult(val granted: Boolean) : RadarAction
+    data class CwNativeSessionChanged(val active: Boolean) : RadarAction
 }

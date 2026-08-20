@@ -56,6 +56,7 @@ internal fun Project.setupAndroidApp() {
     extensions.configure<ApplicationExtension> {
         namespace = libs.versions.packageName.get()
         compileSdk = libs.versions.compileSdk.get().toInt()
+        ndkVersion = libs.versions.ndkVersion.get()
         defaultConfig {
             applicationId = libs.versions.packageName.get()
             minSdk = libs.versions.minSdk.get().toInt()
@@ -84,6 +85,7 @@ internal fun Project.setupAndroidLib() {
     applyPlugin(libs.plugins.android.library)
     extensions.configure<CommonExtension> {
         compileSdk = libs.versions.compileSdk.get().toInt()
+        ndkVersion = libs.versions.ndkVersion.get()
         defaultConfig.minSdk = libs.versions.minSdk.get().toInt()
     }
     dependencies {

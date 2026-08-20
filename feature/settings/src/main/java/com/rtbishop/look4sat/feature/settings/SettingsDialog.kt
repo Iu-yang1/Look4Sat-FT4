@@ -17,8 +17,12 @@
  */
 package com.rtbishop.look4sat.feature.settings
 
+import android.Manifest
 import android.bluetooth.BluetoothManager
 import android.content.Context
+import android.content.pm.PackageManager
+import android.os.Build
+import androidx.core.content.ContextCompat
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -564,6 +568,15 @@ fun RadioControlDialog(
     val pairedDevices: List<Pair<String, String>> = remember {
         buildList {
             try {
+                if (
+                    Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+                    ContextCompat.checkSelfPermission(
+                        context,
+                        Manifest.permission.BLUETOOTH_CONNECT
+                    ) != PackageManager.PERMISSION_GRANTED
+                ) {
+                    return@buildList
+                }
                 val manager = context.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
                 manager.adapter?.bondedDevices?.forEach {
                     add(Pair(it.name ?: "Unknown", it.address ?: ""))

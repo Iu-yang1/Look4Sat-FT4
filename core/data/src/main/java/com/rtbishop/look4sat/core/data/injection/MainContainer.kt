@@ -25,10 +25,10 @@ import android.location.LocationManager
 import androidx.room.Room
 import com.rtbishop.look4sat.core.data.database.Look4SatDb
 import com.rtbishop.look4sat.core.data.framework.BluetoothReporter
-import com.rtbishop.look4sat.core.data.framework.Ft817Controller
-import com.rtbishop.look4sat.core.data.framework.Ic705Controller
 import com.rtbishop.look4sat.core.data.framework.NetworkReporter
 import com.rtbishop.look4sat.core.data.framework.RadioTrackingService
+import com.rtbishop.look4sat.core.data.ft4.Ft4Service
+import com.rtbishop.look4sat.core.data.ft4.Ft4AudioTransmitter
 import com.rtbishop.look4sat.core.data.repository.AmSatRepository
 import com.rtbishop.look4sat.core.data.repository.DatabaseRepo
 import com.rtbishop.look4sat.core.data.repository.SatelliteRepo
@@ -38,13 +38,20 @@ import com.rtbishop.look4sat.core.data.repository.SettingsRepo
 import com.rtbishop.look4sat.core.data.source.LocalSource
 import com.rtbishop.look4sat.core.data.source.RemoteSource
 import com.rtbishop.look4sat.core.data.usecase.AddToCalendar
-import com.rtbishop.look4sat.core.data.usecase.AudioCapture
+import com.rtbishop.look4sat.core.data.usecase.SharedAudioHub
+import com.rtbishop.look4sat.core.data.time.AndroidMonotonicTimeSource
+import com.rtbishop.look4sat.core.data.time.AndroidTimeSynchronizationService
 import com.rtbishop.look4sat.core.data.usecase.SaveImage
 import com.rtbishop.look4sat.core.data.usecase.ShowToast
-import com.rtbishop.look4sat.core.domain.model.RadioControlSettings
+import com.rtbishop.look4sat.core.domain.audio.IAudioHub
+import com.rtbishop.look4sat.core.domain.ft4.IFt4Service
+import com.rtbishop.look4sat.core.domain.ft4.IFt4TransmitCoordinator
+import com.rtbishop.look4sat.core.domain.ft4.IFt4AudioTransmitter
+import com.rtbishop.look4sat.core.domain.time.IDisciplinedClock
+import com.rtbishop.look4sat.core.domain.time.ITimeSynchronizationService
+import com.rtbishop.look4sat.core.domain.time.SystemDisciplinedClock
 import com.rtbishop.look4sat.core.domain.repository.IDatabaseRepo
 import com.rtbishop.look4sat.core.domain.repository.IMainContainer
-import com.rtbishop.look4sat.core.domain.repository.IRadioController
 import com.rtbishop.look4sat.core.domain.repository.IRadioTrackingService
 import com.rtbishop.look4sat.core.domain.repository.IReporter
 import com.rtbishop.look4sat.core.domain.repository.ISatelliteRepo
@@ -55,7 +62,6 @@ import com.rtbishop.look4sat.core.domain.repository.MutualPassData
 import com.rtbishop.look4sat.core.domain.source.ILocalSource
 import com.rtbishop.look4sat.core.domain.source.IRemoteSource
 import com.rtbishop.look4sat.core.domain.usecase.IAddToCalendar
-import com.rtbishop.look4sat.core.domain.usecase.IAudioCapture
 import com.rtbishop.look4sat.core.domain.usecase.ISaveImage
 import com.rtbishop.look4sat.core.domain.usecase.IShowToast
 import com.rtbishop.look4sat.core.domain.utility.DataParser
@@ -79,9 +85,25 @@ class MainContainer(private val context: Context) : IMainContainer {
     override val satelliteRepo = provideSatelliteRepo()
     override val databaseRepo = provideDatabaseRepo()
     override val amSatRepo by lazy { AmSatRepository(remoteSource) }
-    override val radioTrackingService: IRadioTrackingService by lazy {
+    override val audioHub: IAudioHub by lazy { SharedAudioHub(appScope) }
+    override val ft4Service: IFt4Service by lazy { Ft4Service(appScope, audioHub, disciplinedClock) }
+    override val disciplinedClock: IDisciplinedClock by lazy {
+        SystemDisciplinedClock(AndroidMonotonicTimeSource)
+    }
+    override val timeSynchronizationService: ITimeSynchronizationService =
+        AndroidTimeSynchronizationService(context, appScope, disciplinedClock).also { service ->
+            val settings = settingsRepo.ft4Settings.value
+            service.setNtpEnabled(settings.ntpSynchronizationEnabled)
+            service.setGnssEnabled(settings.gnssSynchronizationEnabled)
+        }
+    private val sharedRadioTrackingService: RadioTrackingService by lazy {
         val manager = context.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
         RadioTrackingService(appScope, manager, satelliteRepo, settingsRepo)
+    }
+    override val radioTrackingService: IRadioTrackingService by lazy { sharedRadioTrackingService }
+    override val ft4TransmitCoordinator: IFt4TransmitCoordinator by lazy { sharedRadioTrackingService }
+    override val ft4AudioTransmitter: IFt4AudioTransmitter by lazy {
+        Ft4AudioTransmitter(context, ft4Service, ft4TransmitCoordinator, disciplinedClock)
     }
 
     private val _mutualPassData = MutableStateFlow(MutualPassData())
@@ -94,8 +116,6 @@ class MainContainer(private val context: Context) : IMainContainer {
     override fun provideAddToCalendar(): IAddToCalendar = AddToCalendar(context)
 
     override fun provideShowToast(): IShowToast = ShowToast(context)
-
-    override fun provideAudioCapture(): IAudioCapture = AudioCapture()
 
     override fun provideSaveImage(): ISaveImage = SaveImage(context)
 
@@ -120,28 +140,6 @@ class MainContainer(private val context: Context) : IMainContainer {
             rc.frequencyPort.toIntOrNull() ?: 0,
             rc.frequencyOffsetHz
         )
-    }
-
-    override fun provideTxRadioController(): IRadioController {
-        val manager  = context.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
-        val settings = settingsRepo.radioControlSettings.value
-        val address  = settings.txRadioAddress
-        return if (settings.radioModel == RadioControlSettings.MODEL_ICOM_IC705) {
-            Ic705Controller(manager, address)
-        } else {
-            Ft817Controller(manager, address)
-        }
-    }
-
-    override fun provideRxRadioController(): IRadioController {
-        val manager  = context.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
-        val settings = settingsRepo.radioControlSettings.value
-        val address  = settings.rxRadioAddress
-        return if (settings.radioModel == RadioControlSettings.MODEL_ICOM_IC705) {
-            Ic705Controller(manager, address)
-        } else {
-            Ft817Controller(manager, address)
-        }
     }
 
     override fun provideSensorsRepo(): ISensorsRepo {

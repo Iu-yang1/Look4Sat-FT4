@@ -67,6 +67,8 @@ object IcomCivProtocol {
     const val CMD_MISC_SETTING: Byte        = 0x16
     /** Read/write selected-VFO frequency (cmd 0x25). */
     const val CMD_SELECTED_VFO_FREQ: Byte   = 0x25
+    /** Read/write transceiver state (sub 0x00 controls PTT). */
+    const val CMD_TRANSCEIVER_STATUS: Byte  = 0x1C
 
     // ── Sub-command bytes ──────────────────────────────────────────────────
     /** Sub for CMD_SELECT_VFO: select VFO-A (main). */
@@ -83,6 +85,7 @@ object IcomCivProtocol {
     const val SUB_UNSELECTED_VFO: Byte = 0x01
     /** Sub for CMD_MISC_SETTING: CTCSS/DTCS tone squelch. */
     const val SUB_CTCSS_SETTING: Byte = 0x42.toByte()
+    const val SUB_PTT: Byte = 0x00
 
     // ── Mode bytes ────────────────────────────────────────────────────────
     /** Maps mode strings (upper-case) → IC-705 mode bytes. */
@@ -266,6 +269,23 @@ object IcomCivProtocol {
         return frame(CMD_CTCSS_TONE, 0x00, *bcd)
     }
 
+    /** Set PTT through CI-V CMD 0x1C sub 0x00; 0x01 = TX, 0x00 = RX. */
+    fun buildPttCommand(enabled: Boolean): ByteArray =
+        frame(CMD_TRANSCEIVER_STATUS, SUB_PTT, if (enabled) 0x01 else 0x00)
+
+    /** Read PTT state through CI-V CMD 0x1C sub 0x00. */
+    fun buildReadPttCommand(): ByteArray = frame(CMD_TRANSCEIVER_STATUS, SUB_PTT)
+
+    /** Parse [SUB_PTT, state] from a CMD 0x1C response. */
+    fun parsePttState(payload: ByteArray): Boolean? {
+        if (payload.size < 2 || payload[0] != SUB_PTT) return null
+        return when (payload[1]) {
+            0x00.toByte() -> false
+            0x01.toByte() -> true
+            else -> null
+        }
+    }
+
     // ── Response parsing ───────────────────────────────────────────────────
 
     /**
@@ -310,7 +330,7 @@ object IcomCivProtocol {
      * Check whether a buffer contains an OK acknowledgement (FB FD) from
      * the radio. Tolerates broadcast noise before the ACK.
      */
-    fun containsAck(buf: ByteArray): Boolean {
+    fun ackStatus(buf: ByteArray): Boolean? {
         var i = 0
         while (i < buf.size - 5) {
             if (buf[i] != PREAMBLE || buf[i + 1] != PREAMBLE) { i++; continue }
@@ -325,8 +345,10 @@ object IcomCivProtocol {
             if (cmd == ACK_NG) return false
             i = fdIdx + 1
         }
-        return false
+        return null
     }
+
+    fun containsAck(buf: ByteArray): Boolean = ackStatus(buf) == true
 
     /**
      * Parse frequency + mode from a CMD_READ_FREQ reply payload.

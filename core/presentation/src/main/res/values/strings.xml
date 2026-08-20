@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources>
+<resources xmlns:tools="http://schemas.android.com/tools" tools:ignore="MissingTranslation">
     <!-- Commmon -->
     <string name="app_name" translatable="false">Look4Sat</string>
     <string name="btn_accept">Accept</string>
@@ -106,6 +106,8 @@
     <string name="radar_cw_start">Start</string>
     <string name="radar_cw_stop">Stop</string>
     <string name="radar_cw_reset">Clear</string>
+    <string name="radar_cw_kotlin_fallback">Morse Expert native decoder is unavailable on this ABI; using the built-in CW decoder.</string>
+    <string name="radar_cw_waiting">Waiting for CW audio…</string>
 
     <!-- Map screen -->
     <string name="map_prev">Prev</string>
@@ -210,6 +212,32 @@
     <string name="prefs_net_perm_error">Check your network permission</string>
 
     <string name="prefs_other_title">Other settings</string>
+    <string name="prefs_ft4_title">FT4 and time synchronization</string>
+    <string name="prefs_ft4_callsign">Operator callsign</string>
+    <string name="prefs_ft4_grid">Maidenhead grid: %s</string>
+    <string name="prefs_ft4_edit_grid">Edit grid</string>
+    <string name="prefs_ft4_decode">Enable FT4 decoding</string>
+    <string name="prefs_ft4_decode_depth">Decoding strength</string>
+    <string name="prefs_ft4_decode_fast">Fast</string>
+    <string name="prefs_ft4_decode_balanced">Balanced</string>
+    <string name="prefs_ft4_decode_deep">Deep</string>
+    <string name="prefs_ft4_ntp">Use NTP synchronization</string>
+    <string name="prefs_ft4_gnss">Use GNSS synchronization</string>
+    <string name="prefs_ft4_sync_now">Synchronize now</string>
+    <string name="prefs_ft4_synchronizing">Synchronizing…</string>
+    <string name="prefs_ft4_time_synced">Time synchronized · offset %1$+.0f ms</string>
+    <string name="prefs_ft4_time_unsynced">Time not synchronized · offset %1$+.0f ms</string>
+    <string name="prefs_ft4_time_error">Time synchronization: %s</string>
+    <string name="prefs_ft4_time_system">System</string>
+    <string name="prefs_ft4_time_ntp" translatable="false">NTP</string>
+    <string name="prefs_ft4_time_gnss" translatable="false">GNSS</string>
+    <string name="prefs_ft4_time_holdover">Holdover</string>
+    <string name="prefs_ft4_native_supported">%1$s · official FT4 core · self-test %2$s</string>
+    <string name="prefs_ft4_native_unsupported">%1$s · FT4 unavailable: %2$s</string>
+    <string name="prefs_ft4_self_test_pending">pending</string>
+    <string name="prefs_ft4_self_test_passed">passed</string>
+    <string name="prefs_ft4_self_test_failed">failed</string>
+    <string name="prefs_ft4_gnss_permission">Precise location permission is required for GNSS time</string>
     <string name="prefs_other_switch_utc">Show pass time in UTC</string>
     <string name="prefs_other_switch_update">Enable automatic data update</string>
     <string name="prefs_other_switch_sweep">Enable radar sweep animation</string>
@@ -266,4 +294,129 @@
     <string name="mutual_station_a">Station A</string>
     <string name="mutual_station_b">Station B</string>
 
+    <!-- FT4 -->
+    <string name="nav_ft4">FT4</string>
+    <string name="sat_amsat_status">AMSAT status</string>
+    <string name="ft4_title">FT4 satellite operation</string>
+    <string name="ft4_back">Back</string>
+    <string name="ft4_page_spectrum">Spectrum</string>
+    <string name="ft4_page_decode">Decode / Call</string>
+    <string name="ft4_page_automatic">Automatic</string>
+    <string name="ft4_status_ready">Official core ready · %1$s</string>
+    <string name="ft4_status_unavailable">FT4 unavailable · %1$s</string>
+    <string name="ft4_status_disabled">FT4 decoding is disabled in Settings</string>
+    <string name="ft4_error">FT4: %1$s</string>
+    <string name="ft4_dismiss">Dismiss</string>
+    <string name="ft4_expand_status">Expand satellite and radio status</string>
+    <string name="ft4_collapse_status">Collapse satellite and radio status</string>
+    <string name="ft4_satellite_radio">Satellite and radio</string>
+    <string name="ft4_no_pass">No pass or transponder selected</string>
+    <string name="ft4_select_pass_hint">Select them on the Passes screen first</string>
+    <string name="ft4_go_to_passes">Back to passes</string>
+    <string name="ft4_satellite_value">Satellite: %1$s</string>
+    <string name="ft4_transponder_value">Transponder: %1$s · %2$s · inverted %3$s</string>
+    <string name="ft4_yes">yes</string>
+    <string name="ft4_no">no</string>
+    <string name="ft4_pass_value">AOS %1$s · LOS %2$s · remaining %3$s</string>
+    <string name="ft4_position_value">Az %1$.1f° · El %2$.1f° · %3$.0f km</string>
+    <string name="ft4_tracking_on">Tracking</string>
+    <string name="ft4_tracking_off">Not tracking</string>
+    <string name="ft4_tx_frequency">TX %1$.6f MHz (nominal %2$.6f · %3$+d Hz)</string>
+    <string name="ft4_rx_frequency">RX %1$.6f MHz (nominal %2$.6f · %3$+d Hz)</string>
+    <string name="ft4_audio_frequency">FT4 audio %1$.0f Hz</string>
+    <string name="ft4_radio_value">TX %1$s · RX %2$s · %3$s</string>
+    <string name="ft4_connected">connected</string>
+    <string name="ft4_disconnected">disconnected</string>
+    <string name="ft4_split">single-radio split</string>
+    <string name="ft4_dual_radio">dual radio</string>
+    <string name="ft4_mode_value">Mode TX %1$s / RX %2$s · PTT %3$s</string>
+    <string name="ft4_cat_busy">CAT busy</string>
+    <string name="ft4_connect_radios">Connect radios</string>
+    <string name="ft4_disconnect_radios">Disconnect</string>
+    <string name="ft4_start_tracking">Start tracking</string>
+    <string name="ft4_stop_tracking">Stop tracking</string>
+    <string name="ft4_emergency_stop">Emergency PTT OFF</string>
+    <string name="ft4_spectrum_range">0–3000 Hz</string>
+    <string name="ft4_input_level">Input %1$.1f dB</string>
+    <string name="ft4_selected_frequency">Selected %1$.0f Hz</string>
+    <string name="ft4_slot_progress">Slot %1$d%%</string>
+    <string name="ft4_time_source">Time %1$s · ±%2$.0f ms</string>
+    <string name="ft4_start_receive">Start receiving</string>
+    <string name="ft4_stop_receive">Stop receiving</string>
+    <string name="ft4_microphone_required">Microphone permission is required</string>
+    <string name="ft4_audio_owner_idle">Audio input idle</string>
+    <string name="ft4_audio_owner">Audio %1$d Hz · %2$s</string>
+    <string name="ft4_audio_system_silenced">Microphone is in use by another app</string>
+    <string name="ft4_radar_position">Az %1$.1f° · El %2$.1f°</string>
+    <string name="ft4_radar_summary">%1$s · Az %2$.1f° · El %3$.1f°</string>
+    <string name="ft4_radio_compact">TX %1$s · RX %2$s · PTT %3$s · %4$s</string>
+    <string name="ft4_frequency_detail">Nominal %1$s MHz · Doppler %2$+d Hz</string>
+    <string name="ft4_radio_control_status">Radio control</string>
+    <string name="ft4_tx_label" translatable="false">TX</string>
+    <string name="ft4_rx_label" translatable="false">RX</string>
+    <string name="ft4_ptt_status" translatable="false">PTT %1$s</string>
+    <string name="ft4_cat_ready">CAT ready</string>
+    <string name="ft4_decode_empty">No FT4 messages decoded yet</string>
+    <string name="ft4_decode_count">Decoded messages: %1$d</string>
+    <string name="ft4_decode_duration">Last decode: %1$d ms</string>
+    <string name="ft4_decode_duration_pending">Last decode: --</string>
+    <string name="ft4_decode_utc">UTC</string>
+    <string name="ft4_decode_snr">dB</string>
+    <string name="ft4_decode_dt">DT</string>
+    <string name="ft4_decode_hz">Hz</string>
+    <string name="ft4_decode_message">Message</string>
+    <string name="ft4_calling_controls">Call / transmit</string>
+    <string name="ft4_operator_call">My callsign</string>
+    <string name="ft4_target_call">Target callsign</string>
+    <string name="ft4_grid">Grid</string>
+    <string name="ft4_tx_audio">TX audio frequency</string>
+    <string name="ft4_even_slot">Even slot</string>
+    <string name="ft4_odd_slot">Odd slot</string>
+    <string name="ft4_message_preview">Message: %1$s</string>
+    <string name="ft4_transmit_next_slot">Transmit next slot</string>
+    <string name="ft4_stop_transmit">Stop transmit</string>
+    <string name="ft4_clear_decodes">Clear</string>
+    <string name="ft4_manual_time_warning">Time is not disciplined; manual TX timing may be inaccurate</string>
+    <string name="ft4_automation_state">State: %1$s</string>
+    <string name="ft4_automation_target">Target: %1$s</string>
+    <string name="ft4_automation_current">Current: %1$s</string>
+    <string name="ft4_automation_next">Next: %1$s</string>
+    <string name="ft4_automation_slots">RX %1$s · TX %2$s</string>
+    <string name="ft4_automation_cq">Consecutive CQ: %1$d</string>
+    <string name="ft4_automation_state_label">State</string>
+    <string name="ft4_automation_target_label">Target</string>
+    <string name="ft4_automation_current_label">Current message</string>
+    <string name="ft4_automation_next_label">Next message</string>
+    <string name="ft4_automation_slots_label">Slots</string>
+    <string name="ft4_automation_slots_compact">RX %1$s · TX %2$s</string>
+    <string name="ft4_automation_cq_label">Consecutive CQ</string>
+    <string name="ft4_automation_time_ok">Automatic operation allowed</string>
+    <string name="ft4_automation_time_blocked">Automatic TX blocked: %1$s</string>
+    <string name="ft4_arm">Arm</string>
+    <string name="ft4_stop_automation">Stop</string>
+    <string name="ft4_slot_even">even</string>
+    <string name="ft4_slot_odd">odd</string>
+    <string name="ft4_not_set">not set</string>
+    <string name="ft4_slot_unset_compact" translatable="false">—</string>
+    <string name="ft4_spectrum_description">%1$s, %2$s</string>
+    <string name="main_tracking">Tracking: %1$s</string>
+    <string name="ft4_clock_system">system</string>
+    <string name="ft4_clock_ntp">NTP</string>
+    <string name="ft4_clock_gnss">GNSS</string>
+    <string name="ft4_clock_holdover">holdover</string>
+    <string name="ft4_receive_content_description">FT4 spectrum and waterfall</string>
+    <string name="ft4_frequency_content_description">Select FT4 audio frequency</string>
+    <string name="ft4_phase_idle">Idle</string>
+    <string name="ft4_phase_armed">Armed</string>
+    <string name="ft4_phase_calling">Calling</string>
+    <string name="ft4_phase_replying">Replying</string>
+    <string name="ft4_phase_report">Report</string>
+    <string name="ft4_phase_roger">Roger</string>
+    <string name="ft4_phase_signoff">Signoff</string>
+    <string name="ft4_phase_complete">Complete</string>
+    <string name="ft4_phase_aborted">Aborted</string>
+    <string name="ft4_gate_system">no trusted NTP/GNSS time</string>
+    <string name="ft4_gate_expired">time sample expired</string>
+    <string name="ft4_gate_uncertain">uncertainty exceeds 250 ms</string>
+    <string name="ft4_gate_unhealthy">clock is unhealthy</string>
 </resources>

@@ -1,0 +1,77 @@
+diff --git a/flang/lib/Optimizer/CodeGen/Target.cpp b/flang/lib/Optimizer/CodeGen/Target.cpp
+index 3e262b633122..9bdbb42a81a7 100644
+--- a/flang/lib/Optimizer/CodeGen/Target.cpp
++++ b/flang/lib/Optimizer/CodeGen/Target.cpp
+@@ -786,3 +786,49 @@
++//===----------------------------------------------------------------------===//
++// ARM AAPCS 32-bit target specifics.
++//===----------------------------------------------------------------------===//
++
++namespace {
++struct TargetARM : public GenericTarget<TargetARM> {
++  using GenericTarget::GenericTarget;
++
++  static constexpr int defaultWidth = 32;
++
++  CodeGenSpecifics::Marshalling
++  complexArgumentType(mlir::Location loc, mlir::Type eleTy) const override {
++    assert(fir::isa_real(eleTy));
++    CodeGenSpecifics::Marshalling marshal;
++    const auto *sem = &floatToSemantics(kindMap, eleTy);
++    if (sem == &llvm::APFloat::IEEEsingle() ||
++        sem == &llvm::APFloat::IEEEdouble()) {
++      marshal.emplace_back(fir::SequenceType::get({2}, eleTy), AT{});
++    } else {
++      typeTodo(sem, loc, "argument");
++    }
++    return marshal;
++  }
++
++  CodeGenSpecifics::Marshalling
++  complexReturnType(mlir::Location loc, mlir::Type eleTy) const override {
++    assert(fir::isa_real(eleTy));
++    CodeGenSpecifics::Marshalling marshal;
++    const auto *sem = &floatToSemantics(kindMap, eleTy);
++    unsigned short alignment = 0;
++    if (sem == &llvm::APFloat::IEEEsingle())
++      alignment = 4;
++    else if (sem == &llvm::APFloat::IEEEdouble())
++      alignment = 8;
++    else
++      typeTodo(sem, loc, "return");
++    auto structTy =
++        mlir::TupleType::get(eleTy.getContext(), mlir::TypeRange{eleTy, eleTy});
++    marshal.emplace_back(fir::ReferenceType::get(structTy),
++                         AT{/*alignment=*/alignment, /*byval=*/false,
++                            /*sret=*/true});
++    return marshal;
++  }
++};
++} // namespace
++
+ //===----------------------------------------------------------------------===//
+ // AArch64 target specifics.
+ //===----------------------------------------------------------------------===//
+@@ -1926,5 +1972,9 @@ fir::CodeGenSpecifics::get(mlir::MLIRContext *ctx, llvm::Triple &&trp,
+     return std::make_unique<TargetAArch64>(
+         ctx, std::move(trp), std::move(kindMap), targetCPU, targetFeatures, dl);
++  case llvm::Triple::ArchType::arm:
++    return std::make_unique<TargetARM>(ctx, std::move(trp),
++                                       std::move(kindMap), targetCPU,
++                                       targetFeatures, dl);
+   case llvm::Triple::ArchType::ppc:
+     return std::make_unique<TargetPPC>(ctx, std::move(trp), std::move(kindMap),
+                                        targetCPU, targetFeatures, dl);
+diff --git a/flang/lib/Optimizer/CodeGen/CodeGen.cpp b/flang/lib/Optimizer/CodeGen/CodeGen.cpp
+index f1cb247bad2f..d7bb9ddf44c7 100644
+--- a/flang/lib/Optimizer/CodeGen/CodeGen.cpp
++++ b/flang/lib/Optimizer/CodeGen/CodeGen.cpp
+@@ -774,7 +774,7 @@ struct AssumedSizeExtentOpConversion
+   matchAndRewrite(fir::AssumedSizeExtentOp op, OpAdaptor,
+                   mlir::ConversionPatternRewriter &rewriter) const override {
+     mlir::Location loc = op.getLoc();
+-    mlir::Type ity = lowerTy().indexType();
++    mlir::Type ity = convertType(op.getType());
+     auto cst = fir::genConstantIndex(loc, ity, rewriter, -1);
+     rewriter.replaceOp(op, cst.getResult());
+     return mlir::success();

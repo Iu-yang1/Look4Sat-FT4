@@ -1,14 +1,15 @@
 [versions]
 #noinspection UnusedVersionCatalogEntry
-appVersionCode = "446"
+appVersionCode = "450"
 #noinspection UnusedVersionCatalogEntry
-appVersionName = "4.4.6-ba7opf.1"
+appVersionName = "4.4.8-ba7opf.3"
 #noinspection UnusedVersionCatalogEntry
 compileSdk = "37"
 #noinspection UnusedVersionCatalogEntry
 minSdk = "24"
 #noinspection UnusedVersionCatalogEntry
 jdkVersion = "21"
+ndkVersion = "26.1.10909125"
 #noinspection UnusedVersionCatalogEntry
 packageName = "com.rtbishop.look4sat"
 

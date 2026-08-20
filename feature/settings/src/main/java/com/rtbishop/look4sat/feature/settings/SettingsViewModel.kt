@@ -22,18 +22,28 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.rtbishop.look4sat.core.domain.repository.IDatabaseRepo
+import com.rtbishop.look4sat.core.domain.ft4.IFt4AudioTransmitter
+import com.rtbishop.look4sat.core.domain.ft4.IFt4Service
 import com.rtbishop.look4sat.core.domain.repository.IMainContainer
 import com.rtbishop.look4sat.core.domain.repository.ISettingsRepo
 import com.rtbishop.look4sat.core.domain.usecase.IShowToast
+import com.rtbishop.look4sat.core.domain.time.IDisciplinedClock
+import com.rtbishop.look4sat.core.domain.time.ITimeSynchronizationService
 import com.rtbishop.look4sat.core.presentation.R
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 class SettingsViewModel(
     private val databaseRepo: IDatabaseRepo,
     private val settingsRepo: ISettingsRepo,
+    private val ft4Service: IFt4Service,
+    private val ft4AudioTransmitter: IFt4AudioTransmitter,
+    private val disciplinedClock: IDisciplinedClock,
+    private val timeSynchronizationService: ITimeSynchronizationService,
     private val showToast: IShowToast
 ) : ViewModel() {
 
@@ -45,6 +55,10 @@ class SettingsViewModel(
             positionSettings = defaultPosSettings,
             dataSettings = defaultDataSettings,
             otherSettings = settingsRepo.otherSettings.value,
+            ft4Settings = settingsRepo.ft4Settings.value,
+            ft4Capability = ft4Service.capability.value,
+            clockSnapshot = disciplinedClock.snapshot(),
+            timeSynchronizationState = timeSynchronizationService.state.value,
             rcSettings = settingsRepo.rcSettings.value,
             radioControlSettings = settingsRepo.radioControlSettings.value,
             dataSourcesSettings = settingsRepo.dataSourcesSettings.value
@@ -54,6 +68,17 @@ class SettingsViewModel(
     val uiState: StateFlow<SettingsState> = _uiState
 
     init {
+        val ft4Settings = settingsRepo.ft4Settings.value
+        timeSynchronizationService.setNtpEnabled(ft4Settings.ntpSynchronizationEnabled)
+        timeSynchronizationService.setGnssEnabled(ft4Settings.gnssSynchronizationEnabled)
+        viewModelScope.launch {
+            val capability = ft4Service.refreshCapability()
+            if (!capability.receiveAvailable && settingsRepo.ft4Settings.value.decodeEnabled) {
+                settingsRepo.updateFt4Settings { it.copy(decodeEnabled = false) }
+                ft4Service.stopReceiving()
+            }
+            if (capability.officialCoreAvailable) ft4Service.runNativeSelfTest()
+        }
         viewModelScope.launch {
             settingsRepo.stationPosition.collect { geoPos ->
                 _uiState.update {
@@ -83,6 +108,27 @@ class SettingsViewModel(
         viewModelScope.launch {
             settingsRepo.otherSettings.collect { settings ->
                 _uiState.update { it.copy(otherSettings = settings) }
+            }
+        }
+        viewModelScope.launch {
+            settingsRepo.ft4Settings.collect { settings ->
+                _uiState.update { it.copy(ft4Settings = settings) }
+            }
+        }
+        viewModelScope.launch {
+            ft4Service.capability.collect { capability ->
+                _uiState.update { it.copy(ft4Capability = capability) }
+            }
+        }
+        viewModelScope.launch {
+            timeSynchronizationService.state.collect { state ->
+                _uiState.update { it.copy(timeSynchronizationState = state) }
+            }
+        }
+        viewModelScope.launch {
+            while (isActive) {
+                _uiState.update { it.copy(clockSnapshot = disciplinedClock.refresh()) }
+                delay(1_000L)
             }
         }
         viewModelScope.launch {
@@ -121,6 +167,30 @@ class SettingsViewModel(
             is SettingsAction.ToggleSensor -> settingsRepo.updateOtherSettings { it.copy(stateOfSensors = action.value) }
             is SettingsAction.ToggleLightTheme -> settingsRepo.updateOtherSettings { it.copy(stateOfLightTheme = action.value) }
             is SettingsAction.ToggleNightMode -> settingsRepo.updateOtherSettings { it.copy(stateOfNightMode = action.value) }
+            is SettingsAction.SetFt4Callsign -> settingsRepo.updateFt4Settings {
+                it.copy(operatorCallsign = action.value)
+            }
+            is SettingsAction.ToggleFt4Decode -> {
+                settingsRepo.updateFt4Settings { it.copy(decodeEnabled = action.value) }
+                if (!action.value) viewModelScope.launch {
+                    ft4Service.stopReceiving()
+                    ft4AudioTransmitter.emergencyStop()
+                }
+            }
+            is SettingsAction.SetFt4DecodeDepth -> settingsRepo.updateFt4Settings {
+                it.copy(decodeDepth = action.value.coerceIn(1, 3))
+            }
+            is SettingsAction.ToggleNtpSynchronization -> {
+                settingsRepo.updateFt4Settings { it.copy(ntpSynchronizationEnabled = action.value) }
+                timeSynchronizationService.setNtpEnabled(action.value)
+            }
+            is SettingsAction.ToggleGnssSynchronization -> {
+                settingsRepo.updateFt4Settings { it.copy(gnssSynchronizationEnabled = action.value) }
+                timeSynchronizationService.setGnssEnabled(action.value)
+            }
+            SettingsAction.SynchronizeTimeNow -> viewModelScope.launch {
+                timeSynchronizationService.synchronizeNow()
+            }
             // Remote control & data sources
             is SettingsAction.UpdateRC -> settingsRepo.updateRCSettings(action.settings)
             is SettingsAction.UpdateRadioControl -> settingsRepo.updateRadioControlSettings(action.settings)
@@ -206,6 +276,10 @@ class SettingsViewModel(
                 SettingsViewModel(
                     databaseRepo = container.databaseRepo,
                     settingsRepo = container.settingsRepo,
+                    ft4Service = container.ft4Service,
+                    ft4AudioTransmitter = container.ft4AudioTransmitter,
+                    disciplinedClock = container.disciplinedClock,
+                    timeSynchronizationService = container.timeSynchronizationService,
                     showToast = container.provideShowToast()
                 )
             }

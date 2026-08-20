@@ -59,6 +59,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.rtbishop.look4sat.core.domain.predict.OrbitalPos
+import com.rtbishop.look4sat.core.domain.audio.IAudioHub
 import com.rtbishop.look4sat.core.domain.repository.IContainerProvider
 import com.rtbishop.look4sat.core.domain.repository.MutualPassData
 import com.rtbishop.look4sat.core.domain.utility.DopplerFrequencyCalculator
@@ -67,6 +68,7 @@ import com.rtbishop.look4sat.core.presentation.EmptyListCard
 import com.rtbishop.look4sat.core.presentation.IconCard
 import com.rtbishop.look4sat.core.presentation.NextPassRow
 import com.rtbishop.look4sat.core.presentation.R
+import com.rtbishop.look4sat.core.presentation.RadarViewCompose
 import com.rtbishop.look4sat.core.presentation.TimerRow
 import com.rtbishop.look4sat.core.presentation.TopBar
 import com.rtbishop.look4sat.core.presentation.formatFrequency
@@ -121,7 +123,7 @@ fun RadarDestination(navigateUp: () -> Unit) {
         viewModel.onAction(RadarAction.SstvPermissionResult(granted))
         viewModel.onAction(RadarAction.CwPermissionResult(granted))
     }
-    RadarScreen(uiState, viewModel::onAction, navigateUpAndClearMutual, mutualData, requestMicPermission = {
+    RadarScreen(uiState, viewModel::onAction, navigateUpAndClearMutual, mutualData, container.audioHub, requestMicPermission = {
         permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
     })
 }
@@ -132,6 +134,7 @@ private fun RadarScreen(
     onAction: (RadarAction) -> Unit,
     navigateUp: () -> Unit,
     mutualData: MutualPassData,
+    audioHub: IAudioHub,
     requestMicPermission: () -> Unit
 ) {
     val upcomingPass = uiState.currentPass ?: getDefaultPass()
@@ -186,11 +189,11 @@ private fun RadarScreen(
         }
         if (isVertical) {
             RadarCard(uiState, trackB, trackBPosition, Modifier.weight(1f))
-            PagerCard(uiState, onAction, requestMicPermission, Modifier.weight(1f))
+            PagerCard(uiState, onAction, audioHub, requestMicPermission, Modifier.weight(1f))
         } else {
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 RadarCard(uiState, trackB, trackBPosition, Modifier.weight(1f))
-                PagerCard(uiState, onAction, requestMicPermission, Modifier.weight(1f))
+                PagerCard(uiState, onAction, audioHub, requestMicPermission, Modifier.weight(1f))
             }
         }
     }
@@ -200,6 +203,7 @@ private fun RadarScreen(
 private fun PagerCard(
     uiState: RadarState,
     onAction: (RadarAction) -> Unit,
+    audioHub: IAudioHub,
     requestMicPermission: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -249,6 +253,7 @@ private fun PagerCard(
                         selectedUuid = uiState.transceivers.selectedUuid,
                         orbitalPos = uiState.orbitalPos,
                         cw = uiState.cw,
+                        audioHub = audioHub,
                         onAction = onAction,
                         requestMicPermission = requestMicPermission
                     )

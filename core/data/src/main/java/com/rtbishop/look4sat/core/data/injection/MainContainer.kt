@@ -91,9 +91,12 @@ class MainContainer(private val context: Context) : IMainContainer {
     override val disciplinedClock: IDisciplinedClock by lazy {
         SystemDisciplinedClock(AndroidMonotonicTimeSource)
     }
-    override val timeSynchronizationService: ITimeSynchronizationService by lazy {
-        AndroidTimeSynchronizationService(context, appScope, disciplinedClock)
-    }
+    override val timeSynchronizationService: ITimeSynchronizationService =
+        AndroidTimeSynchronizationService(context, appScope, disciplinedClock).also { service ->
+            val settings = settingsRepo.ft4Settings.value
+            service.setNtpEnabled(settings.ntpSynchronizationEnabled)
+            service.setGnssEnabled(settings.gnssSynchronizationEnabled)
+        }
     override val radioTrackingService: IRadioTrackingService by lazy {
         val manager = context.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
         RadioTrackingService(appScope, manager, satelliteRepo, settingsRepo)

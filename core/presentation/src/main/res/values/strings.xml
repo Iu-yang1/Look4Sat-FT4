@@ -212,6 +212,27 @@
     <string name="prefs_net_perm_error">Check your network permission</string>
 
     <string name="prefs_other_title">Other settings</string>
+    <string name="prefs_ft4_title">FT4 and time synchronization</string>
+    <string name="prefs_ft4_callsign">Operator callsign</string>
+    <string name="prefs_ft4_grid">Maidenhead grid: %s</string>
+    <string name="prefs_ft4_edit_grid">Edit grid</string>
+    <string name="prefs_ft4_decode">Enable FT4 decoding</string>
+    <string name="prefs_ft4_ntp">Use NTP synchronization</string>
+    <string name="prefs_ft4_gnss">Use GNSS synchronization</string>
+    <string name="prefs_ft4_sync_now">Synchronize now</string>
+    <string name="prefs_ft4_synchronizing">Synchronizing…</string>
+    <string name="prefs_ft4_time_status">Time: %1$s · offset %2$+.0f ms · uncertainty %3$.0f ms</string>
+    <string name="prefs_ft4_time_error">Time synchronization: %s</string>
+    <string name="prefs_ft4_time_system">System</string>
+    <string name="prefs_ft4_time_ntp" translatable="false">NTP</string>
+    <string name="prefs_ft4_time_gnss" translatable="false">GNSS</string>
+    <string name="prefs_ft4_time_holdover">Holdover</string>
+    <string name="prefs_ft4_native_supported">%1$s · official FT4 core · self-test %2$s</string>
+    <string name="prefs_ft4_native_unsupported">%1$s · FT4 unavailable: %2$s</string>
+    <string name="prefs_ft4_self_test_pending">pending</string>
+    <string name="prefs_ft4_self_test_passed">passed</string>
+    <string name="prefs_ft4_self_test_failed">failed</string>
+    <string name="prefs_ft4_gnss_permission">Precise location permission is required for GNSS time</string>
     <string name="prefs_other_switch_utc">Show pass time in UTC</string>
     <string name="prefs_other_switch_update">Enable automatic data update</string>
     <string name="prefs_other_switch_sweep">Enable radar sweep animation</string>

@@ -25,6 +25,7 @@ import androidx.core.location.LocationListenerCompat
 import androidx.core.location.LocationManagerCompat
 import com.rtbishop.look4sat.core.domain.model.DataSourcesSettings
 import com.rtbishop.look4sat.core.domain.model.DatabaseState
+import com.rtbishop.look4sat.core.domain.model.Ft4Settings
 import com.rtbishop.look4sat.core.domain.model.OtherSettings
 import com.rtbishop.look4sat.core.domain.model.PassesSettings
 import com.rtbishop.look4sat.core.domain.model.RCSettings
@@ -39,6 +40,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
 import com.rtbishop.look4sat.core.domain.model.Constants
 import com.rtbishop.look4sat.core.domain.source.Sources
+import java.util.Locale
 
 class SettingsRepo(
     private val locationManager: LocationManager,
@@ -90,6 +92,10 @@ class SettingsRepo(
     private val keySstvMode = "sstvMode"
     private val keyLowElevation = "lowElevation"
     private val keyHighElevation = "highElevation"
+    private val keyFt4OperatorCallsign = "ft4OperatorCallsign"
+    private val keyFt4DecodeEnabled = "ft4DecodeEnabled"
+    private val keyFt4NtpEnabled = "ft4NtpEnabled"
+    private val keyFt4GnssEnabled = "ft4GnssEnabled"
     private val keyUseCustomTle = "useCustomTle"
     private val keyUseCustomTransceivers = "useCustomTransceivers"
     private val keyTleUrl = "tleUrl"
@@ -386,6 +392,35 @@ class SettingsRepo(
         sstvMode = preferences.getString(keySstvMode, null) ?: "Auto",
         lowElevation = Double.fromBits(preferences.getLong(keyLowElevation, 15.0.toRawBits())),
         highElevation = Double.fromBits(preferences.getLong(keyHighElevation, 45.0.toRawBits()))
+    )
+    //endregion
+
+    //region # FT4 settings
+    private val _ft4Settings = MutableStateFlow(getFt4Settings())
+    override val ft4Settings: StateFlow<Ft4Settings> = _ft4Settings
+
+    override fun updateFt4Settings(transform: (Ft4Settings) -> Ft4Settings) {
+        _ft4Settings.update { current ->
+            val transformed = transform(current)
+            val updated = transformed.copy(
+                operatorCallsign = transformed.operatorCallsign.trim().uppercase(Locale.US)
+            )
+            preferences.edit {
+                putString(keyFt4OperatorCallsign, updated.operatorCallsign)
+                putBoolean(keyFt4DecodeEnabled, updated.decodeEnabled)
+                putBoolean(keyFt4NtpEnabled, updated.ntpSynchronizationEnabled)
+                putBoolean(keyFt4GnssEnabled, updated.gnssSynchronizationEnabled)
+            }
+            updated
+        }
+    }
+
+    private fun getFt4Settings() = Ft4Settings(
+        operatorCallsign = preferences.getString(keyFt4OperatorCallsign, null)
+            .orEmpty().trim().uppercase(Locale.US),
+        decodeEnabled = preferences.getBoolean(keyFt4DecodeEnabled, false),
+        ntpSynchronizationEnabled = preferences.getBoolean(keyFt4NtpEnabled, false),
+        gnssSynchronizationEnabled = preferences.getBoolean(keyFt4GnssEnabled, false)
     )
     //endregion
 

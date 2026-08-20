@@ -19,6 +19,7 @@ package com.rtbishop.look4sat.core.data.repository
 
 import com.rtbishop.look4sat.core.domain.model.DataSourcesSettings
 import com.rtbishop.look4sat.core.domain.model.DatabaseState
+import com.rtbishop.look4sat.core.domain.model.Ft4Settings
 import com.rtbishop.look4sat.core.domain.model.OtherSettings
 import com.rtbishop.look4sat.core.domain.model.PassesSettings
 import com.rtbishop.look4sat.core.domain.model.RCSettings
@@ -185,6 +186,8 @@ private class FakeSettingsRepo(dataSources: DataSourcesSettings = defaultDataSou
         OtherSettings(false, false, false, false, false, false, false, false)
     )
 
+    override val ft4Settings: StateFlow<Ft4Settings> = MutableStateFlow(Ft4Settings())
+
     override val dataSourcesSettings: MutableStateFlow<DataSourcesSettings> = MutableStateFlow(dataSources)
 
     override val radioControlSettings: StateFlow<RadioControlSettings> = MutableStateFlow(
@@ -218,6 +221,8 @@ private class FakeSettingsRepo(dataSources: DataSourcesSettings = defaultDataSou
     override fun updateRCSettings(settings: RCSettings) = Unit
 
     override fun updateOtherSettings(transform: (OtherSettings) -> OtherSettings) = Unit
+
+    override fun updateFt4Settings(transform: (Ft4Settings) -> Ft4Settings) = Unit
 
     override fun updateDataSourcesSettings(settings: DataSourcesSettings) {
         dataSourcesSettings.value = settings

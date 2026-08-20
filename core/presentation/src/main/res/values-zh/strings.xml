@@ -178,6 +178,27 @@
     <string name="rc_enable_switch">启用 CAT 控制</string>
 
     <string name="prefs_other_title">其他设置</string>
+    <string name="prefs_ft4_title">FT4 与时间同步</string>
+    <string name="prefs_ft4_callsign">本机呼号</string>
+    <string name="prefs_ft4_grid">Maidenhead 网格：%s</string>
+    <string name="prefs_ft4_edit_grid">编辑网格</string>
+    <string name="prefs_ft4_decode">启用 FT4 解码</string>
+    <string name="prefs_ft4_ntp">使用 NTP 同步</string>
+    <string name="prefs_ft4_gnss">使用 GNSS 同步</string>
+    <string name="prefs_ft4_sync_now">立即同步</string>
+    <string name="prefs_ft4_synchronizing">正在同步…</string>
+    <string name="prefs_ft4_time_status">时间：%1$s · 偏移 %2$+.0f ms · 不确定度 %3$.0f ms</string>
+    <string name="prefs_ft4_time_error">时间同步：%s</string>
+    <string name="prefs_ft4_time_system">系统</string>
+    <string name="prefs_ft4_time_ntp" translatable="false">NTP</string>
+    <string name="prefs_ft4_time_gnss" translatable="false">GNSS</string>
+    <string name="prefs_ft4_time_holdover">守时</string>
+    <string name="prefs_ft4_native_supported">%1$s · 官方 FT4 核心 · 自检%2$s</string>
+    <string name="prefs_ft4_native_unsupported">%1$s · FT4 不可用：%2$s</string>
+    <string name="prefs_ft4_self_test_pending">待执行</string>
+    <string name="prefs_ft4_self_test_passed">通过</string>
+    <string name="prefs_ft4_self_test_failed">失败</string>
+    <string name="prefs_ft4_gnss_permission">GNSS 时间需要精确位置权限</string>
     <string name="prefs_other_switch_utc">以 UTC 时间显示</string>
     <string name="prefs_other_switch_update">启用卫星数据自动更新</string>
     <string name="prefs_other_switch_sweep">启用雷达扫描动画</string>

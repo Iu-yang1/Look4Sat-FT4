@@ -104,7 +104,7 @@ class AndroidTimeSynchronizationService(
     }
 
     override suspend fun synchronizeNow(): Boolean {
-        if (closed || !_state.value.ntpEnabled) return false
+        if (closed) return false
         return synchronizationMutex.withLock {
             _state.update { it.copy(synchronizing = true, lastError = "") }
             try {

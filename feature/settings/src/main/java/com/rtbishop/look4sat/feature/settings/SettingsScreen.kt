@@ -38,6 +38,7 @@ import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -56,12 +57,16 @@ import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.rtbishop.look4sat.core.domain.model.DataSourcesSettings
+import com.rtbishop.look4sat.core.domain.time.ClockSource
 import com.rtbishop.look4sat.core.domain.model.OtherSettings
 import com.rtbishop.look4sat.core.domain.predict.GeoPos
 import com.rtbishop.look4sat.core.domain.repository.IContainerProvider
@@ -285,11 +290,128 @@ private fun SettingsScreen(uiState: SettingsState, onAction: (SettingsAction) ->
                     onRadioControlClick = { dialogs.radioControl = true }
                 )
             }
+            item(span = { GridItemSpan(maxLineSpan) }) {
+                Ft4SettingsCard(
+                    state = uiState,
+                    editGrid = { dialogs.locator = true },
+                    enableGnss = permissions.launchGnss,
+                    onAction = onAction
+                )
+            }
             item { OtherCard(uiState.otherSettings, onAction) }
             item { CardCredits() }
         }
     }
 }
+
+@Composable
+private fun Ft4SettingsCard(
+    state: SettingsState,
+    editGrid: () -> Unit,
+    enableGnss: () -> Unit,
+    onAction: (SettingsAction) -> Unit
+) {
+    val settings = state.ft4Settings
+    val capability = state.ft4Capability
+    val clock = state.clockSnapshot
+    val synchronization = state.timeSynchronizationState
+    val timeStatus = if (synchronization.lastError.isNotBlank()) {
+        stringResource(R.string.prefs_ft4_time_error, synchronization.lastError)
+    } else {
+        stringResource(
+            R.string.prefs_ft4_time_status,
+            clockSourceLabel(clock.source),
+            clock.offsetMillis,
+            clock.uncertaintyMillis
+        )
+    }
+    val selfTest = when (capability.nativeSelfTestPassed) {
+        true -> stringResource(R.string.prefs_ft4_self_test_passed)
+        false -> stringResource(R.string.prefs_ft4_self_test_failed)
+        null -> stringResource(R.string.prefs_ft4_self_test_pending)
+    }
+    val nativeStatus = if (capability.officialCoreAvailable) {
+        stringResource(R.string.prefs_ft4_native_supported, capability.abi, selfTest)
+    } else {
+        stringResource(
+            R.string.prefs_ft4_native_unsupported,
+            capability.abi,
+            capability.unavailableReason
+        )
+    }
+
+    ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)
+        ) {
+            Text(
+                text = stringResource(R.string.prefs_ft4_title),
+                color = MaterialTheme.colorScheme.primary
+            )
+            OutlinedTextField(
+                value = settings.operatorCallsign,
+                onValueChange = { onAction(SettingsAction.SetFt4Callsign(it)) },
+                label = { Text(stringResource(R.string.prefs_ft4_callsign)) },
+                keyboardOptions = KeyboardOptions(
+                    capitalization = KeyboardCapitalization.Characters,
+                    imeAction = ImeAction.Done
+                ),
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    text = stringResource(
+                        R.string.prefs_ft4_grid,
+                        state.positionSettings.stationPos.qthLocator
+                    ),
+                    modifier = Modifier.weight(1f)
+                )
+                CardButton(
+                    onClick = editGrid,
+                    text = stringResource(R.string.prefs_ft4_edit_grid)
+                )
+            }
+            SwitchRow(
+                labelResId = R.string.prefs_ft4_decode,
+                checked = settings.decodeEnabled,
+                enabled = capability.receiveAvailable
+            ) { onAction(SettingsAction.ToggleFt4Decode(it)) }
+            SwitchRow(R.string.prefs_ft4_ntp, settings.ntpSynchronizationEnabled) {
+                onAction(SettingsAction.ToggleNtpSynchronization(it))
+            }
+            SwitchRow(R.string.prefs_ft4_gnss, settings.gnssSynchronizationEnabled) { enabled ->
+                if (enabled) enableGnss() else onAction(SettingsAction.ToggleGnssSynchronization(false))
+            }
+            CardButton(
+                onClick = { onAction(SettingsAction.SynchronizeTimeNow) },
+                text = if (synchronization.synchronizing) {
+                    stringResource(R.string.prefs_ft4_synchronizing)
+                } else {
+                    stringResource(R.string.prefs_ft4_sync_now)
+                },
+                modifier = Modifier.fillMaxWidth()
+            )
+            Text(text = timeStatus, style = MaterialTheme.typography.bodySmall)
+            Text(text = nativeStatus, style = MaterialTheme.typography.bodySmall)
+        }
+    }
+}
+
+@Composable
+private fun clockSourceLabel(source: ClockSource): String = stringResource(
+    when (source) {
+        ClockSource.SYSTEM -> R.string.prefs_ft4_time_system
+        ClockSource.NTP -> R.string.prefs_ft4_time_ntp
+        ClockSource.GNSS -> R.string.prefs_ft4_time_gnss
+        ClockSource.HOLDOVER -> R.string.prefs_ft4_time_holdover
+    }
+)
 
 @Preview(showBackground = true)
 @Composable
@@ -500,14 +622,19 @@ private fun OtherCard(settings: OtherSettings, onAction: (SettingsAction) -> Uni
 }
 
 @Composable
-private fun SwitchRow(labelResId: Int, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
+private fun SwitchRow(
+    labelResId: Int,
+    checked: Boolean,
+    enabled: Boolean = true,
+    onCheckedChange: (Boolean) -> Unit
+) {
     Row(
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier.fillMaxWidth()
     ) {
         Text(text = stringResource(id = labelResId))
-        Switch(checked = checked, onCheckedChange = onCheckedChange)
+        Switch(checked = checked, enabled = enabled, onCheckedChange = onCheckedChange)
     }
 }
 
@@ -656,6 +783,7 @@ private fun rememberDialogVisibility(): DialogVisibility {
 @Stable
 private class SettingsPermissions(
     val launchLocation: () -> Unit,
+    val launchGnss: () -> Unit,
     val launchTleImport: () -> Unit,
     val launchTransceiverImport: () -> Unit,
     val launchBluetooth: () -> Unit,
@@ -679,6 +807,17 @@ private fun rememberSettingsPermissions(
         val coarse = permissions[Manifest.permission.ACCESS_COARSE_LOCATION] == true
         if (fine || coarse) sendAction(SettingsAction.SetGpsPosition)
         else sendAction(SettingsAction.ShowToast(locationError))
+    }
+    val gnssPermissionError = stringResource(R.string.prefs_ft4_gnss_permission)
+    val gnssRequest = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissions ->
+        if (permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true) {
+            sendAction(SettingsAction.ToggleGnssSynchronization(true))
+        } else {
+            sendAction(SettingsAction.ToggleGnssSynchronization(false))
+            sendAction(SettingsAction.ShowToast(gnssPermissionError))
+        }
     }
 
     val satellitesImportError = stringResource(R.string.prefs_data_import_satellites_error)
@@ -719,6 +858,11 @@ private fun rememberSettingsPermissions(
         SettingsPermissions(
             launchLocation = {
                 locationRequest.launch(
+                    arrayOf(Manifest.permission.ACCESS_COARSE_LOCATION, Manifest.permission.ACCESS_FINE_LOCATION)
+                )
+            },
+            launchGnss = {
+                gnssRequest.launch(
                     arrayOf(Manifest.permission.ACCESS_COARSE_LOCATION, Manifest.permission.ACCESS_FINE_LOCATION)
                 )
             },

@@ -75,7 +75,7 @@ internal fun Ft4SpectrumPage(
         modifier = modifier,
         verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
-        ElevatedCard(modifier = Modifier.fillMaxWidth().height(420.dp)) {
+        ElevatedCard(modifier = Modifier.fillMaxWidth().height(380.dp)) {
             SpectrumWaterfall(
                 renderState = renderState,
                 selectedFrequencyHz = state.selectedAudioFrequencyHz,

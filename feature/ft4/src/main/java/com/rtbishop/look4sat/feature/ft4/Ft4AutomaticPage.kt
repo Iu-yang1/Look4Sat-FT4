@@ -12,7 +12,6 @@ package com.rtbishop.look4sat.feature.ft4
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.KeyboardOptions
@@ -35,7 +34,11 @@ import com.rtbishop.look4sat.core.domain.time.ClockSource
 import com.rtbishop.look4sat.core.presentation.R
 
 @Composable
-internal fun Ft4AutomaticPage(state: Ft4State, onAction: (Ft4Action) -> Unit) {
+internal fun Ft4AutomaticPage(
+    state: Ft4State,
+    onAction: (Ft4Action) -> Unit,
+    modifier: Modifier = Modifier
+) {
     val automation = state.automation
     val gateAllowed = state.clock.source != ClockSource.SYSTEM &&
         state.clock.healthy &&
@@ -43,7 +46,7 @@ internal fun Ft4AutomaticPage(state: Ft4State, onAction: (Ft4Action) -> Unit) {
         state.clock.sampleAgeMillis <= MAX_TIME_SAMPLE_AGE_MILLIS
     val notSet = stringResource(R.string.ft4_not_set)
     Column(
-        modifier = Modifier.fillMaxSize(),
+        modifier = modifier,
         verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
         ElevatedCard(modifier = Modifier.fillMaxWidth()) {

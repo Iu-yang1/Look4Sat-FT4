@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -45,9 +46,13 @@ import java.util.Locale
 import java.util.TimeZone
 
 @Composable
-internal fun Ft4DecodePage(state: Ft4State, onAction: (Ft4Action) -> Unit) {
-    Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        ElevatedCard(modifier = Modifier.weight(1f).fillMaxWidth()) {
+internal fun Ft4DecodePage(
+    state: Ft4State,
+    onAction: (Ft4Action) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        ElevatedCard(modifier = Modifier.fillMaxWidth().heightIn(min = 160.dp, max = 280.dp)) {
             if (state.decodeResults.isEmpty()) {
                 Text(
                     stringResource(R.string.ft4_decode_empty),

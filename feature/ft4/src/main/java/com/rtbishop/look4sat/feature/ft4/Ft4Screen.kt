@@ -252,15 +252,6 @@ private fun Ft4Shell(
             modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 6.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            if (current != Ft4Page.Spectrum) {
-                SatelliteRadioStatus(
-                    state = state,
-                    onAction = onAction,
-                    connectRadios = connectRadios,
-                    navigateToPasses = navigateUp,
-                    modifier = Modifier.fillMaxWidth()
-                )
-            }
             NavDisplay(
                 backStack = backStack,
                 onBack = navigateUp,
@@ -291,8 +282,36 @@ private fun Ft4Shell(
                             )
                         }
                     }
-                    entry<Ft4Page.Decode> { Ft4DecodePage(state, onAction) }
-                    entry<Ft4Page.Automatic> { Ft4AutomaticPage(state, onAction) }
+                    entry<Ft4Page.Decode> {
+                        Column(
+                            modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            SatelliteRadioStatus(
+                                state = state,
+                                onAction = onAction,
+                                connectRadios = connectRadios,
+                                navigateToPasses = navigateUp,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            Ft4DecodePage(state, onAction, Modifier.fillMaxWidth())
+                        }
+                    }
+                    entry<Ft4Page.Automatic> {
+                        Column(
+                            modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            SatelliteRadioStatus(
+                                state = state,
+                                onAction = onAction,
+                                connectRadios = connectRadios,
+                                navigateToPasses = navigateUp,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            Ft4AutomaticPage(state, onAction, Modifier.fillMaxWidth())
+                        }
+                    }
                 }
             )
         }

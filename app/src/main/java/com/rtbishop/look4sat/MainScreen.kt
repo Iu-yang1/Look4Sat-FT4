@@ -74,11 +74,13 @@ import com.rtbishop.look4sat.core.domain.repository.MutualPassData
 import com.rtbishop.look4sat.core.presentation.DeeplinkResolver
 import com.rtbishop.look4sat.core.presentation.ElevationThresholds
 import com.rtbishop.look4sat.core.presentation.LocalElevationThresholds
+import com.rtbishop.look4sat.core.presentation.R
 import com.rtbishop.look4sat.core.presentation.RadarDestination
 import com.rtbishop.look4sat.core.presentation.Screen
 import com.rtbishop.look4sat.core.presentation.hasEnoughHeight
 import com.rtbishop.look4sat.core.presentation.hasEnoughWidth
 import com.rtbishop.look4sat.feature.map.MapDestination
+import com.rtbishop.look4sat.feature.ft4.Ft4ShellDestination
 import com.rtbishop.look4sat.feature.mutual.MutualScreen
 import com.rtbishop.look4sat.feature.mutual.MutualViewModel
 import com.rtbishop.look4sat.feature.passes.PassesDestination
@@ -96,6 +98,7 @@ fun NavRoot(deeplink: String? = null) {
     }
     val navigateBack: () -> Unit = { rootBackStack.removeLastOrNull() }
     val navigateToRadar: () -> Unit = { rootBackStack.add(RadarDestination) }
+    val navigateToFt4: () -> Unit = { rootBackStack.add(Screen.Ft4) }
     // Incoming screen slides in from the right, outgoing drifts left at 1/3 speed (API35+ style)
     val pushTransition = slideInHorizontally(tween(300)) { it } togetherWith
         slideOutHorizontally(tween(300)) { -it / 3 }
@@ -114,7 +117,9 @@ fun NavRoot(deeplink: String? = null) {
             rememberViewModelStoreNavEntryDecorator()
         ),
         entryProvider = entryProvider {
-            entry<Screen.Passes> { MainScreen(navigateToRadar = navigateToRadar) }
+            entry<Screen.Passes> {
+                MainScreen(navigateToRadar = navigateToRadar, navigateToFt4 = navigateToFt4)
+            }
             entry<RadarDestination> {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
@@ -123,17 +128,25 @@ fun NavRoot(deeplink: String? = null) {
                     RadarDestination(navigateUp = navigateBack)
                 }
             }
+            entry<Screen.Ft4> {
+                Surface(
+                    modifier = Modifier.fillMaxSize(),
+                    color = MaterialTheme.colorScheme.background
+                ) {
+                    Ft4ShellDestination(navigateUp = navigateBack)
+                }
+            }
         }
     )
 }
 
 @Composable
-fun MainScreen(navigateToRadar: () -> Unit = {}) {
+fun MainScreen(navigateToRadar: () -> Unit = {}, navigateToFt4: () -> Unit = {}) {
     val backStack = rememberNavBackStack(Screen.Passes)
     val currentKey = backStack.lastOrNull()
     val navigateBack: () -> Unit = { backStack.removeLastOrNull() }
     val fadeTransition = fadeIn(animationSpec = tween(350)) togetherWith fadeOut(animationSpec = tween(350))
-    val navItems = listOf(Screen.Satellites, Screen.Passes, Screen.Mutual, Screen.Map, Screen.AMSAT, Screen.Settings)
+    val navItems = listOf(Screen.Satellites, Screen.Passes, Screen.Mutual, Screen.Map, Screen.Ft4, Screen.Settings)
 
     val context = LocalContext.current
     val container = (context.applicationContext as IContainerProvider).getMainContainer()
@@ -159,7 +172,7 @@ fun MainScreen(navigateToRadar: () -> Unit = {}) {
                         is Screen.Passes -> screen is Screen.Passes
                         is Screen.Mutual -> screen is Screen.Mutual
                         is Screen.Map -> screen is Screen.Map
-                        is Screen.AMSAT -> screen is Screen.AMSAT
+                        is Screen.Ft4 -> screen is Screen.Ft4
                         is Screen.Settings -> screen is Screen.Settings
                         else -> false
                     }
@@ -169,6 +182,10 @@ fun MainScreen(navigateToRadar: () -> Unit = {}) {
                         selected = isSelected,
                         onClick = {
                             if (isSelected) return@item
+                            if (screen is Screen.Ft4) {
+                                navigateToFt4()
+                                return@item
+                            }
                             while (backStack.size > 1) backStack.removeAt(backStack.size - 1)
                             if (screen !is Screen.Passes) backStack.add(screen)
                         }
@@ -200,7 +217,10 @@ fun MainScreen(navigateToRadar: () -> Unit = {}) {
                     ),
                     entryProvider = entryProvider {
                         entry<Screen.Satellites> {
-                            SatellitesDestination(navigateUp = navigateBack)
+                            SatellitesDestination(
+                                navigateUp = navigateBack,
+                                navigateToAmSat = { backStack.add(Screen.AMSAT) }
+                            )
                         }
                         entry<Screen.Passes> {
                             PassesDestination { catNum, aosTime ->
@@ -262,7 +282,10 @@ fun MainScreen(navigateToRadar: () -> Unit = {}) {
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = "Tracking: ${trackingState.currentPass?.name ?: ""}",
+                            text = stringResource(
+                                R.string.main_tracking,
+                                trackingState.currentPass?.name.orEmpty()
+                            ),
                             fontSize = 13.sp,
                             fontWeight = FontWeight.Medium,
                             color = MaterialTheme.colorScheme.onPrimaryContainer,

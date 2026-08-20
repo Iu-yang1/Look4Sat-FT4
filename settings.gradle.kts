@@ -23,6 +23,7 @@ include(
 )
 include(
     ":feature:cw",
+    ":feature:ft4",
     ":feature:map",
     ":feature:mutual",
     ":feature:passes",

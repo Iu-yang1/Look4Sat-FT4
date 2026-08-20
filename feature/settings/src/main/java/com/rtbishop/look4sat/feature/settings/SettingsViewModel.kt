@@ -22,6 +22,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.rtbishop.look4sat.core.domain.repository.IDatabaseRepo
+import com.rtbishop.look4sat.core.domain.ft4.IFt4AudioTransmitter
 import com.rtbishop.look4sat.core.domain.ft4.IFt4Service
 import com.rtbishop.look4sat.core.domain.repository.IMainContainer
 import com.rtbishop.look4sat.core.domain.repository.ISettingsRepo
@@ -40,6 +41,7 @@ class SettingsViewModel(
     private val databaseRepo: IDatabaseRepo,
     private val settingsRepo: ISettingsRepo,
     private val ft4Service: IFt4Service,
+    private val ft4AudioTransmitter: IFt4AudioTransmitter,
     private val disciplinedClock: IDisciplinedClock,
     private val timeSynchronizationService: ITimeSynchronizationService,
     private val showToast: IShowToast
@@ -170,7 +172,10 @@ class SettingsViewModel(
             }
             is SettingsAction.ToggleFt4Decode -> {
                 settingsRepo.updateFt4Settings { it.copy(decodeEnabled = action.value) }
-                if (!action.value) viewModelScope.launch { ft4Service.stopReceiving() }
+                if (!action.value) viewModelScope.launch {
+                    ft4Service.stopReceiving()
+                    ft4AudioTransmitter.emergencyStop()
+                }
             }
             is SettingsAction.ToggleNtpSynchronization -> {
                 settingsRepo.updateFt4Settings { it.copy(ntpSynchronizationEnabled = action.value) }
@@ -269,6 +274,7 @@ class SettingsViewModel(
                     databaseRepo = container.databaseRepo,
                     settingsRepo = container.settingsRepo,
                     ft4Service = container.ft4Service,
+                    ft4AudioTransmitter = container.ft4AudioTransmitter,
                     disciplinedClock = container.disciplinedClock,
                     timeSynchronizationService = container.timeSynchronizationService,
                     showToast = container.provideShowToast()

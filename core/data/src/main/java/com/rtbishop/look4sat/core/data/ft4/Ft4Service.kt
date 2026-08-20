@@ -53,7 +53,10 @@ class Ft4Service(
     private val audioHub: IAudioHub,
     private val clock: IDisciplinedClock,
     private val decodeDispatcher: CoroutineDispatcher = Executors
-        .newSingleThreadExecutor { runnable -> Thread(runnable, "Look4Sat-FT4-decode") }
+        .newSingleThreadExecutor { runnable ->
+            // 官方 WSJT-X Fortran 解码器包含较大的局部工作区，Android 默认线程栈不足。
+            Thread(null, runnable, "Look4Sat-FT4-decode", DECODE_THREAD_STACK_BYTES)
+        }
         .asCoroutineDispatcher()
 ) : IFt4Service {
     private val lifecycleLock = Any()
@@ -292,6 +295,7 @@ class Ft4Service(
     )
 
     private companion object {
+        const val DECODE_THREAD_STACK_BYTES = 8L * 1024L * 1024L
         const val FT4_SAMPLE_RATE = 12_000
         const val SLOT_MILLIS = 7_500L
         const val SPECTRUM_FFT_SIZE = 2_048

@@ -18,6 +18,8 @@
 package com.rtbishop.look4sat.core.domain.repository
 import com.rtbishop.look4sat.core.domain.model.SatRadio
 import com.rtbishop.look4sat.core.domain.audio.IAudioHub
+import com.rtbishop.look4sat.core.domain.time.IDisciplinedClock
+import com.rtbishop.look4sat.core.domain.time.ITimeSynchronizationService
 import com.rtbishop.look4sat.core.domain.usecase.IAddToCalendar
 import com.rtbishop.look4sat.core.domain.usecase.ISaveImage
 import com.rtbishop.look4sat.core.domain.usecase.IShowToast
@@ -32,6 +34,8 @@ interface IMainContainer {
     val databaseRepo: IDatabaseRepo
     val amSatRepo: IAmSatRepository
     val audioHub: IAudioHub
+    val disciplinedClock: IDisciplinedClock
+    val timeSynchronizationService: ITimeSynchronizationService
     val radioTrackingService: IRadioTrackingService
     val mutualPassData: StateFlow<MutualPassData>
     fun setMutualPassData(data: MutualPassData)

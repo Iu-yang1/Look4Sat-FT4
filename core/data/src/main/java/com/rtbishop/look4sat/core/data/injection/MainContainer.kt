@@ -39,10 +39,15 @@ import com.rtbishop.look4sat.core.data.source.LocalSource
 import com.rtbishop.look4sat.core.data.source.RemoteSource
 import com.rtbishop.look4sat.core.data.usecase.AddToCalendar
 import com.rtbishop.look4sat.core.data.usecase.SharedAudioHub
+import com.rtbishop.look4sat.core.data.time.AndroidMonotonicTimeSource
+import com.rtbishop.look4sat.core.data.time.AndroidTimeSynchronizationService
 import com.rtbishop.look4sat.core.data.usecase.SaveImage
 import com.rtbishop.look4sat.core.data.usecase.ShowToast
 import com.rtbishop.look4sat.core.domain.model.RadioControlSettings
 import com.rtbishop.look4sat.core.domain.audio.IAudioHub
+import com.rtbishop.look4sat.core.domain.time.IDisciplinedClock
+import com.rtbishop.look4sat.core.domain.time.ITimeSynchronizationService
+import com.rtbishop.look4sat.core.domain.time.SystemDisciplinedClock
 import com.rtbishop.look4sat.core.domain.repository.IDatabaseRepo
 import com.rtbishop.look4sat.core.domain.repository.IMainContainer
 import com.rtbishop.look4sat.core.domain.repository.IRadioController
@@ -80,6 +85,12 @@ class MainContainer(private val context: Context) : IMainContainer {
     override val databaseRepo = provideDatabaseRepo()
     override val amSatRepo by lazy { AmSatRepository(remoteSource) }
     override val audioHub: IAudioHub by lazy { SharedAudioHub(appScope) }
+    override val disciplinedClock: IDisciplinedClock by lazy {
+        SystemDisciplinedClock(AndroidMonotonicTimeSource)
+    }
+    override val timeSynchronizationService: ITimeSynchronizationService by lazy {
+        AndroidTimeSynchronizationService(context, appScope, disciplinedClock)
+    }
     override val radioTrackingService: IRadioTrackingService by lazy {
         val manager = context.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
         RadioTrackingService(appScope, manager, satelliteRepo, settingsRepo)

@@ -45,6 +45,7 @@ class Ft4ViewModel(
     private var automationJob: Job? = null
     private var manualTransmitJob: Job? = null
     private var generation = 0L
+    private var screenActive = false
 
     private val mutableState = kotlinx.coroutines.flow.MutableStateFlow(
         Ft4State(
@@ -76,11 +77,16 @@ class Ft4ViewModel(
     fun onAction(action: Ft4Action) {
         when (action) {
             is Ft4Action.MicrophonePermissionChanged -> {
+                screenActive = true
                 mutableState.update { it.copy(hasMicrophonePermission = action.granted) }
                 if (container.settingsRepo.otherSettings.value.stateOfSensors) sensorsRepo.enableSensor()
-                if (!action.granted) cleanupScope.launch {
-                    ft4Service.stopReceiving()
-                    container.audioHub.stopAll()
+                if (action.granted) {
+                    startReceivingIfAvailable()
+                } else {
+                    cleanupScope.launch {
+                        ft4Service.stopReceiving()
+                        container.audioHub.stopAll()
+                    }
                 }
             }
             Ft4Action.ToggleReceiving -> toggleReceiving()
@@ -130,6 +136,8 @@ class Ft4ViewModel(
                     stopAutomationNow("FT4 disabled")
                     ft4Service.stopReceiving()
                     transmitter.emergencyStop()
+                } else if (screenActive) {
+                    startReceivingIfAvailable()
                 }
             }
         }
@@ -179,7 +187,10 @@ class Ft4ViewModel(
             }
         }
         viewModelScope.launch {
-            ft4Service.capability.collect { value -> mutableState.update { it.copy(capability = value) } }
+            ft4Service.capability.collect { value ->
+                mutableState.update { it.copy(capability = value) }
+                if (screenActive) startReceivingIfAvailable()
+            }
         }
         viewModelScope.launch {
             ft4Service.engineState.collect { value -> mutableState.update { it.copy(engineState = value) } }
@@ -285,6 +296,19 @@ class Ft4ViewModel(
                 state.settings.operatorCallsign
             )
         }
+    }
+
+    private fun startReceivingIfAvailable() {
+        val state = mutableState.value
+        if (!screenActive || state.isReceiving || !state.settings.decodeEnabled ||
+            !state.capability.receiveAvailable || !state.hasMicrophonePermission
+        ) {
+            return
+        }
+        ft4Service.startReceiving(
+            Ft4DecoderOptions(qsoFrequencyHz = state.selectedAudioFrequencyHz.toInt()),
+            state.settings.operatorCallsign
+        )
     }
 
     private fun startManualTransmit() {
@@ -470,6 +494,7 @@ class Ft4ViewModel(
     }
 
     private fun closeOperations() {
+        screenActive = false
         automationJob?.cancel()
         manualTransmitJob?.cancel()
         sensorsRepo.disableSensor()

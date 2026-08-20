@@ -347,7 +347,13 @@
     <string name="ft4_radio_compact">TX %1$s · RX %2$s · PTT %3$s · %4$s</string>
     <string name="ft4_cat_ready">CAT ready</string>
     <string name="ft4_decode_empty">No FT4 messages decoded yet</string>
-    <string name="ft4_decode_row">%1$s  %2$+d dB  %3$.1f s  %4$.0f Hz\n%5$s</string>
+    <string name="ft4_decode_count">Decoded messages: %1$d</string>
+    <string name="ft4_decode_utc">UTC</string>
+    <string name="ft4_decode_snr">dB</string>
+    <string name="ft4_decode_dt">DT</string>
+    <string name="ft4_decode_hz">Hz</string>
+    <string name="ft4_decode_message">Message</string>
+    <string name="ft4_calling_controls">Call / transmit</string>
     <string name="ft4_operator_call">My callsign</string>
     <string name="ft4_target_call">Target callsign</string>
     <string name="ft4_grid">Grid</string>

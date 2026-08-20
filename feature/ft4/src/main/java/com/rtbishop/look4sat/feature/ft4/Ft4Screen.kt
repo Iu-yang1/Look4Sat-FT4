@@ -77,7 +77,6 @@ import kotlinx.serialization.Serializable
 private sealed interface Ft4Page : NavKey {
     @Serializable data object Spectrum : Ft4Page
     @Serializable data object Decode : Ft4Page
-    @Serializable data object Automatic : Ft4Page
 }
 
 @Composable
@@ -116,7 +115,11 @@ fun Ft4ShellDestination(navigateUp: () -> Unit) {
             context,
             Manifest.permission.RECORD_AUDIO
         ) == PackageManager.PERMISSION_GRANTED
-        viewModel.onAction(Ft4Action.MicrophonePermissionChanged(granted))
+        if (granted) {
+            viewModel.onAction(Ft4Action.MicrophonePermissionChanged(true))
+        } else {
+            microphoneLauncher.launch(Manifest.permission.RECORD_AUDIO)
+        }
     }
 
     Ft4Shell(
@@ -150,7 +153,7 @@ private fun Ft4Shell(
 ) {
     val backStack = rememberNavBackStack(Ft4Page.Spectrum)
     val current = backStack.lastOrNull()
-    val pages = listOf(Ft4Page.Spectrum, Ft4Page.Decode, Ft4Page.Automatic)
+    val pages = listOf(Ft4Page.Spectrum, Ft4Page.Decode)
     val timing by viewModel.timingState.collectAsStateWithLifecycle()
     Scaffold(
         modifier = Modifier.fillMaxSize().keepScreenOn(),
@@ -226,12 +229,10 @@ private fun Ft4Shell(
                     val label = when (page) {
                         Ft4Page.Spectrum -> stringResource(R.string.ft4_page_spectrum)
                         Ft4Page.Decode -> stringResource(R.string.ft4_page_decode)
-                        Ft4Page.Automatic -> stringResource(R.string.ft4_page_automatic)
                     }
                     val icon = when (page) {
                         Ft4Page.Spectrum -> R.drawable.ic_radio_tower
                         Ft4Page.Decode -> R.drawable.ic_radios
-                        Ft4Page.Automatic -> R.drawable.ic_play
                     }
                     NavigationBarItem(
                         selected = current == page,
@@ -295,21 +296,6 @@ private fun Ft4Shell(
                                 modifier = Modifier.fillMaxWidth()
                             )
                             Ft4DecodePage(state, onAction, Modifier.fillMaxWidth())
-                        }
-                    }
-                    entry<Ft4Page.Automatic> {
-                        Column(
-                            modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
-                            verticalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            SatelliteRadioStatus(
-                                state = state,
-                                onAction = onAction,
-                                connectRadios = connectRadios,
-                                navigateToPasses = navigateUp,
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                            Ft4AutomaticPage(state, onAction, Modifier.fillMaxWidth())
                         }
                     }
                 }

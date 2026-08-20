@@ -14,18 +14,14 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardCapitalization
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -34,7 +30,7 @@ import com.rtbishop.look4sat.core.domain.time.ClockSource
 import com.rtbishop.look4sat.core.presentation.R
 
 @Composable
-internal fun Ft4AutomaticPage(
+internal fun Ft4AutomationSection(
     state: Ft4State,
     onAction: (Ft4Action) -> Unit,
     modifier: Modifier = Modifier
@@ -52,19 +48,12 @@ internal fun Ft4AutomaticPage(
         ElevatedCard(modifier = Modifier.fillMaxWidth()) {
             Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
                 Text(
-                    stringResource(R.string.ft4_automation_state, phaseLabel(automation.phase)),
+                    stringResource(R.string.ft4_page_automatic),
                     fontWeight = FontWeight.Bold
                 )
-                OutlinedTextField(
-                    value = state.targetCall,
-                    onValueChange = { onAction(Ft4Action.SetTargetCall(it)) },
-                    label = { Text(stringResource(R.string.ft4_target_call)) },
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(
-                        capitalization = KeyboardCapitalization.Characters,
-                        keyboardType = KeyboardType.Ascii
-                    ),
-                    modifier = Modifier.fillMaxWidth()
+                Text(
+                    stringResource(R.string.ft4_automation_state, phaseLabel(automation.phase)),
+                    fontSize = 13.sp
                 )
                 StatusLine(R.string.ft4_automation_target, automation.targetCall.ifBlank { state.targetCall.ifBlank { notSet } })
                 StatusLine(R.string.ft4_automation_current, automation.currentMessage.ifBlank { notSet })

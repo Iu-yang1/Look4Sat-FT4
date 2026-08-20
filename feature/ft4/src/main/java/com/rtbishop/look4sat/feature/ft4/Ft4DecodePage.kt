@@ -9,27 +9,30 @@
  */
 package com.rtbishop.look4sat.feature.ft4
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
@@ -52,7 +55,31 @@ internal fun Ft4DecodePage(
     modifier: Modifier = Modifier
 ) {
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        ElevatedCard(modifier = Modifier.fillMaxWidth().heightIn(min = 160.dp, max = 280.dp)) {
+        DecodeTable(state, onAction)
+        CallingCard(state, onAction)
+        Ft4AutomationSection(state, onAction, Modifier.fillMaxWidth())
+    }
+}
+
+@Composable
+private fun DecodeTable(state: Ft4State, onAction: (Ft4Action) -> Unit) {
+    ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+        Column {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(start = 10.dp, end = 4.dp),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    stringResource(R.string.ft4_decode_count, state.decodeResults.size),
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(vertical = 10.dp)
+                )
+                TextButton(onClick = { onAction(Ft4Action.ClearDecodes) }) {
+                    Text(stringResource(R.string.ft4_clear_decodes))
+                }
+            }
+            HorizontalDivider()
+            DecodeTableHeader()
             if (state.decodeResults.isEmpty()) {
                 Text(
                     stringResource(R.string.ft4_decode_empty),
@@ -60,7 +87,7 @@ internal fun Ft4DecodePage(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             } else {
-                LazyColumn(modifier = Modifier.fillMaxSize()) {
+                LazyColumn(modifier = Modifier.fillMaxWidth().heightIn(min = 128.dp, max = 300.dp)) {
                     items(state.decodeResults, key = Ft4DecodeResult::stableId) { result ->
                         DecodeRow(
                             result = result,
@@ -74,32 +101,54 @@ internal fun Ft4DecodePage(
                 }
             }
         }
-        CallingCard(state, onAction)
+    }
+}
+
+@Composable
+private fun DecodeTableHeader() {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 5.dp)
+    ) {
+        TableCell(stringResource(R.string.ft4_decode_utc), 66.dp)
+        TableCell(stringResource(R.string.ft4_decode_snr), 42.dp)
+        TableCell(stringResource(R.string.ft4_decode_dt), 46.dp)
+        TableCell(stringResource(R.string.ft4_decode_hz), 54.dp)
+        Text(stringResource(R.string.ft4_decode_message), fontSize = 10.sp, modifier = Modifier.weight(1f))
     }
 }
 
 @Composable
 private fun DecodeRow(result: Ft4DecodeResult, highlighted: Boolean, onClick: () -> Unit) {
-    ElevatedCard(
-        colors = CardDefaults.elevatedCardColors(
-            containerColor = if (highlighted) MaterialTheme.colorScheme.primaryContainer
-            else MaterialTheme.colorScheme.surface
-        ),
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 3.dp).clickable(onClick = onClick)
-    ) {
-        Text(
-            text = stringResource(
-                R.string.ft4_decode_row,
-                formatDecodeUtc(result.slotUtcMillis),
-                result.snr,
-                result.dtSeconds,
-                result.frequencyHz,
-                result.text
-            ),
-            modifier = Modifier.padding(8.dp),
-            fontSize = 13.sp
-        )
+    val background = when {
+        highlighted -> MaterialTheme.colorScheme.primaryContainer
+        result.text.startsWith("CQ ") -> MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.45f)
+        else -> Color.Transparent
     }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(background)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 8.dp, vertical = 6.dp)
+    ) {
+        TableCell(formatDecodeUtc(result.slotUtcMillis), 66.dp)
+        TableCell(String.format(Locale.US, "%+d", result.snr), 42.dp)
+        TableCell(String.format(Locale.US, "%.1f", result.dtSeconds), 46.dp)
+        TableCell(String.format(Locale.US, "%.0f", result.frequencyHz), 54.dp)
+        Text(result.text, fontSize = 11.sp, maxLines = 2, modifier = Modifier.weight(1f))
+    }
+    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f))
+}
+
+@Composable
+private fun TableCell(value: String, width: androidx.compose.ui.unit.Dp) {
+    Text(
+        value,
+        fontSize = 10.sp,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        modifier = Modifier.width(width)
+    )
 }
 
 @Composable
@@ -115,6 +164,7 @@ private fun CallingCard(state: Ft4State, onAction: (Ft4Action) -> Unit) {
         state.transmitState !is Ft4TransmitState.Failed
     ElevatedCard(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+            Text(stringResource(R.string.ft4_calling_controls), fontWeight = FontWeight.Bold)
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 LabeledValue(stringResource(R.string.ft4_operator_call), myCall.ifBlank { notSet }, Modifier.weight(1f))
                 LabeledValue(stringResource(R.string.ft4_grid), state.grid4.ifBlank { notSet }, Modifier.weight(1f))
@@ -148,9 +198,6 @@ private fun CallingCard(state: Ft4State, onAction: (Ft4Action) -> Unit) {
                     onClick = { onAction(Ft4Action.SetTxSlotParity(1)) },
                     label = { Text(stringResource(R.string.ft4_odd_slot)) }
                 )
-                Button(onClick = { onAction(Ft4Action.ClearDecodes) }) {
-                    Text(stringResource(R.string.ft4_clear_decodes))
-                }
             }
             Text(
                 stringResource(R.string.ft4_message_preview, preview),

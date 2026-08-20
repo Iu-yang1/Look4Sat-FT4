@@ -312,7 +312,13 @@
     <string name="ft4_radio_compact">TX %1$s · RX %2$s · PTT %3$s · %4$s</string>
     <string name="ft4_cat_ready">CAT 就绪</string>
     <string name="ft4_decode_empty">尚未解码到 FT4 消息</string>
-    <string name="ft4_decode_row">%1$s  %2$+d dB  %3$.1f s  %4$.0f Hz\n%5$s</string>
+    <string name="ft4_decode_count">已解码消息：%1$d</string>
+    <string name="ft4_decode_utc">UTC</string>
+    <string name="ft4_decode_snr">dB</string>
+    <string name="ft4_decode_dt">DT</string>
+    <string name="ft4_decode_hz">Hz</string>
+    <string name="ft4_decode_message">消息</string>
+    <string name="ft4_calling_controls">呼叫与发射</string>
     <string name="ft4_operator_call">本机呼号</string>
     <string name="ft4_target_call">目标呼号</string>
     <string name="ft4_grid">网格</string>

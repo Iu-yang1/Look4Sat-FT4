@@ -1,7 +1,7 @@
 ﻿param(
     [Parameter(Mandatory = $true)]
     [string]$OutputDir,
-    [ValidateSet('arm64-v8a', 'x86_64', 'armeabi-v7a')]
+    [ValidateSet('arm64-v8a', 'armeabi-v7a')]
     [string]$Abi = 'arm64-v8a',
     [string]$CMakePath = '',
     [string]$NinjaPath = '',
@@ -37,7 +37,6 @@ $roots = @(Get-Ft8cnCandidateRoots -RepoRoot $repoRoot)
 
 $configuration = @{
     'arm64-v8a' = @{ Triple = 'aarch64-linux-android24' }
-    'x86_64' = @{ Triple = 'x86_64-linux-android24' }
     'armeabi-v7a' = @{ Triple = 'armv7a-linux-androideabi24' }
 }[$Abi]
 $targetTriple = $configuration.Triple
@@ -46,8 +45,12 @@ $CMakePath = Find-Ft8cnExecutable -ExplicitPath $CMakePath -CommandNames @('cmak
     -CandidateRoots $roots -RelativePatterns @('cmake\*\bin\cmake.exe')
 $NinjaPath = Find-Ft8cnExecutable -ExplicitPath $NinjaPath -CommandNames @('ninja.exe', 'ninja') `
     -CandidateRoots $roots -RelativePatterns @('cmake\*\bin\ninja.exe')
-$FlangPath = Find-Ft8cnExecutable -ExplicitPath $FlangPath -CommandNames @('flang-new.exe', 'flang.exe') `
-    -CandidateRoots $roots -RelativePatterns @('build\llvm-flang-*\bin\flang-new.exe', 'llvm*\bin\flang*.exe')
+$FlangPath = Find-Ft8cnExecutable -ExplicitPath $FlangPath -CommandNames @('flang.exe', 'flang-new.exe') `
+    -CandidateRoots $roots -RelativePatterns @(
+        'build\llvm-flang-*\bin\flang.exe',
+        'build\llvm-flang-*\bin\flang-new.exe',
+        'llvm*\bin\flang*.exe'
+    )
 $NdkRoot = Find-Ft8cnDirectory -ExplicitPath $NdkRoot -CandidateRoots $roots `
     -RelativePatterns @('ndk\*', 'AndroidSDKLIB\ndk\*') -RequiredChild 'build\cmake\android.toolchain.cmake'
 $BoostHeaders = Find-Ft8cnDirectory -ExplicitPath $BoostHeaders -CandidateRoots $roots `
@@ -62,6 +65,7 @@ $clangxx = Join-Path $ndkBin 'clang++.exe'
 $llvmAr = Join-Path $ndkBin 'llvm-ar.exe'
 $manifest = Join-Path $cppRoot 'ft4-core-sources.manifest'
 $runtimeScript = Join-Path $scriptDir 'build-flang-runtime.ps1'
+$arm32Patch = Join-Path $scriptDir 'patches\flang-22.1-arm32-codegen.patch'
 
 Assert-ExistingPath $CMakePath 'CMake'
 Assert-ExistingPath $NinjaPath 'Ninja'
@@ -95,6 +99,28 @@ foreach ($line in Get-Content $manifest -Encoding UTF8) {
 
 $OutputDir = [System.IO.Path]::GetFullPath($OutputDir)
 New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
+if ($Abi -eq 'armeabi-v7a') {
+    Assert-ExistingPath $arm32Patch 'Flang ARM32 patch'
+    $preflightDir = Join-Path $OutputDir 'preflight'
+    $preflightSource = Join-Path $preflightDir 'flang-arm32.f90'
+    $preflightObject = Join-Path $preflightDir 'flang-arm32.o'
+    New-Item -ItemType Directory -Force -Path $preflightDir | Out-Null
+    Set-Content -LiteralPath $preflightSource -Encoding ASCII -Value @'
+subroutine look4sat_flang_arm32_probe(values, result)
+  character*1 values(*)
+  integer result
+  result = iachar(values(1))
+end subroutine look4sat_flang_arm32_probe
+'@
+    $preflight = Invoke-Ft8cnNativeCapture -Path $FlangPath -Arguments @(
+        '-target', $targetTriple, '-fPIC', '-c', $preflightSource, '-o', $preflightObject
+    )
+    if ($preflight.ExitCode -ne 0) {
+        $applyPatchScript = Join-Path $scriptDir 'apply-flang-arm32-patch.ps1'
+        throw "Flang ARM32 preflight failed. Command=$FlangPath -target $targetTriple; " +
+            "apply=$applyPatchScript; output=$($preflight.Output)"
+    }
+}
 & $runtimeScript -OutputDir $OutputDir -CMakePath $CMakePath -NinjaPath $NinjaPath `
     -NdkRoot $NdkRoot -FlangPath $FlangPath -LlvmSourceRoot $LlvmSourceRoot `
     -BuildProfile $BuildProfile -Optimization O2 -Abi $Abi -TargetTriple $targetTriple
@@ -102,7 +128,13 @@ if (-not $?) { throw "Flang runtime 构建失败：ABI=$Abi" }
 
 $runtimeArchive = Join-Path $OutputDir 'libflang_rt.runtime.a'
 Assert-ExistingPath $runtimeArchive 'Flang runtime archive'
-$profileFlags = if ($BuildProfile -eq 'Debug') { @('-O0', '-g') } else { @('-O2', '-DNDEBUG') }
+$profileFlags = if ($BuildProfile -eq 'Debug') {
+    # Flang 22 的 ARM32 低优化类型描述仍使用 64 位静态地址，链接前就会失败；
+    # 该 ABI 的官方 Fortran 核心在 Debug APK 中也使用已验证的 Release 编译参数。
+    if ($Abi -eq 'armeabi-v7a') { @('-O2', '-DNDEBUG') } else { @('-O0', '-g') }
+} else {
+    @('-O2', '-DNDEBUG')
+}
 $allSources = @($fortranSources) + @($cSources) + @($cxxSources)
 $fingerprintLines = New-Object System.Collections.Generic.List[string]
 $fingerprintLines.Add("abi=$Abi")
@@ -110,7 +142,11 @@ $fingerprintLines.Add("target=$targetTriple")
 $fingerprintLines.Add("profile=$BuildProfile")
 $fingerprintLines.Add('upstream=6f69c7281a99d0243824ac02ce5706e8e897776f')
 $fingerprintLines.Add('flang=' + (Get-Ft8cnCommandVersion $FlangPath @('--version')))
+$fingerprintLines.Add('flang-binary=' + (Get-Ft8cnFileSha256 $FlangPath))
 $fingerprintLines.Add('clang=' + (Get-Ft8cnCommandVersion $clang @('--version')))
+if ($Abi -eq 'armeabi-v7a') {
+    $fingerprintLines.Add('flang-arm32-patch=' + (Get-Ft8cnFileSha256 $arm32Patch))
+}
 foreach ($file in @($allSources + @($manifest, $runtimeScript, $PSCommandPath))) {
     $fingerprintLines.Add("file=$(Get-Ft8cnRelativePath $cppRoot $file)|$(Get-Ft8cnFileSha256 $file)")
 }

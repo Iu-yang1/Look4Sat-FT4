@@ -9,7 +9,7 @@ android {
 
     defaultConfig {
         minSdk = libs.versions.minSdk.get().toInt()
-        ndk.abiFilters += listOf("arm64-v8a", "x86_64", "armeabi-v7a")
+        ndk.abiFilters += listOf("arm64-v8a", "armeabi-v7a")
         consumerProguardFiles("consumer-rules.pro")
         externalNativeBuild {
             cmake {

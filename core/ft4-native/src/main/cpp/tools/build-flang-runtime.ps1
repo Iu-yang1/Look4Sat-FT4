@@ -10,7 +10,7 @@
     [string]$BuildProfile = 'Release',
     [ValidateSet('O2')]
     [string]$Optimization = 'O2',
-    [ValidateSet('arm64-v8a', 'x86_64', 'armeabi-v7a')]
+    [ValidateSet('arm64-v8a', 'armeabi-v7a')]
     [string]$Abi = 'arm64-v8a',
     [string]$TargetTriple = ''
 )
@@ -39,7 +39,6 @@ $roots = @(Get-Ft8cnCandidateRoots -RepoRoot $repoRoot)
 
 $abiConfiguration = @{
     'arm64-v8a' = @{ Triple = 'aarch64-linux-android24'; Platform = '24' }
-    'x86_64' = @{ Triple = 'x86_64-linux-android24'; Platform = '24' }
     'armeabi-v7a' = @{ Triple = 'armv7a-linux-androideabi24'; Platform = '24' }
 }[$Abi]
 if (-not $TargetTriple) { $TargetTriple = $abiConfiguration.Triple }
@@ -59,12 +58,18 @@ $LlvmSourceRoot = Find-Ft8cnDirectory -ExplicitPath $LlvmSourceRoot -CandidateRo
 
 if (-not $OutputDir) { $OutputDir = Join-Path $cppRoot "out\$Abi" }
 if (-not $BuildDir) {
-    # flang-rt encodes absolute source paths into object directories. Keep the
-    # default workspace short so Gradle's deep .cxx path cannot exceed MAX_PATH.
+    # flang-rt 会把绝对源码路径写入对象目录；默认在所选 LLVM 源码旁使用短路径，
+    # 避免 Gradle 深层 .cxx 路径超过 MAX_PATH，并将工具链缓存留在配置的工具盘。
     $workspaceBase = if ($env:LOOK4SAT_FLANG_RT_WORKSPACE) {
         $env:LOOK4SAT_FLANG_RT_WORKSPACE
     } else {
-        Join-Path ([System.IO.Path]::GetTempPath()) 'f8frt'
+        $llvmSourceParent = Split-Path -Parent $LlvmSourceRoot
+        $toolsRoot = if ((Split-Path -Leaf $llvmSourceParent) -eq 'src') {
+            Split-Path -Parent $llvmSourceParent
+        } else {
+            $llvmSourceParent
+        }
+        Join-Path $toolsRoot 'build\look4sat-flang-rt'
     }
     $BuildDir = $workspaceBase
 }
@@ -102,6 +107,7 @@ $fingerprintLines.Add("abi=$Abi")
 $fingerprintLines.Add('cmake=' + (Get-Ft8cnCommandVersion $CMakePath @('--version')))
 $fingerprintLines.Add('ninja=' + (Get-Ft8cnCommandVersion $NinjaPath @('--version')))
 $fingerprintLines.Add('flang=' + (Get-Ft8cnCommandVersion $FlangPath @('--version')))
+$fingerprintLines.Add('flang-binary=' + (Get-Ft8cnFileSha256 $FlangPath))
 $fingerprintLines.Add('patch-tool=' + (Get-Ft8cnCommandVersion $PatchPath @('--version')))
 $fingerprintLines.Add('patch=' + (Get-Ft8cnFileSha256 $patchFile))
 $fingerprintLines.Add('script=' + (Get-Ft8cnFileSha256 $PSCommandPath))

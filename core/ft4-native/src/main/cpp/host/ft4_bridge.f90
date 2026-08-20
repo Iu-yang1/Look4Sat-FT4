@@ -1,6 +1,6 @@
 module ft4_mobile_bridge
   use iso_c_binding
-  use ft4_decode, only: ft4_decoder, ft4_decode_callback
+  use ft4_decode, only: ft4_decoder, ft4_decode_callback, decode
   implicit none
 
   integer, parameter :: MAX_CONTEXTS = 4
@@ -199,7 +199,7 @@ contains
     end do
     call clear_results(handle)
     active_context = handle
-    call decoders(handle)%decode(decode_callback, iwave, 0, &
+    call decode(decoders(handle), decode_callback, iwave, 0, &
         contexts(handle)%qso_frequency_hz, 0, 3000, contexts(handle)%decode_depth, &
         .false., 0, contexts(handle)%my_call, contexts(handle)%his_call)
     active_context = 0

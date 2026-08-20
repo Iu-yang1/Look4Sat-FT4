@@ -2,8 +2,6 @@ module ft4_decode
 
    type :: ft4_decoder
       procedure(ft4_decode_callback), pointer :: callback
-   contains
-      procedure :: decode
    end type ft4_decoder
 
    abstract interface
@@ -29,7 +27,7 @@ contains
       use packjt77
       include 'ft4/ft4_params.f90'
       parameter (MAXCAND=200)
-      class(ft4_decoder), intent(inout) :: this
+      type(ft4_decoder), intent(inout) :: this
       procedure(ft4_decode_callback) :: callback
       parameter (NSS=NSPS/NDOWN,NDMAX=NMAX/NDOWN)
       character message*37,msgsent*37

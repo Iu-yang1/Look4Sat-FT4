@@ -9,7 +9,27 @@ set(FT4_CORE_OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/ft4-core")
 set(FT4_CORE_ARCHIVE "${FT4_CORE_OUTPUT}/liblook4sat_ft4_core.a")
 set(FT4_RUNTIME_ARCHIVE "${FT4_CORE_OUTPUT}/libflang_rt.runtime.a")
 set(FT4_BUILD_LOG "${FT4_CORE_OUTPUT}/configure-build.log")
+set(FT4_SOURCE_MANIFEST "${CMAKE_CURRENT_SOURCE_DIR}/ft4-core-sources.manifest")
 file(MAKE_DIRECTORY "${FT4_CORE_OUTPUT}")
+
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+    "${FT4_SOURCE_MANIFEST}"
+    "${CMAKE_CURRENT_SOURCE_DIR}/tools/build-ft4-core.ps1"
+    "${CMAKE_CURRENT_SOURCE_DIR}/tools/build-flang-runtime.ps1"
+    "${CMAKE_CURRENT_SOURCE_DIR}/tools/toolchain-common.ps1"
+    "${CMAKE_CURRENT_SOURCE_DIR}/tools/patches/flang-rt-android-time.patch"
+    "${CMAKE_CURRENT_SOURCE_DIR}/tools/patches/flang-22.1-arm32-codegen.patch"
+)
+file(GLOB_RECURSE FT4_CORE_INPUTS CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/vendor/*.f90"
+    "${CMAKE_CURRENT_SOURCE_DIR}/vendor/*.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/vendor/*.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/host/*.f90"
+    "${CMAKE_CURRENT_SOURCE_DIR}/host/*.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/android/*.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/fft/*.c"
+)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${FT4_CORE_INPUTS})
 
 set(FT4_BUILD_PROFILE Release)
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")

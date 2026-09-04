@@ -24,6 +24,12 @@ class Ft4SlotAssembler {
     private var targetSlotStartNanos: Long? = null
     private var expectedNextChunkNanos: Long? = null
 
+    val bufferedSampleCount: Int
+        get() = buffered
+
+    val activeSlotStartMillis: Long?
+        get() = targetSlotStartNanos?.div(NANOS_PER_MILLISECOND)
+
     fun append(samples: FloatArray, firstSampleUtcNanos: Long): List<Ft4AudioSlot> {
         if (samples.isEmpty()) return emptyList()
         val expected = expectedNextChunkNanos

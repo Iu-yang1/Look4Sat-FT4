@@ -45,6 +45,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
+internal const val AUDIO_TIMESTAMP_TIMEBASE = AudioTimestamp.TIMEBASE_BOOTTIME
+
 class SharedAudioHub(private val scope: CoroutineScope) : IAudioHub {
     private data class Candidate(
         val sampleRate: Int,
@@ -128,10 +130,14 @@ class SharedAudioHub(private val scope: CoroutineScope) : IAudioHub {
             val opened = openRecorder()
             recorder = opened.recorder
             val candidate = opened.candidate
+            val routedDevice = recorder.routedDevice
             _state.value = AudioHubState.Capturing(
                 sampleRate = candidate.sampleRate,
                 format = candidate.format,
-                consumers = activeConsumers()
+                consumers = activeConsumers(),
+                deviceId = routedDevice?.id,
+                deviceType = routedDevice?.type,
+                deviceName = routedDevice?.productName?.toString().orEmpty()
             )
             readLoop(recorder, candidate)
         } catch (error: Exception) {
@@ -211,7 +217,7 @@ class SharedAudioHub(private val scope: CoroutineScope) : IAudioHub {
         sampleRate: Int
     ): Long {
         val timestamp = AudioTimestamp()
-        if (recorder.getTimestamp(timestamp, AudioTimestamp.TIMEBASE_MONOTONIC) == AudioRecord.SUCCESS) {
+        if (recorder.getTimestamp(timestamp, AUDIO_TIMESTAMP_TIMEBASE) == AudioRecord.SUCCESS) {
             val frameDelta = timestamp.framePosition - firstFramePosition
             return timestamp.nanoTime - frameDelta * NANOS_PER_SECOND / sampleRate
         }

@@ -35,16 +35,23 @@ import com.rtbishop.look4sat.core.presentation.CardButton
 import com.rtbishop.look4sat.core.presentation.R
 
 @Composable
+internal fun Ft4AutomaticPage(
+    state: Ft4State,
+    onAction: (Ft4Action) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Ft4AutomationSection(state, onAction, modifier)
+}
+
+@Composable
 internal fun Ft4AutomationSection(
     state: Ft4State,
     onAction: (Ft4Action) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val automation = state.automation
-    val gateAllowed = state.clock.source != ClockSource.SYSTEM &&
-        state.clock.healthy &&
-        state.clock.uncertaintyMillis <= 250.0 &&
-        state.clock.sampleAgeMillis <= MAX_TIME_SAMPLE_AGE_MILLIS
+    val blockReason = automaticGateReason(state)
+    val gateAllowed = blockReason == null
     val notSet = stringResource(R.string.ft4_not_set)
     ElevatedCard(modifier = modifier) {
         Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
@@ -101,7 +108,7 @@ internal fun Ft4AutomationSection(
                 if (gateAllowed) {
                     stringResource(R.string.ft4_automation_time_ok)
                 } else {
-                    stringResource(R.string.ft4_automation_time_blocked, automaticGateReason(state))
+                    stringResource(R.string.ft4_automation_time_blocked, requireNotNull(blockReason))
                 },
                 color = if (gateAllowed) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
                 fontSize = 12.sp
@@ -194,14 +201,27 @@ private fun compactSlotLabel(parity: Int?): String = when (parity) {
 }
 
 @Composable
-private fun automaticGateReason(state: Ft4State): String = stringResource(
-    when {
+private fun automaticGateReason(state: Ft4State): String? {
+    val resource = when {
+        !state.settings.decodeEnabled -> R.string.ft4_gate_disabled
+        !state.capability.officialCoreAvailable -> R.string.ft4_gate_stub
+        !state.capability.receiveAvailable -> R.string.ft4_gate_rx_unavailable
+        !state.capability.transmitAvailable -> R.string.ft4_gate_tx_unavailable
+        !state.hasMicrophonePermission -> R.string.ft4_gate_microphone
         state.clock.source == ClockSource.SYSTEM -> R.string.ft4_gate_system
         state.clock.sampleAgeMillis > MAX_TIME_SAMPLE_AGE_MILLIS -> R.string.ft4_gate_expired
         state.clock.uncertaintyMillis > 250.0 -> R.string.ft4_gate_uncertain
-        else -> R.string.ft4_gate_unhealthy
+        !state.clock.healthy -> R.string.ft4_gate_unhealthy
+        !state.radio.isActive -> R.string.ft4_gate_tracking
+        !state.radio.txConnected -> R.string.ft4_gate_tx_radio
+        state.trackingPass == null -> R.string.ft4_gate_pass
+        state.radio.selectedTransponder == null -> R.string.ft4_gate_transponder
+        state.trackingPass?.losTime?.let { it <= state.clock.utcMillis } == true -> R.string.ft4_gate_los
+        state.settings.operatorCallsign.isBlank() -> R.string.ft4_gate_callsign
+        else -> return null
     }
-)
+    return stringResource(resource)
+}
 
 private val RUNNING_PHASES = setOf(
     Ft4AutomationPhase.ARMED,

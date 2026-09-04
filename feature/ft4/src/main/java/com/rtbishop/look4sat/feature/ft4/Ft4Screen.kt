@@ -45,9 +45,11 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -75,6 +77,7 @@ import androidx.navigation3.runtime.rememberNavBackStack
 import androidx.navigation3.runtime.rememberSaveableStateHolderNavEntryDecorator
 import androidx.navigation3.ui.NavDisplay
 import com.rtbishop.look4sat.core.domain.predict.OrbitalPos
+import com.rtbishop.look4sat.core.domain.predict.OrbitalPass
 import com.rtbishop.look4sat.core.domain.repository.PttState
 import com.rtbishop.look4sat.core.domain.repository.RadioTrackingState
 import com.rtbishop.look4sat.core.domain.repository.IContainerProvider
@@ -90,7 +93,19 @@ import kotlinx.serialization.Serializable
 private sealed interface Ft4Page : NavKey {
     @Serializable data object Spectrum : Ft4Page
     @Serializable data object Decode : Ft4Page
+    @Serializable data object Automatic : Ft4Page
 }
+
+@Immutable
+private data class Ft4SatelliteRadioPanelState(
+    val radio: RadioTrackingState,
+    val pass: OrbitalPass?,
+    val orbitalPosition: OrbitalPos?,
+    val satelliteTrack: List<OrbitalPos>,
+    val orientationValues: Pair<Float, Float>,
+    val shouldShowSweep: Boolean,
+    val shouldUseCompass: Boolean
+)
 
 @Composable
 fun Ft4ShellDestination(navigateUp: () -> Unit) {
@@ -166,7 +181,27 @@ private fun Ft4Shell(
 ) {
     val backStack = rememberNavBackStack(Ft4Page.Spectrum)
     val current = backStack.lastOrNull()
-    val pages = listOf(Ft4Page.Spectrum, Ft4Page.Decode)
+    val pages = listOf(Ft4Page.Spectrum, Ft4Page.Decode, Ft4Page.Automatic)
+    var satelliteExpanded by rememberSaveable { mutableStateOf(true) }
+    val satellitePanel = remember(
+        state.radio,
+        state.trackingPass,
+        state.orbitalPosition,
+        state.satelliteTrack,
+        state.orientationValues,
+        state.shouldShowSweep,
+        state.shouldUseCompass
+    ) {
+        Ft4SatelliteRadioPanelState(
+            radio = state.radio,
+            pass = state.trackingPass,
+            orbitalPosition = state.orbitalPosition,
+            satelliteTrack = state.satelliteTrack,
+            orientationValues = state.orientationValues,
+            shouldShowSweep = state.shouldShowSweep,
+            shouldUseCompass = state.shouldUseCompass
+        )
+    }
     val timing by viewModel.timingState.collectAsStateWithLifecycle()
     Scaffold(
         modifier = Modifier.fillMaxSize().keepScreenOn(),
@@ -235,10 +270,12 @@ private fun Ft4Shell(
                     val label = when (page) {
                         Ft4Page.Spectrum -> stringResource(R.string.ft4_page_spectrum)
                         Ft4Page.Decode -> stringResource(R.string.ft4_page_decode)
+                        Ft4Page.Automatic -> stringResource(R.string.ft4_page_automatic)
                     }
                     val icon = when (page) {
                         Ft4Page.Spectrum -> R.drawable.ic_spectrum_ft8cn
                         Ft4Page.Decode -> R.drawable.ic_radios
+                        Ft4Page.Automatic -> R.drawable.ic_play
                     }
                     NavigationBarItem(
                         selected = current == page,
@@ -274,10 +311,12 @@ private fun Ft4Shell(
                             verticalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
                             SatelliteRadioStatus(
-                                state = state,
+                                state = satellitePanel,
                                 onAction = onAction,
                                 connectRadios = connectRadios,
                                 navigateToPasses = navigateUp,
+                                expanded = satelliteExpanded,
+                                onExpandedChange = { satelliteExpanded = it },
                                 modifier = Modifier.fillMaxWidth()
                             )
                             Ft4SpectrumPage(
@@ -295,13 +334,32 @@ private fun Ft4Shell(
                             verticalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
                             SatelliteRadioStatus(
-                                state = state,
+                                state = satellitePanel,
                                 onAction = onAction,
                                 connectRadios = connectRadios,
                                 navigateToPasses = navigateUp,
+                                expanded = satelliteExpanded,
+                                onExpandedChange = { satelliteExpanded = it },
                                 modifier = Modifier.fillMaxWidth()
                             )
                             Ft4DecodePage(state, onAction, Modifier.fillMaxWidth())
+                        }
+                    }
+                    entry<Ft4Page.Automatic> {
+                        Column(
+                            modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            SatelliteRadioStatus(
+                                state = satellitePanel,
+                                onAction = onAction,
+                                connectRadios = connectRadios,
+                                navigateToPasses = navigateUp,
+                                expanded = satelliteExpanded,
+                                onExpandedChange = { satelliteExpanded = it },
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            Ft4AutomaticPage(state, onAction, Modifier.fillMaxWidth())
                         }
                     }
                 }
@@ -312,20 +370,21 @@ private fun Ft4Shell(
 
 @Composable
 private fun SatelliteRadioStatus(
-    state: Ft4State,
+    state: Ft4SatelliteRadioPanelState,
     onAction: (Ft4Action) -> Unit,
     connectRadios: () -> Unit,
     navigateToPasses: () -> Unit,
+    expanded: Boolean,
+    onExpandedChange: (Boolean) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    var expanded by rememberSaveable { mutableStateOf(true) }
     val radio = state.radio
-    val pass = state.trackingPass
+    val pass = state.pass
     val transponder = radio.selectedTransponder
     ElevatedCard(modifier = modifier) {
         Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
             Row(
-                modifier = Modifier.fillMaxWidth().clickable { expanded = !expanded },
+                modifier = Modifier.fillMaxWidth().clickable { onExpandedChange(!expanded) },
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(stringResource(R.string.ft4_satellite_radio), fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
@@ -417,7 +476,7 @@ private fun SatelliteRadioStatus(
 }
 
 @Composable
-private fun FrequencyStatus(state: Ft4State) {
+private fun FrequencyStatus(state: Ft4SatelliteRadioPanelState) {
     val radio = state.radio
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Ft4FrequencyRow(
@@ -438,7 +497,7 @@ private fun FrequencyStatus(state: Ft4State) {
 }
 
 @Composable
-private fun SatelliteRadar(state: Ft4State, position: OrbitalPos) {
+private fun SatelliteRadar(state: Ft4SatelliteRadioPanelState, position: OrbitalPos) {
     Box(
         contentAlignment = Alignment.Center,
         modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp)

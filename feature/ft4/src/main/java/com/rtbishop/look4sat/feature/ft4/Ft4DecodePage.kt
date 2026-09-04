@@ -65,7 +65,6 @@ internal fun Ft4DecodePage(
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
         DecodeTable(state, onAction)
         CallingCard(state, onAction)
-        Ft4AutomationSection(state, onAction, Modifier.fillMaxWidth())
     }
 }
 

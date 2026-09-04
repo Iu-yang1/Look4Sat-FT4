@@ -434,7 +434,7 @@
     <string name="ft4_automation_slots_compact">RX %1$s · TX %2$s</string>
     <string name="ft4_automation_cq_label">Consecutive CQ</string>
     <string name="ft4_automation_time_ok">Automatic operation allowed</string>
-    <string name="ft4_automation_time_blocked">Automatic TX blocked: %1$s</string>
+    <string name="ft4_automation_time_blocked">Cannot arm: %1$s</string>
     <string name="ft4_arm">Arm</string>
     <string name="ft4_stop_automation">Stop</string>
     <string name="ft4_slot_even">even</string>
@@ -462,4 +462,15 @@
     <string name="ft4_gate_expired">time sample expired</string>
     <string name="ft4_gate_uncertain">uncertainty exceeds 250 ms</string>
     <string name="ft4_gate_unhealthy">clock is unhealthy</string>
+    <string name="ft4_gate_disabled">FT4 decoding is disabled</string>
+    <string name="ft4_gate_stub">official FT4 core is unavailable for this ABI</string>
+    <string name="ft4_gate_rx_unavailable">FT4 receive core is unavailable</string>
+    <string name="ft4_gate_tx_unavailable">FT4 transmit core is unavailable</string>
+    <string name="ft4_gate_microphone">microphone permission is missing</string>
+    <string name="ft4_gate_tracking">satellite tracking is stopped</string>
+    <string name="ft4_gate_tx_radio">TX radio is not connected</string>
+    <string name="ft4_gate_pass">no pass is selected</string>
+    <string name="ft4_gate_transponder">no transponder is selected</string>
+    <string name="ft4_gate_los">the selected pass has reached LOS</string>
+    <string name="ft4_gate_callsign">operator callsign is not configured</string>
 </resources>

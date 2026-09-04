@@ -396,7 +396,7 @@
     <string name="ft4_automation_slots_compact">RX %1$s · TX %2$s</string>
     <string name="ft4_automation_cq_label">连续 CQ</string>
     <string name="ft4_automation_time_ok">允许自动程序操作</string>
-    <string name="ft4_automation_time_blocked">自动 TX 已阻止：%1$s</string>
+    <string name="ft4_automation_time_blocked">无法进入待机：%1$s</string>
     <string name="ft4_arm">待机</string>
     <string name="ft4_stop_automation">停止</string>
     <string name="ft4_slot_even">偶数</string>
@@ -423,4 +423,15 @@
     <string name="ft4_gate_expired">时间样本已过期</string>
     <string name="ft4_gate_uncertain">不确定度超过 250 ms</string>
     <string name="ft4_gate_unhealthy">时钟状态不健康</string>
+    <string name="ft4_gate_disabled">FT4 解码尚未启用</string>
+    <string name="ft4_gate_stub">当前 ABI 没有官方 FT4 核心</string>
+    <string name="ft4_gate_rx_unavailable">FT4 接收核心不可用</string>
+    <string name="ft4_gate_tx_unavailable">FT4 发射核心不可用</string>
+    <string name="ft4_gate_microphone">缺少麦克风权限</string>
+    <string name="ft4_gate_tracking">卫星追踪尚未启动</string>
+    <string name="ft4_gate_tx_radio">TX 电台尚未连接</string>
+    <string name="ft4_gate_pass">尚未选择过境</string>
+    <string name="ft4_gate_transponder">尚未选择转发器</string>
+    <string name="ft4_gate_los">所选过境已经到达 LOS</string>
+    <string name="ft4_gate_callsign">尚未设置本机呼号</string>
 </resources>

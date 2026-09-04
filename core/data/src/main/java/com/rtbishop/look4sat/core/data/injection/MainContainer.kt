@@ -35,6 +35,7 @@ import com.rtbishop.look4sat.core.data.repository.SatelliteRepo
 import com.rtbishop.look4sat.core.data.repository.SelectionRepo
 import com.rtbishop.look4sat.core.data.repository.SensorsRepo
 import com.rtbishop.look4sat.core.data.repository.SettingsRepo
+import com.rtbishop.look4sat.core.data.repository.UpdateRepository
 import com.rtbishop.look4sat.core.data.source.LocalSource
 import com.rtbishop.look4sat.core.data.source.RemoteSource
 import com.rtbishop.look4sat.core.data.usecase.AddToCalendar
@@ -84,7 +85,8 @@ class MainContainer(private val context: Context) : IMainContainer {
     override val selectionRepo = provideSelectionRepo()
     override val satelliteRepo = provideSatelliteRepo()
     override val databaseRepo = provideDatabaseRepo()
-    override val amSatRepo by lazy { AmSatRepository(remoteSource) }
+    override val amSatRepo by lazy { AmSatRepository(remoteSource, appScope) }
+    override val updateRepo by lazy { UpdateRepository(remoteSource) }
     override val audioHub: IAudioHub by lazy { SharedAudioHub(appScope) }
     override val ft4Service: IFt4Service by lazy { Ft4Service(appScope, audioHub, disciplinedClock) }
     override val disciplinedClock: IDisciplinedClock by lazy {

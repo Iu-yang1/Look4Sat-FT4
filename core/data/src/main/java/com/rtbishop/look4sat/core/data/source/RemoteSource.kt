@@ -20,10 +20,13 @@ package com.rtbishop.look4sat.core.data.source
 import android.content.ContentResolver
 import androidx.core.net.toUri
 import com.rtbishop.look4sat.core.domain.source.IRemoteSource
+import com.rtbishop.look4sat.core.domain.source.NetworkResult
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.withContext
+import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.InputStream
 
 class RemoteSource(
@@ -42,20 +45,26 @@ class RemoteSource(
         }
     }
 
-    override suspend fun getNetworkStream(url: String): InputStream? = withContext(dispatcher) {
+    override suspend fun getNetworkStream(url: String): NetworkResult = withContext(dispatcher) {
         try {
             val networkRequest = Request.Builder().url(url).build()
             val response = httpClient.newCall(networkRequest).execute()
             if (!response.isSuccessful) {
+                val code = response.code
                 response.close()
-                return@withContext null
+                return@withContext NetworkResult(code, null)
             }
             // Return the body stream directly as the caller is responsible for closing it.
             // Closing the stream returns the connection to OkHttp's pool.
-            response.body.byteStream().buffered()
+            val body = response.body
+            if (body == null) {
+                response.close()
+                return@withContext NetworkResult(response.code, null)
+            }
+            NetworkResult(response.code, body.byteStream().buffered())
         } catch (exception: Exception) {
             println("RemoteSource network stream exception: $exception")
-            null
+            NetworkResult(NetworkResult.CONNECTION_ERROR, null)
         }
     }
 
@@ -87,6 +96,23 @@ class RemoteSource(
             }
         } catch (exception: Exception) {
             println("RemoteSource getAmSatReports exception: $exception")
+            null
+        }
+    }
+
+    override suspend fun submitAmSatReport(payloadJson: String): Pair<Int, String>? = withContext(dispatcher) {
+        try {
+            val body = payloadJson.toRequestBody("application/json; charset=utf-8".toMediaType())
+            val request = Request.Builder()
+                .url("https://www.amsat.org/status/api/v1/reports.php")
+                .header("User-Agent", "Look4Sat")
+                .post(body)
+                .build()
+            httpClient.newCall(request).execute().use { response ->
+                response.code to response.body.string()
+            }
+        } catch (exception: Exception) {
+            println("RemoteSource submitAmSatReport exception: $exception")
             null
         }
     }

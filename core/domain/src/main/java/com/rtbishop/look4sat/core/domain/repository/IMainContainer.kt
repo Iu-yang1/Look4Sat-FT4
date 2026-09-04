@@ -42,6 +42,7 @@ interface IMainContainer {
     val ft4TransmitCoordinator: IFt4TransmitCoordinator
     val disciplinedClock: IDisciplinedClock
     val timeSynchronizationService: ITimeSynchronizationService
+    val updateRepo: IUpdateRepository
     val radioTrackingService: IRadioTrackingService
     val mutualPassData: StateFlow<MutualPassData>
     fun setMutualPassData(data: MutualPassData)

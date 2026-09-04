@@ -1,5 +1,7 @@
 package com.rtbishop.look4sat.core.data.repository
 
+import com.rtbishop.look4sat.core.domain.model.AmSatReportSubmission
+import com.rtbishop.look4sat.core.domain.model.AmSatReportSubmitResult
 import com.rtbishop.look4sat.core.domain.model.SatDay
 import com.rtbishop.look4sat.core.domain.model.SatReport
 import com.rtbishop.look4sat.core.domain.model.SatSlot
@@ -7,11 +9,18 @@ import com.rtbishop.look4sat.core.domain.model.SatStatus
 import com.rtbishop.look4sat.core.domain.model.SatStatusPage
 import com.rtbishop.look4sat.core.domain.repository.IAmSatRepository
 import com.rtbishop.look4sat.core.domain.source.IRemoteSource
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.text.SimpleDateFormat
 import java.util.Calendar
+import java.util.Date
 import java.util.Locale
 import java.util.TimeZone
 
@@ -26,28 +35,125 @@ private data class ApiReport(
 )
 
 /** AMSAT status repository using RemoteSource (Clean Architecture: data layer handles HTTP). */
-class AmSatRepository(private val remoteSource: IRemoteSource) : IAmSatRepository {
+class AmSatRepository(
+    private val remoteSource: IRemoteSource,
+    private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+) : IAmSatRepository {
+
+    private val statusCacheMutex = Mutex()
+
+    @Volatile
+    private var statusCache: SatStatusPage? = null
+
+    @Volatile
+    private var statusFetchInFlight: Deferred<SatStatusPage?>? = null
+
+    @Volatile
+    private var cacheGeneration = 0
 
     private val isoUtcFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US).apply {
         timeZone = TimeZone.getTimeZone("UTC")
     }
 
-    override suspend fun fetchStatus(): SatStatusPage? = withContext(Dispatchers.IO) {
+    override fun getCachedStatus(): SatStatusPage? = statusCache
+
+    override suspend fun fetchStatus(forceRefresh: Boolean): SatStatusPage? {
+        if (!forceRefresh) statusCache?.let { return it }
+
+        var cachedPage: SatStatusPage? = null
+        val inFlightFetch = statusCacheMutex.withLock {
+            if (!forceRefresh) {
+                val cached = statusCache
+                if (cached != null) {
+                    cachedPage = cached
+                    return@withLock null
+                }
+            }
+
+            statusFetchInFlight ?: scope.async(Dispatchers.IO) {
+                fetchStatusFromRemote(cacheGeneration)
+            }.also { statusFetchInFlight = it }
+        }
+
+        cachedPage?.let { return it }
+        val fetch = inFlightFetch ?: return null
+        return try {
+            fetch.await()
+        } finally {
+            statusCacheMutex.withLock {
+                if (statusFetchInFlight === fetch && fetch.isCompleted) statusFetchInFlight = null
+            }
+        }
+    }
+
+    private suspend fun fetchStatusFromRemote(generation: Int): SatStatusPage? {
         val nowSec = System.currentTimeMillis() / 1000
-        val catalogJson = remoteSource.getAmSatCatalog() ?: return@withContext null
+        val catalogJson = remoteSource.getAmSatCatalog() ?: return null
         // 72h = 3 days; API hard cap is limit=500 regardless of what we send.
         // 500 records across ~100 catalog satellites ≈ ~1-5 reports/satellite/day — enough for 3 days.
         // Upgrade path: paginate or request AMSAT to raise the cap if catalog grows beyond ~200 sats.
-        val reportsJson = remoteSource.getAmSatReports(hours = 72, limit = 500) ?: return@withContext null
-        
+        val reportsJson = remoteSource.getAmSatReports(hours = 72, limit = 500) ?: return null
+
         val names = parseCatalog(catalogJson)
         val reports = parseReports(reportsJson)
-        
-        if (names.isEmpty() && reports.isEmpty()) return@withContext null
-        
+
+        if (names.isEmpty() && reports.isEmpty()) return null
+
         val statuses = buildStatuses(names, reports, nowSec)
         val reportMap = reports.associate { it.id to toSatReport(it) }
-        SatStatusPage(System.currentTimeMillis(), statuses, reportMap)
+        return SatStatusPage(System.currentTimeMillis(), statuses, reportMap).also { page ->
+            if (generation == cacheGeneration) statusCache = page
+        }
+    }
+
+    override suspend fun prefetchStatus() {
+        fetchStatus(forceRefresh = false)
+    }
+
+    override fun clearStatusCache() {
+        cacheGeneration += 1
+        statusCache = null
+        statusFetchInFlight = null
+    }
+
+    override suspend fun submitReport(submission: AmSatReportSubmission): AmSatReportSubmitResult = withContext(Dispatchers.IO) {
+        val payload = JSONObject().apply {
+            put("name", submission.name)
+            put("report", submission.report)
+            put("callsign", submission.callsign)
+            put("reported_at", isoUtcFormat.format(Date(submission.reportedAtUtcMillis)))
+            if (submission.gridSquare.isNotBlank()) put("grid_square", submission.gridSquare)
+        }
+        val response = remoteSource.submitAmSatReport(payload.toString())
+            ?: return@withContext AmSatReportSubmitResult(success = false, message = "Network request failed")
+        val (code, body) = response
+        val errorMessage = parseSubmitError(body)
+        return@withContext if (code in 200..299 && errorMessage.isBlank()) {
+            AmSatReportSubmitResult(success = true, reportId = parseSubmitReportId(body))
+        } else {
+            AmSatReportSubmitResult(
+                success = false,
+                message = errorMessage.ifBlank { "HTTP $code" }
+            )
+        }
+    }
+
+    private fun parseSubmitError(json: String): String {
+        return try {
+            JSONObject(json).optJSONObject("error")?.optString("message").orEmpty()
+        } catch (_: Exception) {
+            ""
+        }
+    }
+
+    private fun parseSubmitReportId(json: String): String? {
+        return try {
+            val obj = JSONObject(json)
+            obj.optJSONObject("data")?.optString("id")?.takeIf { it.isNotBlank() }
+                ?: obj.optString("id").takeIf { it.isNotBlank() }
+        } catch (_: Exception) {
+            null
+        }
     }
 
     /** Parse catalog JSON to list of satellite names */
@@ -93,11 +199,10 @@ class AmSatRepository(private val remoteSource: IRemoteSource) : IAmSatRepositor
     /** Build one SatStatus (3 days x 12 slots) per catalog satellite, slotting reports by age. */
     private fun buildStatuses(names: List<String>, reports: List<ApiReport>, nowSec: Long): List<SatStatus> {
         val byName = reports.groupBy { it.name }
-        val monthAbbr = arrayOf("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
         val utc = Calendar.getInstance(TimeZone.getTimeZone("UTC"))
         val labels = (0 until 3).map { d ->
             utc.timeInMillis = (nowSec - d * 86400L) * 1000
-            "${monthAbbr[utc.get(Calendar.MONTH)]} ${utc.get(Calendar.DAY_OF_MONTH)}"
+            formatDayLabel(utc)
         }
         return names.map { name ->
             val slots = (0 until 36).map { slotIdx ->
@@ -119,6 +224,15 @@ class AmSatRepository(private val remoteSource: IRemoteSource) : IAmSatRepositor
                 SatDay(dateLabel = labels[d], slots = slots.subList(d * 12, (d + 1) * 12))
             }
             SatStatus(name = name, days = days)
+        }
+    }
+
+    private fun formatDayLabel(calendar: Calendar): String {
+        return if (Locale.getDefault().language == Locale.CHINESE.language) {
+            "${calendar.get(Calendar.MONTH) + 1}月${calendar.get(Calendar.DAY_OF_MONTH)}日"
+        } else {
+            val monthAbbr = arrayOf("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+            "${monthAbbr[calendar.get(Calendar.MONTH)]} ${calendar.get(Calendar.DAY_OF_MONTH)}"
         }
     }
 

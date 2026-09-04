@@ -70,6 +70,26 @@
     <string name="amsat_load_failed">Load failed - check network and retry</string>
     <string name="amsat_no_reports">No reports for this period</string>
     <string name="amsat_close">Close</string>
+    <string name="amsat_upload">Upload</string>
+    <string name="amsat_upload_back">Back</string>
+    <string name="amsat_upload_report">Upload report to AMSAT</string>
+    <string name="amsat_upload_status">Status</string>
+    <string name="amsat_upload_callsign">Callsign</string>
+    <string name="amsat_upload_grid">Grid</string>
+    <string name="amsat_upload_time_now">Time: current UTC %s</string>
+    <string name="amsat_upload_submit">Submit to AMSAT</string>
+    <string name="amsat_upload_confirm">Upload</string>
+    <string name="amsat_upload_confirm_title">Confirm AMSAT upload</string>
+    <string name="amsat_upload_confirm_message">This public report will be uploaded to AMSAT.\nSatellite: %1$s\nStatus: %2$s\nCallsign: %3$s\nGrid: %4$s</string>
+    <string name="amsat_upload_grid_none">Not provided</string>
+    <string name="amsat_upload_success">Report uploaded</string>
+    <string name="amsat_upload_failed">Upload failed: %s</string>
+    <string name="amsat_upload_callsign_required">Callsign is required</string>
+    <string name="amsat_upload_grid_invalid">Grid must be a 4 or 6 character Maidenhead locator</string>
+    <string name="amsat_upload_active">Active</string>
+    <string name="amsat_upload_tlm">TLM/Beacon</string>
+    <string name="amsat_upload_not_heard">Not Heard</string>
+    <string name="amsat_upload_crew_active">Crew Active</string>
 
     <!-- Radar screen -->
     <string name="radar_back">Back</string>
@@ -170,6 +190,7 @@
     <string name="prefs_data_import_transceivers_error">No transceivers imported. Select a valid SatNOGS (.json) file.</string>
 
     <string name="prefs_data_sources_title">Custom data sources</string>
+    <string name="prefs_data_sources_restore">Restore default sources</string>
     <string name="prefs_data_sources_tle_switch">Custom TLE URL</string>
     <string name="prefs_data_sources_transceivers_switch">Custom transceivers URL</string>
     <string name="prefs_data_sources_url_title" translatable="false">URL (HTTPS)</string>
@@ -293,6 +314,18 @@
     <string name="mutual_open_radar">Open Radar</string>
     <string name="mutual_station_a">Station A</string>
     <string name="mutual_station_b">Station B</string>
+    <string name="update_check_title">Check for updates</string>
+    <string name="update_check_button">Check for updates</string>
+    <string name="update_check_current">Current version: %s</string>
+    <string name="update_check_latest">Latest version: %s</string>
+    <string name="update_check_up_to_date">You are up to date</string>
+    <string name="update_check_available">New version available</string>
+    <string name="update_check_release_notes">Release notes</string>
+    <string name="update_check_download">Download &amp; install</string>
+    <string name="update_check_downloading">Downloading…</string>
+    <string name="update_check_error">Failed to check for updates. Check your connection.</string>
+    <string name="update_check_download_error">Download failed. Try again.</string>
+    <string name="update_check_no_apk">No APK attached to this release.</string>
 
     <!-- FT4 -->
     <string name="nav_ft4">FT4</string>

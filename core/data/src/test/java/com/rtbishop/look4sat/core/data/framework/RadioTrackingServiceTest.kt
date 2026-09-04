@@ -258,6 +258,7 @@ private class FakeSettingsRepo : ISettingsRepo {
     )
     override val ft4Settings = MutableStateFlow(Ft4Settings(decodeEnabled = true))
     override val dataSourcesSettings = MutableStateFlow(DataSourcesSettings(emptyList(), emptyList()))
+    override val dataSourcesStatus = MutableStateFlow<Map<String, Int>>(emptyMap())
     override val radioControlSettings = MutableStateFlow(
         RadioControlSettings(
             enabled = true,
@@ -289,7 +290,14 @@ private class FakeSettingsRepo : ISettingsRepo {
     override fun updateDataSourcesSettings(settings: DataSourcesSettings) {
         dataSourcesSettings.value = settings
     }
+    override fun updateDataSourcesStatus(status: Map<String, Int>) {
+        dataSourcesStatus.value = status
+    }
     override fun updateRadioControlSettings(settings: RadioControlSettings) {
         radioControlSettings.value = settings
     }
+    override fun getSatelliteOffset(catnum: Int) = ""
+    override fun setSatelliteOffset(catnum: Int, offset: String) = Unit
+    override fun getAmSatCallsign() = ""
+    override fun setAmSatCallsign(callsign: String) = Unit
 }

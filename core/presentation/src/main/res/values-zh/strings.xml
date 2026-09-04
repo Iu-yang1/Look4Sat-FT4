@@ -53,6 +53,26 @@
     <string name="amsat_load_failed">加载失败 - 检查网络后重试</string>
     <string name="amsat_no_reports">此时间段无报告</string>
     <string name="amsat_close">关闭</string>
+    <string name="amsat_upload">上传</string>
+    <string name="amsat_upload_back">返回</string>
+    <string name="amsat_upload_report">上传报告到 AMSAT</string>
+    <string name="amsat_upload_status">状态</string>
+    <string name="amsat_upload_callsign">呼号</string>
+    <string name="amsat_upload_grid">网格</string>
+    <string name="amsat_upload_time_now">时间：当前 UTC %s</string>
+    <string name="amsat_upload_submit">提交到 AMSAT</string>
+    <string name="amsat_upload_confirm">确认上传</string>
+    <string name="amsat_upload_confirm_title">确认上传到 AMSAT</string>
+    <string name="amsat_upload_confirm_message">这条公开报告将上传到 AMSAT。\n卫星：%1$s\n状态：%2$s\n呼号：%3$s\n网格：%4$s</string>
+    <string name="amsat_upload_grid_none">未填写</string>
+    <string name="amsat_upload_success">报告已上传</string>
+    <string name="amsat_upload_failed">上传失败：%s</string>
+    <string name="amsat_upload_callsign_required">请填写呼号</string>
+    <string name="amsat_upload_grid_invalid">网格应为 4 或 6 位 Maidenhead 定位符</string>
+    <string name="amsat_upload_active">活跃</string>
+    <string name="amsat_upload_tlm">遥测/信标</string>
+    <string name="amsat_upload_not_heard">未听到</string>
+    <string name="amsat_upload_crew_active">ISS 语音</string>
 
     <!-- Radar screen -->
     <string name="radar_back">后退</string>
@@ -136,6 +156,7 @@
     <string name="prefs_data_import_transceivers_error">未导入收发器。请选择有效的 SatNOGS (.json) 文件。</string>
 
     <string name="prefs_data_sources_title">自定义数据源</string>
+    <string name="prefs_data_sources_restore">恢复默认数据源</string>
     <string name="prefs_data_sources_tle_switch">自定义TLE URL</string>
     <string name="prefs_data_sources_transceivers_switch">自定义收发器URL</string>
     <string name="prefs_data_sources_url_title" translatable="false">URL</string>
@@ -258,6 +279,18 @@
     <string name="mutual_open_radar">查看雷达</string>
     <string name="mutual_station_a">站点A</string>
     <string name="mutual_station_b">站点B</string>
+    <string name="update_check_title">检查更新</string>
+    <string name="update_check_button">检查更新</string>
+    <string name="update_check_current">当前版本：%s</string>
+    <string name="update_check_latest">最新版本：%s</string>
+    <string name="update_check_up_to_date">已是最新版本</string>
+    <string name="update_check_available">发现新版本</string>
+    <string name="update_check_release_notes">更新内容</string>
+    <string name="update_check_download">下载并安装</string>
+    <string name="update_check_downloading">正在下载…</string>
+    <string name="update_check_error">检查更新失败，请检查网络连接。</string>
+    <string name="update_check_download_error">下载失败，请重试。</string>
+    <string name="update_check_no_apk">该版本未附带 APK 安装包。</string>
 
     <!-- FT4 -->
     <string name="nav_ft4">FT4</string>

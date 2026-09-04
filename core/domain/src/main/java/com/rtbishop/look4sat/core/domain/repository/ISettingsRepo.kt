@@ -79,8 +79,23 @@ interface ISettingsRepo {
     fun updateDataSourcesSettings(settings: DataSourcesSettings)
     //endregion
 
+    //region # Data sources status
+    val dataSourcesStatus: StateFlow<Map<String, Int>>
+    fun updateDataSourcesStatus(status: Map<String, Int>)
+    //endregion
+
     //region # Radio control settings
     val radioControlSettings: StateFlow<RadioControlSettings>
     fun updateRadioControlSettings(settings: RadioControlSettings)
+    //endregion
+
+    //region # Per-satellite calculator offset settings
+    fun getSatelliteOffset(catnum: Int): String
+    fun setSatelliteOffset(catnum: Int, offset: String)
+    //endregion
+
+    //region # AMSAT status report settings
+    fun getAmSatCallsign(): String
+    fun setAmSatCallsign(callsign: String)
     //endregion
 }

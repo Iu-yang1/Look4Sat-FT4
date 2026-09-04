@@ -38,6 +38,7 @@ import com.rtbishop.look4sat.core.domain.utility.round
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
+import org.json.JSONObject
 import com.rtbishop.look4sat.core.domain.model.Constants
 import com.rtbishop.look4sat.core.domain.source.Sources
 import java.util.Locale
@@ -103,8 +104,13 @@ class SettingsRepo(
     private val keyTransceiversUrl = "transceiversUrl"
     private val keySatelliteUrls = "satelliteUrls"
     private val keyTransceiversUrls = "transceiversUrls"
+    private val keySatelliteEnabled = "satelliteEnabled"
+    private val keyTransceiversEnabled = "transceiversEnabled"
+    private val keySatnogsTleSourceMigration = "satnogsTleSourceMigration"
     private val separatorComma = ","
     private val separatorUrl = "\n"
+    private val legacyCelestrakSatnogsUrl =
+        "https://celestrak.org/NORAD/elements/gp.php?GROUP=satnogs&FORMAT=csv"
 
     //region # Satellites selection settings
     private val _satelliteSelection = MutableStateFlow(getSelectedIds())
@@ -432,11 +438,21 @@ class SettingsRepo(
     override val dataSourcesSettings: StateFlow<DataSourcesSettings> = _dataSourcesSettings
 
     override fun updateDataSourcesSettings(settings: DataSourcesSettings) {
+        // Normalize the enabled lists so they are positionally aligned with the URL lists.
+        // Missing entries default to enabled (true), keeping the persisted "one flag per URL"
+        // invariant intact even when a default empty list is used to construct the model.
+        val normalized = settings.copy(
+            satelliteEnabled = alignFlags(settings.satelliteUrls, settings.satelliteEnabled),
+            transceiversEnabled = alignFlags(settings.transceiversUrls, settings.transceiversEnabled)
+        )
         preferences.edit {
-            putString(keySatelliteUrls, settings.satelliteUrls.joinToString(separatorUrl))
-            putString(keyTransceiversUrls, settings.transceiversUrls.joinToString(separatorUrl))
+            putString(keySatelliteUrls, normalized.satelliteUrls.joinToString(separatorUrl))
+            putString(keyTransceiversUrls, normalized.transceiversUrls.joinToString(separatorUrl))
+            putString(keySatelliteEnabled, normalized.satelliteEnabled.joinToString(separatorComma))
+            putString(keyTransceiversEnabled, normalized.transceiversEnabled.joinToString(separatorComma))
+            putBoolean(keySatnogsTleSourceMigration, true)
         }
-        _dataSourcesSettings.value = settings
+        _dataSourcesSettings.value = normalized
     }
 
     private fun getDataSourcesSettings(): DataSourcesSettings = DataSourcesSettings(
@@ -445,14 +461,32 @@ class SettingsRepo(
             defaultUrls = Sources.satelliteDataUrls.values.filter { it.isNotBlank() },
             legacyEnabledKey = keyUseCustomTle,
             legacyUrlKey = keyTleUrl
-        ),
+        ).migrateSatnogsTleSource(),
         transceiversUrls = getDataSourceUrls(
             key = keyTransceiversUrls,
             defaultUrls = Sources.transceiversDataUrls.values.filter { it.isNotBlank() },
             legacyEnabledKey = keyUseCustomTransceivers,
             legacyUrlKey = keyTransceiversUrl
-        )
+        ),
+        satelliteEnabled = readEnabledFlags(keySatelliteEnabled),
+        transceiversEnabled = readEnabledFlags(keyTransceiversEnabled)
     )
+
+    /** Read the persisted per-source enabled flags (empty when never stored). */
+    private fun readEnabledFlags(key: String): List<Boolean> {
+        return preferences.getString(key, null)
+            ?.split(separatorComma)
+            ?.mapNotNull { it.trim() }
+            ?.filter { it == "true" || it == "false" }
+            ?.map { it == "true" }
+            ?: emptyList()
+    }
+
+    /** Keep the flags positionally aligned with the URL list, defaulting to enabled. */
+    private fun alignFlags(urls: List<String>, flags: List<Boolean>): List<Boolean> {
+        if (flags.size >= urls.size) return flags.take(urls.size)
+        return flags + List(urls.size - flags.size) { true }
+    }
 
     private fun getDataSourceUrls(
         key: String,
@@ -471,6 +505,40 @@ class SettingsRepo(
         } else {
             defaultUrls
         }
+    }
+
+    private fun List<String>.migrateSatnogsTleSource(): List<String> {
+        if (preferences.getBoolean(keySatnogsTleSourceMigration, false)) return this
+        val satnogsTleUrl = Sources.satelliteDataUrls["SatNOGS"].orEmpty()
+        if (satnogsTleUrl.isBlank() || containsSourceUrl(satnogsTleUrl)) return this
+        val celestrakSatnogsIndex = indexOfFirst { isSameSourceUrl(it, legacyCelestrakSatnogsUrl) }
+        if (celestrakSatnogsIndex < 0) return this
+
+        val migrated = toMutableList().apply { add(celestrakSatnogsIndex + 1, satnogsTleUrl) }
+        preferences.edit {
+            putString(keySatelliteUrls, migrated.joinToString(separatorUrl))
+            putBoolean(keySatnogsTleSourceMigration, true)
+        }
+        return migrated
+    }
+
+    private fun List<String>.containsSourceUrl(url: String): Boolean = any { isSameSourceUrl(it, url) }
+
+    private fun isSameSourceUrl(first: String, second: String): Boolean =
+        normalizeSourceUrl(first).equals(normalizeSourceUrl(second), ignoreCase = true)
+
+    private fun normalizeSourceUrl(url: String): String {
+        val trimmed = url.trim()
+        return if (trimmed.startsWith("http", ignoreCase = true)) trimmed else "https://$trimmed"
+    }
+    //endregion
+
+    //region # Data sources status
+    private val _dataSourcesStatus = MutableStateFlow<Map<String, Int>>(emptyMap())
+    override val dataSourcesStatus: StateFlow<Map<String, Int>> = _dataSourcesStatus
+
+    override fun updateDataSourcesStatus(status: Map<String, Int>) {
+        _dataSourcesStatus.value = status
     }
     //endregion
 
@@ -511,5 +579,56 @@ class SettingsRepo(
         baudRate = preferences.getInt(keyRadioBaudRate, 4800),
         splitMode = preferences.getBoolean(keyRadioSplitMode, false)
     )
+    //endregion
+
+    //region # Per-satellite calculator offset settings
+    private val keySatelliteOffsets = "satelliteOffsets"
+    private val keyLegacySatelliteOffsetPrefix = "offset_khz_"
+
+    override fun getSatelliteOffset(catnum: Int): String {
+        val json = preferences.getString(keySatelliteOffsets, "{}") ?: "{}"
+        val stored = try {
+            JSONObject(json).optString(catnum.toString(), "")
+        } catch (_: Exception) {
+            ""
+        }
+        if (stored.isNotEmpty()) return stored
+
+        // Lazy migration from the fork's old UI-layer implementation, which stored
+        // one SharedPreferences entry per satellite directly from TransceiversPage.
+        val legacyKey = "$keyLegacySatelliteOffsetPrefix$catnum"
+        val legacy = preferences.getString(legacyKey, "").orEmpty()
+        if (legacy.isNotEmpty()) {
+            setSatelliteOffset(catnum, legacy)
+        }
+        return legacy
+    }
+
+    override fun setSatelliteOffset(catnum: Int, offset: String) {
+        val json = preferences.getString(keySatelliteOffsets, "{}") ?: "{}"
+        val updated = try {
+            val obj = JSONObject(json)
+            if (offset.isEmpty()) obj.remove(catnum.toString()) else obj.put(catnum.toString(), offset)
+            obj.toString()
+        } catch (_: Exception) {
+            if (offset.isEmpty()) "{}" else """{"$catnum": "$offset"}"""
+        }
+        preferences.edit {
+            putString(keySatelliteOffsets, updated)
+            remove("$keyLegacySatelliteOffsetPrefix$catnum")
+        }
+    }
+    //endregion
+
+    //region # AMSAT status report settings
+    private val keyAmSatCallsign = "amSatCallsign"
+
+    override fun getAmSatCallsign(): String {
+        return preferences.getString(keyAmSatCallsign, "").orEmpty()
+    }
+
+    override fun setAmSatCallsign(callsign: String) {
+        preferences.edit { putString(keyAmSatCallsign, callsign.trim().uppercase(Locale.US)) }
+    }
     //endregion
 }

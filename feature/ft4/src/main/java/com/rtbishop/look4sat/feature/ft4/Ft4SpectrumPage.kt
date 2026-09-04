@@ -46,8 +46,14 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.rtbishop.look4sat.core.domain.audio.AudioHubState
+import com.rtbishop.look4sat.core.domain.audio.AudioSampleFormat
+import com.rtbishop.look4sat.core.domain.ft4.Ft4EngineState
 import com.rtbishop.look4sat.core.domain.ft4.Ft4SpectrumFrame
 import com.rtbishop.look4sat.core.presentation.R
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import java.util.TimeZone
 import kotlin.math.roundToInt
 import kotlinx.coroutines.flow.collectLatest
 
@@ -96,6 +102,7 @@ internal fun Ft4SpectrumPage(
                     color = if (state.audioHub.isUnavailable()) MaterialTheme.colorScheme.error
                     else MaterialTheme.colorScheme.onSurface
                 )
+                ReceiveDiagnostics(state.engineState)
                 if (!state.hasMicrophonePermission) {
                     Text(stringResource(R.string.ft4_microphone_required), color = MaterialTheme.colorScheme.error)
                 }
@@ -285,8 +292,14 @@ private fun audioOwnerText(state: AudioHubState): String = when (state) {
     } else {
         stringResource(
             R.string.ft4_audio_owner,
+            state.deviceName.ifBlank { stringResource(R.string.ft4_audio_device_unknown) },
             state.sampleRate,
-            state.consumers.joinToString { it.name }
+            stringResource(
+                when (state.format) {
+                    AudioSampleFormat.PCM_FLOAT -> R.string.ft4_audio_pcm_float
+                    AudioSampleFormat.PCM_16 -> R.string.ft4_audio_pcm_16
+                }
+            )
         )
     }
     is AudioHubState.Failed -> stringResource(R.string.ft4_error, state.reason)
@@ -294,6 +307,50 @@ private fun audioOwnerText(state: AudioHubState): String = when (state) {
 
 private fun AudioHubState.isUnavailable(): Boolean =
     this is AudioHubState.Failed || (this is AudioHubState.Capturing && systemSilenced)
+
+@Composable
+private fun ReceiveDiagnostics(engineState: Ft4EngineState) {
+    val receiving = engineState as? Ft4EngineState.Receiving ?: return
+    val detailColor = MaterialTheme.colorScheme.onSurfaceVariant
+    Text(
+        text = receiving.timestampResidualMillis?.let {
+            stringResource(R.string.ft4_timestamp_residual, it)
+        } ?: stringResource(R.string.ft4_timestamp_residual_pending),
+        color = detailColor,
+        fontSize = 11.sp
+    )
+    Text(
+        text = stringResource(
+            R.string.ft4_slot_diagnostics,
+            receiving.assemblingSlotUtcMillis?.let(::formatSlotUtc)
+                ?: stringResource(R.string.ft4_slot_pending),
+            receiving.assembledSampleCount
+        ),
+        color = detailColor,
+        fontSize = 11.sp
+    )
+    Text(
+        text = stringResource(
+            R.string.ft4_pipeline_diagnostics,
+            receiving.captureQueueDepth,
+            receiving.decodeQueueDepth,
+            receiving.droppedAudioBlocks
+        ),
+        color = if (receiving.droppedAudioBlocks > 0L) MaterialTheme.colorScheme.error else detailColor,
+        fontSize = 11.sp
+    )
+    Text(
+        text = receiving.lastDecodeDurationMillis?.let {
+            stringResource(R.string.ft4_decode_diagnostics, it, receiving.lastDecodeResultCount)
+        } ?: stringResource(R.string.ft4_decode_diagnostics_pending),
+        color = detailColor,
+        fontSize = 11.sp
+    )
+}
+
+private fun formatSlotUtc(millis: Long): String = SimpleDateFormat("HH:mm:ss.SSS", Locale.US).apply {
+    timeZone = TimeZone.getTimeZone("UTC")
+}.format(Date(millis))
 
 private const val MAX_FREQUENCY_HZ = 3_000f
 private const val MIN_DB = -100f

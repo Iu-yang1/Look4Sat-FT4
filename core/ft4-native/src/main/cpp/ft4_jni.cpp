@@ -1,5 +1,6 @@
 #include <jni.h>
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
@@ -250,6 +251,46 @@ jstring native_self_test(JNIEnv *env, jclass) {
             }
         }
     }
+    constexpr int waveform_samples = 12000 * 504 / 100;
+    constexpr int waveform_offset = 12000 / 2;
+    std::vector<float> waveform(static_cast<size_t>(waveform_samples));
+    std::vector<float> decode_slot(90000, 0.0f);
+    if (ft4_bridge_generate_wave(message, 12000, 1500.0f, waveform.data(), waveform_samples)
+            != waveform_samples) {
+        return env->NewStringUTF("decode-loop waveform failed");
+    }
+    std::copy(waveform.begin(), waveform.end(), decode_slot.begin() + waveform_offset);
+    ftx_decoder_t *decoder = ftx_decoder_create(FTX_MODE_FT4, 12000, 90000, 0);
+    if (decoder == nullptr) return env->NewStringUTF("decode-loop create failed");
+    ftx_decoder_options_t options{};
+    options.decode_pass_count = 3;
+    options.multi_decode_round_count = 3;
+    options.qso_freq_sensitivity = 1;
+    options.decode_sensitivity = 1;
+    options.enable_early_decode = 1;
+    options.enable_wideband_dx_search = 1;
+    options.ldpc_iterations = 40;
+    ftx_decoder_input_context_t input{};
+    input.input_is_live = 0;
+    input.qso_frequency_hz = 1500;
+    input.tx_frequency_hz = 1500;
+    input.source_sample_rate = 12000;
+    const bool configured = ftx_decoder_set_options(decoder, &options) == 0
+            && ftx_decoder_set_input_context(decoder, &input) == 0;
+    const int decoded_count = configured
+            ? ftx_decoder_process_float_slot(decoder, decode_slot.data(), 90000, 0)
+            : -1;
+    bool found_message = false;
+    for (int index = 0; index < decoded_count; ++index) {
+        ftx_decode_result_t decoded{};
+        if (ftx_decoder_get_result(decoder, index, &decoded) == 0
+                && std::strcmp(decoded.text, message) == 0) {
+            found_message = true;
+            break;
+        }
+    }
+    ftx_decoder_destroy(decoder);
+    if (!found_message) return env->NewStringUTF("decode-loop failed");
     return env->NewStringUTF("");
 #else
     return env->NewStringUTF(FT4_UNAVAILABLE_REASON);

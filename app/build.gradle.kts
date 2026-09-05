@@ -1,17 +1,29 @@
+import java.io.FileInputStream
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.convention.applicationPlugin)
 }
 
-val releaseStoreFile = providers.environmentVariable("LOOK4SAT_RELEASE_STORE_FILE").orNull
-val releaseStorePassword = providers.environmentVariable("LOOK4SAT_RELEASE_STORE_PASSWORD").orNull
-val releaseKeyAlias = providers.environmentVariable("LOOK4SAT_RELEASE_KEY_ALIAS").orNull
-val releaseKeyPassword = providers.environmentVariable("LOOK4SAT_RELEASE_KEY_PASSWORD").orNull
+// Release 签名信息只从被忽略的 local.properties 或环境变量读取，禁止写入版本库。
+val releaseProps = Properties().apply {
+    val propsFile = rootProject.file("local.properties")
+    if (propsFile.exists()) FileInputStream(propsFile).use { load(it) }
+}
+
+fun releaseCred(name: String): String? =
+    (releaseProps.getProperty(name) ?: System.getenv(name))?.takeIf { it.isNotBlank() }
+
+val releaseStoreFile = releaseCred("LOOK4SAT_RELEASE_STORE_FILE")
+val releaseStorePassword = releaseCred("LOOK4SAT_RELEASE_STORE_PASSWORD")
+val releaseKeyAlias = releaseCred("LOOK4SAT_RELEASE_KEY_ALIAS")
+val releaseKeyPassword = releaseCred("LOOK4SAT_RELEASE_KEY_PASSWORD")
 val hasReleaseSigning = listOf(
     releaseStoreFile,
     releaseStorePassword,
     releaseKeyAlias,
     releaseKeyPassword
-).all { !it.isNullOrBlank() } && file(releaseStoreFile.orEmpty()).isFile
+).all { it != null } && file(releaseStoreFile.orEmpty()).isFile
 
 android {
     namespace = libs.versions.packageName.get()

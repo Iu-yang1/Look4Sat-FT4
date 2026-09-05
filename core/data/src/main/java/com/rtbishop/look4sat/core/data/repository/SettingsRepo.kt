@@ -551,6 +551,7 @@ class SettingsRepo(
     private val keyRxRadioName = "rxRadioName"
     private val keyRadioBaudRate = "radioBaudRate"
     private val keyRadioSplitMode = "radioSplitMode"
+    private val keyRadioCatTransport = "radioCatTransport"
 
     private val _radioControlSettings = MutableStateFlow(getRadioControlSettings())
     override val radioControlSettings: StateFlow<RadioControlSettings> = _radioControlSettings
@@ -565,6 +566,7 @@ class SettingsRepo(
             putString(keyRxRadioName, settings.rxRadioName)
             putInt(keyRadioBaudRate, settings.baudRate)
             putBoolean(keyRadioSplitMode, settings.splitMode)
+            putString(keyRadioCatTransport, settings.catTransport)
         }
         _radioControlSettings.value = settings
     }
@@ -577,7 +579,9 @@ class SettingsRepo(
         txRadioName = preferences.getString(keyTxRadioName, null) ?: "TX Radio",
         rxRadioName = preferences.getString(keyRxRadioName, null) ?: "RX Radio",
         baudRate = preferences.getInt(keyRadioBaudRate, 4800),
-        splitMode = preferences.getBoolean(keyRadioSplitMode, false)
+        splitMode = preferences.getBoolean(keyRadioSplitMode, false),
+        catTransport = preferences.getString(keyRadioCatTransport, null)
+            ?: RadioControlSettings.TRANSPORT_BLUETOOTH
     )
     //endregion
 

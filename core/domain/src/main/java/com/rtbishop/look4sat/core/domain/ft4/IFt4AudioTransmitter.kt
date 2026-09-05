@@ -30,8 +30,15 @@ sealed interface Ft4TransmitState {
     data class Failed(val reason: String) : Ft4TransmitState
 }
 
+data class Ft4PlaybackTiming(
+    val requestedSlotUtcMillis: Long = 0L,
+    val startErrorMillis: Double? = null,
+    val underrunCount: Int = 0
+)
+
 interface IFt4AudioTransmitter {
     val state: StateFlow<Ft4TransmitState>
+    val playbackTiming: StateFlow<Ft4PlaybackTiming>
 
     suspend fun transmit(request: Ft4TransmissionRequest)
     suspend fun stop()

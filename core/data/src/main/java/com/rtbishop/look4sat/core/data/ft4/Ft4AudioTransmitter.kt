@@ -14,10 +14,12 @@ import android.media.AudioAttributes
 import android.media.AudioFocusRequest
 import android.media.AudioFormat
 import android.media.AudioManager
+import android.media.AudioTimestamp
 import android.media.AudioTrack
 import android.os.Build
 import android.os.SystemClock
 import com.rtbishop.look4sat.core.domain.ft4.Ft4TransmitState
+import com.rtbishop.look4sat.core.domain.ft4.Ft4PlaybackTiming
 import com.rtbishop.look4sat.core.domain.ft4.Ft4TransmissionRequest
 import com.rtbishop.look4sat.core.domain.ft4.IFt4AudioTransmitter
 import com.rtbishop.look4sat.core.domain.ft4.IFt4Service
@@ -51,9 +53,11 @@ class Ft4AudioTransmitter(
     private val outputFactory = outputFactory ?: AndroidFt4AudioOutputFactory(requireNotNull(context))
     private val executionMutex = Mutex()
     private val mutableState = MutableStateFlow<Ft4TransmitState>(Ft4TransmitState.Idle)
+    private val mutablePlaybackTiming = MutableStateFlow(Ft4PlaybackTiming())
     @Volatile private var activeJob: Job? = null
 
     override val state: StateFlow<Ft4TransmitState> = mutableState.asStateFlow()
+    override val playbackTiming: StateFlow<Ft4PlaybackTiming> = mutablePlaybackTiming.asStateFlow()
 
     override suspend fun transmit(request: Ft4TransmissionRequest) = executionMutex.withLock {
         check(activeJob == null) { "FT4 transmitter is already active" }
@@ -73,8 +77,9 @@ class Ft4AudioTransmitter(
             check(waveform.size == EXPECTED_WAVEFORM_SAMPLES) { "Unexpected FT4 waveform length" }
             check(waveform.all(Float::isFinite)) { "FT4 waveform contains invalid samples" }
             output = outputFactory.create(OUTPUT_SAMPLE_RATE, request.volume)
+            output.prepare(waveform)
 
-            waitUntil(request, request.slotStartUtcMillis - RADIO_PREPARE_LEAD_MILLIS)
+            waitUntil(request, request.slotStartUtcMillis - coordinator.recommendedPrepareLeadMillis())
             checkAutomaticClock(request)
             lease = coordinator.beginTransmit(
                 TxRequest(
@@ -93,7 +98,13 @@ class Ft4AudioTransmitter(
                 "FT4 transmit slot was missed"
             }
             mutableState.value = Ft4TransmitState.Transmitting(request.message, lease)
-            output.play(waveform)
+            val playCallErrorMillis = clock.nowMillis() - request.slotStartUtcMillis
+            val playback = output.play(waveform)
+            mutablePlaybackTiming.value = Ft4PlaybackTiming(
+                requestedSlotUtcMillis = request.slotStartUtcMillis,
+                startErrorMillis = playback.startDelayMillis?.plus(playCallErrorMillis),
+                underrunCount = playback.underrunCount
+            )
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (error: Throwable) {
@@ -150,7 +161,6 @@ class Ft4AudioTransmitter(
         const val OUTPUT_SAMPLE_RATE = 48_000
         const val EXPECTED_WAVEFORM_SAMPLES = 241_920
         const val WAVEFORM_DURATION_MILLIS = 5_040L
-        const val RADIO_PREPARE_LEAD_MILLIS = 350L
         const val MAX_START_LATENESS_MILLIS = 150L
         const val WAIT_UPDATE_MILLIS = 100L
     }
@@ -161,8 +171,11 @@ fun interface Ft4AudioOutputFactory {
 }
 
 interface Ft4AudioOutput : AutoCloseable {
-    suspend fun play(samples: FloatArray)
+    suspend fun prepare(samples: FloatArray) = Unit
+    suspend fun play(samples: FloatArray): Ft4AudioPlaybackResult
 }
+
+data class Ft4AudioPlaybackResult(val startDelayMillis: Double?, val underrunCount: Int)
 
 private class AndroidFt4AudioOutputFactory(context: Context) : Ft4AudioOutputFactory {
     private val audioManager = context.applicationContext.getSystemService(AudioManager::class.java)
@@ -183,22 +196,47 @@ private class AndroidFt4AudioOutput(
     private var track: AudioTrack? = null
     private var focusRequest: AudioFocusRequest? = null
     private var focusHeld = false
+    private var preparedCount = 0
+    private var usingFloat = false
 
-    override suspend fun play(samples: FloatArray) = withContext(Dispatchers.IO) {
+    override suspend fun prepare(samples: FloatArray) = withContext(Dispatchers.IO) {
         check(requestAudioFocus()) { "Audio focus was denied" }
         val floatTrack = buildTrack(AudioFormat.ENCODING_PCM_FLOAT)
         if (floatTrack != null) {
             track = floatTrack
-            writeFloat(floatTrack, samples)
+            usingFloat = true
+            preparedCount = writeFloatChunk(floatTrack, samples, 0, PRELOAD_SAMPLES)
         } else {
             val pcm16Track = checkNotNull(buildTrack(AudioFormat.ENCODING_PCM_16BIT)) {
                 "AudioTrack could not be initialized"
             }
             track = pcm16Track
-            writePcm16(pcm16Track, samples)
+            usingFloat = false
+            preparedCount = writePcm16Chunk(pcm16Track, samples, 0, PRELOAD_SAMPLES)
         }
-        waitForPlayback(checkNotNull(track), samples.size)
-        check((track?.underrunCount ?: 0) == 0) { "AudioTrack underrun" }
+        check(preparedCount > 0) { "AudioTrack preload failed" }
+    }
+
+    override suspend fun play(samples: FloatArray): Ft4AudioPlaybackResult = withContext(Dispatchers.IO) {
+        if (track == null) prepare(samples)
+        val audioTrack = checkNotNull(track)
+        val playRequestNanos = System.nanoTime()
+        audioTrack.play()
+        var offset = preparedCount
+        while (offset < samples.size) {
+            currentCoroutineContext().ensureActive()
+            val written = if (usingFloat) {
+                writeFloatChunk(audioTrack, samples, offset, WRITE_CHUNK_SAMPLES)
+            } else {
+                writePcm16Chunk(audioTrack, samples, offset, WRITE_CHUNK_SAMPLES)
+            }
+            check(written > 0) { "AudioTrack write failed: $written" }
+            offset += written
+        }
+        val startDelayMillis = waitForPlayback(audioTrack, samples.size, playRequestNanos)
+        val underruns = audioTrack.underrunCount
+        check(underruns == 0) { "AudioTrack underrun" }
+        Ft4AudioPlaybackResult(startDelayMillis, underruns)
     }
 
     private fun buildTrack(encoding: Int): AudioTrack? {
@@ -226,49 +264,36 @@ private class AndroidFt4AudioOutput(
         return candidate
     }
 
-    private suspend fun writeFloat(audioTrack: AudioTrack, samples: FloatArray) {
-        val preload = writeFloatChunk(audioTrack, samples, 0, PRELOAD_SAMPLES)
-        check(preload > 0) { "AudioTrack preload failed" }
-        audioTrack.play()
-        var offset = preload
-        while (offset < samples.size) {
-            currentCoroutineContext().ensureActive()
-            val written = writeFloatChunk(audioTrack, samples, offset, WRITE_CHUNK_SAMPLES)
-            check(written > 0) { "AudioTrack write failed: $written" }
-            offset += written
-        }
-    }
-
     private fun writeFloatChunk(track: AudioTrack, samples: FloatArray, offset: Int, maximum: Int): Int =
         track.write(samples, offset, minOf(maximum, samples.size - offset), AudioTrack.WRITE_BLOCKING)
 
-    private suspend fun writePcm16(audioTrack: AudioTrack, samples: FloatArray) {
-        val buffer = ShortArray(WRITE_CHUNK_SAMPLES)
-        var offset = 0
-        var started = false
-        while (offset < samples.size) {
-            currentCoroutineContext().ensureActive()
-            val count = minOf(buffer.size, samples.size - offset)
-            for (index in 0 until count) {
-                buffer[index] = (samples[offset + index].coerceIn(-1f, 1f) * Short.MAX_VALUE).toInt().toShort()
-            }
-            val written = audioTrack.write(buffer, 0, count, AudioTrack.WRITE_BLOCKING)
-            check(written > 0) { "AudioTrack write failed: $written" }
-            offset += written
-            if (!started) {
-                audioTrack.play()
-                started = true
-            }
+    private fun writePcm16Chunk(track: AudioTrack, samples: FloatArray, offset: Int, maximum: Int): Int {
+        val count = minOf(maximum, samples.size - offset)
+        val buffer = ShortArray(count)
+        for (index in 0 until count) {
+            buffer[index] = (samples[offset + index].coerceIn(-1f, 1f) * Short.MAX_VALUE).toInt().toShort()
         }
+        return track.write(buffer, 0, count, AudioTrack.WRITE_BLOCKING)
     }
 
-    private suspend fun waitForPlayback(audioTrack: AudioTrack, sampleCount: Int) {
+    private suspend fun waitForPlayback(
+        audioTrack: AudioTrack,
+        sampleCount: Int,
+        playRequestNanos: Long
+    ): Double? {
         val deadline = SystemClock.elapsedRealtime() + sampleCount * 1_000L / sampleRate + PLAYBACK_DRAIN_GRACE_MILLIS
+        var startDelayMillis: Double? = null
+        val timestamp = AudioTimestamp()
         while (audioTrack.playbackHeadPosition.toLong() < sampleCount) {
             currentCoroutineContext().ensureActive()
             check(SystemClock.elapsedRealtime() < deadline) { "AudioTrack playback timed out" }
+            if (startDelayMillis == null && audioTrack.getTimestamp(timestamp)) {
+                val firstFrameNanos = timestamp.nanoTime - timestamp.framePosition * 1_000_000_000L / sampleRate
+                startDelayMillis = (firstFrameNanos - playRequestNanos) / 1_000_000.0
+            }
             delay(PLAYBACK_POLL_MILLIS)
         }
+        return startDelayMillis
     }
 
     private fun requestAudioFocus(): Boolean {
@@ -308,6 +333,8 @@ private class AndroidFt4AudioOutput(
         }
         focusRequest = null
         focusHeld = false
+        preparedCount = 0
+        usingFloat = false
     }
 
     private companion object {

@@ -18,9 +18,12 @@
 package com.rtbishop.look4sat.feature.settings
 
 import android.Manifest
+import android.app.PendingIntent
 import android.bluetooth.BluetoothManager
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.hardware.usb.UsbManager
 import android.os.Build
 import androidx.core.content.ContextCompat
 import androidx.compose.animation.core.Animatable
@@ -854,6 +857,7 @@ fun RadioControlDialog(
     val enabled    = rememberSaveable { mutableStateOf(initialSettings.enabled) }
     val radioModel = rememberSaveable { mutableStateOf(initialSettings.radioModel) }
     val splitMode  = rememberSaveable { mutableStateOf(initialSettings.splitMode) }
+    val catTransport = rememberSaveable { mutableStateOf(initialSettings.catTransport) }
     val txAddress  = rememberSaveable { mutableStateOf(initialSettings.txRadioAddress) }
     val rxAddress  = rememberSaveable { mutableStateOf(initialSettings.rxRadioAddress) }
     val txName     = rememberSaveable { mutableStateOf(initialSettings.txRadioName) }
@@ -861,7 +865,10 @@ fun RadioControlDialog(
     val baudRate   = rememberSaveable { mutableIntStateOf(initialSettings.baudRate) }
     val selectingFor = rememberSaveable { mutableStateOf("") } // "tx", "rx", or ""
 
-    val isIcom = radioModel.value == RadioControlSettings.MODEL_ICOM_IC705
+    val isIcom = radioModel.value in setOf(
+        RadioControlSettings.MODEL_ICOM_IC705,
+        RadioControlSettings.MODEL_ICOM_IC9700
+    )
     val isSingleRadio = isIcom && splitMode.value
 
     // Reset split mode when switching away from IC-705
@@ -873,9 +880,17 @@ fun RadioControlDialog(
     // If current baud rate is not in the new list, default to the first available
     if (baudRate.intValue !in baudRates) baudRate.intValue = baudRates.first()
 
-    val pairedDevices: List<Pair<String, String>> = remember {
+    val pairedDevices: List<Pair<String, String>> = remember(catTransport.value) {
         buildList {
             try {
+                if (catTransport.value == RadioControlSettings.TRANSPORT_USB) {
+                    val manager = context.getSystemService(UsbManager::class.java)
+                    manager.deviceList.values.forEach { device ->
+                        add((device.productName ?: "USB ${device.vendorId}:${device.productId}") to device.deviceId.toString())
+                    }
+                    return@buildList
+                }
+                if (catTransport.value != RadioControlSettings.TRANSPORT_BLUETOOTH) return@buildList
                 if (
                     Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
                     ContextCompat.checkSelfPermission(
@@ -903,7 +918,8 @@ fun RadioControlDialog(
                 txRadioName    = txName.value,
                 rxRadioName    = if (isSingleRadio) "" else rxName.value,
                 baudRate       = baudRate.intValue,
-                splitMode      = splitMode.value
+                splitMode      = splitMode.value,
+                catTransport   = catTransport.value
             )
         )
         onDismiss()
@@ -924,6 +940,41 @@ fun RadioControlDialog(
             ) {
                 Text(stringResource(R.string.rc_enable_switch))
                 Switch(checked = enabled.value, onCheckedChange = { enabled.value = it })
+            }
+            Spacer(modifier = Modifier.height(6.dp))
+
+            Text(stringResource(R.string.rc_cat_transport), fontWeight = FontWeight.Medium)
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                RadioControlSettings.SUPPORTED_TRANSPORTS.forEach { transport ->
+                    FilterChip(
+                        selected = catTransport.value == transport,
+                        onClick = {
+                            catTransport.value = transport
+                            txAddress.value = ""
+                            rxAddress.value = ""
+                        },
+                        label = { Text(transport, fontSize = 12.sp) },
+                        enabled = enabled.value
+                    )
+                }
+            }
+            if (catTransport.value == RadioControlSettings.TRANSPORT_TCP) {
+                OutlinedTextField(
+                    value = txAddress.value,
+                    onValueChange = { txAddress.value = it },
+                    label = { Text(stringResource(R.string.rc_tx_tcp_address)) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                if (!isSingleRadio) {
+                    OutlinedTextField(
+                        value = rxAddress.value,
+                        onValueChange = { rxAddress.value = it },
+                        label = { Text(stringResource(R.string.rc_rx_tcp_address)) },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
             }
             Spacer(modifier = Modifier.height(6.dp))
 
@@ -953,9 +1004,9 @@ fun RadioControlDialog(
                     modifier              = Modifier.fillMaxWidth()
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
-                        Text("Split mode (single radio)", fontWeight = FontWeight.Medium)
+                        Text(stringResource(R.string.rc_split_mode), fontWeight = FontWeight.Medium)
                         Text(
-                            text     = "Use VFO-A/B split on one IC-705 instead of two radios",
+                            text     = stringResource(R.string.rc_split_mode_hint),
                             fontSize = 12.sp,
                             color    = androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -970,43 +1021,47 @@ fun RadioControlDialog(
             }
 
             // TX Radio (always shown; in split mode this is the single IC-705)
-            val txLabel = if (isSingleRadio) "Radio (IC-705)" else "TX Radio (Uplink)"
+            val txLabel = stringResource(if (isSingleRadio) R.string.rc_single_radio else R.string.rc_tx_radio)
             Text(txLabel, fontWeight = FontWeight.Medium)
             if (txAddress.value.isNotBlank()) {
                 Text("${txName.value} — ${txAddress.value}", fontSize = 13.sp)
             }
-            CardButton(
-                onClick  = { selectingFor.value = "tx" },
-                text     = if (isSingleRadio) "Select Device" else "Select TX Device",
-                modifier = Modifier.fillMaxWidth()
-            )
+            if (catTransport.value != RadioControlSettings.TRANSPORT_TCP) {
+                CardButton(
+                    onClick  = { selectingFor.value = "tx" },
+                    text     = stringResource(if (isSingleRadio) R.string.rc_select_device else R.string.rc_select_tx_device),
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
             Spacer(modifier = Modifier.height(6.dp))
 
             // RX Radio (hidden in split mode — the same radio handles both)
             if (!isSingleRadio) {
-                Text("RX Radio (Downlink)", fontWeight = FontWeight.Medium)
+                Text(stringResource(R.string.rc_rx_radio), fontWeight = FontWeight.Medium)
                 if (rxAddress.value.isNotBlank()) {
                     Text("${rxName.value} — ${rxAddress.value}", fontSize = 13.sp)
                 }
-                CardButton(
-                    onClick  = { selectingFor.value = "rx" },
-                    text     = "Select RX Device",
-                    modifier = Modifier.fillMaxWidth()
-                )
+                if (catTransport.value != RadioControlSettings.TRANSPORT_TCP) {
+                    CardButton(
+                        onClick  = { selectingFor.value = "rx" },
+                        text     = stringResource(R.string.rc_select_rx_device),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
                 Spacer(modifier = Modifier.height(6.dp))
             }
 
             // Paired device picker (inline, shown while selecting)
             if (selectingFor.value.isNotBlank()) {
                 Text(
-                    text       = "Paired Bluetooth Devices:",
+                    text       = stringResource(R.string.rc_paired_devices),
                     fontWeight = FontWeight.Medium,
                     color      = androidx.compose.material3.MaterialTheme.colorScheme.primary
                 )
                 Spacer(modifier = Modifier.height(2.dp))
                 if (pairedDevices.isEmpty()) {
                     Text(
-                        "No paired devices found. Pair your BT adapter in Android Bluetooth settings first.",
+                        stringResource(R.string.rc_no_paired_devices),
                         fontSize = 13.sp
                     )
                 } else {
@@ -1015,6 +1070,21 @@ fun RadioControlDialog(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clickable {
+                                    if (catTransport.value == RadioControlSettings.TRANSPORT_USB) {
+                                        val usbManager = context.getSystemService(UsbManager::class.java)
+                                        val device = usbManager.deviceList.values.firstOrNull {
+                                            it.deviceId.toString() == address
+                                        }
+                                        if (device != null && !usbManager.hasPermission(device)) {
+                                            val permissionIntent = PendingIntent.getBroadcast(
+                                                context,
+                                                device.deviceId,
+                                                Intent("${context.packageName}.USB_CAT_PERMISSION").setPackage(context.packageName),
+                                                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+                                            )
+                                            usbManager.requestPermission(device, permissionIntent)
+                                        }
+                                    }
                                     if (selectingFor.value == "tx") {
                                         txAddress.value = address
                                         txName.value    = name
@@ -1040,7 +1110,7 @@ fun RadioControlDialog(
             }
 
             // Baud rate — FlowRow so all chips fit on narrow screens
-            Text("Baud Rate:", fontWeight = FontWeight.Medium)
+            Text(stringResource(R.string.rc_baud_rate), fontWeight = FontWeight.Medium)
             FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 baudRates.forEach { rate ->
                     FilterChip(

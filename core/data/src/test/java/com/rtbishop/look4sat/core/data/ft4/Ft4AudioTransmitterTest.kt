@@ -53,7 +53,7 @@ class Ft4AudioTransmitterTest {
 
         transmitter.transmit(request(slotStart = 1_000L, automatic = true))
 
-        assertEquals(listOf("generate", "output", "begin", "confirm", "play", "close", "end"), events)
+        assertEquals(listOf("generate", "output", "prepare", "begin", "confirm", "play", "close", "end"), events)
         assertEquals(1, coordinator.offCount)
     }
 
@@ -133,9 +133,14 @@ private class FakeOutput(
 ) : Ft4AudioOutput {
     init { events += "output" }
 
-    override suspend fun play(samples: FloatArray) {
+    override suspend fun prepare(samples: FloatArray) {
+        events += "prepare"
+    }
+
+    override suspend fun play(samples: FloatArray): Ft4AudioPlaybackResult {
         events += "play"
         if (fail) error("audio failed")
+        return Ft4AudioPlaybackResult(4.0, 0)
     }
 
     override fun close() {

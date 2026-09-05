@@ -54,7 +54,8 @@ data class RadioTrackingState(
     val nominalTxFrequencyHz: Long? = null,
     val nominalRxFrequencyHz: Long? = null,
     val txDopplerCorrectionHz: Long? = null,
-    val rxDopplerCorrectionHz: Long? = null
+    val rxDopplerCorrectionHz: Long? = null,
+    val physicalConnectionCount: Int = 0
 )
 
 interface IRadioTrackingService {

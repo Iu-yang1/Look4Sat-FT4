@@ -26,6 +26,7 @@ import androidx.room.Room
 import com.rtbishop.look4sat.core.data.database.Look4SatDb
 import com.rtbishop.look4sat.core.data.database.QsoDatabase
 import com.rtbishop.look4sat.core.data.framework.BluetoothReporter
+import com.rtbishop.look4sat.core.data.framework.AndroidRadioTransportFactory
 import com.rtbishop.look4sat.core.data.framework.NetworkReporter
 import com.rtbishop.look4sat.core.data.framework.RadioTrackingService
 import com.rtbishop.look4sat.core.data.ft4.Ft4Service
@@ -107,7 +108,15 @@ class MainContainer(private val context: Context) : IMainContainer {
         }
     private val sharedRadioTrackingService: RadioTrackingService by lazy {
         val manager = context.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
-        RadioTrackingService(appScope, manager, satelliteRepo, settingsRepo)
+        val transportFactory = AndroidRadioTransportFactory(context, manager)
+        RadioTrackingService(
+            appScope,
+            manager,
+            satelliteRepo,
+            settingsRepo,
+            disciplinedClock,
+            transportFactory = transportFactory::create
+        )
     }
     override val radioTrackingService: IRadioTrackingService by lazy { sharedRadioTrackingService }
     override val ft4TransmitCoordinator: IFt4TransmitCoordinator by lazy { sharedRadioTrackingService }

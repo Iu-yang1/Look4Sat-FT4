@@ -24,6 +24,7 @@ include(
 include(
     ":feature:cw",
     ":feature:ft4",
+    ":feature:logbook",
     ":feature:map",
     ":feature:mutual",
     ":feature:passes",

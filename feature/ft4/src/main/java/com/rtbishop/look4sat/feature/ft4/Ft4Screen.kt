@@ -108,7 +108,7 @@ private data class Ft4SatelliteRadioPanelState(
 )
 
 @Composable
-fun Ft4ShellDestination(navigateUp: () -> Unit) {
+fun Ft4ShellDestination(navigateUp: () -> Unit, navigateToLogbook: () -> Unit) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val container = (context.applicationContext as IContainerProvider).getMainContainer()
@@ -155,6 +155,7 @@ fun Ft4ShellDestination(navigateUp: () -> Unit) {
         viewModel = viewModel,
         onAction = viewModel::onAction,
         navigateUp = navigateUp,
+        navigateToLogbook = navigateToLogbook,
         requestMicrophone = { microphoneLauncher.launch(Manifest.permission.RECORD_AUDIO) },
         connectRadios = {
             if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S || ContextCompat.checkSelfPermission(
@@ -176,6 +177,7 @@ private fun Ft4Shell(
     viewModel: Ft4ViewModel,
     onAction: (Ft4Action) -> Unit,
     navigateUp: () -> Unit,
+    navigateToLogbook: () -> Unit,
     requestMicrophone: () -> Unit,
     connectRadios: () -> Unit
 ) {
@@ -242,6 +244,7 @@ private fun Ft4Shell(
                             modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp)
                         )
                     }
+                    IconCard(action = navigateToLogbook, resId = R.drawable.ic_logbook)
                 }
                 if (state.error.isNotBlank()) {
                     ElevatedCard(

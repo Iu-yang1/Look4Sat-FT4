@@ -18,6 +18,7 @@
 package com.rtbishop.look4sat.core.domain.repository
 import com.rtbishop.look4sat.core.domain.model.SatRadio
 import com.rtbishop.look4sat.core.domain.audio.IAudioHub
+import com.rtbishop.look4sat.core.domain.logbook.IQsoRepository
 import com.rtbishop.look4sat.core.domain.ft4.IFt4Service
 import com.rtbishop.look4sat.core.domain.ft4.IFt4AudioTransmitter
 import com.rtbishop.look4sat.core.domain.ft4.IFt4TransmitCoordinator
@@ -35,6 +36,7 @@ interface IMainContainer {
     val selectionRepo: ISelectionRepo
     val satelliteRepo: ISatelliteRepo
     val databaseRepo: IDatabaseRepo
+    val qsoRepository: IQsoRepository
     val amSatRepo: IAmSatRepository
     val audioHub: IAudioHub
     val ft4Service: IFt4Service

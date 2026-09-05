@@ -77,6 +77,7 @@ import com.rtbishop.look4sat.core.domain.repository.MutualPassData
 import com.rtbishop.look4sat.core.presentation.DeeplinkResolver
 import com.rtbishop.look4sat.core.presentation.ElevationThresholds
 import com.rtbishop.look4sat.core.presentation.LocalElevationThresholds
+import com.rtbishop.look4sat.core.presentation.LogbookDestination
 import com.rtbishop.look4sat.core.presentation.R
 import com.rtbishop.look4sat.core.presentation.RadarDestination
 import com.rtbishop.look4sat.core.presentation.Screen
@@ -84,6 +85,7 @@ import com.rtbishop.look4sat.core.presentation.hasEnoughHeight
 import com.rtbishop.look4sat.core.presentation.hasEnoughWidth
 import com.rtbishop.look4sat.feature.map.MapDestination
 import com.rtbishop.look4sat.feature.ft4.Ft4ShellDestination
+import com.rtbishop.look4sat.feature.logbook.LogbookScreenDestination
 import com.rtbishop.look4sat.feature.mutual.MutualScreen
 import com.rtbishop.look4sat.feature.mutual.MutualViewModel
 import com.rtbishop.look4sat.feature.passes.PassesDestination
@@ -103,6 +105,7 @@ fun NavRoot(deeplink: String? = null) {
     val navigateBack: () -> Unit = { rootBackStack.removeLastOrNull() }
     val navigateToRadar: () -> Unit = { rootBackStack.add(RadarDestination) }
     val navigateToFt4: () -> Unit = { rootBackStack.add(Screen.Ft4) }
+    val navigateToLogbook: () -> Unit = { rootBackStack.add(LogbookDestination) }
     val navigateToMap: () -> Unit = {
         while (rootBackStack.size > 1) rootBackStack.removeAt(rootBackStack.size - 1)
         openMapRequest += 1
@@ -146,7 +149,15 @@ fun NavRoot(deeplink: String? = null) {
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    Ft4ShellDestination(navigateUp = navigateBack)
+                    Ft4ShellDestination(navigateUp = navigateBack, navigateToLogbook = navigateToLogbook)
+                }
+            }
+            entry<LogbookDestination> {
+                Surface(
+                    modifier = Modifier.fillMaxSize(),
+                    color = MaterialTheme.colorScheme.background
+                ) {
+                    LogbookScreenDestination(navigateUp = navigateBack)
                 }
             }
         }

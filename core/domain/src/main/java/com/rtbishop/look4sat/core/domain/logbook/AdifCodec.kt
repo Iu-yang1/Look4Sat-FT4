@@ -1,0 +1,147 @@
+/*
+ * Look4Sat. Amateur radio satellite tracker and pass predictor.
+ * Copyright (C) 2019-2026 Arty Bishop and contributors.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ */
+package com.rtbishop.look4sat.core.domain.logbook
+
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import java.util.TimeZone
+
+/** ADIF 3.1.7 的小型 ADI 编解码器，仅处理日志本实际使用的字段。 */
+object AdifCodec {
+    private val utc = TimeZone.getTimeZone("UTC")
+
+    fun encode(records: List<QsoRecord>): String = buildString {
+        append(field("ADIF_VER", "3.1.7"))
+        append(field("PROGRAMID", "Look4Sat"))
+        append("<EOH>\r\n")
+        records.forEach { record ->
+            val startDate = format(record.startUtcMillis, "yyyyMMdd")
+            val startTime = format(record.startUtcMillis, "HHmmss")
+            append(field("QSO_DATE", startDate))
+            append(field("TIME_ON", startTime))
+            record.endUtcMillis?.let {
+                append(field("QSO_DATE_OFF", format(it, "yyyyMMdd")))
+                append(field("TIME_OFF", format(it, "HHmmss")))
+            }
+            append(field("CALL", record.theirCallsign))
+            append(field("STATION_CALLSIGN", record.myCallsign))
+            append(field("MODE", "MFSK"))
+            append(field("SUBMODE", "FT4"))
+            appendOptional("GRIDSQUARE", record.theirGrid)
+            appendOptional("MY_GRIDSQUARE", record.myGrid)
+            appendOptional("RST_SENT", record.sentReport)
+            appendOptional("RST_RCVD", record.receivedReport)
+            record.txFrequencyHz?.let { append(field("FREQ", hzToMhz(it))) }
+            record.rxFrequencyHz?.let { append(field("FREQ_RX", hzToMhz(it))) }
+            appendOptional("BAND", record.band)
+            appendOptional("BAND_RX", record.rxBand)
+            if (record.satelliteName.isNotBlank()) {
+                append(field("PROP_MODE", "SAT"))
+                append(field("SAT_NAME", record.satelliteName))
+                appendOptional("SAT_MODE", record.satelliteMode)
+            }
+            appendOptional("APP_LOOK4SAT_TRANSPONDER", record.transponderName)
+            record.passAosUtcMillis?.let { append(field("APP_LOOK4SAT_PASS_AOS", it.toString())) }
+            record.ft4AudioFrequencyHz?.let { append(field("APP_LOOK4SAT_FT4_AUDIO_HZ", it.toString())) }
+            append(field("APP_LOOK4SAT_AUTOMATIC", if (record.automatic) "Y" else "N"))
+            append(field("APP_LOOK4SAT_STATUS", record.status.name))
+            if (record.rawMessages.isNotEmpty()) {
+                append(field("APP_LOOK4SAT_MESSAGES", record.rawMessages.joinToString(" | ")))
+            }
+            append("<EOR>\r\n")
+        }
+    }
+
+    fun decode(content: String): List<QsoRecord> = splitRecords(content).mapNotNull { values ->
+        val call = values["CALL"].orEmpty().trim().uppercase(Locale.US)
+        val date = values["QSO_DATE"].orEmpty()
+        val time = values["TIME_ON"].orEmpty()
+        if (call.isBlank() || date.length != 8 || time.length !in setOf(4, 6)) return@mapNotNull null
+        val start = parse(date, time) ?: return@mapNotNull null
+        val end = values["QSO_DATE_OFF"]?.let { endDate ->
+            values["TIME_OFF"]?.let { endTime -> parse(endDate, endTime) }
+        }
+        QsoRecord(
+            startUtcMillis = start,
+            endUtcMillis = end,
+            theirCallsign = call,
+            myCallsign = values["STATION_CALLSIGN"].orEmpty().uppercase(Locale.US),
+            theirGrid = values["GRIDSQUARE"].orEmpty().uppercase(Locale.US),
+            myGrid = values["MY_GRIDSQUARE"].orEmpty().uppercase(Locale.US),
+            sentReport = values["RST_SENT"].orEmpty(),
+            receivedReport = values["RST_RCVD"].orEmpty(),
+            txFrequencyHz = mhzToHz(values["FREQ"]),
+            rxFrequencyHz = mhzToHz(values["FREQ_RX"]),
+            band = values["BAND"].orEmpty(),
+            rxBand = values["BAND_RX"].orEmpty(),
+            satelliteName = values["SAT_NAME"].orEmpty(),
+            transponderName = values["APP_LOOK4SAT_TRANSPONDER"].orEmpty(),
+            satelliteMode = values["SAT_MODE"].orEmpty(),
+            passAosUtcMillis = values["APP_LOOK4SAT_PASS_AOS"]?.toLongOrNull(),
+            ft4AudioFrequencyHz = values["APP_LOOK4SAT_FT4_AUDIO_HZ"]?.toIntOrNull(),
+            automatic = values["APP_LOOK4SAT_AUTOMATIC"].equals("Y", true),
+            status = values["APP_LOOK4SAT_STATUS"]?.let { runCatching { QsoStatus.valueOf(it) }.getOrNull() }
+                ?: QsoStatus.COMPLETE,
+            rawMessages = values["APP_LOOK4SAT_MESSAGES"]?.split(" | ")?.filter(String::isNotBlank).orEmpty()
+        )
+    }
+
+    private fun splitRecords(content: String): List<Map<String, String>> {
+        val records = mutableListOf<Map<String, String>>()
+        var values = linkedMapOf<String, String>()
+        var index = 0
+        while (index < content.length) {
+            val start = content.indexOf('<', index)
+            if (start < 0) break
+            val end = content.indexOf('>', start + 1)
+            if (end < 0) break
+            val descriptor = content.substring(start + 1, end)
+            val parts = descriptor.split(':')
+            val name = parts.first().trim().uppercase(Locale.US)
+            index = end + 1
+            when (name) {
+                "EOH" -> values.clear()
+                "EOR" -> {
+                    if (values.isNotEmpty()) records += values.toMap()
+                    values = linkedMapOf()
+                }
+                else -> {
+                    val length = parts.getOrNull(1)?.toIntOrNull() ?: continue
+                    if (length < 0 || index + length > content.length) continue
+                    values[name] = content.substring(index, index + length)
+                    index += length
+                }
+            }
+        }
+        return records
+    }
+
+    private fun StringBuilder.appendOptional(name: String, value: String) {
+        if (value.isNotBlank()) append(field(name, value))
+    }
+
+    private fun field(name: String, value: String): String = "<$name:${value.length}>$value"
+
+    private fun hzToMhz(value: Long): String = String.format(Locale.US, "%.6f", value / 1_000_000.0)
+
+    private fun mhzToHz(value: String?): Long? = value?.toDoubleOrNull()?.let { (it * 1_000_000.0).toLong() }
+
+    private fun format(value: Long, pattern: String): String =
+        SimpleDateFormat(pattern, Locale.US).apply { timeZone = utc }.format(Date(value))
+
+    private fun parse(date: String, time: String): Long? = runCatching {
+        val normalizedTime = if (time.length == 4) "${time}00" else time
+        SimpleDateFormat("yyyyMMddHHmmss", Locale.US).apply {
+            isLenient = false
+            timeZone = utc
+        }.parse(date + normalizedTime)?.time
+    }.getOrNull()
+}

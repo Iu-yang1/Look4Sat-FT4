@@ -24,6 +24,7 @@ import android.hardware.display.DisplayManager
 import android.location.LocationManager
 import androidx.room.Room
 import com.rtbishop.look4sat.core.data.database.Look4SatDb
+import com.rtbishop.look4sat.core.data.database.QsoDatabase
 import com.rtbishop.look4sat.core.data.framework.BluetoothReporter
 import com.rtbishop.look4sat.core.data.framework.NetworkReporter
 import com.rtbishop.look4sat.core.data.framework.RadioTrackingService
@@ -31,6 +32,7 @@ import com.rtbishop.look4sat.core.data.ft4.Ft4Service
 import com.rtbishop.look4sat.core.data.ft4.Ft4AudioTransmitter
 import com.rtbishop.look4sat.core.data.repository.AmSatRepository
 import com.rtbishop.look4sat.core.data.repository.DatabaseRepo
+import com.rtbishop.look4sat.core.data.repository.QsoRepository
 import com.rtbishop.look4sat.core.data.repository.SatelliteRepo
 import com.rtbishop.look4sat.core.data.repository.SelectionRepo
 import com.rtbishop.look4sat.core.data.repository.SensorsRepo
@@ -46,6 +48,7 @@ import com.rtbishop.look4sat.core.data.usecase.SaveImage
 import com.rtbishop.look4sat.core.data.usecase.ShowToast
 import com.rtbishop.look4sat.core.domain.audio.IAudioHub
 import com.rtbishop.look4sat.core.domain.ft4.IFt4Service
+import com.rtbishop.look4sat.core.domain.logbook.IQsoRepository
 import com.rtbishop.look4sat.core.domain.ft4.IFt4TransmitCoordinator
 import com.rtbishop.look4sat.core.domain.ft4.IFt4AudioTransmitter
 import com.rtbishop.look4sat.core.domain.time.IDisciplinedClock
@@ -85,6 +88,10 @@ class MainContainer(private val context: Context) : IMainContainer {
     override val selectionRepo = provideSelectionRepo()
     override val satelliteRepo = provideSatelliteRepo()
     override val databaseRepo = provideDatabaseRepo()
+    override val qsoRepository: IQsoRepository by lazy {
+        val database = Room.databaseBuilder(context, QsoDatabase::class.java, "Look4SatQsoDB").build()
+        QsoRepository(database.qsoDao(), Dispatchers.IO)
+    }
     override val amSatRepo by lazy { AmSatRepository(remoteSource, appScope) }
     override val updateRepo by lazy { UpdateRepository(remoteSource) }
     override val audioHub: IAudioHub by lazy { SharedAudioHub(appScope) }

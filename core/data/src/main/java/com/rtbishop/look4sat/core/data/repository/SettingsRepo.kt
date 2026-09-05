@@ -98,6 +98,7 @@ class SettingsRepo(
     private val keyFt4DecodeDepth = "ft4DecodeDepth"
     private val keyFt4NtpEnabled = "ft4NtpEnabled"
     private val keyFt4GnssEnabled = "ft4GnssEnabled"
+    private val keyFt4AudioInputDevice = "ft4AudioInputDevice"
     private val keyUseCustomTle = "useCustomTle"
     private val keyUseCustomTransceivers = "useCustomTransceivers"
     private val keyTleUrl = "tleUrl"
@@ -418,6 +419,7 @@ class SettingsRepo(
                 putInt(keyFt4DecodeDepth, updated.decodeDepth.coerceIn(1, 3))
                 putBoolean(keyFt4NtpEnabled, updated.ntpSynchronizationEnabled)
                 putBoolean(keyFt4GnssEnabled, updated.gnssSynchronizationEnabled)
+                putString(keyFt4AudioInputDevice, updated.audioInputDeviceKey)
             }
             updated
         }
@@ -429,7 +431,8 @@ class SettingsRepo(
         decodeEnabled = preferences.getBoolean(keyFt4DecodeEnabled, false),
         decodeDepth = preferences.getInt(keyFt4DecodeDepth, 3).coerceIn(1, 3),
         ntpSynchronizationEnabled = preferences.getBoolean(keyFt4NtpEnabled, false),
-        gnssSynchronizationEnabled = preferences.getBoolean(keyFt4GnssEnabled, false)
+        gnssSynchronizationEnabled = preferences.getBoolean(keyFt4GnssEnabled, false),
+        audioInputDeviceKey = preferences.getString(keyFt4AudioInputDevice, null).orEmpty()
     )
     //endregion
 

@@ -71,7 +71,8 @@ data class Ft4Settings(
     val decodeEnabled: Boolean = false,
     val decodeDepth: Int = 3,
     val ntpSynchronizationEnabled: Boolean = false,
-    val gnssSynchronizationEnabled: Boolean = false
+    val gnssSynchronizationEnabled: Boolean = false,
+    val audioInputDeviceKey: String = ""
 )
 
 data class DataSourcesSettings(

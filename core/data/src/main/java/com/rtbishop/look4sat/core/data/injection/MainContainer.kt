@@ -95,7 +95,13 @@ class MainContainer(private val context: Context) : IMainContainer {
     }
     override val amSatRepo by lazy { AmSatRepository(remoteSource, appScope) }
     override val updateRepo by lazy { UpdateRepository(remoteSource) }
-    override val audioHub: IAudioHub by lazy { SharedAudioHub(appScope) }
+    override val audioHub: IAudioHub by lazy {
+        SharedAudioHub(
+            context = context,
+            scope = appScope,
+            initialDeviceKey = settingsRepo.ft4Settings.value.audioInputDeviceKey.ifBlank { null }
+        )
+    }
     override val ft4Service: IFt4Service by lazy { Ft4Service(appScope, audioHub, disciplinedClock) }
     override val disciplinedClock: IDisciplinedClock by lazy {
         SystemDisciplinedClock(AndroidMonotonicTimeSource)

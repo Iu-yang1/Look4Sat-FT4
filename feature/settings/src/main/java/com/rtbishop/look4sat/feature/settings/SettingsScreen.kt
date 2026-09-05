@@ -24,6 +24,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -392,6 +393,37 @@ private fun Ft4SettingsCard(
                 enabled = capability.receiveAvailable
             ) { onAction(SettingsAction.ToggleFt4Decode(it)) }
             if (settings.decodeEnabled) {
+                Text(
+                    text = stringResource(R.string.prefs_ft4_audio_input),
+                    style = MaterialTheme.typography.bodySmall
+                )
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    FilterChip(
+                        selected = settings.audioInputDeviceKey.isBlank(),
+                        onClick = { onAction(SettingsAction.SetAudioInputDevice(null)) },
+                        label = { Text(stringResource(R.string.prefs_ft4_audio_default)) }
+                    )
+                    state.audioInputDevices.forEach { device ->
+                        FilterChip(
+                            selected = settings.audioInputDeviceKey == device.key,
+                            onClick = { onAction(SettingsAction.SetAudioInputDevice(device.key)) },
+                            label = {
+                                Text(
+                                    text = if (device.external) {
+                                        stringResource(R.string.prefs_ft4_audio_external, device.name)
+                                    } else {
+                                        device.name
+                                    },
+                                    maxLines = 1
+                                )
+                            }
+                        )
+                    }
+                }
                 Text(
                     text = stringResource(R.string.prefs_ft4_decode_depth),
                     style = MaterialTheme.typography.bodySmall

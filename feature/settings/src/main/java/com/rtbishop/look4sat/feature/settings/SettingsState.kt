@@ -17,6 +17,7 @@
  */
 package com.rtbishop.look4sat.feature.settings
 
+import com.rtbishop.look4sat.core.domain.audio.AudioInputDevice
 import com.rtbishop.look4sat.core.domain.model.DataSourcesSettings
 import com.rtbishop.look4sat.core.domain.ft4.Ft4Capability
 import com.rtbishop.look4sat.core.domain.model.Ft4Settings
@@ -58,6 +59,7 @@ data class SettingsState(
     val ft4Capability: Ft4Capability,
     val clockSnapshot: ClockSnapshot,
     val timeSynchronizationState: TimeSynchronizationState,
+    val audioInputDevices: List<AudioInputDevice>,
     val rcSettings: RCSettings,
     val radioControlSettings: RadioControlSettings,
     val dataSourcesSettings: DataSourcesSettings,
@@ -90,6 +92,7 @@ sealed interface SettingsAction {
     data class SetFt4Callsign(val value: String) : SettingsAction
     data class ToggleFt4Decode(val value: Boolean) : SettingsAction
     data class SetFt4DecodeDepth(val value: Int) : SettingsAction
+    data class SetAudioInputDevice(val key: String?) : SettingsAction
     data class ToggleNtpSynchronization(val value: Boolean) : SettingsAction
     data class ToggleGnssSynchronization(val value: Boolean) : SettingsAction
     data object SynchronizeTimeNow : SettingsAction

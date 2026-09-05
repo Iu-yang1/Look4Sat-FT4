@@ -14,6 +14,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.rtbishop.look4sat.core.domain.audio.AudioConsumer
 import com.rtbishop.look4sat.core.domain.audio.AudioDelivery
 import com.rtbishop.look4sat.core.domain.audio.AudioHubState
+import com.rtbishop.look4sat.core.domain.audio.AudioInputDevice
 import com.rtbishop.look4sat.core.domain.audio.AudioSampleFormat
 import com.rtbishop.look4sat.core.domain.audio.Ft4SlotAssembler
 import com.rtbishop.look4sat.core.domain.audio.IAudioHub
@@ -230,6 +231,9 @@ class Ft4AudioStreamInstrumentedTest {
         private val chunks = Channel<TimestampedAudioChunk>(Channel.UNLIMITED)
         private val mutableState = MutableStateFlow<AudioHubState>(AudioHubState.Idle)
         override val state: StateFlow<AudioHubState> = mutableState.asStateFlow()
+        override val inputDevices = MutableStateFlow<List<AudioInputDevice>>(emptyList()).asStateFlow()
+
+        override suspend fun selectInputDevice(deviceKey: String?) = Unit
 
         override fun audioFlow(consumer: AudioConsumer, delivery: AudioDelivery): Flow<TimestampedAudioChunk> = flow {
             mutableState.value = AudioHubState.Capturing(

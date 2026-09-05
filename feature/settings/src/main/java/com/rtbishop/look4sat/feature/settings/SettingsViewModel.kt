@@ -22,6 +22,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import com.rtbishop.look4sat.core.domain.audio.IAudioHub
 import com.rtbishop.look4sat.core.domain.repository.IDatabaseRepo
 import com.rtbishop.look4sat.core.domain.ft4.IFt4AudioTransmitter
 import com.rtbishop.look4sat.core.domain.ft4.IFt4Service
@@ -46,6 +47,7 @@ class SettingsViewModel(
     private val settingsRepo: ISettingsRepo,
     private val ft4Service: IFt4Service,
     private val ft4AudioTransmitter: IFt4AudioTransmitter,
+    private val audioHub: IAudioHub,
     private val disciplinedClock: IDisciplinedClock,
     private val timeSynchronizationService: ITimeSynchronizationService,
     private val updateRepo: IUpdateRepository,
@@ -65,6 +67,7 @@ class SettingsViewModel(
             ft4Capability = ft4Service.capability.value,
             clockSnapshot = disciplinedClock.snapshot(),
             timeSynchronizationState = timeSynchronizationService.state.value,
+            audioInputDevices = audioHub.inputDevices.value,
             rcSettings = settingsRepo.rcSettings.value,
             radioControlSettings = settingsRepo.radioControlSettings.value,
             dataSourcesSettings = settingsRepo.dataSourcesSettings.value,
@@ -125,6 +128,11 @@ class SettingsViewModel(
         viewModelScope.launch {
             ft4Service.capability.collect { capability ->
                 _uiState.update { it.copy(ft4Capability = capability) }
+            }
+        }
+        viewModelScope.launch {
+            audioHub.inputDevices.collect { devices ->
+                _uiState.update { it.copy(audioInputDevices = devices) }
             }
         }
         viewModelScope.launch {
@@ -191,6 +199,10 @@ class SettingsViewModel(
             }
             is SettingsAction.SetFt4DecodeDepth -> settingsRepo.updateFt4Settings {
                 it.copy(decodeDepth = action.value.coerceIn(1, 3))
+            }
+            is SettingsAction.SetAudioInputDevice -> {
+                settingsRepo.updateFt4Settings { it.copy(audioInputDeviceKey = action.key.orEmpty()) }
+                viewModelScope.launch { audioHub.selectInputDevice(action.key) }
             }
             is SettingsAction.ToggleNtpSynchronization -> {
                 settingsRepo.updateFt4Settings { it.copy(ntpSynchronizationEnabled = action.value) }
@@ -338,6 +350,7 @@ class SettingsViewModel(
                     settingsRepo = container.settingsRepo,
                     ft4Service = container.ft4Service,
                     ft4AudioTransmitter = container.ft4AudioTransmitter,
+                    audioHub = container.audioHub,
                     disciplinedClock = container.disciplinedClock,
                     timeSynchronizationService = container.timeSynchronizationService,
                     updateRepo = container.updateRepo,

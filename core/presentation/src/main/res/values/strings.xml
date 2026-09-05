@@ -252,6 +252,9 @@
     <string name="prefs_ft4_grid">Maidenhead grid: %s</string>
     <string name="prefs_ft4_edit_grid">Edit grid</string>
     <string name="prefs_ft4_decode">Enable FT4 decoding</string>
+    <string name="prefs_ft4_audio_input">Shared audio input</string>
+    <string name="prefs_ft4_audio_default">System default</string>
+    <string name="prefs_ft4_audio_external">USB/external · %s</string>
     <string name="prefs_ft4_decode_depth">Decoding strength</string>
     <string name="prefs_ft4_decode_fast">Fast</string>
     <string name="prefs_ft4_decode_balanced">Balanced</string>

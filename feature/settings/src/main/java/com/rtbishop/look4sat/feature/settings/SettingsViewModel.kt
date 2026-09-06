@@ -17,18 +17,22 @@
  */
 package com.rtbishop.look4sat.feature.settings
 
+import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import com.rtbishop.look4sat.core.domain.audio.IAudioHub
 import com.rtbishop.look4sat.core.domain.repository.IDatabaseRepo
 import com.rtbishop.look4sat.core.domain.ft4.IFt4AudioTransmitter
 import com.rtbishop.look4sat.core.domain.ft4.IFt4Service
 import com.rtbishop.look4sat.core.domain.repository.IMainContainer
 import com.rtbishop.look4sat.core.domain.repository.ISettingsRepo
+import com.rtbishop.look4sat.core.domain.repository.IUpdateRepository
 import com.rtbishop.look4sat.core.domain.usecase.IShowToast
 import com.rtbishop.look4sat.core.domain.time.IDisciplinedClock
 import com.rtbishop.look4sat.core.domain.time.ITimeSynchronizationService
+import com.rtbishop.look4sat.core.domain.utility.VersionComparator
 import com.rtbishop.look4sat.core.presentation.R
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -36,14 +40,18 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import java.io.File
 
 class SettingsViewModel(
     private val databaseRepo: IDatabaseRepo,
     private val settingsRepo: ISettingsRepo,
     private val ft4Service: IFt4Service,
     private val ft4AudioTransmitter: IFt4AudioTransmitter,
+    private val audioHub: IAudioHub,
     private val disciplinedClock: IDisciplinedClock,
     private val timeSynchronizationService: ITimeSynchronizationService,
+    private val updateRepo: IUpdateRepository,
+    private val apkFile: File,
     private val showToast: IShowToast
 ) : ViewModel() {
 
@@ -59,9 +67,11 @@ class SettingsViewModel(
             ft4Capability = ft4Service.capability.value,
             clockSnapshot = disciplinedClock.snapshot(),
             timeSynchronizationState = timeSynchronizationService.state.value,
+            audioInputDevices = audioHub.inputDevices.value,
             rcSettings = settingsRepo.rcSettings.value,
             radioControlSettings = settingsRepo.radioControlSettings.value,
-            dataSourcesSettings = settingsRepo.dataSourcesSettings.value
+            dataSourcesSettings = settingsRepo.dataSourcesSettings.value,
+            dataSourcesStatus = settingsRepo.dataSourcesStatus.value
         )
     )
 
@@ -121,6 +131,11 @@ class SettingsViewModel(
             }
         }
         viewModelScope.launch {
+            audioHub.inputDevices.collect { devices ->
+                _uiState.update { it.copy(audioInputDevices = devices) }
+            }
+        }
+        viewModelScope.launch {
             timeSynchronizationService.state.collect { state ->
                 _uiState.update { it.copy(timeSynchronizationState = state) }
             }
@@ -134,6 +149,11 @@ class SettingsViewModel(
         viewModelScope.launch {
             settingsRepo.dataSourcesSettings.collect { settings ->
                 _uiState.update { it.copy(dataSourcesSettings = settings) }
+            }
+        }
+        viewModelScope.launch {
+            settingsRepo.dataSourcesStatus.collect { status ->
+                _uiState.update { it.copy(dataSourcesStatus = status) }
             }
         }
         viewModelScope.launch {
@@ -180,6 +200,10 @@ class SettingsViewModel(
             is SettingsAction.SetFt4DecodeDepth -> settingsRepo.updateFt4Settings {
                 it.copy(decodeDepth = action.value.coerceIn(1, 3))
             }
+            is SettingsAction.SetAudioInputDevice -> {
+                settingsRepo.updateFt4Settings { it.copy(audioInputDeviceKey = action.key.orEmpty()) }
+                viewModelScope.launch { audioHub.selectInputDevice(action.key) }
+            }
             is SettingsAction.ToggleNtpSynchronization -> {
                 settingsRepo.updateFt4Settings { it.copy(ntpSynchronizationEnabled = action.value) }
                 timeSynchronizationService.setNtpEnabled(action.value)
@@ -195,10 +219,58 @@ class SettingsViewModel(
             is SettingsAction.UpdateRC -> settingsRepo.updateRCSettings(action.settings)
             is SettingsAction.UpdateRadioControl -> settingsRepo.updateRadioControlSettings(action.settings)
             is SettingsAction.UpdateDataSources -> settingsRepo.updateDataSourcesSettings(action.settings)
+            // Update checker
+            SettingsAction.CheckForUpdate -> checkForUpdate()
+            SettingsAction.DownloadUpdate -> downloadUpdate()
+            SettingsAction.ConsumeDownloadedApk -> consumeDownloadedApk()
             // System
             is SettingsAction.ShowToast -> showToast(action.message)
         }
     }
+
+    // region Update checker
+
+    private fun checkForUpdate() {
+        _uiState.update { it.copy(updateChecker = it.updateChecker.copy(isChecking = true, errorResId = null)) }
+        viewModelScope.launch {
+            val release = updateRepo.getLatestRelease()
+            val hasUpdate = release != null &&
+                VersionComparator.isNewer(release.versionTag, settingsRepo.appVersionName)
+            _uiState.update {
+                it.copy(
+                    updateChecker = it.updateChecker.copy(
+                        isChecking = false,
+                        release = release,
+                        hasUpdate = hasUpdate,
+                        errorResId = if (release == null) R.string.update_check_error else null
+                    )
+                )
+            }
+        }
+    }
+
+    private fun downloadUpdate() {
+        val url = _uiState.value.updateChecker.release?.apkUrl ?: return
+        _uiState.update { it.copy(updateChecker = it.updateChecker.copy(isDownloading = true, errorResId = null)) }
+        viewModelScope.launch {
+            val success = updateRepo.downloadApk(url, apkFile)
+            _uiState.update {
+                it.copy(
+                    updateChecker = it.updateChecker.copy(
+                        isDownloading = false,
+                        apkFile = if (success) apkFile else null,
+                        errorResId = if (success) null else R.string.update_check_download_error
+                    )
+                )
+            }
+        }
+    }
+
+    private fun consumeDownloadedApk() {
+        _uiState.update { it.copy(updateChecker = it.updateChecker.copy(apkFile = null)) }
+    }
+
+    // endregion
 
     // region Position helpers — consolidated from 3 near-identical functions
 
@@ -271,15 +343,18 @@ class SettingsViewModel(
 
     companion object {
 
-        fun factory(container: IMainContainer) = viewModelFactory {
+        fun factory(container: IMainContainer, context: Context) = viewModelFactory {
             initializer {
                 SettingsViewModel(
                     databaseRepo = container.databaseRepo,
                     settingsRepo = container.settingsRepo,
                     ft4Service = container.ft4Service,
                     ft4AudioTransmitter = container.ft4AudioTransmitter,
+                    audioHub = container.audioHub,
                     disciplinedClock = container.disciplinedClock,
                     timeSynchronizationService = container.timeSynchronizationService,
+                    updateRepo = container.updateRepo,
+                    apkFile = File(context.cacheDir, "look4sat-update.apk"),
                     showToast = container.provideShowToast()
                 )
             }

@@ -18,6 +18,16 @@ import org.junit.Test
 
 class IcomCivProtocolTest {
     @Test
+    fun `IC-9700 profile accepts responses from A2 only`() {
+        val response = byteArrayOf(
+            0xFE.toByte(), 0xFE.toByte(), 0xE0.toByte(), 0xA2.toByte(),
+            IcomCivProtocol.ACK_OK, 0xFD.toByte()
+        )
+
+        assertTrue(IcomCivProtocol.ackStatus(response, IcomCivProtocol.ADDR_IC9700) == true)
+        assertEquals(null, IcomCivProtocol.ackStatus(response, IcomCivProtocol.ADDR_IC705))
+    }
+    @Test
     fun pttOnAndOffCommandsUseCivTransceiverStatus() {
         assertArrayEquals(
             byteArrayOf(

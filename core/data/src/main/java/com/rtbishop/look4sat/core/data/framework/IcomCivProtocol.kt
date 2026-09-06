@@ -39,6 +39,7 @@ object IcomCivProtocol {
     // ── Address constants ──────────────────────────────────────────────────
     /** Default CI-V address of the IC-705. */
     const val ADDR_IC705: Byte    = 0xA4.toByte()
+    const val ADDR_IC9700: Byte   = 0xA2.toByte()
     /** Default CI-V address of the controller (us). */
     const val ADDR_CTRL: Byte     = 0xE0.toByte()
 
@@ -299,7 +300,11 @@ object IcomCivProtocol {
      * @param expectCmd the command byte we are looking for in the reply, or
      *                  null to accept any command response from the radio
      */
-    fun parseResponse(buf: ByteArray, expectCmd: Byte?): ParsedResponse? {
+    fun parseResponse(
+        buf: ByteArray,
+        expectCmd: Byte?,
+        radioAddress: Byte = ADDR_IC705
+    ): ParsedResponse? {
         var i = 0
         while (i < buf.size - 5) {
             // Look for FE FE preamble
@@ -308,7 +313,7 @@ object IcomCivProtocol {
             val src  = buf[i + 3]
             val cmd  = buf[i + 4]
             // We only care about frames addressed to us from the radio
-            if (dest != ADDR_CTRL || src != ADDR_IC705) { i++; continue }
+            if (dest != ADDR_CTRL || src != radioAddress) { i++; continue }
             // Find the terminating FD
             val fdIdx = buf.indexOf(END_OF_MSG, startIndex = i + 5)
             if (fdIdx < 0) break  // incomplete frame, wait for more data
@@ -330,14 +335,14 @@ object IcomCivProtocol {
      * Check whether a buffer contains an OK acknowledgement (FB FD) from
      * the radio. Tolerates broadcast noise before the ACK.
      */
-    fun ackStatus(buf: ByteArray): Boolean? {
+    fun ackStatus(buf: ByteArray, radioAddress: Byte = ADDR_IC705): Boolean? {
         var i = 0
         while (i < buf.size - 5) {
             if (buf[i] != PREAMBLE || buf[i + 1] != PREAMBLE) { i++; continue }
             val dest = buf[i + 2]
             val src  = buf[i + 3]
             val cmd  = buf[i + 4]
-            if (dest != ADDR_CTRL || src != ADDR_IC705) { i++; continue }
+            if (dest != ADDR_CTRL || src != radioAddress) { i++; continue }
             // Skip to FD
             val fdIdx = buf.indexOf(END_OF_MSG, startIndex = i + 5)
             if (fdIdx < 0) break
@@ -348,7 +353,8 @@ object IcomCivProtocol {
         return null
     }
 
-    fun containsAck(buf: ByteArray): Boolean = ackStatus(buf) == true
+    fun containsAck(buf: ByteArray, radioAddress: Byte = ADDR_IC705): Boolean =
+        ackStatus(buf, radioAddress) == true
 
     /**
      * Parse frequency + mode from a CMD_READ_FREQ reply payload.

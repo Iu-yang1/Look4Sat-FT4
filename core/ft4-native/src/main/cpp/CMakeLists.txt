@@ -72,9 +72,15 @@ if(FT4_BUILD_RESULT EQUAL 0 AND EXISTS "${FT4_CORE_ARCHIVE}" AND EXISTS "${FT4_R
     set(FT4_OFFICIAL_CORE TRUE)
     message(STATUS "Look4Sat FT4 official core enabled for ${ANDROID_ABI}")
 else()
-    message(WARNING
-        "Look4Sat FT4 official core unavailable for ${ANDROID_ABI}; building capability stub. "
-        "See ${FT4_BUILD_LOG}")
+    if(FT4_BUILD_PROFILE STREQUAL "Release")
+        message(FATAL_ERROR
+            "Look4Sat FT4 release requires the official core for ${ANDROID_ABI}. "
+            "Stub publication is forbidden. See ${FT4_BUILD_LOG}")
+    else()
+        message(WARNING
+            "Look4Sat FT4 official core unavailable for ${ANDROID_ABI}; building debug capability stub. "
+            "See ${FT4_BUILD_LOG}")
+    endif()
 endif()
 
 add_library(look4sat_ft4 SHARED ft4_jni.cpp)

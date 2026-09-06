@@ -53,6 +53,26 @@
     <string name="amsat_load_failed">加载失败 - 检查网络后重试</string>
     <string name="amsat_no_reports">此时间段无报告</string>
     <string name="amsat_close">关闭</string>
+    <string name="amsat_upload">上传</string>
+    <string name="amsat_upload_back">返回</string>
+    <string name="amsat_upload_report">上传报告到 AMSAT</string>
+    <string name="amsat_upload_status">状态</string>
+    <string name="amsat_upload_callsign">呼号</string>
+    <string name="amsat_upload_grid">网格</string>
+    <string name="amsat_upload_time_now">时间：当前 UTC %s</string>
+    <string name="amsat_upload_submit">提交到 AMSAT</string>
+    <string name="amsat_upload_confirm">确认上传</string>
+    <string name="amsat_upload_confirm_title">确认上传到 AMSAT</string>
+    <string name="amsat_upload_confirm_message">这条公开报告将上传到 AMSAT。\n卫星：%1$s\n状态：%2$s\n呼号：%3$s\n网格：%4$s</string>
+    <string name="amsat_upload_grid_none">未填写</string>
+    <string name="amsat_upload_success">报告已上传</string>
+    <string name="amsat_upload_failed">上传失败：%s</string>
+    <string name="amsat_upload_callsign_required">请填写呼号</string>
+    <string name="amsat_upload_grid_invalid">网格应为 4 或 6 位 Maidenhead 定位符</string>
+    <string name="amsat_upload_active">活跃</string>
+    <string name="amsat_upload_tlm">遥测/信标</string>
+    <string name="amsat_upload_not_heard">未听到</string>
+    <string name="amsat_upload_crew_active">ISS 语音</string>
 
     <!-- Radar screen -->
     <string name="radar_back">后退</string>
@@ -136,6 +156,7 @@
     <string name="prefs_data_import_transceivers_error">未导入收发器。请选择有效的 SatNOGS (.json) 文件。</string>
 
     <string name="prefs_data_sources_title">自定义数据源</string>
+    <string name="prefs_data_sources_restore">恢复默认数据源</string>
     <string name="prefs_data_sources_tle_switch">自定义TLE URL</string>
     <string name="prefs_data_sources_transceivers_switch">自定义收发器URL</string>
     <string name="prefs_data_sources_url_title" translatable="false">URL</string>
@@ -176,6 +197,20 @@
     <string name="rc_tx_name_hint">发射电台名称</string>
     <string name="rc_rx_name_hint">接收电台名称</string>
     <string name="rc_enable_switch">启用 CAT 控制</string>
+    <string name="rc_split_mode">Split 模式（单电台）</string>
+    <string name="rc_split_mode_hint">在一台 Icom 电台上使用 VFO-A/B Split，不使用双电台</string>
+    <string name="rc_single_radio">电台（单机 Split）</string>
+    <string name="rc_tx_radio">TX 电台（上行）</string>
+    <string name="rc_rx_radio">RX 电台（下行）</string>
+    <string name="rc_select_device">选择设备</string>
+    <string name="rc_select_tx_device">选择 TX 设备</string>
+    <string name="rc_select_rx_device">选择 RX 设备</string>
+    <string name="rc_paired_devices">可用 CAT 设备：</string>
+    <string name="rc_no_paired_devices">未找到可用 CAT 设备。</string>
+    <string name="rc_baud_rate">波特率：</string>
+    <string name="rc_cat_transport">CAT 传输</string>
+    <string name="rc_tx_tcp_address">TX 主机:端口</string>
+    <string name="rc_rx_tcp_address">RX 主机:端口</string>
 
     <string name="prefs_other_title">其他设置</string>
     <string name="prefs_ft4_title">FT4 与时间同步</string>
@@ -183,6 +218,9 @@
     <string name="prefs_ft4_grid">网格：%s</string>
     <string name="prefs_ft4_edit_grid">编辑网格</string>
     <string name="prefs_ft4_decode">启用 FT4 解码</string>
+    <string name="prefs_ft4_audio_input">共享音频输入</string>
+    <string name="prefs_ft4_audio_default">系统默认</string>
+    <string name="prefs_ft4_audio_external">USB/外置 · %s</string>
     <string name="prefs_ft4_decode_depth">解码能力</string>
     <string name="prefs_ft4_decode_fast">快速</string>
     <string name="prefs_ft4_decode_balanced">均衡</string>
@@ -258,6 +296,18 @@
     <string name="mutual_open_radar">查看雷达</string>
     <string name="mutual_station_a">站点A</string>
     <string name="mutual_station_b">站点B</string>
+    <string name="update_check_title">检查更新</string>
+    <string name="update_check_button">检查更新</string>
+    <string name="update_check_current">当前版本：%s</string>
+    <string name="update_check_latest">最新版本：%s</string>
+    <string name="update_check_up_to_date">已是最新版本</string>
+    <string name="update_check_available">发现新版本</string>
+    <string name="update_check_release_notes">更新内容</string>
+    <string name="update_check_download">下载并安装</string>
+    <string name="update_check_downloading">正在下载…</string>
+    <string name="update_check_error">检查更新失败，请检查网络连接。</string>
+    <string name="update_check_download_error">下载失败，请重试。</string>
+    <string name="update_check_no_apk">该版本未附带 APK 安装包。</string>
 
     <!-- FT4 -->
     <string name="nav_ft4">FT4</string>
@@ -308,9 +358,21 @@
     <string name="ft4_time_source">时间 %1$s · ±%2$.0f ms</string>
     <string name="ft4_start_receive">开始接收</string>
     <string name="ft4_stop_receive">停止接收</string>
+    <string name="ft4_grant_microphone">授予麦克风权限</string>
     <string name="ft4_microphone_required">需要麦克风权限</string>
+    <string name="ft4_waiting_audio">正在等待音频输入…</string>
     <string name="ft4_audio_owner_idle">音频输入空闲</string>
-    <string name="ft4_audio_owner">音频 %1$d Hz · %2$s</string>
+    <string name="ft4_audio_owner">输入 %1$s · %2$d Hz · %3$s</string>
+    <string name="ft4_audio_device_unknown">未知设备</string>
+    <string name="ft4_audio_pcm_float">PCM 浮点</string>
+    <string name="ft4_audio_pcm_16">PCM 16 位</string>
+    <string name="ft4_timestamp_residual">时间戳残差 %1$.3f ms</string>
+    <string name="ft4_timestamp_residual_pending">时间戳残差 --</string>
+    <string name="ft4_slot_diagnostics">时隙 %1$s · %2$d/90,000 样本</string>
+    <string name="ft4_slot_pending">等待下一完整边界</string>
+    <string name="ft4_pipeline_diagnostics">捕获队列 %1$d · 解码队列 %2$d · 丢块 %3$d</string>
+    <string name="ft4_decode_diagnostics">解码 %1$d ms · %2$d 个结果</string>
+    <string name="ft4_decode_diagnostics_pending">解码 -- · 0 个结果</string>
     <string name="ft4_audio_system_silenced">麦克风正被其他应用占用</string>
     <string name="ft4_radar_position">方位 %1$.1f° · 仰角 %2$.1f°</string>
     <string name="ft4_radar_summary">%1$s · 方位 %2$.1f° · 仰角 %3$.1f°</string>
@@ -353,7 +415,7 @@
     <string name="ft4_automation_slots_compact">RX %1$s · TX %2$s</string>
     <string name="ft4_automation_cq_label">连续 CQ</string>
     <string name="ft4_automation_time_ok">允许自动程序操作</string>
-    <string name="ft4_automation_time_blocked">自动 TX 已阻止：%1$s</string>
+    <string name="ft4_automation_time_blocked">无法进入待机：%1$s</string>
     <string name="ft4_arm">待机</string>
     <string name="ft4_stop_automation">停止</string>
     <string name="ft4_slot_even">偶数</string>
@@ -380,4 +442,14 @@
     <string name="ft4_gate_expired">时间样本已过期</string>
     <string name="ft4_gate_uncertain">不确定度超过 250 ms</string>
     <string name="ft4_gate_unhealthy">时钟状态不健康</string>
+    <string name="ft4_gate_disabled">FT4 解码尚未启用</string>
+    <string name="ft4_gate_stub">当前 ABI 没有官方 FT4 核心</string>
+    <string name="ft4_gate_rx_unavailable">FT4 接收核心不可用</string>
+    <string name="ft4_gate_tx_unavailable">FT4 发射核心不可用</string>
+    <string name="ft4_gate_microphone">缺少麦克风权限</string>
+    <string name="ft4_gate_tracking">卫星追踪尚未启动</string>
+    <string name="ft4_gate_tx_radio">TX 电台尚未连接</string>
+    <string name="ft4_gate_pass">尚未选择过境</string>
+    <string name="ft4_gate_transponder">尚未选择转发器</string>
+    <string name="ft4_gate_callsign">尚未设置本机呼号</string>
 </resources>

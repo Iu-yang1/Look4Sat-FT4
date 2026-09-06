@@ -41,6 +41,13 @@ data class TimestampedAudioChunk(
     val format: AudioSampleFormat
 )
 
+data class AudioInputDevice(
+    val key: String,
+    val name: String,
+    val type: Int,
+    val external: Boolean
+)
+
 sealed interface AudioHubState {
     data object Idle : AudioHubState
 
@@ -48,7 +55,10 @@ sealed interface AudioHubState {
         val sampleRate: Int,
         val format: AudioSampleFormat,
         val consumers: Set<AudioConsumer>,
-        val systemSilenced: Boolean = false
+        val systemSilenced: Boolean = false,
+        val deviceId: Int? = null,
+        val deviceType: Int? = null,
+        val deviceName: String = ""
     ) : AudioHubState
 
     data class Failed(val reason: String) : AudioHubState
@@ -56,6 +66,7 @@ sealed interface AudioHubState {
 
 interface IAudioHub {
     val state: StateFlow<AudioHubState>
+    val inputDevices: StateFlow<List<AudioInputDevice>>
 
     /**
      * 订阅共享麦克风。首个订阅者启动录音，最后一个订阅者离开后释放录音。
@@ -65,6 +76,9 @@ interface IAudioHub {
         consumer: AudioConsumer,
         delivery: AudioDelivery = AudioDelivery.RELIABLE
     ): Flow<TimestampedAudioChunk>
+
+    /** 选择共享录音入口；传入 null 使用系统默认路由。活动录音会安全重启。 */
+    suspend fun selectInputDevice(deviceKey: String?)
 
     /** 应用进入后台、权限撤销或用户禁用解码时停止并释放所有音频资源。 */
     suspend fun stopAll()

@@ -48,6 +48,9 @@ sealed class Screen(val iconResId: Int, val titleResId: Int) : NavKey {
 @Serializable
 data object RadarDestination : NavKey
 
+@Serializable
+data object LogbookDestination : NavKey
+
 interface IDeeplinkMatcher {
     fun match(deeplink: String): NavKey?
 }

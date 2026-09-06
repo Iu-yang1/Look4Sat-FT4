@@ -18,7 +18,6 @@
 package com.rtbishop.look4sat.core.data.framework
 
 import android.bluetooth.BluetoothManager
-import android.bluetooth.BluetoothSocket
 import android.util.Log
 import com.rtbishop.look4sat.core.domain.repository.IRadioController
 import kotlinx.coroutines.Dispatchers
@@ -27,24 +26,17 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
-import java.io.InputStream
-import java.io.OutputStream
-import java.util.UUID
 import kotlin.time.Duration.Companion.milliseconds
 
 class Ft817Controller(
-    private val bluetoothManager: BluetoothManager,
-    private val deviceAddress: String
+    bluetoothManager: BluetoothManager,
+    private val deviceAddress: String,
+    private val transport: RadioTransport = BluetoothSppRadioTransport(bluetoothManager, deviceAddress)
 ) : IRadioController {
 
     private val tag = "FT817"
-    private val sppId: UUID = UUID.fromString("00001101-0000-1000-8000-00805f9b34fb")
     private val ioMutex = Mutex()
     private val commandDelayMs = 200L
-
-    private var socket: BluetoothSocket? = null
-    private var outputStream: OutputStream? = null
-    private var inputStream: InputStream? = null
 
     override var isConnected: Boolean = false
         private set
@@ -53,15 +45,9 @@ class Ft817Controller(
         if (isConnected) return@withContext true
         if (deviceAddress.isBlank()) return@withContext false
         try {
-            val device = bluetoothManager.adapter.getRemoteDevice(deviceAddress)
-            val btSocket = device.createInsecureRfcommSocketToServiceRecord(sppId)
-            btSocket.connect()
-            socket = btSocket
-            outputStream = btSocket.outputStream
-            inputStream = btSocket.inputStream
-            isConnected = true
+            isConnected = transport.connect()
             Log.i(tag, "Connected to $deviceAddress")
-            true
+            isConnected
         } catch (e: Exception) {
             Log.e(tag, "Connect error: ${e.message}")
             isConnected = false
@@ -73,15 +59,10 @@ class Ft817Controller(
         withContext(Dispatchers.IO) {
             try {
                 if (isConnected) withTimeoutOrNull(PTT_OFF_TIMEOUT_MS) { pttOff() }
-                inputStream?.close()
-                outputStream?.close()
-                socket?.close()
+                transport.disconnect()
             } catch (e: Exception) {
                 Log.e(tag, "Disconnect error: ${e.message}")
             } finally {
-                inputStream = null
-                outputStream = null
-                socket = null
                 isConnected = false
                 Log.i(tag, "Disconnected from $deviceAddress")
             }
@@ -132,8 +113,7 @@ class Ft817Controller(
     private suspend fun sendCommand(bytes: ByteArray): Boolean {
         return withContext(Dispatchers.IO) {
             try {
-                outputStream?.write(bytes) ?: return@withContext false
-                outputStream?.flush()
+                if (!transport.write(bytes)) return@withContext false
                 delay(commandDelayMs.milliseconds)
                 true
             } catch (e: Exception) {
@@ -159,22 +139,14 @@ class Ft817Controller(
                 var read = 0
                 val deadline = System.nanoTime() + RESPONSE_TIMEOUT_MS * 1_000_000L
                 while (read < responseSize) {
-                    val stream = inputStream ?: run {
-                        isConnected = false
-                        return@withContext null
-                    }
-                    if (stream.available() <= 0) {
+                    val chunk = transport.readAvailable(responseSize - read)
+                    if (chunk.isEmpty()) {
                         if (System.nanoTime() >= deadline) return@withContext null
                         delay(POLL_INTERVAL_MS.milliseconds)
                         continue
                     }
-                    val count = stream.read(buffer, read, responseSize - read)
-                    if (count < 0) {
-                        Log.i(tag, "Response stream closed by remote device")
-                        isConnected = false
-                        return@withContext null
-                    }
-                    read += count
+                    chunk.copyInto(buffer, read)
+                    read += chunk.size
                 }
                 buffer
             } catch (e: Exception) {
@@ -186,15 +158,11 @@ class Ft817Controller(
     }
 
     private suspend fun readByteWithTimeout(timeoutMs: Long): Int? = withContext(Dispatchers.IO) {
-        val stream = inputStream ?: return@withContext null
         val deadline = System.nanoTime() + timeoutMs * 1_000_000L
         try {
             while (System.nanoTime() < deadline) {
-                if (stream.available() > 0) {
-                    val value = stream.read()
-                    if (value < 0) isConnected = false
-                    return@withContext value.takeIf { it >= 0 }
-                }
+                val value = transport.readAvailable(1).firstOrNull()
+                if (value != null) return@withContext value.toInt() and 0xFF
                 delay(POLL_INTERVAL_MS.milliseconds)
             }
             null

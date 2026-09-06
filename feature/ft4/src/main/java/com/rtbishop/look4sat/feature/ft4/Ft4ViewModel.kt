@@ -18,6 +18,9 @@ import com.rtbishop.look4sat.core.domain.ft4.Ft4AutomationController
 import com.rtbishop.look4sat.core.domain.ft4.Ft4AutomationPhase
 import com.rtbishop.look4sat.core.domain.ft4.Ft4DecoderOptions
 import com.rtbishop.look4sat.core.domain.ft4.Ft4TransmissionRequest
+import com.rtbishop.look4sat.core.domain.ft4.Ft4DecodeResult
+import com.rtbishop.look4sat.core.domain.logbook.QsoRecord
+import com.rtbishop.look4sat.core.domain.logbook.QsoStatus
 import com.rtbishop.look4sat.core.domain.repository.IMainContainer
 import com.rtbishop.look4sat.core.domain.time.DisciplinedFt4SlotScheduler
 import java.util.Locale
@@ -30,6 +33,8 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 class Ft4ViewModel(
     private val container: IMainContainer,
@@ -46,6 +51,9 @@ class Ft4ViewModel(
     private var manualTransmitJob: Job? = null
     private var generation = 0L
     private var screenActive = false
+    private var activeQsoId: Long? = null
+    private val loggedDecodeKeys = LinkedHashSet<String>()
+    private val qsoMutex = Mutex()
 
     private val mutableState = kotlinx.coroutines.flow.MutableStateFlow(
         Ft4State(
@@ -96,6 +104,7 @@ class Ft4ViewModel(
             }
             is Ft4Action.SetTargetCall -> {
                 if (automationController.snapshot.phase.isRunning()) stopAutomation()
+                if (!action.callsign.equals(mutableState.value.targetCall, ignoreCase = true)) activeQsoId = null
                 mutableState.update { it.copy(targetCall = action.callsign.uppercase(Locale.US)) }
             }
             is Ft4Action.SelectDecode -> {
@@ -112,6 +121,7 @@ class Ft4ViewModel(
                         txSlotParity = 1 - decodedParity
                     )
                 }
+                viewModelScope.launch { updateQsoFromDecode(action.result, automatic = false) }
             }
             is Ft4Action.SetTxSlotParity -> mutableState.update {
                 it.copy(txSlotParity = action.parity.coerceIn(0, 1))
@@ -213,7 +223,9 @@ class Ft4ViewModel(
                 if (!session.phase.isRunning()) return@collect
                 val slot = scheduler.boundaryAt(clock.nowMillis()).index
                 results.forEach { result ->
-                    automationController.onDecode(session.generation, result, slot)
+                    val before = automationController.snapshot
+                    val after = automationController.onDecode(session.generation, result, slot)
+                    if (after != before) updateQsoFromDecode(result, automatic = true)
                 }
                 val updated = automationController.snapshot
                 mutableState.update {
@@ -233,7 +245,7 @@ class Ft4ViewModel(
                     val mode = radio.txMode.orEmpty()
                     val band = bandKey(radio.nominalTxFrequencyHz)
                     if (!radio.isActive || !radio.txConnected || radio.currentPass == null ||
-                        radio.selectedTransponder == null || radio.elevation <= 0.0
+                        radio.selectedTransponder == null
                     ) {
                         stopAutomationNow("Satellite or radio context is unavailable")
                     } else if (mode != automation.mode || band != automation.band) {
@@ -392,7 +404,7 @@ class Ft4ViewModel(
                 val pass = radio.currentPass
                 if (!state.settings.decodeEnabled || !clock.automaticFt4TransmitAllowed() ||
                     !radio.isActive || !radio.txConnected || pass == null ||
-                    radio.selectedTransponder == null || clock.nowMillis() >= pass.losTime
+                    radio.selectedTransponder == null
                 ) {
                     stopAutomationNow(clock.automaticFt4TransmitBlockReason().ifBlank { "FT4 automatic TX gate closed" })
                     break
@@ -413,7 +425,9 @@ class Ft4ViewModel(
                             false
                         }
                         automationController.transmissionFinished(sessionGeneration, intent, succeeded)
+                        val completed = automationController.snapshot.phase == Ft4AutomationPhase.COMPLETE
                         mutableState.update { it.copy(automation = automationController.snapshot) }
+                        if (completed) finishActiveQso(QsoStatus.COMPLETE)
                         if (!succeeded) break
                     }
                 }
@@ -442,6 +456,7 @@ class Ft4ViewModel(
         val transponder = checkNotNull(radio.selectedTransponder) { "No transponder is selected" }
         val validation = ft4Service.validateMessage(message)
         check(validation.valid) { validation.error }
+        appendTransmittedMessage(validation.normalizedMessage, automatic)
         transmitter.transmit(
             Ft4TransmissionRequest(
                 message = validation.normalizedMessage,
@@ -470,7 +485,81 @@ class Ft4ViewModel(
             automationController.abort(current.generation, reason)
             mutableState.update { it.copy(automation = automationController.snapshot) }
             transmitter.emergencyStop()
+            finishActiveQso(QsoStatus.ABORTED)
         }
+    }
+
+    private suspend fun updateQsoFromDecode(result: Ft4DecodeResult, automatic: Boolean) = qsoMutex.withLock {
+        if (!loggedDecodeKeys.add(result.stableId)) return@withLock
+        trimLoggedDecodeKeys()
+        val state = mutableState.value
+        val theirCall = result.sourceCall.trim().uppercase(Locale.US)
+        if (theirCall.isBlank()) return@withLock
+        val existing = activeQsoId?.let { container.qsoRepository.find(it) }
+            ?.takeIf { it.theirCallsign == theirCall }
+        val detail = result.gridOrReport.trim().uppercase(Locale.US)
+        val base = existing ?: newQsoRecord(state, theirCall, automatic, result.slotUtcMillis)
+        val updated = base.copy(
+            theirGrid = if (GRID_PATTERN.matches(detail)) detail else base.theirGrid,
+            receivedReport = if (REPORT_PATTERN.matches(detail.removePrefix("R"))) detail.removePrefix("R") else base.receivedReport,
+            automatic = base.automatic || automatic,
+            rawMessages = (base.rawMessages + result.text).distinct(),
+            status = if (detail == "73" && automatic) QsoStatus.COMPLETE else base.status,
+            endUtcMillis = if (detail == "73" && automatic) result.slotUtcMillis else base.endUtcMillis
+        )
+        activeQsoId = container.qsoRepository.save(updated)
+    }
+
+    private suspend fun appendTransmittedMessage(message: String, automatic: Boolean) = qsoMutex.withLock {
+        val state = mutableState.value
+        val target = state.targetCall.trim().uppercase(Locale.US)
+        if (target.isBlank()) return@withLock
+        val base = activeQsoId?.let { container.qsoRepository.find(it) }
+            ?.takeIf { it.theirCallsign == target }
+            ?: newQsoRecord(state, target, automatic, state.clock.utcMillis)
+        val detail = message.trim().split(Regex("\\s+")).lastOrNull().orEmpty().uppercase(Locale.US)
+        val sentReport = detail.removePrefix("R").takeIf { REPORT_PATTERN.matches(it) } ?: base.sentReport
+        activeQsoId = container.qsoRepository.save(
+            base.copy(
+                sentReport = sentReport,
+                automatic = base.automatic || automatic,
+                rawMessages = (base.rawMessages + message).distinct()
+            )
+        )
+    }
+
+    private suspend fun finishActiveQso(status: QsoStatus) = qsoMutex.withLock {
+        val id = activeQsoId ?: return@withLock
+        val record = container.qsoRepository.find(id) ?: return@withLock
+        container.qsoRepository.save(record.copy(status = status, endUtcMillis = clock.nowMillis()))
+        activeQsoId = null
+    }
+
+    private fun newQsoRecord(state: Ft4State, target: String, automatic: Boolean, start: Long): QsoRecord {
+        val radio = state.radio
+        val pass = state.trackingPass
+        val transponder = radio.selectedTransponder
+        return QsoRecord(
+            startUtcMillis = start,
+            theirCallsign = target,
+            myCallsign = state.settings.operatorCallsign,
+            myGrid = state.stationGrid,
+            txFrequencyHz = radio.txFrequencyHz,
+            rxFrequencyHz = radio.rxFrequencyHz,
+            band = adifBand(radio.txFrequencyHz),
+            rxBand = adifBand(radio.rxFrequencyHz),
+            satelliteName = pass?.name.orEmpty(),
+            transponderName = transponder?.info.orEmpty(),
+            satelliteMode = listOfNotNull(transponder?.uplinkMode, transponder?.downlinkMode)
+                .filter(String::isNotBlank).joinToString("/"),
+            passAosUtcMillis = pass?.aosTime,
+            ft4AudioFrequencyHz = state.selectedAudioFrequencyHz.toInt(),
+            automatic = automatic
+        )
+    }
+
+    private fun trimLoggedDecodeKeys() {
+        while (loggedDecodeKeys.size > 256) loggedDecodeKeys.remove(loggedDecodeKeys.first())
     }
 
     private fun toggleTracking() {
@@ -536,6 +625,8 @@ private fun Ft4AutomationPhase.isRunning(): Boolean = this !in setOf(
 )
 
 private const val FT4_SLOT_MILLIS = 7_500L
+private val GRID_PATTERN = Regex("[A-R]{2}\\d{2}(?:[A-X]{2})?", RegexOption.IGNORE_CASE)
+private val REPORT_PATTERN = Regex("[+-]\\d{2}")
 
 private fun Ft4State.decoderOptions() = Ft4DecoderOptions(
     decodePassCount = settings.decodeDepth,
@@ -544,3 +635,14 @@ private fun Ft4State.decoderOptions() = Ft4DecoderOptions(
 )
 
 private fun bandKey(frequencyHz: Long?): String = frequencyHz?.let { (it / 1_000_000L).toString() }.orEmpty()
+
+private fun adifBand(frequencyHz: Long?): String = when (frequencyHz ?: return "") {
+    in 50_000_000L..54_000_000L -> "6m"
+    in 144_000_000L..148_000_000L -> "2m"
+    in 219_000_000L..225_000_000L -> "1.25m"
+    in 420_000_000L..450_000_000L -> "70cm"
+    in 902_000_000L..928_000_000L -> "33cm"
+    in 1_240_000_000L..1_300_000_000L -> "23cm"
+    in 2_300_000_000L..2_450_000_000L -> "13cm"
+    else -> ""
+}

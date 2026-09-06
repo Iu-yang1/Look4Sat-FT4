@@ -70,6 +70,26 @@
     <string name="amsat_load_failed">Load failed - check network and retry</string>
     <string name="amsat_no_reports">No reports for this period</string>
     <string name="amsat_close">Close</string>
+    <string name="amsat_upload">Upload</string>
+    <string name="amsat_upload_back">Back</string>
+    <string name="amsat_upload_report">Upload report to AMSAT</string>
+    <string name="amsat_upload_status">Status</string>
+    <string name="amsat_upload_callsign">Callsign</string>
+    <string name="amsat_upload_grid">Grid</string>
+    <string name="amsat_upload_time_now">Time: current UTC %s</string>
+    <string name="amsat_upload_submit">Submit to AMSAT</string>
+    <string name="amsat_upload_confirm">Upload</string>
+    <string name="amsat_upload_confirm_title">Confirm AMSAT upload</string>
+    <string name="amsat_upload_confirm_message">This public report will be uploaded to AMSAT.\nSatellite: %1$s\nStatus: %2$s\nCallsign: %3$s\nGrid: %4$s</string>
+    <string name="amsat_upload_grid_none">Not provided</string>
+    <string name="amsat_upload_success">Report uploaded</string>
+    <string name="amsat_upload_failed">Upload failed: %s</string>
+    <string name="amsat_upload_callsign_required">Callsign is required</string>
+    <string name="amsat_upload_grid_invalid">Grid must be a 4 or 6 character Maidenhead locator</string>
+    <string name="amsat_upload_active">Active</string>
+    <string name="amsat_upload_tlm">TLM/Beacon</string>
+    <string name="amsat_upload_not_heard">Not Heard</string>
+    <string name="amsat_upload_crew_active">Crew Active</string>
 
     <!-- Radar screen -->
     <string name="radar_back">Back</string>
@@ -170,6 +190,7 @@
     <string name="prefs_data_import_transceivers_error">No transceivers imported. Select a valid SatNOGS (.json) file.</string>
 
     <string name="prefs_data_sources_title">Custom data sources</string>
+    <string name="prefs_data_sources_restore">Restore default sources</string>
     <string name="prefs_data_sources_tle_switch">Custom TLE URL</string>
     <string name="prefs_data_sources_transceivers_switch">Custom transceivers URL</string>
     <string name="prefs_data_sources_url_title" translatable="false">URL (HTTPS)</string>
@@ -190,6 +211,20 @@
     <string name="rc_tx_name_hint">TX Radio Name</string>
     <string name="rc_rx_name_hint">RX Radio Name</string>
     <string name="rc_enable_switch">Enable CAT Control</string>
+    <string name="rc_split_mode">Split mode (single radio)</string>
+    <string name="rc_split_mode_hint">Use VFO-A/B split on one Icom radio instead of two radios</string>
+    <string name="rc_single_radio">Radio (single split)</string>
+    <string name="rc_tx_radio">TX Radio (Uplink)</string>
+    <string name="rc_rx_radio">RX Radio (Downlink)</string>
+    <string name="rc_select_device">Select Device</string>
+    <string name="rc_select_tx_device">Select TX Device</string>
+    <string name="rc_select_rx_device">Select RX Device</string>
+    <string name="rc_paired_devices">Available CAT devices:</string>
+    <string name="rc_no_paired_devices">No available CAT device was found.</string>
+    <string name="rc_baud_rate">Baud Rate:</string>
+    <string name="rc_cat_transport">CAT transport</string>
+    <string name="rc_tx_tcp_address">TX host:port</string>
+    <string name="rc_rx_tcp_address">RX host:port</string>
 
     <string name="prefs_net_title">Network data output</string>
     <string name="prefs_net_rotator_switch">Enable rotation output</string>
@@ -217,6 +252,9 @@
     <string name="prefs_ft4_grid">Maidenhead grid: %s</string>
     <string name="prefs_ft4_edit_grid">Edit grid</string>
     <string name="prefs_ft4_decode">Enable FT4 decoding</string>
+    <string name="prefs_ft4_audio_input">Shared audio input</string>
+    <string name="prefs_ft4_audio_default">System default</string>
+    <string name="prefs_ft4_audio_external">USB/external · %s</string>
     <string name="prefs_ft4_decode_depth">Decoding strength</string>
     <string name="prefs_ft4_decode_fast">Fast</string>
     <string name="prefs_ft4_decode_balanced">Balanced</string>
@@ -293,6 +331,18 @@
     <string name="mutual_open_radar">Open Radar</string>
     <string name="mutual_station_a">Station A</string>
     <string name="mutual_station_b">Station B</string>
+    <string name="update_check_title">Check for updates</string>
+    <string name="update_check_button">Check for updates</string>
+    <string name="update_check_current">Current version: %s</string>
+    <string name="update_check_latest">Latest version: %s</string>
+    <string name="update_check_up_to_date">You are up to date</string>
+    <string name="update_check_available">New version available</string>
+    <string name="update_check_release_notes">Release notes</string>
+    <string name="update_check_download">Download &amp; install</string>
+    <string name="update_check_downloading">Downloading…</string>
+    <string name="update_check_error">Failed to check for updates. Check your connection.</string>
+    <string name="update_check_download_error">Download failed. Try again.</string>
+    <string name="update_check_no_apk">No APK attached to this release.</string>
 
     <!-- FT4 -->
     <string name="nav_ft4">FT4</string>
@@ -343,9 +393,21 @@
     <string name="ft4_time_source">Time %1$s · ±%2$.0f ms</string>
     <string name="ft4_start_receive">Start receiving</string>
     <string name="ft4_stop_receive">Stop receiving</string>
+    <string name="ft4_grant_microphone">Grant microphone permission</string>
     <string name="ft4_microphone_required">Microphone permission is required</string>
+    <string name="ft4_waiting_audio">Waiting for audio input…</string>
     <string name="ft4_audio_owner_idle">Audio input idle</string>
-    <string name="ft4_audio_owner">Audio %1$d Hz · %2$s</string>
+    <string name="ft4_audio_owner">Input %1$s · %2$d Hz · %3$s</string>
+    <string name="ft4_audio_device_unknown">unknown device</string>
+    <string name="ft4_audio_pcm_float">PCM Float</string>
+    <string name="ft4_audio_pcm_16">PCM 16-bit</string>
+    <string name="ft4_timestamp_residual">Timestamp residual %1$.3f ms</string>
+    <string name="ft4_timestamp_residual_pending">Timestamp residual --</string>
+    <string name="ft4_slot_diagnostics">Slot %1$s · %2$d/90,000 samples</string>
+    <string name="ft4_slot_pending">waiting for complete boundary</string>
+    <string name="ft4_pipeline_diagnostics">Capture queue %1$d · decode queue %2$d · dropped blocks %3$d</string>
+    <string name="ft4_decode_diagnostics">Decode %1$d ms · %2$d results</string>
+    <string name="ft4_decode_diagnostics_pending">Decode -- · 0 results</string>
     <string name="ft4_audio_system_silenced">Microphone is in use by another app</string>
     <string name="ft4_radar_position">Az %1$.1f° · El %2$.1f°</string>
     <string name="ft4_radar_summary">%1$s · Az %2$.1f° · El %3$.1f°</string>
@@ -391,7 +453,7 @@
     <string name="ft4_automation_slots_compact">RX %1$s · TX %2$s</string>
     <string name="ft4_automation_cq_label">Consecutive CQ</string>
     <string name="ft4_automation_time_ok">Automatic operation allowed</string>
-    <string name="ft4_automation_time_blocked">Automatic TX blocked: %1$s</string>
+    <string name="ft4_automation_time_blocked">Cannot arm: %1$s</string>
     <string name="ft4_arm">Arm</string>
     <string name="ft4_stop_automation">Stop</string>
     <string name="ft4_slot_even">even</string>
@@ -419,4 +481,14 @@
     <string name="ft4_gate_expired">time sample expired</string>
     <string name="ft4_gate_uncertain">uncertainty exceeds 250 ms</string>
     <string name="ft4_gate_unhealthy">clock is unhealthy</string>
+    <string name="ft4_gate_disabled">FT4 decoding is disabled</string>
+    <string name="ft4_gate_stub">official FT4 core is unavailable for this ABI</string>
+    <string name="ft4_gate_rx_unavailable">FT4 receive core is unavailable</string>
+    <string name="ft4_gate_tx_unavailable">FT4 transmit core is unavailable</string>
+    <string name="ft4_gate_microphone">microphone permission is missing</string>
+    <string name="ft4_gate_tracking">satellite tracking is stopped</string>
+    <string name="ft4_gate_tx_radio">TX radio is not connected</string>
+    <string name="ft4_gate_pass">no pass is selected</string>
+    <string name="ft4_gate_transponder">no transponder is selected</string>
+    <string name="ft4_gate_callsign">operator callsign is not configured</string>
 </resources>

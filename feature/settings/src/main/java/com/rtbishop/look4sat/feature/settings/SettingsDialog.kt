@@ -18,59 +18,91 @@
 package com.rtbishop.look4sat.feature.settings
 
 import android.Manifest
+import android.app.PendingIntent
 import android.bluetooth.BluetoothManager
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.hardware.usb.UsbManager
 import android.os.Build
 import androidx.core.content.ContextCompat
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.MutableFloatState
+import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.toMutableStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
+import com.rtbishop.look4sat.core.domain.model.Constants
 import com.rtbishop.look4sat.core.domain.model.RCSettings
 import com.rtbishop.look4sat.core.domain.model.RadioControlSettings
+import com.rtbishop.look4sat.core.domain.source.NetworkResult
+import com.rtbishop.look4sat.core.domain.source.Sources
 import com.rtbishop.look4sat.core.presentation.CardButton
+import com.rtbishop.look4sat.core.presentation.IconCard
 import com.rtbishop.look4sat.core.presentation.LocalSpacing
 import com.rtbishop.look4sat.core.presentation.MainTheme
 import com.rtbishop.look4sat.core.presentation.R
 import com.rtbishop.look4sat.core.presentation.SharedDialog
-import androidx.compose.animation.core.spring
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyListScope
-import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.runtime.mutableLongStateOf
-import androidx.compose.runtime.toMutableStateList
-import androidx.compose.ui.draw.rotate
-import androidx.compose.ui.res.painterResource
-import com.rtbishop.look4sat.core.domain.model.Constants
-import com.rtbishop.look4sat.core.presentation.IconCard
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 @Preview(showBackground = true)
 @Composable
@@ -142,10 +174,16 @@ private fun TransceiversDialogPreview() {
             transceiversUrls = listOf(
                 "db.satnogs.org/api/transmitters/?format=json&status=active"
             ),
+            satelliteEnabled = listOf(true, false),
+            transceiversEnabled = listOf(true),
+            statusCodes = mapOf(
+                "celestrak.org/NORAD/elements/gp.php?GROUP=active&FORMAT=csv" to 200,
+                "amsat.org/tle/current/nasabare.txt" to 404
+            ),
             onImportTle = {},
             onImportTransceivers = {},
             onDismiss = {},
-            onSave = { _, _ -> }
+            onSave = { _, _, _, _ -> }
         )
     }
 }
@@ -154,10 +192,13 @@ private fun TransceiversDialogPreview() {
 fun DataSourcesDialog(
     satelliteUrls: List<String>,
     transceiversUrls: List<String>,
+    satelliteEnabled: List<Boolean>,
+    transceiversEnabled: List<Boolean>,
+    statusCodes: Map<String, Int>,
     onImportTle: () -> Unit,
     onImportTransceivers: () -> Unit,
     onDismiss: () -> Unit,
-    onSave: (List<String>, List<String>) -> Unit
+    onSave: (List<String>, List<String>, List<Boolean>, List<Boolean>) -> Unit
 ) {
     val padding = LocalSpacing.current.large
     // Stable Long IDs avoid key collisions when several entries are empty or duplicated.
@@ -168,10 +209,39 @@ fun DataSourcesDialog(
     val txUrls = remember {
         transceiversUrls.mapIndexed { i, url -> (satelliteUrls.size + i).toLong() to url }.toMutableStateList()
     }
+    val satEnabled = remember {
+        mutableStateMapOf<Long, Boolean>().apply {
+            satUrls.forEachIndexed { i, (id, _) -> this[id] = satelliteEnabled.getOrElse(i) { true } }
+        }
+    }
+    val txEnabled = remember {
+        mutableStateMapOf<Long, Boolean>().apply {
+            txUrls.forEachIndexed { i, (id, _) -> this[id] = transceiversEnabled.getOrElse(i) { true } }
+        }
+    }
+    val onRestoreDefaults = {
+        val satDefaults = Sources.satelliteDataUrls.values.filter { it.isNotBlank() }
+        val txDefaults = Sources.transceiversDataUrls.values.filter { it.isNotBlank() }
+        nextId.longValue = (satDefaults.size + txDefaults.size).toLong()
+        satUrls.clear()
+        satUrls.addAll(satDefaults.mapIndexed { i, url -> i.toLong() to url })
+        txUrls.clear()
+        txUrls.addAll(txDefaults.mapIndexed { i, url -> (satDefaults.size + i).toLong() to url })
+        satEnabled.clear()
+        txEnabled.clear()
+        Unit
+    }
+    val listState = rememberLazyListState()
+    val satDraggedId = remember { mutableStateOf(-1L) }
+    val txDraggedId = remember { mutableStateOf(-1L) }
     val onAccept = {
+        val satFiltered = satUrls.filter { it.second.trim().isNotBlank() }
+        val txFiltered = txUrls.filter { it.second.trim().isNotBlank() }
         onSave(
-            satUrls.map { it.second.trim() }.filter { it.isNotBlank() },
-            txUrls.map { it.second.trim() }.filter { it.isNotBlank() }
+            satFiltered.map { it.second.trim() },
+            txFiltered.map { it.second.trim() },
+            satFiltered.map { satEnabled[it.first] ?: true },
+            txFiltered.map { txEnabled[it.first] ?: true }
         )
         onDismiss()
     }
@@ -181,6 +251,7 @@ fun DataSourcesDialog(
         onAccept = onAccept,
     ) {
         LazyColumn(
+            state = listState,
             modifier = Modifier
                 .fillMaxHeight(0.84f)
                 .padding(horizontal = padding),
@@ -204,12 +275,24 @@ fun DataSourcesDialog(
                     )
                 }
             }
+            item {
+                CardButton(
+                    onClick = onRestoreDefaults,
+                    text = stringResource(R.string.prefs_data_sources_restore),
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
             sourceSection(
                 sectionKey = "sat",
                 labelResId = R.string.prefs_data_sources_satellites_label,
                 urls = satUrls,
+                listState = listState,
+                draggedId = satDraggedId,
+                statusCodes = statusCodes,
+                enabledMap = satEnabled,
+                onToggle = { id -> satEnabled[id] = !(satEnabled[id] ?: true) },
                 onAdd = { satUrls.add(nextId.longValue++ to "") },
-                onMoveUp = { i -> if (i > 0) satUrls.add(i - 1, satUrls.removeAt(i)) },
+                onMove = { from, to -> satUrls.add(to, satUrls.removeAt(from)) },
                 onRemove = { i -> satUrls.removeAt(i) },
                 onUrlChange = { i, v -> satUrls[i] = satUrls[i].first to v }
             )
@@ -217,8 +300,13 @@ fun DataSourcesDialog(
                 sectionKey = "tx",
                 labelResId = R.string.prefs_data_sources_transceivers_label,
                 urls = txUrls,
+                listState = listState,
+                draggedId = txDraggedId,
+                statusCodes = statusCodes,
+                enabledMap = txEnabled,
+                onToggle = { id -> txEnabled[id] = !(txEnabled[id] ?: true) },
                 onAdd = { txUrls.add(nextId.longValue++ to "") },
-                onMoveUp = { i -> if (i > 0) txUrls.add(i - 1, txUrls.removeAt(i)) },
+                onMove = { from, to -> txUrls.add(to, txUrls.removeAt(from)) },
                 onRemove = { i -> txUrls.removeAt(i) },
                 onUrlChange = { i, v -> txUrls[i] = txUrls[i].first to v }
             )
@@ -230,8 +318,13 @@ private fun LazyListScope.sourceSection(
     sectionKey: String,
     labelResId: Int,
     urls: List<Pair<Long, String>>,
+    listState: LazyListState,
+    draggedId: MutableState<Long>,
+    statusCodes: Map<String, Int>,
+    enabledMap: Map<Long, Boolean>,
+    onToggle: (Long) -> Unit,
     onAdd: () -> Unit,
-    onMoveUp: (Int) -> Unit,
+    onMove: (Int, Int) -> Unit,
     onRemove: (Int) -> Unit,
     onUrlChange: (Int, String) -> Unit
 ) {
@@ -247,36 +340,254 @@ private fun LazyListScope.sourceSection(
             IconCard(action = onAdd, resId = R.drawable.ic_add)
         }
     }
-    itemsIndexed(urls, key = { _, entry -> "$sectionKey-${entry.first}" }) { index, (_, url) ->
+    itemsIndexed(urls, key = { _, entry -> "$sectionKey-${entry.first}" }) { index, (id, url) ->
         val enabledTint = MaterialTheme.colorScheme.onSurfaceVariant
-        OutlinedTextField(
-            value = url,
-            onValueChange = { onUrlChange(index, it) },
-            label = { Text(stringResource(R.string.prefs_data_sources_url_title)) },
-            leadingIcon = {
-                IconButton(onClick = { onMoveUp(index) }, enabled = index > 0) {
-                    Icon(
-                        painter = painterResource(R.drawable.ic_arrow),
-                        contentDescription = null,
-                        tint = if (index > 0) enabledTint else enabledTint.copy(alpha = 0.32f),
-                        modifier = Modifier.rotate(270f)
-                    )
-                }
-            },
-            trailingIcon = {
-                IconButton(onClick = { onRemove(index) }) {
-                    Icon(
-                        painter = painterResource(R.drawable.ic_delete),
-                        contentDescription = null
-                    )
-                }
-            },
-            singleLine = true,
+        val enabled = enabledMap[id] ?: true
+        val rowState = remember { DragRowState() }
+        val scope = rememberCoroutineScope()
+        val isDragging = draggedId.value == id
+        val isLifted = isDragging || rowState.isSettling.value
+        LaunchedEffect(isDragging) {
+            if (!isDragging) return@LaunchedEffect
+            autoScroll(listState, rowState.startCenterY, rowState.fingerOffset, rowState.scrollComp)
+        }
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier
                 .fillMaxWidth()
-                .animateItem(fadeInSpec = spring(), fadeOutSpec = spring())
-        )
+                .draggedVisual(
+                    isLifted = isLifted,
+                    translationY = if (rowState.isSettling.value) {
+                        rowState.settleAnim.value
+                    } else {
+                        rowState.offsetY.floatValue + rowState.scrollComp.floatValue
+                    }
+                )
+                .animateItem(
+                    fadeInSpec = spring(),
+                    // The dragged row repositions instantly, while its neighbours spring
+                    // out of the way (the "squeeze" effect).
+                    placementSpec = if (isDragging) {
+                        tween<IntOffset>(durationMillis = 0)
+                    } else {
+                        spring(
+                            dampingRatio = Spring.DampingRatioMediumBouncy,
+                            stiffness = Spring.StiffnessMediumLow
+                        )
+                    },
+                    fadeOutSpec = spring()
+                )
+        ) {
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .size(40.dp)
+                    .dragHandle(listState, sectionKey, id, urls, draggedId, rowState, scope, onMove)
+            ) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_drag_handle),
+                    contentDescription = null,
+                    tint = enabledTint
+                )
+            }
+            OutlinedTextField(
+                value = url,
+                onValueChange = { onUrlChange(index, it) },
+                label = { Text(stringResource(R.string.prefs_data_sources_url_title)) },
+                supportingText = statusCodes[url]?.let { code ->
+                    { Text(statusLabel(code), color = statusColor(code), fontSize = 12.sp) }
+                },
+                trailingIcon = {
+                    IconButton(onClick = { onRemove(index) }) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_delete),
+                            contentDescription = null
+                        )
+                    }
+                },
+                singleLine = true,
+                enabled = enabled,
+                modifier = Modifier.weight(1f)
+            )
+            Checkbox(
+                checked = enabled,
+                onCheckedChange = { onToggle(id) }
+            )
+        }
     }
+}
+
+/**
+ * Per-row drag state, kept in one object to keep the drag-handle modifier signature small.
+ *
+ * [offsetY] is the compensated visual displacement during a drag (finger travel minus the
+ * heights of already-swapped neighbours), so the row stays glued to the finger. [fingerOffset]
+ * tracks the raw finger travel for edge auto-scroll and swap detection. [settleAnim] smoothly
+ * flies the lifted row back into its slot once the finger is released.
+ */
+private class DragRowState {
+    val offsetY = mutableFloatStateOf(0f)
+    val fingerOffset = mutableFloatStateOf(0f)
+    val scrollComp = mutableFloatStateOf(0f)
+    val startCenterY = mutableFloatStateOf(0f)
+    val settleAnim = Animatable(0f)
+    val isSettling = mutableStateOf(false)
+}
+
+/** Spring shared by neighbour "squeeze" and the settle-back animation: soft and slightly bouncy. */
+private val reorderSpring = spring<Float>(
+    dampingRatio = Spring.DampingRatioMediumBouncy,
+    stiffness = Spring.StiffnessMediumLow
+)
+
+/**
+ * Drag handle gesture that performs live reordering while dragging.
+ */
+@Composable
+private fun Modifier.dragHandle(
+    listState: LazyListState,
+    sectionKey: String,
+    entryId: Long,
+    urls: List<Pair<Long, String>>,
+    draggedId: MutableState<Long>,
+    rowState: DragRowState,
+    scope: CoroutineScope,
+    onMove: (from: Int, to: Int) -> Unit
+): Modifier = pointerInput(entryId, sectionKey) {
+    fun reorderLive() {
+        val myIndex = urls.indexOfFirst { it.first == entryId }
+        if (myIndex !in urls.indices) return
+        val myCenter = rowState.startCenterY.floatValue + rowState.fingerOffset.floatValue
+        val visible = listState.layoutInfo.visibleItemsInfo
+        // Dragging down: swap when the dragged centre passes the next row's midpoint.
+        if (myIndex < urls.lastIndex) {
+            val next = visible.firstOrNull { it.key == "$sectionKey-${urls[myIndex + 1].first}" }
+            if (next != null && myCenter > next.offset + next.size / 2f) {
+                onMove(myIndex, myIndex + 1)
+                rowState.offsetY.floatValue -= next.size.toFloat()
+                return
+            }
+        }
+        // Dragging up: swap when the dragged centre passes the previous row's midpoint.
+        if (myIndex > 0) {
+            val prev = visible.firstOrNull { it.key == "$sectionKey-${urls[myIndex - 1].first}" }
+            if (prev != null && myCenter < prev.offset + prev.size / 2f) {
+                onMove(myIndex, myIndex - 1)
+                rowState.offsetY.floatValue += prev.size.toFloat()
+            }
+        }
+    }
+
+    // Reset the drag bookkeeping and fly the lifted row back into its slot.
+    fun finishDrag() {
+        val lastOffset = rowState.offsetY.floatValue + rowState.scrollComp.floatValue
+        if (kotlin.math.abs(lastOffset) < 1f) {
+            rowState.fingerOffset.floatValue = 0f
+            rowState.offsetY.floatValue = 0f
+            rowState.scrollComp.floatValue = 0f
+            draggedId.value = -1L
+            return
+        }
+        scope.launch {
+            rowState.settleAnim.snapTo(lastOffset)
+            rowState.isSettling.value = true
+            rowState.fingerOffset.floatValue = 0f
+            rowState.offsetY.floatValue = 0f
+            rowState.scrollComp.floatValue = 0f
+            draggedId.value = -1L
+            rowState.settleAnim.animateTo(0f, reorderSpring)
+            rowState.isSettling.value = false
+        }
+    }
+
+    detectDragGesturesAfterLongPress(
+        onDragStart = {
+            rowState.isSettling.value = false
+            val layout = listState.layoutInfo.visibleItemsInfo.firstOrNull { it.key == "$sectionKey-$entryId" }
+            rowState.startCenterY.floatValue = (layout?.offset ?: 0) + (layout?.size ?: 0) / 2f
+            rowState.fingerOffset.floatValue = 0f
+            rowState.offsetY.floatValue = 0f
+            rowState.scrollComp.floatValue = 0f
+            draggedId.value = entryId
+        },
+        onDragEnd = ::finishDrag,
+        onDragCancel = ::finishDrag
+    ) { change, dragAmount ->
+        change.consume()
+        if (draggedId.value != entryId) return@detectDragGesturesAfterLongPress
+        rowState.fingerOffset.floatValue += dragAmount.y
+        rowState.offsetY.floatValue += dragAmount.y
+        reorderLive()
+    }
+}
+
+@Composable
+private fun Modifier.draggedVisual(isLifted: Boolean, translationY: Float): Modifier {
+    val shape = MaterialTheme.shapes.small
+    // Smoothly scale the row up/down as the lifted card appears and disappears.
+    val scale by animateFloatAsState(
+        targetValue = if (isLifted) 1.02f else 1f,
+        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
+        label = "dragScale"
+    )
+    return this
+        .graphicsLayer {
+            if (isLifted) {
+                this.translationY = translationY
+                scaleX = scale
+                scaleY = scale
+            }
+        }
+        .then(
+            if (isLifted) {
+                // Solid card on top so the lifted row fully covers the row beneath it
+                // instead of showing a translucent overlap of both rows.
+                Modifier
+                    .zIndex(1f)
+                    .shadow(8.dp, shape, clip = false)
+                    .background(MaterialTheme.colorScheme.surface, shape)
+            } else {
+                Modifier
+            }
+        )
+}
+
+/**
+ * Scrolls the list while dragging so the entry follows the finger past the viewport edges.
+ * The visual centre is tracked independently of the entry's layout slot (which can scroll out
+ * of [LazyListState.layoutInfo.visibleItemsInfo] during a long drag); [startCenterY] is the
+ * entry's viewport centre captured at drag start and [fingerOffset] is the raw finger delta.
+ */
+private suspend fun autoScroll(
+    listState: LazyListState,
+    startCenterY: MutableFloatState,
+    fingerOffset: MutableFloatState,
+    scrollComp: MutableFloatState
+) {
+    val threshold = 48f
+    val maxSpeed = 24f
+    while (true) {
+        val info = listState.layoutInfo
+        val center = startCenterY.floatValue + fingerOffset.floatValue
+        val top = info.viewportStartOffset + threshold
+        val bottom = info.viewportEndOffset - threshold
+        val delta = when {
+            center < top -> -(top - center).coerceAtMost(maxSpeed)
+            center > bottom -> (center - bottom).coerceAtMost(maxSpeed)
+            else -> 0f
+        }
+        if (delta != 0f) scrollComp.floatValue += listState.scrollBy(delta)
+        delay(16L)
+    }
+}
+
+private fun statusLabel(code: Int): String = if (code == NetworkResult.CONNECTION_ERROR) "ERR" else code.toString()
+
+@Composable
+private fun statusColor(code: Int): Color = when {
+    code == NetworkResult.CONNECTION_ERROR -> MaterialTheme.colorScheme.error
+    code in 200..299 -> Color(0xFF66BB6A)
+    else -> MaterialTheme.colorScheme.error
 }
 
 @Preview(showBackground = true)
@@ -546,6 +857,7 @@ fun RadioControlDialog(
     val enabled    = rememberSaveable { mutableStateOf(initialSettings.enabled) }
     val radioModel = rememberSaveable { mutableStateOf(initialSettings.radioModel) }
     val splitMode  = rememberSaveable { mutableStateOf(initialSettings.splitMode) }
+    val catTransport = rememberSaveable { mutableStateOf(initialSettings.catTransport) }
     val txAddress  = rememberSaveable { mutableStateOf(initialSettings.txRadioAddress) }
     val rxAddress  = rememberSaveable { mutableStateOf(initialSettings.rxRadioAddress) }
     val txName     = rememberSaveable { mutableStateOf(initialSettings.txRadioName) }
@@ -553,7 +865,10 @@ fun RadioControlDialog(
     val baudRate   = rememberSaveable { mutableIntStateOf(initialSettings.baudRate) }
     val selectingFor = rememberSaveable { mutableStateOf("") } // "tx", "rx", or ""
 
-    val isIcom = radioModel.value == RadioControlSettings.MODEL_ICOM_IC705
+    val isIcom = radioModel.value in setOf(
+        RadioControlSettings.MODEL_ICOM_IC705,
+        RadioControlSettings.MODEL_ICOM_IC9700
+    )
     val isSingleRadio = isIcom && splitMode.value
 
     // Reset split mode when switching away from IC-705
@@ -565,9 +880,17 @@ fun RadioControlDialog(
     // If current baud rate is not in the new list, default to the first available
     if (baudRate.intValue !in baudRates) baudRate.intValue = baudRates.first()
 
-    val pairedDevices: List<Pair<String, String>> = remember {
+    val pairedDevices: List<Pair<String, String>> = remember(catTransport.value) {
         buildList {
             try {
+                if (catTransport.value == RadioControlSettings.TRANSPORT_USB) {
+                    val manager = context.getSystemService(UsbManager::class.java)
+                    manager.deviceList.values.forEach { device ->
+                        add((device.productName ?: "USB ${device.vendorId}:${device.productId}") to device.deviceId.toString())
+                    }
+                    return@buildList
+                }
+                if (catTransport.value != RadioControlSettings.TRANSPORT_BLUETOOTH) return@buildList
                 if (
                     Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
                     ContextCompat.checkSelfPermission(
@@ -595,7 +918,8 @@ fun RadioControlDialog(
                 txRadioName    = txName.value,
                 rxRadioName    = if (isSingleRadio) "" else rxName.value,
                 baudRate       = baudRate.intValue,
-                splitMode      = splitMode.value
+                splitMode      = splitMode.value,
+                catTransport   = catTransport.value
             )
         )
         onDismiss()
@@ -616,6 +940,41 @@ fun RadioControlDialog(
             ) {
                 Text(stringResource(R.string.rc_enable_switch))
                 Switch(checked = enabled.value, onCheckedChange = { enabled.value = it })
+            }
+            Spacer(modifier = Modifier.height(6.dp))
+
+            Text(stringResource(R.string.rc_cat_transport), fontWeight = FontWeight.Medium)
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                RadioControlSettings.SUPPORTED_TRANSPORTS.forEach { transport ->
+                    FilterChip(
+                        selected = catTransport.value == transport,
+                        onClick = {
+                            catTransport.value = transport
+                            txAddress.value = ""
+                            rxAddress.value = ""
+                        },
+                        label = { Text(transport, fontSize = 12.sp) },
+                        enabled = enabled.value
+                    )
+                }
+            }
+            if (catTransport.value == RadioControlSettings.TRANSPORT_TCP) {
+                OutlinedTextField(
+                    value = txAddress.value,
+                    onValueChange = { txAddress.value = it },
+                    label = { Text(stringResource(R.string.rc_tx_tcp_address)) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                if (!isSingleRadio) {
+                    OutlinedTextField(
+                        value = rxAddress.value,
+                        onValueChange = { rxAddress.value = it },
+                        label = { Text(stringResource(R.string.rc_rx_tcp_address)) },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
             }
             Spacer(modifier = Modifier.height(6.dp))
 
@@ -645,9 +1004,9 @@ fun RadioControlDialog(
                     modifier              = Modifier.fillMaxWidth()
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
-                        Text("Split mode (single radio)", fontWeight = FontWeight.Medium)
+                        Text(stringResource(R.string.rc_split_mode), fontWeight = FontWeight.Medium)
                         Text(
-                            text     = "Use VFO-A/B split on one IC-705 instead of two radios",
+                            text     = stringResource(R.string.rc_split_mode_hint),
                             fontSize = 12.sp,
                             color    = androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -662,43 +1021,47 @@ fun RadioControlDialog(
             }
 
             // TX Radio (always shown; in split mode this is the single IC-705)
-            val txLabel = if (isSingleRadio) "Radio (IC-705)" else "TX Radio (Uplink)"
+            val txLabel = stringResource(if (isSingleRadio) R.string.rc_single_radio else R.string.rc_tx_radio)
             Text(txLabel, fontWeight = FontWeight.Medium)
             if (txAddress.value.isNotBlank()) {
                 Text("${txName.value} — ${txAddress.value}", fontSize = 13.sp)
             }
-            CardButton(
-                onClick  = { selectingFor.value = "tx" },
-                text     = if (isSingleRadio) "Select Device" else "Select TX Device",
-                modifier = Modifier.fillMaxWidth()
-            )
+            if (catTransport.value != RadioControlSettings.TRANSPORT_TCP) {
+                CardButton(
+                    onClick  = { selectingFor.value = "tx" },
+                    text     = stringResource(if (isSingleRadio) R.string.rc_select_device else R.string.rc_select_tx_device),
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
             Spacer(modifier = Modifier.height(6.dp))
 
             // RX Radio (hidden in split mode — the same radio handles both)
             if (!isSingleRadio) {
-                Text("RX Radio (Downlink)", fontWeight = FontWeight.Medium)
+                Text(stringResource(R.string.rc_rx_radio), fontWeight = FontWeight.Medium)
                 if (rxAddress.value.isNotBlank()) {
                     Text("${rxName.value} — ${rxAddress.value}", fontSize = 13.sp)
                 }
-                CardButton(
-                    onClick  = { selectingFor.value = "rx" },
-                    text     = "Select RX Device",
-                    modifier = Modifier.fillMaxWidth()
-                )
+                if (catTransport.value != RadioControlSettings.TRANSPORT_TCP) {
+                    CardButton(
+                        onClick  = { selectingFor.value = "rx" },
+                        text     = stringResource(R.string.rc_select_rx_device),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
                 Spacer(modifier = Modifier.height(6.dp))
             }
 
             // Paired device picker (inline, shown while selecting)
             if (selectingFor.value.isNotBlank()) {
                 Text(
-                    text       = "Paired Bluetooth Devices:",
+                    text       = stringResource(R.string.rc_paired_devices),
                     fontWeight = FontWeight.Medium,
                     color      = androidx.compose.material3.MaterialTheme.colorScheme.primary
                 )
                 Spacer(modifier = Modifier.height(2.dp))
                 if (pairedDevices.isEmpty()) {
                     Text(
-                        "No paired devices found. Pair your BT adapter in Android Bluetooth settings first.",
+                        stringResource(R.string.rc_no_paired_devices),
                         fontSize = 13.sp
                     )
                 } else {
@@ -707,6 +1070,21 @@ fun RadioControlDialog(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clickable {
+                                    if (catTransport.value == RadioControlSettings.TRANSPORT_USB) {
+                                        val usbManager = context.getSystemService(UsbManager::class.java)
+                                        val device = usbManager.deviceList.values.firstOrNull {
+                                            it.deviceId.toString() == address
+                                        }
+                                        if (device != null && !usbManager.hasPermission(device)) {
+                                            val permissionIntent = PendingIntent.getBroadcast(
+                                                context,
+                                                device.deviceId,
+                                                Intent("${context.packageName}.USB_CAT_PERMISSION").setPackage(context.packageName),
+                                                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+                                            )
+                                            usbManager.requestPermission(device, permissionIntent)
+                                        }
+                                    }
                                     if (selectingFor.value == "tx") {
                                         txAddress.value = address
                                         txName.value    = name
@@ -732,7 +1110,7 @@ fun RadioControlDialog(
             }
 
             // Baud rate — FlowRow so all chips fit on narrow screens
-            Text("Baud Rate:", fontWeight = FontWeight.Medium)
+            Text(stringResource(R.string.rc_baud_rate), fontWeight = FontWeight.Medium)
             FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 baudRates.forEach { rate ->
                     FilterChip(

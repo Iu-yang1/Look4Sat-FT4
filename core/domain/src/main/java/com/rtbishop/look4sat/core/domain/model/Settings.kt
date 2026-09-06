@@ -68,16 +68,22 @@ data class OtherSettings(
 
 data class Ft4Settings(
     val operatorCallsign: String = "",
-    val decodeEnabled: Boolean = false,
+    val decodeEnabled: Boolean = true,
     val decodeDepth: Int = 3,
     val ntpSynchronizationEnabled: Boolean = false,
-    val gnssSynchronizationEnabled: Boolean = false
+    val gnssSynchronizationEnabled: Boolean = false,
+    val audioInputDeviceKey: String = ""
 )
 
 data class DataSourcesSettings(
     val satelliteUrls: List<String>,
-    val transceiversUrls: List<String>
-)
+    val transceiversUrls: List<String>,
+    val satelliteEnabled: List<Boolean> = emptyList(),
+    val transceiversEnabled: List<Boolean> = emptyList()
+) {
+    fun isSatelliteEnabled(index: Int): Boolean = satelliteEnabled.getOrElse(index) { true }
+    fun isTransceiverEnabled(index: Int): Boolean = transceiversEnabled.getOrElse(index) { true }
+}
 
 data class RadioControlSettings(
     val enabled: Boolean,
@@ -86,16 +92,22 @@ data class RadioControlSettings(
     val rxRadioAddress: String,
     val txRadioName: String,
     val rxRadioName: String,
-    val baudRate: Int,
-    /** IC-705 only: use single-radio split-VFO mode instead of two radios. */
-    val splitMode: Boolean = false
+      val baudRate: Int,
+      /** IC-705 only: use single-radio split-VFO mode instead of two radios. */
+      val splitMode: Boolean = false,
+      val catTransport: String = TRANSPORT_BLUETOOTH
 ) {
     companion object {
         const val MODEL_YAESU_FT817   = "Yaesu FT-817/818"
         const val MODEL_YAESU_FT857   = "Yaesu FT-857/897"
         const val MODEL_ICOM_IC705    = "Icom IC-705"
+          const val MODEL_ICOM_IC9700   = "Icom IC-9700"
+          const val TRANSPORT_BLUETOOTH = "BLUETOOTH"
+          const val TRANSPORT_USB = "USB"
+          const val TRANSPORT_TCP = "TCP"
 
-        val SUPPORTED_RADIOS = listOf(MODEL_YAESU_FT817, MODEL_YAESU_FT857, MODEL_ICOM_IC705)
+          val SUPPORTED_RADIOS = listOf(MODEL_YAESU_FT817, MODEL_YAESU_FT857, MODEL_ICOM_IC705, MODEL_ICOM_IC9700)
+          val SUPPORTED_TRANSPORTS = listOf(TRANSPORT_BLUETOOTH, TRANSPORT_USB, TRANSPORT_TCP)
 
         /** Baud rates available for Yaesu radios. */
         val BAUD_RATES_YAESU = listOf(4800, 9600, 38400)

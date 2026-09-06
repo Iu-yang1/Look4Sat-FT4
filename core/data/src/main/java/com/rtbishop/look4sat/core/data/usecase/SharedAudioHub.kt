@@ -10,15 +10,22 @@
 package com.rtbishop.look4sat.core.data.usecase
 
 import android.annotation.SuppressLint
+import android.content.Context
+import android.media.AudioDeviceCallback
+import android.media.AudioDeviceInfo
 import android.media.AudioFormat
+import android.media.AudioManager
 import android.media.AudioRecord
 import android.media.AudioTimestamp
 import android.media.MediaRecorder
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.os.SystemClock
 import com.rtbishop.look4sat.core.domain.audio.AudioConsumer
 import com.rtbishop.look4sat.core.domain.audio.AudioDelivery
 import com.rtbishop.look4sat.core.domain.audio.AudioHubState
+import com.rtbishop.look4sat.core.domain.audio.AudioInputDevice
 import com.rtbishop.look4sat.core.domain.audio.AudioSampleFormat
 import com.rtbishop.look4sat.core.domain.audio.IAudioHub
 import com.rtbishop.look4sat.core.domain.audio.Pcm16Converter
@@ -45,7 +52,13 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
-class SharedAudioHub(private val scope: CoroutineScope) : IAudioHub {
+internal const val AUDIO_TIMESTAMP_TIMEBASE = AudioTimestamp.TIMEBASE_BOOTTIME
+
+class SharedAudioHub(
+    context: Context,
+    private val scope: CoroutineScope,
+    initialDeviceKey: String? = null
+) : IAudioHub {
     private data class Candidate(
         val sampleRate: Int,
         val encoding: Int,
@@ -65,12 +78,26 @@ class SharedAudioHub(private val scope: CoroutineScope) : IAudioHub {
     )
 
     private val lifecycleMutex = Mutex()
+    private val audioManager = context.applicationContext.getSystemService(AudioManager::class.java)
     private val nextSubscriberId = AtomicLong(1L)
     private val subscribers = ConcurrentHashMap<Long, Subscriber>()
     private val _state = MutableStateFlow<AudioHubState>(AudioHubState.Idle)
+    private val _inputDevices = MutableStateFlow(readInputDevices())
+    @Volatile
+    private var preferredDeviceKey = initialDeviceKey
     private var captureJob: Job? = null
 
+    private val deviceCallback = object : AudioDeviceCallback() {
+        override fun onAudioDevicesAdded(addedDevices: Array<out AudioDeviceInfo>) = refreshInputDevices()
+        override fun onAudioDevicesRemoved(removedDevices: Array<out AudioDeviceInfo>) = refreshInputDevices()
+    }
+
+    init {
+        audioManager.registerAudioDeviceCallback(deviceCallback, Handler(Looper.getMainLooper()))
+    }
+
     override val state: StateFlow<AudioHubState> = _state.asStateFlow()
+    override val inputDevices: StateFlow<List<AudioInputDevice>> = _inputDevices.asStateFlow()
 
     override fun audioFlow(
         consumer: AudioConsumer,
@@ -91,6 +118,20 @@ class SharedAudioHub(private val scope: CoroutineScope) : IAudioHub {
             subscribers.clear()
             job?.cancelAndJoin()
             _state.value = AudioHubState.Idle
+        }
+    }
+
+    override suspend fun selectInputDevice(deviceKey: String?) {
+        lifecycleMutex.withLock {
+            preferredDeviceKey = deviceKey
+            val job = captureJob
+            captureJob = null
+            job?.cancelAndJoin()
+            if (subscribers.isNotEmpty()) {
+                captureJob = scope.launch(Dispatchers.IO) { captureAudio() }
+            } else {
+                _state.value = AudioHubState.Idle
+            }
         }
     }
 
@@ -128,10 +169,14 @@ class SharedAudioHub(private val scope: CoroutineScope) : IAudioHub {
             val opened = openRecorder()
             recorder = opened.recorder
             val candidate = opened.candidate
+            val routedDevice = recorder.routedDevice
             _state.value = AudioHubState.Capturing(
                 sampleRate = candidate.sampleRate,
                 format = candidate.format,
-                consumers = activeConsumers()
+                consumers = activeConsumers(),
+                deviceId = routedDevice?.id,
+                deviceType = routedDevice?.type,
+                deviceName = routedDevice?.productName?.toString().orEmpty()
             )
             readLoop(recorder, candidate)
         } catch (error: Exception) {
@@ -211,7 +256,7 @@ class SharedAudioHub(private val scope: CoroutineScope) : IAudioHub {
         sampleRate: Int
     ): Long {
         val timestamp = AudioTimestamp()
-        if (recorder.getTimestamp(timestamp, AudioTimestamp.TIMEBASE_MONOTONIC) == AudioRecord.SUCCESS) {
+        if (recorder.getTimestamp(timestamp, AUDIO_TIMESTAMP_TIMEBASE) == AudioRecord.SUCCESS) {
             val frameDelta = timestamp.framePosition - firstFramePosition
             return timestamp.nanoTime - frameDelta * NANOS_PER_SECOND / sampleRate
         }
@@ -221,6 +266,12 @@ class SharedAudioHub(private val scope: CoroutineScope) : IAudioHub {
     @SuppressLint("MissingPermission")
     private fun openRecorder(): OpenedRecorder {
         val failures = mutableListOf<String>()
+        val selectedKey = preferredDeviceKey
+        val selectedDevice = selectedKey?.let { key ->
+            audioManager.getDevices(AudioManager.GET_DEVICES_INPUTS)
+                .firstOrNull { deviceKey(it) == key }
+                ?: error("选择的音频输入设备当前不可用")
+        }
         for (candidate in CANDIDATES) {
             val bytesPerSample = if (candidate.encoding == AudioFormat.ENCODING_PCM_FLOAT) 4 else 2
             val minimum = AudioRecord.getMinBufferSize(
@@ -250,6 +301,11 @@ class SharedAudioHub(private val scope: CoroutineScope) : IAudioHub {
                 failures += "${candidate.sampleRate}/${candidate.format}: ${recorderResult.exceptionOrNull()?.message}"
                 continue
             }
+            if (selectedDevice != null && !recorder.setPreferredDevice(selectedDevice)) {
+                failures += "${candidate.sampleRate}/${candidate.format}: 无法选择音频输入设备"
+                recorder.release()
+                continue
+            }
             if (recorder.state == AudioRecord.STATE_INITIALIZED) {
                 val started = runCatching {
                     recorder.startRecording()
@@ -263,6 +319,32 @@ class SharedAudioHub(private val scope: CoroutineScope) : IAudioHub {
             recorder.release()
         }
         error("没有可用的单声道录音配置: ${failures.joinToString()}")
+    }
+
+    private fun refreshInputDevices() {
+        _inputDevices.value = readInputDevices()
+        val selectedKey = preferredDeviceKey ?: return
+        if (_inputDevices.value.none { it.key == selectedKey }) {
+            scope.launch { selectInputDevice(selectedKey) }
+        }
+    }
+
+    private fun readInputDevices(): List<AudioInputDevice> = audioManager
+        .getDevices(AudioManager.GET_DEVICES_INPUTS)
+        .map { device ->
+            AudioInputDevice(
+                key = deviceKey(device),
+                name = device.productName.toString(),
+                type = device.type,
+                external = device.type in EXTERNAL_DEVICE_TYPES
+            )
+        }
+        .distinctBy { it.key }
+
+    private fun deviceKey(device: AudioDeviceInfo): String {
+        val address = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) device.address else ""
+        val identity = address.ifBlank { device.productName.toString() }
+        return "${device.type}:$identity"
     }
 
     private fun updateConsumersInState() {
@@ -290,6 +372,15 @@ class SharedAudioHub(private val scope: CoroutineScope) : IAudioHub {
         private const val CHUNKS_PER_SECOND = 10
         private const val RELIABLE_BUFFER_CHUNKS = 32
         private const val NANOS_PER_SECOND = 1_000_000_000L
+
+        private val EXTERNAL_DEVICE_TYPES = setOf(
+            AudioDeviceInfo.TYPE_USB_DEVICE,
+            AudioDeviceInfo.TYPE_USB_HEADSET,
+            AudioDeviceInfo.TYPE_WIRED_HEADSET,
+            AudioDeviceInfo.TYPE_LINE_ANALOG,
+            AudioDeviceInfo.TYPE_LINE_DIGITAL,
+            AudioDeviceInfo.TYPE_BLUETOOTH_SCO
+        )
 
         private val CANDIDATES = listOf(
             Candidate(

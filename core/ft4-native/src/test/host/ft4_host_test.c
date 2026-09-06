@@ -182,6 +182,33 @@ static int decode_slot(ftx_decoder_t *decoder, const float *samples, long long u
     return ftx_decoder_process_float_slot(decoder, samples, FT4_SLOT_SAMPLES, utc_millis);
 }
 
+static void test_generated_decode_loop(void) {
+    const char *message = "CQ K1ABC FN42";
+    float *waveform = (float *) calloc(FT4_WAVE_SAMPLES_12K, sizeof(float));
+    float *slot = (float *) calloc(FT4_SLOT_SAMPLES, sizeof(float));
+    ftx_decoder_t *decoder = ftx_decoder_create(FTX_MODE_FT4, 12000, FT4_SLOT_SAMPLES, 0);
+    int found = 0;
+    if (waveform != NULL && slot != NULL && decoder != NULL
+            && ft4_bridge_generate_wave(message, 12000, 1500.0f, waveform,
+                                        FT4_WAVE_SAMPLES_12K) == FT4_WAVE_SAMPLES_12K
+            && configure_decoder(decoder)) {
+        memcpy(slot + 6000, waveform, FT4_WAVE_SAMPLES_12K * sizeof(float));
+        const int count = decode_slot(decoder, slot, 0);
+        for (int index = 0; index < count; ++index) {
+            ftx_decode_result_t result = {0};
+            if (ftx_decoder_get_result(decoder, index, &result) == 0
+                    && strcmp(result.text, message) == 0) {
+                found = 1;
+                break;
+            }
+        }
+    }
+    expect_true(found, "generated waveform completes real decode loop");
+    ftx_decoder_destroy(decoder);
+    free(slot);
+    free(waveform);
+}
+
 static void test_noise(void) {
     float *noise = (float *) calloc(FT4_SLOT_SAMPLES, sizeof(float));
     ftx_decoder_t *decoder = ftx_decoder_create(FTX_MODE_FT4, 12000, FT4_SLOT_SAMPLES, 0);
@@ -311,6 +338,7 @@ static void test_corpus(const char *path) {
 int main(int argc, char **argv) {
     test_codec();
     test_tones_and_waveform();
+    test_generated_decode_loop();
     if (argc > 1) {
         test_corpus(argv[1]);
         test_noise();

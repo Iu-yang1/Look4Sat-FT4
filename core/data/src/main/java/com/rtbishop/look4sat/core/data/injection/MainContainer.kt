@@ -24,17 +24,21 @@ import android.hardware.display.DisplayManager
 import android.location.LocationManager
 import androidx.room.Room
 import com.rtbishop.look4sat.core.data.database.Look4SatDb
+import com.rtbishop.look4sat.core.data.database.QsoDatabase
 import com.rtbishop.look4sat.core.data.framework.BluetoothReporter
+import com.rtbishop.look4sat.core.data.framework.AndroidRadioTransportFactory
 import com.rtbishop.look4sat.core.data.framework.NetworkReporter
 import com.rtbishop.look4sat.core.data.framework.RadioTrackingService
 import com.rtbishop.look4sat.core.data.ft4.Ft4Service
 import com.rtbishop.look4sat.core.data.ft4.Ft4AudioTransmitter
 import com.rtbishop.look4sat.core.data.repository.AmSatRepository
 import com.rtbishop.look4sat.core.data.repository.DatabaseRepo
+import com.rtbishop.look4sat.core.data.repository.QsoRepository
 import com.rtbishop.look4sat.core.data.repository.SatelliteRepo
 import com.rtbishop.look4sat.core.data.repository.SelectionRepo
 import com.rtbishop.look4sat.core.data.repository.SensorsRepo
 import com.rtbishop.look4sat.core.data.repository.SettingsRepo
+import com.rtbishop.look4sat.core.data.repository.UpdateRepository
 import com.rtbishop.look4sat.core.data.source.LocalSource
 import com.rtbishop.look4sat.core.data.source.RemoteSource
 import com.rtbishop.look4sat.core.data.usecase.AddToCalendar
@@ -45,6 +49,7 @@ import com.rtbishop.look4sat.core.data.usecase.SaveImage
 import com.rtbishop.look4sat.core.data.usecase.ShowToast
 import com.rtbishop.look4sat.core.domain.audio.IAudioHub
 import com.rtbishop.look4sat.core.domain.ft4.IFt4Service
+import com.rtbishop.look4sat.core.domain.logbook.IQsoRepository
 import com.rtbishop.look4sat.core.domain.ft4.IFt4TransmitCoordinator
 import com.rtbishop.look4sat.core.domain.ft4.IFt4AudioTransmitter
 import com.rtbishop.look4sat.core.domain.time.IDisciplinedClock
@@ -84,8 +89,19 @@ class MainContainer(private val context: Context) : IMainContainer {
     override val selectionRepo = provideSelectionRepo()
     override val satelliteRepo = provideSatelliteRepo()
     override val databaseRepo = provideDatabaseRepo()
-    override val amSatRepo by lazy { AmSatRepository(remoteSource) }
-    override val audioHub: IAudioHub by lazy { SharedAudioHub(appScope) }
+    override val qsoRepository: IQsoRepository by lazy {
+        val database = Room.databaseBuilder(context, QsoDatabase::class.java, "Look4SatQsoDB").build()
+        QsoRepository(database.qsoDao(), Dispatchers.IO)
+    }
+    override val amSatRepo by lazy { AmSatRepository(remoteSource, appScope) }
+    override val updateRepo by lazy { UpdateRepository(remoteSource) }
+    override val audioHub: IAudioHub by lazy {
+        SharedAudioHub(
+            context = context,
+            scope = appScope,
+            initialDeviceKey = settingsRepo.ft4Settings.value.audioInputDeviceKey.ifBlank { null }
+        )
+    }
     override val ft4Service: IFt4Service by lazy { Ft4Service(appScope, audioHub, disciplinedClock) }
     override val disciplinedClock: IDisciplinedClock by lazy {
         SystemDisciplinedClock(AndroidMonotonicTimeSource)
@@ -98,7 +114,15 @@ class MainContainer(private val context: Context) : IMainContainer {
         }
     private val sharedRadioTrackingService: RadioTrackingService by lazy {
         val manager = context.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
-        RadioTrackingService(appScope, manager, satelliteRepo, settingsRepo)
+        val transportFactory = AndroidRadioTransportFactory(context, manager)
+        RadioTrackingService(
+            appScope,
+            manager,
+            satelliteRepo,
+            settingsRepo,
+            disciplinedClock,
+            transportFactory = transportFactory::create
+        )
     }
     override val radioTrackingService: IRadioTrackingService by lazy { sharedRadioTrackingService }
     override val ft4TransmitCoordinator: IFt4TransmitCoordinator by lazy { sharedRadioTrackingService }

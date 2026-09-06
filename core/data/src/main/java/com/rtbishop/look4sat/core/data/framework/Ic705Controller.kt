@@ -18,7 +18,6 @@
 package com.rtbishop.look4sat.core.data.framework
 
 import android.bluetooth.BluetoothManager
-import android.bluetooth.BluetoothSocket
 import android.util.Log
 import com.rtbishop.look4sat.core.domain.repository.IRadioController
 import kotlinx.coroutines.Dispatchers
@@ -27,9 +26,6 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
-import java.io.InputStream
-import java.io.OutputStream
-import java.util.UUID
 
 /**
  * Icom IC-705 CI-V controller over Bluetooth SPP.
@@ -41,12 +37,13 @@ import java.util.UUID
  * the very next byte is the response.
  */
 class Ic705Controller(
-    private val bluetoothManager: BluetoothManager,
-    private val deviceAddress: String
+    bluetoothManager: BluetoothManager,
+    private val deviceAddress: String,
+    private val civAddress: Byte = IcomCivProtocol.ADDR_IC705,
+    private val transport: RadioTransport = BluetoothSppRadioTransport(bluetoothManager, deviceAddress)
 ) : IRadioController {
 
     private val tag = "IC705"
-    private val sppId: UUID = UUID.fromString("00001101-0000-1000-8000-00805f9b34fb")
     private val ioMutex = Mutex()
 
     /** Time budget (ms) to wait for a response amid broadcast noise. */
@@ -55,10 +52,6 @@ class Ic705Controller(
     private val POLL_INTERVAL_MS = 20L
     /** Small pause after writing a command before reading the response. */
     private val WRITE_SETTLE_MS = 50L
-
-    private var socket: BluetoothSocket? = null
-    private var outputStream: OutputStream? = null
-    private var inputStream: InputStream? = null
 
     override var isConnected: Boolean = false
         private set
@@ -69,13 +62,8 @@ class Ic705Controller(
         if (isConnected) return@withContext true
         if (deviceAddress.isBlank()) return@withContext false
         try {
-            val device  = bluetoothManager.adapter.getRemoteDevice(deviceAddress)
-            val btSocket = device.createInsecureRfcommSocketToServiceRecord(sppId)
-            btSocket.connect()
-            socket       = btSocket
-            outputStream = btSocket.outputStream
-            inputStream  = btSocket.inputStream
-            isConnected  = true
+            isConnected = transport.connect()
+            if (!isConnected) return@withContext false
             // Enter VFO mode — frequency/mode commands return FA if the radio
             // is in memory-channel mode. Safe to send regardless of current state.
             Log.i(tag, "Connected to $deviceAddress — entering VFO mode")
@@ -94,15 +82,10 @@ class Ic705Controller(
         withContext(Dispatchers.IO) {
             try {
                 if (isConnected) withTimeoutOrNull(PTT_OFF_TIMEOUT_MS) { pttOff() }
-                inputStream?.close()
-                outputStream?.close()
-                socket?.close()
+                transport.disconnect()
             } catch (e: Exception) {
                 Log.e(tag, "Disconnect error: ${e.message}")
             } finally {
-                inputStream  = null
-                outputStream = null
-                socket       = null
                 isConnected  = false
                 Log.i(tag, "Disconnected from $deviceAddress")
             }
@@ -271,9 +254,9 @@ class Ic705Controller(
         if (!write(cmd)) return false
         delay(WRITE_SETTLE_MS)
         val buf = drainWithTimeout(ACK_TIMEOUT_MS) {
-            IcomCivProtocol.ackStatus(it) != null
+            IcomCivProtocol.ackStatus(it, civAddress) != null
         }
-        val ok  = IcomCivProtocol.ackStatus(buf) == true
+        val ok  = IcomCivProtocol.ackStatus(buf, civAddress) == true
         if (!ok) Log.w(tag, "ACK not found in ${buf.size} bytes: ${IcomCivProtocol.toHex(buf)}")
         return ok
     }
@@ -287,9 +270,9 @@ class Ic705Controller(
         if (!write(cmd)) return null
         delay(WRITE_SETTLE_MS)
         val buf      = drainWithTimeout(ACK_TIMEOUT_MS) {
-            IcomCivProtocol.parseResponse(it, expectCmd) != null
+            IcomCivProtocol.parseResponse(it, expectCmd, civAddress) != null
         }
-        val response = IcomCivProtocol.parseResponse(buf, expectCmd)
+        val response = IcomCivProtocol.parseResponse(buf, expectCmd, civAddress)
         if (response == null) {
             Log.w(tag, "No response for cmd 0x${String.format("%02X", expectCmd.toInt() and 0xFF)} " +
                     "in ${buf.size} bytes: ${IcomCivProtocol.toHex(buf)}")
@@ -325,17 +308,12 @@ class Ic705Controller(
     ): ByteArray {
         val result   = mutableListOf<Byte>()
         val deadline = System.currentTimeMillis() + timeoutMs
-        val stream   = inputStream ?: return ByteArray(0)
         while (System.currentTimeMillis() < deadline) {
             try {
-                val available = stream.available()
-                if (available > 0) {
-                    val chunk = ByteArray(available)
-                    val read  = stream.read(chunk)
-                    if (read > 0) {
-                        result.addAll(chunk.take(read))
-                        if (responseComplete(result.toByteArray())) break
-                    }
+                val chunk = transport.readAvailable(MAX_READ_CHUNK)
+                if (chunk.isNotEmpty()) {
+                    result.addAll(chunk.toList())
+                    if (responseComplete(result.toByteArray())) break
                 } else {
                     delay(POLL_INTERVAL_MS)
                 }
@@ -348,12 +326,16 @@ class Ic705Controller(
         return result.toByteArray()
     }
 
-    private fun write(bytes: ByteArray): Boolean {
+    private suspend fun write(bytes: ByteArray): Boolean {
         return try {
-            val stream = outputStream ?: return false
-            stream.write(bytes)
-            stream.flush()
-            true
+            val addressed = bytes.copyOf().also { command ->
+                if (command.size >= 4 && command[0] == IcomCivProtocol.PREAMBLE &&
+                    command[1] == IcomCivProtocol.PREAMBLE
+                ) {
+                    command[2] = civAddress
+                }
+            }
+            transport.write(addressed)
         } catch (e: Exception) {
             Log.e(tag, "Write error: ${e.message}")
             isConnected = false
@@ -363,5 +345,6 @@ class Ic705Controller(
 
     private companion object {
         const val PTT_OFF_TIMEOUT_MS = 1_500L
+        const val MAX_READ_CHUNK = 4_096
     }
 }

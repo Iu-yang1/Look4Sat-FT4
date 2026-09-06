@@ -17,15 +17,18 @@
  */
 package com.rtbishop.look4sat.feature.settings
 
+import com.rtbishop.look4sat.core.domain.audio.AudioInputDevice
 import com.rtbishop.look4sat.core.domain.model.DataSourcesSettings
 import com.rtbishop.look4sat.core.domain.ft4.Ft4Capability
 import com.rtbishop.look4sat.core.domain.model.Ft4Settings
+import com.rtbishop.look4sat.core.domain.model.LatestRelease
 import com.rtbishop.look4sat.core.domain.model.OtherSettings
 import com.rtbishop.look4sat.core.domain.model.RCSettings
 import com.rtbishop.look4sat.core.domain.model.RadioControlSettings
 import com.rtbishop.look4sat.core.domain.predict.GeoPos
 import com.rtbishop.look4sat.core.domain.time.ClockSnapshot
 import com.rtbishop.look4sat.core.domain.time.TimeSynchronizationState
+import java.io.File
 
 data class PositionSettings(
     val isUpdating: Boolean, val stationPos: GeoPos, val messageResId: Int
@@ -38,6 +41,15 @@ data class DataSettings(
     val timestamp: Long
 )
 
+data class UpdateCheckerState(
+    val isChecking: Boolean = false,
+    val release: LatestRelease? = null,
+    val hasUpdate: Boolean = false,
+    val isDownloading: Boolean = false,
+    val apkFile: File? = null,
+    val errorResId: Int? = null
+)
+
 data class SettingsState(
     val appVersionName: String,
     val positionSettings: PositionSettings,
@@ -47,9 +59,12 @@ data class SettingsState(
     val ft4Capability: Ft4Capability,
     val clockSnapshot: ClockSnapshot,
     val timeSynchronizationState: TimeSynchronizationState,
+    val audioInputDevices: List<AudioInputDevice>,
     val rcSettings: RCSettings,
     val radioControlSettings: RadioControlSettings,
-    val dataSourcesSettings: DataSourcesSettings
+    val dataSourcesSettings: DataSourcesSettings,
+    val dataSourcesStatus: Map<String, Int> = emptyMap(),
+    val updateChecker: UpdateCheckerState = UpdateCheckerState()
 )
 
 sealed interface SettingsAction {
@@ -77,6 +92,7 @@ sealed interface SettingsAction {
     data class SetFt4Callsign(val value: String) : SettingsAction
     data class ToggleFt4Decode(val value: Boolean) : SettingsAction
     data class SetFt4DecodeDepth(val value: Int) : SettingsAction
+    data class SetAudioInputDevice(val key: String?) : SettingsAction
     data class ToggleNtpSynchronization(val value: Boolean) : SettingsAction
     data class ToggleGnssSynchronization(val value: Boolean) : SettingsAction
     data object SynchronizeTimeNow : SettingsAction
@@ -87,6 +103,11 @@ sealed interface SettingsAction {
 
     // Data sources
     data class UpdateDataSources(val settings: DataSourcesSettings) : SettingsAction
+
+    // Update checker
+    data object CheckForUpdate : SettingsAction
+    data object DownloadUpdate : SettingsAction
+    data object ConsumeDownloadedApk : SettingsAction
 
     // System
     data class ShowToast(val message: String) : SettingsAction

@@ -28,6 +28,7 @@ data class TxLease(
 )
 
 interface IFt4TransmitCoordinator {
+    fun recommendedPrepareLeadMillis(): Long = 350L
     suspend fun beginTransmit(request: TxRequest): TxLease
     suspend fun confirmTransmitReady(lease: TxLease)
     suspend fun endTransmit(lease: TxLease)

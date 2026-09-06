@@ -14,6 +14,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.rtbishop.look4sat.core.domain.audio.AudioConsumer
 import com.rtbishop.look4sat.core.domain.audio.AudioDelivery
 import com.rtbishop.look4sat.core.domain.audio.AudioHubState
+import com.rtbishop.look4sat.core.domain.audio.AudioInputDevice
 import com.rtbishop.look4sat.core.domain.audio.AudioSampleFormat
 import com.rtbishop.look4sat.core.domain.audio.Ft4SlotAssembler
 import com.rtbishop.look4sat.core.domain.audio.IAudioHub
@@ -106,6 +107,77 @@ class Ft4AudioStreamInstrumentedTest {
         }
     }
 
+    @Test
+    fun officialCorpusSurvivesTwentyFourAndFortyEightKhzResampling() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().context
+        val wavBytes = context.assets.open(SAMPLE_ASSET).use { it.readBytes() }
+        assertEquals(EXPECTED_SAMPLE_SHA256, wavBytes.sha256())
+        val wav = parsePcm16MonoWav(wavBytes)
+        for (sourceRate in intArrayOf(24_000, 48_000)) {
+            decodeResampledCorpus(wav.samples, sourceRate)
+        }
+    }
+
+    private suspend fun decodeResampledCorpus(samples12k: FloatArray, sourceRate: Int) {
+        val audioHub = InjectedAudioHub(sourceRate)
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val service = Ft4Service(scope, audioHub, FixedClock())
+        try {
+            val capability = service.refreshCapability()
+            assertTrue(capability.unavailableReason, capability.receiveAvailable)
+            assertTrue(service.runNativeSelfTest().isSuccess)
+            service.startReceiving(Ft4DecoderOptions(), MY_CALL)
+            withTimeout(SUBSCRIPTION_TIMEOUT_MILLIS) {
+                audioHub.state.first { it is AudioHubState.Capturing }
+            }
+
+            val sourceSamples = interpolate(samples12k, sourceRate / Ft4SlotAssembler.SAMPLE_RATE)
+            val sourceSlotSamples = sourceRate * Ft4SlotAssembler.SLOT_MILLIS.toInt() / 1_000
+            val stream = FloatArray(sourceSlotSamples * 2)
+            sourceSamples.copyInto(stream, sourceSlotSamples)
+            var framePosition = 0
+            var chunkIndex = 0
+            while (framePosition < stream.size) {
+                val chunkSize = minOf(
+                    AUDIO_CHUNK_PATTERN[chunkIndex % AUDIO_CHUNK_PATTERN.size],
+                    stream.size - framePosition
+                )
+                audioHub.emit(
+                    TimestampedAudioChunk(
+                        samples = stream.copyOfRange(framePosition, framePosition + chunkSize),
+                        sampleRate = sourceRate,
+                        framePosition = framePosition.toLong(),
+                        elapsedRealtimeNanos = framePosition.toLong() * NANOS_PER_SECOND / sourceRate,
+                        format = AudioSampleFormat.PCM_FLOAT
+                    )
+                )
+                framePosition += chunkSize
+                chunkIndex++
+            }
+
+            val results = withTimeout(DECODE_TIMEOUT_MILLIS) {
+                service.decodeResults.first { it.size == EXPECTED_DECODE_COUNT }
+            }
+            assertEquals("$sourceRate Hz", EXPECTED_DECODE_COUNT, results.size)
+            EXPECTED_MESSAGES.forEach { expected ->
+                assertTrue("$sourceRate Hz missing $expected", results.any { it.text == expected })
+            }
+        } finally {
+            service.stopReceiving(clearResults = true)
+            scope.cancel()
+        }
+    }
+
+    private fun interpolate(input: FloatArray, factor: Int): FloatArray {
+        return FloatArray(input.size * factor) { index ->
+            val sourceIndex = index / factor
+            val fraction = (index % factor).toFloat() / factor
+            val first = input[sourceIndex]
+            val second = input.getOrElse(sourceIndex + 1) { first }
+            first + (second - first) * fraction
+        }
+    }
+
     private data class WavSamples(val sampleRate: Int, val samples: FloatArray)
 
     private fun parsePcm16MonoWav(bytes: ByteArray): WavSamples {
@@ -155,14 +227,17 @@ class Ft4AudioStreamInstrumentedTest {
         .digest(this)
         .joinToString("") { "%02x".format(it) }
 
-    private class InjectedAudioHub : IAudioHub {
+    private class InjectedAudioHub(private val sampleRate: Int = Ft4SlotAssembler.SAMPLE_RATE) : IAudioHub {
         private val chunks = Channel<TimestampedAudioChunk>(Channel.UNLIMITED)
         private val mutableState = MutableStateFlow<AudioHubState>(AudioHubState.Idle)
         override val state: StateFlow<AudioHubState> = mutableState.asStateFlow()
+        override val inputDevices = MutableStateFlow<List<AudioInputDevice>>(emptyList()).asStateFlow()
+
+        override suspend fun selectInputDevice(deviceKey: String?) = Unit
 
         override fun audioFlow(consumer: AudioConsumer, delivery: AudioDelivery): Flow<TimestampedAudioChunk> = flow {
             mutableState.value = AudioHubState.Capturing(
-                sampleRate = Ft4SlotAssembler.SAMPLE_RATE,
+                sampleRate = sampleRate,
                 format = AudioSampleFormat.PCM_FLOAT,
                 consumers = setOf(consumer)
             )

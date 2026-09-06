@@ -32,6 +32,7 @@ import com.rtbishop.look4sat.core.domain.repository.ISatelliteRepo
 import com.rtbishop.look4sat.core.domain.repository.ISettingsRepo
 import com.rtbishop.look4sat.core.domain.repository.RadioTrackingState
 import com.rtbishop.look4sat.core.domain.repository.PttState
+import com.rtbishop.look4sat.core.domain.time.IDisciplinedClock
 import com.rtbishop.look4sat.core.domain.utility.TransponderMapper
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -53,7 +54,9 @@ class RadioTrackingService(
     private val bluetoothManager: BluetoothManager?,
     private val satelliteRepo: ISatelliteRepo,
     private val settingsRepo: ISettingsRepo,
-    private val controllerFactory: ((Boolean, String) -> IRadioController)? = null
+    private val clock: IDisciplinedClock,
+    private val controllerFactory: ((Boolean, String) -> IRadioController)? = null,
+    private val transportFactory: ((String, String, Int) -> RadioTransport)? = null
 ) : IRadioTrackingService, IFt4TransmitCoordinator {
 
     private val tag = "RadioTracking"
@@ -70,6 +73,16 @@ class RadioTrackingService(
     @Volatile private var transmitPreparing = false
     private var pttWatchdogJob: Job? = null
     private var nextLeaseId = 1L
+    private val commandLatencyEstimator = RadioCommandLatencyEstimator()
+    private val commandActor = RadioCommandActor(appScope) { busy, failure ->
+        _state.update { current ->
+            current.copy(
+                commandBusy = busy,
+                lastCommandError = failure ?: current.lastCommandError,
+                errorMessage = failure ?: current.errorMessage
+            )
+        }
+    }
     private val hasTransmitClaim: Boolean
         get() = transmitPreparing || activeTxLease != null
 
@@ -83,7 +96,8 @@ class RadioTrackingService(
         val rcSettings = settingsRepo.radioControlSettings.value
         val txAddr     = rcSettings.txRadioAddress
         val rxAddr     = rcSettings.rxRadioAddress
-        val isIcom     = rcSettings.radioModel == RadioControlSettings.MODEL_ICOM_IC705
+        val profile    = radioProfile(rcSettings.radioModel)
+        val isIcom     = profile.isIcom
         val isSplit    = isIcom && rcSettings.splitMode
 
         Log.i(tag, "connectRadios model=${rcSettings.radioModel} split=$isSplit TX=$txAddr RX=$rxAddr")
@@ -95,7 +109,7 @@ class RadioTrackingService(
                 _state.update { it.copy(errorMessage = "No radio address configured in Settings") }
                 return
             }
-            val tx = makeController(isIcom, txAddr)
+            val tx = makeController(profile, txAddr)
             txController = tx
             rxController = null
             _state.update { it.copy(errorMessage = null) }
@@ -103,7 +117,8 @@ class RadioTrackingService(
             _state.update {
                 it.copy(
                     txConnected = txOk,
-                    rxConnected = false,
+                    rxConnected = txOk,
+                    physicalConnectionCount = if (txOk) 1 else 0,
                     errorMessage = if (!txOk) "Could not connect to radio ($txAddr)" else null
                 )
             }
@@ -113,8 +128,8 @@ class RadioTrackingService(
                 _state.update { it.copy(errorMessage = "No radio addresses configured in Settings") }
                 return
             }
-            val tx = makeController(isIcom, txAddr)
-            val rx = makeController(isIcom, rxAddr)
+            val tx = makeController(profile, txAddr)
+            val rx = makeController(profile, rxAddr)
             txController = tx
             rxController = rx
             _state.update { it.copy(errorMessage = null) }
@@ -124,6 +139,7 @@ class RadioTrackingService(
                 it.copy(
                     txConnected = txOk,
                     rxConnected = rxOk,
+                    physicalConnectionCount = listOf(txOk, rxOk).count { connected -> connected },
                     errorMessage = when {
                         !txOk && !rxOk -> "Could not connect to TX and RX radios"
                         !txOk          -> "Could not connect to TX radio ($txAddr)"
@@ -136,12 +152,22 @@ class RadioTrackingService(
         }
     }
 
-    private fun makeController(isIcom: Boolean, address: String): IRadioController =
-        controllerFactory?.invoke(isIcom, address) ?: if (isIcom) {
-            Ic705Controller(checkNotNull(bluetoothManager), address)
+    private fun makeController(profile: RadioProfile, address: String): IRadioController {
+        val settings = settingsRepo.radioControlSettings.value
+        val injected = controllerFactory?.invoke(profile.isIcom, address)
+        val transport = if (injected == null) {
+            transportFactory?.invoke(settings.catTransport, address, settings.baudRate)
+        } else null
+        val controller = injected ?: if (profile.isIcom) {
+            val manager = checkNotNull(bluetoothManager)
+            if (transport == null) Ic705Controller(manager, address, checkNotNull(profile.civAddress))
+            else Ic705Controller(manager, address, checkNotNull(profile.civAddress), transport)
         } else {
-            Ft817Controller(checkNotNull(bluetoothManager), address)
+            val manager = checkNotNull(bluetoothManager)
+            if (transport == null) Ft817Controller(manager, address) else Ft817Controller(manager, address, transport)
         }
+        return SerialRadioController(controller, commandActor)
+    }
 
     override suspend fun disconnectRadios() {
         stopTracking()
@@ -157,7 +183,8 @@ class RadioTrackingService(
                 isActive = false,
                 pttState = PttState.OFF,
                 commandBusy = false,
-                txLeaseId = null
+                txLeaseId = null,
+                physicalConnectionCount = 0
             )
         }
     }
@@ -165,6 +192,7 @@ class RadioTrackingService(
     // ── FT4 transmit lease ──────────────────────────────────────────────────
 
     override suspend fun beginTransmit(request: TxRequest): TxLease = transmitMutex.withLock {
+        val startedNanos = System.nanoTime()
         require(request.waveformDurationMillis in 1L..MAX_WAVEFORM_MILLIS) {
             "Invalid FT4 waveform duration"
         }
@@ -182,7 +210,6 @@ class RadioTrackingService(
             check(pass.catNum == request.expectedSatelliteCatalogNumber) { "Satellite context changed" }
             check(transponder.uuid == request.expectedTransponderUuid) { "Transponder context changed" }
             val midpoint = request.waveformStartUtcMillis + request.waveformDurationMillis / 2L
-            check(midpoint in pass.aosTime..pass.losTime) { "FT4 waveform midpoint is outside the pass" }
             val nominal = current.txBaseFrequencyHz ?: transponder.uplinkCenterFrequency()
             checkNotNull(nominal) { "The selected transponder has no uplink frequency" }
             val position = satelliteRepo.getPosition(
@@ -190,15 +217,12 @@ class RadioTrackingService(
                 settingsRepo.stationPosition.value,
                 midpoint
             )
-            check(position.elevation.isFinite() && position.elevation > 0.0) {
-                "Satellite is below the horizon at the waveform midpoint"
-            }
             val effectiveFrequency = position.getUplinkFreq(nominal)
             val controller = checkNotNull(txController) { "TX radio is not connected" }
             check(controller.isConnected) { "TX radio is not connected" }
 
-            val split = settingsRepo.radioControlSettings.value.splitMode &&
-                settingsRepo.radioControlSettings.value.radioModel == RadioControlSettings.MODEL_ICOM_IC705
+            val radioSettings = settingsRepo.radioControlSettings.value
+            val split = radioSettings.splitMode && radioProfile(radioSettings.radioModel).isIcom
             val frequencySet = if (split) {
                 controller.setTxVfoFrequency(effectiveFrequency)
             } else {
@@ -236,12 +260,14 @@ class RadioTrackingService(
             updateCommandFailure(error)
             throw error
         } finally {
+            commandLatencyEstimator.record((System.nanoTime() - startedNanos) / 1_000_000L)
             transmitPreparing = false
             updateCommandState(busy = false)
         }
     }
 
     override suspend fun confirmTransmitReady(lease: TxLease) = transmitMutex.withLock {
+        val startedNanos = System.nanoTime()
         check(activeTxLease == lease) { "Transmit lease is stale" }
         updateCommandState(busy = true, pttState = PttState.ARMING)
         try {
@@ -258,9 +284,12 @@ class RadioTrackingService(
             forcePttOffLocked(error.message ?: "PTT ON failed")
             throw error
         } finally {
+            commandLatencyEstimator.record((System.nanoTime() - startedNanos) / 1_000_000L)
             updateCommandState(busy = false)
         }
     }
+
+    override fun recommendedPrepareLeadMillis(): Long = commandLatencyEstimator.p95WithMargin()
 
     override suspend fun endTransmit(lease: TxLease) = transmitMutex.withLock {
         if (activeTxLease != lease) return@withLock
@@ -322,25 +351,21 @@ class RadioTrackingService(
     // ── Tracking ────────────────────────────────────────────────────────────
 
     override fun startTracking(pass: OrbitalPass, transponder: SatRadio, txBaseFreqHz: Long?) {
-        if (hasTransmitClaim) appScope.launch { emergencyPttOff() }
-        _state.update {
-            it.copy(
-                isActive             = true,
-                currentPass          = pass,
-                selectedTransponder  = transponder,
-                txBaseFrequencyHz    = txBaseFreqHz
-            )
-        }
         trackingJob?.cancel()
-
-        val rcSettings = settingsRepo.radioControlSettings.value
-        val isIcom     = rcSettings.radioModel == RadioControlSettings.MODEL_ICOM_IC705
-        val isSplit    = isIcom && rcSettings.splitMode
-
-        if (isSplit) {
-            trackingJob = appScope.launch { runSplitTracking(transponder, txBaseFreqHz) }
-        } else {
-            trackingJob = appScope.launch { runDualRadioTracking(transponder, txBaseFreqHz) }
+        trackingJob = appScope.launch {
+            if (hasTransmitClaim) emergencyPttOff()
+            _state.update {
+                it.copy(
+                    isActive = true,
+                    currentPass = pass,
+                    selectedTransponder = transponder,
+                    txBaseFrequencyHz = txBaseFreqHz
+                )
+            }
+            val rcSettings = settingsRepo.radioControlSettings.value
+            val isSplit = radioProfile(rcSettings.radioModel).isIcom && rcSettings.splitMode
+            if (isSplit) runSplitTracking(transponder, txBaseFreqHz)
+            else runDualRadioTracking(transponder, txBaseFreqHz)
         }
     }
 
@@ -361,17 +386,18 @@ class RadioTrackingService(
 
         if (tx != null && tx.isConnected && txMode != null) {
             Log.d(tag, "Setting TX mode: $txMode")
-            tx.setMode(txMode)
+            if (!tx.setMode(txMode)) return failTrackingCommand("TX mode was not acknowledged")
         }
         if (rx != null && rx.isConnected && rxMode != null) {
             Log.d(tag, "Setting RX mode: $rxMode")
-            rx.setMode(rxMode)
+            if (!rx.setMode(rxMode)) return failTrackingCommand("RX mode was not acknowledged")
         }
         if (txMode?.uppercase() == "FM") {
             _state.value.ctcssTone?.let { tone ->
                 Log.d(tag, "Setting CTCSS: ${tone}Hz")
-                tx?.setCtcssTone(tone)
-                tx?.setCtcssMode(true)
+                if (tx?.setCtcssTone(tone) != true || tx.setCtcssMode(true) != true) {
+                    return failTrackingCommand("CTCSS command was not acknowledged")
+                }
             }
         }
         _state.update { it.copy(txMode = txMode, rxMode = rxMode) }
@@ -390,7 +416,7 @@ class RadioTrackingService(
             val xpdr    = currentState.selectedTransponder ?: break
             var txBaseFreq = currentState.txBaseFrequencyHz
             val stationPos = settingsRepo.stationPosition.value
-            val now = System.currentTimeMillis()
+            val now = clock.nowMillis()
             if (now >= satPass.losTime) {
                 if (hasTransmitClaim) emergencyPttOff()
                 _state.update { it.copy(isActive = false, lastCommandError = "Satellite pass reached LOS") }
@@ -470,12 +496,12 @@ class RadioTrackingService(
 
             if (tuningRadio.isEmpty()) {
                 if (!transmitPreparing && activeTxLease == null && txNow != null && txNow.isConnected && txRadioFreq != null) {
-                    txNow.setFrequency(txRadioFreq)
-                    lastSetTxFreq = txRadioFreq.toDouble()
+                    if (txNow.setFrequency(txRadioFreq)) lastSetTxFreq = txRadioFreq.toDouble()
+                    else failTrackingCommand("TX frequency was not acknowledged")
                 }
                 if (rxNow != null && rxNow.isConnected && rxRadioFreq != null) {
-                    rxNow.setFrequency(rxRadioFreq)
-                    lastSetRxFreq = rxRadioFreq.toDouble()
+                    if (rxNow.setFrequency(rxRadioFreq)) lastSetRxFreq = rxRadioFreq.toDouble()
+                    else failTrackingCommand("RX frequency was not acknowledged")
                 }
             }
 
@@ -532,46 +558,48 @@ class RadioTrackingService(
 
         // VFO-A = RX (downlink)
         Log.d(tag, "Split init: selecting VFO-A for RX (downlink)")
-        radio.setVfo(vfoA = true)
+        if (!radio.setVfo(vfoA = true)) return failTrackingCommand("VFO-A selection was not acknowledged")
         if (rxNominal != null) {
             Log.d(tag, "Split init: VFO-A band for ${rxNominal}Hz")
-            radio.setBand(rxNominal)
+            if (!radio.setBand(rxNominal)) return failTrackingCommand("RX band was not acknowledged")
             Log.d(tag, "Split init: VFO-A freq=${rxNominal}Hz")
-            radio.setFrequency(rxNominal)
+            if (!radio.setFrequency(rxNominal)) return failTrackingCommand("RX frequency was not acknowledged")
         }
         if (rxMode != null) {
             Log.d(tag, "Split init: VFO-A mode=$rxMode")
-            radio.setMode(rxMode)
+            if (!radio.setMode(rxMode)) return failTrackingCommand("RX mode was not acknowledged")
         }
 
         // VFO-B = TX (uplink)
         Log.d(tag, "Split init: selecting VFO-B for TX (uplink)")
-        radio.setVfo(vfoA = false)
+        if (!radio.setVfo(vfoA = false)) return failTrackingCommand("VFO-B selection was not acknowledged")
         if (txBase != null) {
             Log.d(tag, "Split init: VFO-B band for ${txBase}Hz")
-            radio.setBand(txBase)
+            if (!radio.setBand(txBase)) return failTrackingCommand("TX band was not acknowledged")
             Log.d(tag, "Split init: VFO-B freq=${txBase}Hz")
-            radio.setFrequency(txBase)
+            if (!radio.setFrequency(txBase)) return failTrackingCommand("TX frequency was not acknowledged")
         }
         if (txMode != null) {
             Log.d(tag, "Split init: VFO-B mode=$txMode")
-            radio.setMode(txMode)
+            if (!radio.setMode(txMode)) return failTrackingCommand("TX mode was not acknowledged")
         }
         if (txMode?.uppercase() == "FM") {
             val tone = _state.value.ctcssTone
             if (tone != null) {
                 Log.d(tag, "Split init: CTCSS=${tone}Hz")
-                radio.setCtcssTone(tone)
-                radio.setCtcssMode(true)
+                if (!radio.setCtcssTone(tone) || !radio.setCtcssMode(true)) {
+                    return failTrackingCommand("CTCSS command was not acknowledged")
+                }
             } else {
-                radio.setCtcssMode(false)
+                if (!radio.setCtcssMode(false)) return failTrackingCommand("CTCSS OFF was not acknowledged")
             }
         }
 
         // Enable SPLIT on VFO-A (return display to RX VFO first)
         Log.d(tag, "Split init: returning to VFO-A, then enabling SPLIT mode")
-        radio.setVfo(vfoA = true)
-        radio.setSplitMode(enabled = true)
+        if (!radio.setVfo(vfoA = true) || !radio.setSplitMode(enabled = true)) {
+            return failTrackingCommand("Split mode was not acknowledged")
+        }
 
         _state.update { it.copy(txMode = txMode, rxMode = rxMode, txBaseFrequencyHz = txBase) }
         Log.i(tag, "IC-705 split init done — entering tracking loop")
@@ -591,7 +619,7 @@ class RadioTrackingService(
             val xpdr    = currentState.selectedTransponder ?: break
             var txBaseFreq = currentState.txBaseFrequencyHz
             val stationPos = settingsRepo.stationPosition.value
-            val now = System.currentTimeMillis()
+            val now = clock.nowMillis()
             if (now >= satPass.losTime) {
                 if (hasTransmitClaim) emergencyPttOff()
                 _state.update { it.copy(isActive = false, lastCommandError = "Satellite pass reached LOS") }
@@ -666,13 +694,13 @@ class RadioTrackingService(
                 // 0x25/00 = active (RX) VFO, 0x25/01 = inactive (TX) VFO.
                 if (rxRadioFreq != null) {
                     Log.d(tag, "Split loop RX (0x25/00): ${rxRadioFreq}Hz")
-                    radio.setWorkingFrequency(rxRadioFreq)
-                    lastSetRxFreq = rxRadioFreq.toDouble()
+                    if (radio.setWorkingFrequency(rxRadioFreq)) lastSetRxFreq = rxRadioFreq.toDouble()
+                    else failTrackingCommand("RX frequency was not acknowledged")
                 }
                 if (activeTxLease == null && txRadioFreq != null) {
                     Log.d(tag, "Split loop TX (0x25/01): ${txRadioFreq}Hz")
-                    radio.setTxVfoFrequency(txRadioFreq)
-                    lastSetTxFreq = txRadioFreq.toDouble()
+                    if (radio.setTxVfoFrequency(txRadioFreq)) lastSetTxFreq = txRadioFreq.toDouble()
+                    else failTrackingCommand("TX frequency was not acknowledged")
                 }
             }
 
@@ -680,7 +708,7 @@ class RadioTrackingService(
                 val frozenLease = activeTxLease
                 it.copy(
                     txConnected   = radio.isConnected,
-                    rxConnected   = false,  // single radio
+                    rxConnected   = radio.isConnected,
                     txFrequencyHz = frozenLease?.effectiveTxFrequencyHz ?: txRadioFreq,
                     rxFrequencyHz = rxRadioFreq,
                     nominalTxFrequencyHz = txBaseFreq,
@@ -702,8 +730,10 @@ class RadioTrackingService(
     override fun stopTracking() {
         trackingJob?.cancel()
         trackingJob = null
-        _state.update { it.copy(isActive = false) }
-        if (hasTransmitClaim) appScope.launch { emergencyPttOff() }
+        appScope.launch {
+            if (hasTransmitClaim) emergencyPttOff()
+            _state.update { it.copy(isActive = false) }
+        }
     }
 
     override fun setTransponder(transponder: SatRadio) {
@@ -711,42 +741,21 @@ class RadioTrackingService(
             if (hasTransmitClaim) emergencyPttOff()
             val tx = txController
             val rx = rxController
-            transponder.uplinkMode?.let { tx?.setMode(it) }
+            val txModeOk = transponder.uplinkMode?.let { tx?.setMode(it) } ?: true
             val rxMode = transponder.downlinkMode
                 ?: transponder.uplinkMode?.let {
                     TransponderMapper.mapUplinkModeToDownlinkMode(it, transponder.isInverted)
                 }
-            rxMode?.let { rx?.setMode(it) }
+            val rxModeOk = rxMode?.let { mode -> rx?.setMode(mode) } ?: true
             if (transponder.uplinkMode?.uppercase() == "FM") {
                 _state.value.ctcssTone?.let { tone ->
-                    tx?.setCtcssTone(tone)
-                    tx?.setCtcssMode(true)
+                    if (tx?.setCtcssTone(tone) != true || tx.setCtcssMode(true) != true) {
+                        return@launch failTrackingCommand("CTCSS command was not acknowledged")
+                    }
                 }
             }
-        }
-        val txCenter = when {
-            transponder.uplinkLow != null && transponder.uplinkHigh != null ->
-                (transponder.uplinkLow!! + transponder.uplinkHigh!!) / 2
-            transponder.uplinkLow != null -> transponder.uplinkLow!!
-            else -> null
-        }
-        val rxNominal = if (txCenter != null) {
-            TransponderMapper.mapUplinkToDownlink(txCenter, transponder)
-        } else transponder.downlinkLow
-        _state.update {
-            it.copy(
-                selectedTransponder = transponder,
-                txBaseFrequencyHz   = txCenter,
-                txFrequencyHz       = txCenter,
-                rxFrequencyHz       = rxNominal,
-                nominalTxFrequencyHz = txCenter,
-                nominalRxFrequencyHz = rxNominal,
-                txMode              = transponder.uplinkMode,
-                rxMode              = transponder.downlinkMode
-                    ?: transponder.uplinkMode?.let { m ->
-                        TransponderMapper.mapUplinkModeToDownlinkMode(m, transponder.isInverted)
-                    }
-            )
+            if (txModeOk != false && rxModeOk != false) updateSelectedTransponder(transponder, rxMode)
+            else failTrackingCommand("Radio mode command was not acknowledged")
         }
     }
 
@@ -767,26 +776,49 @@ class RadioTrackingService(
     }
 
     override fun setCtcssTone(toneHz: Double?) {
-        if (hasTransmitClaim) appScope.launch { emergencyPttOff() }
-        _state.update { it.copy(ctcssTone = toneHz) }
         appScope.launch {
+            if (hasTransmitClaim) emergencyPttOff()
             val tx = txController
-            if (toneHz != null) {
-                tx?.setCtcssTone(toneHz)
-                tx?.setCtcssMode(true)
+            val acknowledged = if (toneHz != null) {
+                tx?.setCtcssTone(toneHz) == true && tx.setCtcssMode(true)
             } else {
-                tx?.setCtcssMode(false)
+                tx?.setCtcssMode(false) == true
             }
+            if (acknowledged) _state.update { it.copy(ctcssTone = toneHz) }
+            else failTrackingCommand("CTCSS command was not acknowledged")
         }
     }
 
     override fun setMode(txMode: String, rxMode: String) {
         appScope.launch {
             if (hasTransmitClaim) emergencyPttOff()
-            txController?.setMode(txMode)
-            rxController?.setMode(rxMode)
+            val txOk = txController?.setMode(txMode) ?: true
+            val rxOk = if (_state.value.splitMode) true else rxController?.setMode(rxMode) ?: true
+            if (txOk && rxOk) _state.update { it.copy(txMode = txMode, rxMode = rxMode) }
+            else failTrackingCommand("Radio mode command was not acknowledged")
         }
-        _state.update { it.copy(txMode = txMode, rxMode = rxMode) }
+    }
+
+    private fun updateSelectedTransponder(transponder: SatRadio, rxMode: String?) {
+        val txCenter = transponder.uplinkCenterFrequency()
+        val rxNominal = if (txCenter != null) TransponderMapper.mapUplinkToDownlink(txCenter, transponder)
+        else transponder.downlinkLow
+        _state.update {
+            it.copy(
+                selectedTransponder = transponder,
+                txBaseFrequencyHz = txCenter,
+                txFrequencyHz = txCenter,
+                rxFrequencyHz = rxNominal,
+                nominalTxFrequencyHz = txCenter,
+                nominalRxFrequencyHz = rxNominal,
+                txMode = transponder.uplinkMode,
+                rxMode = rxMode
+            )
+        }
+    }
+
+    private fun failTrackingCommand(message: String) {
+        _state.update { it.copy(lastCommandError = message, errorMessage = message) }
     }
 
     private companion object {
@@ -808,3 +840,24 @@ private fun SatRadio.uplinkCenterFrequency(): Long? {
 
 private fun dopplerCorrection(corrected: Long?, nominal: Long?): Long? =
     if (corrected != null && nominal != null) corrected - nominal else null
+
+internal class RadioCommandLatencyEstimator(
+    private val capacity: Int = 32,
+    private val fallbackMillis: Long = 350L
+) {
+    private val samples = ArrayDeque<Long>()
+
+    @Synchronized
+    fun record(valueMillis: Long) {
+        samples.addLast(valueMillis.coerceAtLeast(0L))
+        while (samples.size > capacity) samples.removeFirst()
+    }
+
+    @Synchronized
+    fun p95WithMargin(): Long {
+        if (samples.size < 4) return fallbackMillis
+        val sorted = samples.sorted()
+        val index = kotlin.math.ceil(sorted.size * 0.95).toInt().coerceIn(1, sorted.size) - 1
+        return (sorted[index] + 100L).coerceIn(250L, 1_500L)
+    }
+}

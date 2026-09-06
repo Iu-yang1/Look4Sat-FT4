@@ -358,7 +358,9 @@
     <string name="ft4_time_source">时间 %1$s · ±%2$.0f ms</string>
     <string name="ft4_start_receive">开始接收</string>
     <string name="ft4_stop_receive">停止接收</string>
+    <string name="ft4_grant_microphone">授予麦克风权限</string>
     <string name="ft4_microphone_required">需要麦克风权限</string>
+    <string name="ft4_waiting_audio">正在等待音频输入…</string>
     <string name="ft4_audio_owner_idle">音频输入空闲</string>
     <string name="ft4_audio_owner">输入 %1$s · %2$d Hz · %3$s</string>
     <string name="ft4_audio_device_unknown">未知设备</string>
@@ -449,6 +451,5 @@
     <string name="ft4_gate_tx_radio">TX 电台尚未连接</string>
     <string name="ft4_gate_pass">尚未选择过境</string>
     <string name="ft4_gate_transponder">尚未选择转发器</string>
-    <string name="ft4_gate_los">所选过境已经到达 LOS</string>
     <string name="ft4_gate_callsign">尚未设置本机呼号</string>
 </resources>

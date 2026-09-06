@@ -105,6 +105,25 @@ class RadioTrackingServiceTest {
     }
 
     @Test
+    fun leaseAllowsMidpointOutsideSelectedPass() = runTest {
+        val fixture = Fixture(backgroundScope, FakeRadioController(), FakeRadioController())
+        fixture.service.connectRadios()
+        fixture.startTracking()
+        runCurrent()
+
+        val request = fixture.request(generation = 11L, waveformStartUtcMillis = fixture.afterPassStart)
+        val lease = fixture.service.beginTransmit(request)
+
+        assertEquals(
+            request.waveformStartUtcMillis + request.waveformDurationMillis / 2L,
+            lease.waveformMidpointUtcMillis
+        )
+        assertTrue(lease.waveformMidpointUtcMillis in fixture.satelliteRepo.requestedTimes)
+        fixture.service.endTransmit(lease)
+        fixture.close()
+    }
+
+    @Test
     fun watchdogForcesPttOff() = runTest {
         val tx = FakeRadioController()
         val fixture = Fixture(backgroundScope, tx, FakeRadioController())
@@ -183,6 +202,7 @@ class RadioTrackingServiceTest {
         private val settings = FakeSettingsRepo()
         val satelliteRepo = FakeSatelliteRepo(position)
         private val now = nowProvider()
+        val afterPassStart = now + 180_000L
         private val satellite = OrbitalData(
             name = "TEST",
             epoch = 24_100.0,
@@ -226,9 +246,13 @@ class RadioTrackingServiceTest {
             service.startTracking(pass, transponder, nominalTxHz)
         }
 
-        fun request(generation: Long, maximumPttMillis: Long = 8_500L) = TxRequest(
+        fun request(
+            generation: Long,
+            maximumPttMillis: Long = 8_500L,
+            waveformStartUtcMillis: Long = now + 5_000L
+        ) = TxRequest(
             sessionGeneration = generation,
-            waveformStartUtcMillis = now + 5_000L,
+            waveformStartUtcMillis = waveformStartUtcMillis,
             expectedSatelliteCatalogNumber = pass.catNum,
             expectedTransponderUuid = transponder.uuid,
             maximumPttMillis = maximumPttMillis

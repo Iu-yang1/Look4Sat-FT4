@@ -15,6 +15,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -31,6 +32,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
@@ -82,12 +84,21 @@ internal fun Ft4SpectrumPage(
         verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
         ElevatedCard(modifier = Modifier.fillMaxWidth().height(380.dp)) {
-            SpectrumWaterfall(
-                renderState = renderState,
-                selectedFrequencyHz = state.selectedAudioFrequencyHz,
-                onFrequencySelected = { onAction(Ft4Action.SelectAudioFrequency(it)) },
-                modifier = Modifier.fillMaxSize().padding(8.dp)
-            )
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                SpectrumWaterfall(
+                    renderState = renderState,
+                    selectedFrequencyHz = state.selectedAudioFrequencyHz,
+                    onFrequencySelected = { onAction(Ft4Action.SelectAudioFrequency(it)) },
+                    modifier = Modifier.fillMaxSize().padding(8.dp)
+                )
+                spectrumBlockingMessage(state, frame == null)?.let { message ->
+                    Text(
+                        text = message,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.padding(24.dp)
+                    )
+                }
+            }
         }
         ElevatedCard(modifier = Modifier.fillMaxWidth()) {
             Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -116,13 +127,30 @@ internal fun Ft4SpectrumPage(
                 ) {
                     Text(
                         stringResource(
-                            if (state.isReceiving) R.string.ft4_stop_receive else R.string.ft4_start_receive
+                            when {
+                                !state.hasMicrophonePermission -> R.string.ft4_grant_microphone
+                                state.isReceiving -> R.string.ft4_stop_receive
+                                else -> R.string.ft4_start_receive
+                            }
                         )
                     )
                 }
             }
         }
     }
+}
+
+@Composable
+private fun spectrumBlockingMessage(state: Ft4State, hasNoFrame: Boolean): String? = when {
+    !state.settings.decodeEnabled -> stringResource(R.string.ft4_status_disabled)
+    !state.capability.receiveAvailable -> stringResource(
+        R.string.ft4_status_unavailable,
+        state.capability.unavailableReason
+    )
+    !state.hasMicrophonePermission -> stringResource(R.string.ft4_microphone_required)
+    state.audioHub is AudioHubState.Failed -> stringResource(R.string.ft4_error, state.audioHub.reason)
+    hasNoFrame -> stringResource(R.string.ft4_waiting_audio)
+    else -> null
 }
 
 @Composable

@@ -210,7 +210,6 @@ class RadioTrackingService(
             check(pass.catNum == request.expectedSatelliteCatalogNumber) { "Satellite context changed" }
             check(transponder.uuid == request.expectedTransponderUuid) { "Transponder context changed" }
             val midpoint = request.waveformStartUtcMillis + request.waveformDurationMillis / 2L
-            check(midpoint in pass.aosTime..pass.losTime) { "FT4 waveform midpoint is outside the pass" }
             val nominal = current.txBaseFrequencyHz ?: transponder.uplinkCenterFrequency()
             checkNotNull(nominal) { "The selected transponder has no uplink frequency" }
             val position = satelliteRepo.getPosition(
@@ -218,9 +217,6 @@ class RadioTrackingService(
                 settingsRepo.stationPosition.value,
                 midpoint
             )
-            check(position.elevation.isFinite() && position.elevation > 0.0) {
-                "Satellite is below the horizon at the waveform midpoint"
-            }
             val effectiveFrequency = position.getUplinkFreq(nominal)
             val controller = checkNotNull(txController) { "TX radio is not connected" }
             check(controller.isConnected) { "TX radio is not connected" }

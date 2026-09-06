@@ -68,7 +68,7 @@ data class OtherSettings(
 
 data class Ft4Settings(
     val operatorCallsign: String = "",
-    val decodeEnabled: Boolean = false,
+    val decodeEnabled: Boolean = true,
     val decodeDepth: Int = 3,
     val ntpSynchronizationEnabled: Boolean = false,
     val gnssSynchronizationEnabled: Boolean = false,

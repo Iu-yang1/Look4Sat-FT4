@@ -428,7 +428,7 @@ class SettingsRepo(
     private fun getFt4Settings() = Ft4Settings(
         operatorCallsign = preferences.getString(keyFt4OperatorCallsign, null)
             .orEmpty().trim().uppercase(Locale.US),
-        decodeEnabled = preferences.getBoolean(keyFt4DecodeEnabled, false),
+        decodeEnabled = preferences.getBoolean(keyFt4DecodeEnabled, true),
         decodeDepth = preferences.getInt(keyFt4DecodeDepth, 3).coerceIn(1, 3),
         ntpSynchronizationEnabled = preferences.getBoolean(keyFt4NtpEnabled, false),
         gnssSynchronizationEnabled = preferences.getBoolean(keyFt4GnssEnabled, false),

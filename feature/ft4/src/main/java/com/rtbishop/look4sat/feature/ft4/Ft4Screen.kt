@@ -10,8 +10,14 @@
 package com.rtbishop.look4sat.feature.ft4
 
 import android.Manifest
+import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
+import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -111,12 +117,22 @@ private data class Ft4SatelliteRadioPanelState(
 fun Ft4ShellDestination(navigateUp: () -> Unit, navigateToLogbook: () -> Unit) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
+    val activity = remember(context) { context.findActivity() }
     val container = (context.applicationContext as IContainerProvider).getMainContainer()
     val viewModel: Ft4ViewModel = viewModel(factory = Ft4ViewModel.factory(container))
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    var lifecycleResumed by remember {
+        mutableStateOf(lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED))
+    }
+    var microphoneRequestAttempted by rememberSaveable { mutableStateOf(false) }
+    var microphonePermanentlyDenied by rememberSaveable { mutableStateOf(false) }
     val microphoneLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
-    ) { granted -> viewModel.onAction(Ft4Action.MicrophonePermissionChanged(granted)) }
+    ) { granted ->
+        microphonePermanentlyDenied = !granted && microphoneRequestAttempted &&
+            activity?.shouldShowRequestPermissionRationale(Manifest.permission.RECORD_AUDIO) == false
+        viewModel.onAction(Ft4Action.MicrophonePermissionChanged(granted))
+    }
     val bluetoothLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted -> if (granted) viewModel.onAction(Ft4Action.ConnectRadios) }
@@ -124,11 +140,10 @@ fun Ft4ShellDestination(navigateUp: () -> Unit, navigateToLogbook: () -> Unit) {
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
-                val granted = ContextCompat.checkSelfPermission(
-                    context,
-                    Manifest.permission.RECORD_AUDIO
-                ) == PackageManager.PERMISSION_GRANTED
-                viewModel.onAction(Ft4Action.MicrophonePermissionChanged(granted))
+                lifecycleResumed = true
+            }
+            if (event == Lifecycle.Event.ON_PAUSE) {
+                lifecycleResumed = false
             }
             if (event == Lifecycle.Event.ON_STOP) viewModel.onAction(Ft4Action.Leave)
         }
@@ -138,14 +153,23 @@ fun Ft4ShellDestination(navigateUp: () -> Unit, navigateToLogbook: () -> Unit) {
             viewModel.onAction(Ft4Action.Leave)
         }
     }
-    LaunchedEffect(Unit) {
+    LaunchedEffect(
+        lifecycleResumed,
+        state.settings.decodeEnabled,
+        state.capability.receiveAvailable
+    ) {
+        if (!lifecycleResumed) return@LaunchedEffect
         val granted = ContextCompat.checkSelfPermission(
             context,
             Manifest.permission.RECORD_AUDIO
         ) == PackageManager.PERMISSION_GRANTED
         if (granted) {
+            microphonePermanentlyDenied = false
             viewModel.onAction(Ft4Action.MicrophonePermissionChanged(true))
-        } else {
+        } else if (state.settings.decodeEnabled && state.capability.receiveAvailable) {
+            viewModel.onAction(Ft4Action.MicrophonePermissionChanged(false))
+            if (microphoneRequestAttempted) return@LaunchedEffect
+            microphoneRequestAttempted = true
             microphoneLauncher.launch(Manifest.permission.RECORD_AUDIO)
         }
     }
@@ -156,7 +180,19 @@ fun Ft4ShellDestination(navigateUp: () -> Unit, navigateToLogbook: () -> Unit) {
         onAction = viewModel::onAction,
         navigateUp = navigateUp,
         navigateToLogbook = navigateToLogbook,
-        requestMicrophone = { microphoneLauncher.launch(Manifest.permission.RECORD_AUDIO) },
+        requestMicrophone = {
+            if (microphonePermanentlyDenied && activity != null) {
+                activity.startActivity(
+                    Intent(
+                        Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                        Uri.parse("package:${activity.packageName}")
+                    )
+                )
+            } else {
+                microphoneRequestAttempted = true
+                microphoneLauncher.launch(Manifest.permission.RECORD_AUDIO)
+            }
+        },
         connectRadios = {
             if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S || ContextCompat.checkSelfPermission(
                     context,
@@ -169,6 +205,12 @@ fun Ft4ShellDestination(navigateUp: () -> Unit, navigateToLogbook: () -> Unit) {
             }
         }
     )
+}
+
+private tailrec fun Context.findActivity(): Activity? = when (this) {
+    is Activity -> this
+    is ContextWrapper -> baseContext.findActivity()
+    else -> null
 }
 
 @Composable

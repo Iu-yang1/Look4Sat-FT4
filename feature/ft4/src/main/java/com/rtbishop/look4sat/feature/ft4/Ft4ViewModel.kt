@@ -245,7 +245,7 @@ class Ft4ViewModel(
                     val mode = radio.txMode.orEmpty()
                     val band = bandKey(radio.nominalTxFrequencyHz)
                     if (!radio.isActive || !radio.txConnected || radio.currentPass == null ||
-                        radio.selectedTransponder == null || radio.elevation <= 0.0
+                        radio.selectedTransponder == null
                     ) {
                         stopAutomationNow("Satellite or radio context is unavailable")
                     } else if (mode != automation.mode || band != automation.band) {
@@ -404,7 +404,7 @@ class Ft4ViewModel(
                 val pass = radio.currentPass
                 if (!state.settings.decodeEnabled || !clock.automaticFt4TransmitAllowed() ||
                     !radio.isActive || !radio.txConnected || pass == null ||
-                    radio.selectedTransponder == null || clock.nowMillis() >= pass.losTime
+                    radio.selectedTransponder == null
                 ) {
                     stopAutomationNow(clock.automaticFt4TransmitBlockReason().ifBlank { "FT4 automatic TX gate closed" })
                     break

@@ -216,7 +216,6 @@ private fun automaticGateReason(state: Ft4State): String? {
         !state.radio.txConnected -> R.string.ft4_gate_tx_radio
         state.trackingPass == null -> R.string.ft4_gate_pass
         state.radio.selectedTransponder == null -> R.string.ft4_gate_transponder
-        state.trackingPass?.losTime?.let { it <= state.clock.utcMillis } == true -> R.string.ft4_gate_los
         state.settings.operatorCallsign.isBlank() -> R.string.ft4_gate_callsign
         else -> return null
     }

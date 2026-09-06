@@ -11,6 +11,7 @@ package com.rtbishop.look4sat.core.data.ft4
 
 import com.rtbishop.look4sat.core.domain.audio.AudioConsumer
 import com.rtbishop.look4sat.core.domain.audio.AudioDelivery
+import com.rtbishop.look4sat.core.domain.audio.AudioHubState
 import com.rtbishop.look4sat.core.domain.audio.IAudioHub
 import com.rtbishop.look4sat.core.domain.audio.StreamingAudioResampler
 import com.rtbishop.look4sat.core.domain.ft4.Ft4Capability
@@ -249,6 +250,12 @@ class Ft4Service(
                     )
                 }
             )
+            if (generation == sessionGeneration && currentCoroutineContext().isActive) {
+                val reason = (audioHub.state.value as? AudioHubState.Failed)
+                    ?.reason
+                    ?: "Audio input stopped unexpectedly"
+                mutableEngineState.value = Ft4EngineState.Failed(reason)
+            }
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (error: Throwable) {

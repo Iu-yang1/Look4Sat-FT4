@@ -393,7 +393,9 @@
     <string name="ft4_time_source">Time %1$s · ±%2$.0f ms</string>
     <string name="ft4_start_receive">Start receiving</string>
     <string name="ft4_stop_receive">Stop receiving</string>
+    <string name="ft4_grant_microphone">Grant microphone permission</string>
     <string name="ft4_microphone_required">Microphone permission is required</string>
+    <string name="ft4_waiting_audio">Waiting for audio input…</string>
     <string name="ft4_audio_owner_idle">Audio input idle</string>
     <string name="ft4_audio_owner">Input %1$s · %2$d Hz · %3$s</string>
     <string name="ft4_audio_device_unknown">unknown device</string>
@@ -488,6 +490,5 @@
     <string name="ft4_gate_tx_radio">TX radio is not connected</string>
     <string name="ft4_gate_pass">no pass is selected</string>
     <string name="ft4_gate_transponder">no transponder is selected</string>
-    <string name="ft4_gate_los">the selected pass has reached LOS</string>
     <string name="ft4_gate_callsign">operator callsign is not configured</string>
 </resources>

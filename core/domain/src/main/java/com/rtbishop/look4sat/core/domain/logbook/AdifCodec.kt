@@ -33,8 +33,8 @@ object AdifCodec {
             }
             append(field("CALL", record.theirCallsign))
             append(field("STATION_CALLSIGN", record.myCallsign))
-            append(field("MODE", "MFSK"))
-            append(field("SUBMODE", "FT4"))
+            appendOptional("MODE", record.mode)
+            appendOptional("SUBMODE", record.submode)
             appendOptional("GRIDSQUARE", record.theirGrid)
             appendOptional("MY_GRIDSQUARE", record.myGrid)
             appendOptional("RST_SENT", record.sentReport)
@@ -53,8 +53,12 @@ object AdifCodec {
             record.ft4AudioFrequencyHz?.let { append(field("APP_LOOK4SAT_FT4_AUDIO_HZ", it.toString())) }
             append(field("APP_LOOK4SAT_AUTOMATIC", if (record.automatic) "Y" else "N"))
             append(field("APP_LOOK4SAT_STATUS", record.status.name))
+            appendOptional("APP_LOOK4SAT_SESSION", record.sessionId)
             if (record.rawMessages.isNotEmpty()) {
                 append(field("APP_LOOK4SAT_MESSAGES", record.rawMessages.joinToString(" | ")))
+            }
+            if (record.messageEvents.isNotEmpty()) {
+                append(field("APP_LOOK4SAT_EVENTS", QsoEventCodec.encode(record.messageEvents)))
             }
             append("<EOR>\r\n")
         }
@@ -82,6 +86,8 @@ object AdifCodec {
             rxFrequencyHz = mhzToHz(values["FREQ_RX"]),
             band = values["BAND"].orEmpty(),
             rxBand = values["BAND_RX"].orEmpty(),
+            mode = values["MODE"].orEmpty(),
+            submode = values["SUBMODE"].orEmpty(),
             satelliteName = values["SAT_NAME"].orEmpty(),
             transponderName = values["APP_LOOK4SAT_TRANSPONDER"].orEmpty(),
             satelliteMode = values["SAT_MODE"].orEmpty(),
@@ -90,7 +96,9 @@ object AdifCodec {
             automatic = values["APP_LOOK4SAT_AUTOMATIC"].equals("Y", true),
             status = values["APP_LOOK4SAT_STATUS"]?.let { runCatching { QsoStatus.valueOf(it) }.getOrNull() }
                 ?: QsoStatus.COMPLETE,
-            rawMessages = values["APP_LOOK4SAT_MESSAGES"]?.split(" | ")?.filter(String::isNotBlank).orEmpty()
+            rawMessages = values["APP_LOOK4SAT_MESSAGES"]?.split(" | ")?.filter(String::isNotBlank).orEmpty(),
+            sessionId = values["APP_LOOK4SAT_SESSION"].orEmpty(),
+            messageEvents = QsoEventCodec.decode(values["APP_LOOK4SAT_EVENTS"])
         )
     }
 

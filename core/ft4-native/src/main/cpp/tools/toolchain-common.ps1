@@ -1,4 +1,4 @@
-﻿Set-StrictMode -Version Latest
+Set-StrictMode -Version Latest
 
 function Get-Ft8cnCandidateRoots {
     param([string]$RepoRoot)
@@ -34,6 +34,13 @@ function Get-Ft8cnCandidateRoots {
 
     if ($env:LOCALAPPDATA) {
         $roots.Add((Join-Path $env:LOCALAPPDATA 'Android\Sdk'))
+    }
+    $gitCommand = Get-Command git -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($null -ne $gitCommand -and (Test-Path -LiteralPath $gitCommand.Source)) {
+        $gitParent = Split-Path -Parent $gitCommand.Source
+        if ((Split-Path -Leaf $gitParent) -in @('bin', 'cmd')) {
+            $roots.Add((Split-Path -Parent $gitParent))
+        }
     }
     foreach ($drive in Get-PSDrive -PSProvider FileSystem) {
         foreach ($name in @('tools', 'AndroidSDKLIB')) {

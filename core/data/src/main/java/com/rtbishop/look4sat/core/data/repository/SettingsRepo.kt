@@ -88,6 +88,7 @@ class SettingsRepo(
     private val keyStationQth = "stationQth"
     private val keyStationTimestamp = "stationTimestamp"
     private val keyUpdateTimestamp = "updateTimestamp"
+    private val keyDatabaseContentVersion = "databaseContentVersion"
     private val keyShouldSeeWarning = "shouldSeeWarning"
     private val keyShouldSeeWhatsNew = "shouldSeeWhatsNew_v$appVersionName"
     private val keySstvMode = "sstvMode"
@@ -279,6 +280,7 @@ class SettingsRepo(
         putInt(keyNumberOfSatellites, state.numberOfSatellites)
         putInt(keyNumberOfRadios, state.numberOfRadios)
         putLong(keyUpdateTimestamp, state.updateTimestamp)
+        putLong(keyDatabaseContentVersion, state.contentVersion)
         _databaseState.value = state
     }
 
@@ -286,7 +288,8 @@ class SettingsRepo(
         val numberOfRadios = preferences.getInt(keyNumberOfRadios, 0)
         val numberOfSatellites = preferences.getInt(keyNumberOfSatellites, 0)
         val updateTimestamp = preferences.getLong(keyUpdateTimestamp, 0L)
-        return DatabaseState(numberOfRadios, numberOfSatellites, updateTimestamp)
+        val contentVersion = preferences.getLong(keyDatabaseContentVersion, 0L)
+        return DatabaseState(numberOfRadios, numberOfSatellites, updateTimestamp, contentVersion)
     }
     //endregion
 

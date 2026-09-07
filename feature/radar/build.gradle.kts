@@ -7,7 +7,6 @@ android {
 }
 
 dependencies {
-    implementation(project(":feature:mutual"))
-    implementation(project(":feature:cw"))
+    implementation(project(":core:cw"))
     implementation("androidx.constraintlayout:constraintlayout:2.2.1")
 }

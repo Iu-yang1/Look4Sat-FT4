@@ -1,6 +1,6 @@
 package k3;
 
-import com.rtbishop.look4sat.feature.cw.suncompat.Cleaner;
+import com.rtbishop.look4sat.core.cw.suncompat.Cleaner;
 
 /* loaded from: classes.dex */
 public final class d extends g {

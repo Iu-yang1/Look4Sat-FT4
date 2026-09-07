@@ -30,6 +30,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.rtbishop.look4sat.core.domain.ft4.Ft4AutomationPhase
+import com.rtbishop.look4sat.core.domain.repository.TrackingPhase
 import com.rtbishop.look4sat.core.domain.time.ClockSource
 import com.rtbishop.look4sat.core.presentation.CardButton
 import com.rtbishop.look4sat.core.presentation.R
@@ -212,7 +213,7 @@ private fun automaticGateReason(state: Ft4State): String? {
         state.clock.sampleAgeMillis > MAX_TIME_SAMPLE_AGE_MILLIS -> R.string.ft4_gate_expired
         state.clock.uncertaintyMillis > 250.0 -> R.string.ft4_gate_uncertain
         !state.clock.healthy -> R.string.ft4_gate_unhealthy
-        !state.radio.isActive -> R.string.ft4_gate_tracking
+        state.radio.trackingPhase != TrackingPhase.READY -> R.string.ft4_gate_tracking
         !state.radio.txConnected -> R.string.ft4_gate_tx_radio
         state.trackingPass == null -> R.string.ft4_gate_pass
         state.radio.selectedTransponder == null -> R.string.ft4_gate_transponder

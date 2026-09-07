@@ -223,8 +223,11 @@
     <string name="rc_no_paired_devices">No available CAT device was found.</string>
     <string name="rc_baud_rate">Baud Rate:</string>
     <string name="rc_cat_transport">CAT transport</string>
-    <string name="rc_tx_tcp_address">TX host:port</string>
-    <string name="rc_rx_tcp_address">RX host:port</string>
+    <string name="rc_tx_tcp_address">TX raw CAT host:port</string>
+    <string name="rc_rx_tcp_address">RX raw CAT host:port</string>
+    <string name="rc_tcp_raw_hint">TCP sends raw CAT bytes directly; it is not a rigctld client.</string>
+    <string name="rc_usb_cdc_hint">USB supports standard CDC-ACM control/data interface pairs. Vendor-specific serial drivers are not supported.</string>
+    <string name="rc_usb_cdc_device">%1$s · CDC-ACM control #%2$d / data #%3$d · %4$s</string>
 
     <string name="prefs_net_title">Network data output</string>
     <string name="prefs_net_rotator_switch">Enable rotation output</string>
@@ -406,6 +409,7 @@
     <string name="ft4_slot_diagnostics">Slot %1$s · %2$d/90,000 samples</string>
     <string name="ft4_slot_pending">waiting for complete boundary</string>
     <string name="ft4_pipeline_diagnostics">Capture queue %1$d · decode queue %2$d · dropped blocks %3$d</string>
+    <string name="ft4_pipeline_overload">Dropped stale decode slots: %1$d</string>
     <string name="ft4_decode_diagnostics">Decode %1$d ms · %2$d results</string>
     <string name="ft4_decode_diagnostics_pending">Decode -- · 0 results</string>
     <string name="ft4_audio_system_silenced">Microphone is in use by another app</string>

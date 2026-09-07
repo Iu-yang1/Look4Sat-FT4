@@ -28,16 +28,22 @@ import com.rtbishop.look4sat.core.domain.source.ILocalSource
 import com.rtbishop.look4sat.core.domain.utility.round
 import com.rtbishop.look4sat.core.domain.utility.toDegrees
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.TimeZone
+import java.util.concurrent.atomic.AtomicLong
+import kotlin.coroutines.coroutineContext
 
 class SatelliteRepo(
     private val dispatcher: CoroutineDispatcher,
@@ -56,6 +62,9 @@ class SatelliteRepo(
 
     private val _selectedPass = MutableStateFlow(0 to 0L)
     override val selectedPass: StateFlow<Pair<Int, Long>> = _selectedPass
+    private val calculationGeneration = AtomicLong(0L)
+    private val calculationLock = Any()
+    private var calculationJob: Job? = null
 
     override fun selectPass(catNum: Int, aosTime: Long) {
         _selectedPass.value = catNum to aosTime
@@ -66,9 +75,10 @@ class SatelliteRepo(
     override suspend fun initRepository() = withContext(dispatcher) {
         combine(
             settingsRepo.selectedIds,
-            settingsRepo.stationPosition
-        ) { selectedIds, _ -> selectedIds }
-            .collect { selectedIds ->
+            settingsRepo.stationPosition,
+            settingsRepo.databaseState
+        ) { selectedIds, _, databaseState -> selectedIds to databaseState.contentVersion }
+            .collectLatest { (selectedIds, _) ->
                 _satellites.update { localStorage.getEntriesWithIds(selectedIds) }
                 val settings = settingsRepo.passesSettings.value
                 calculatePasses(
@@ -127,46 +137,79 @@ class SatelliteRepo(
         aosEndMinute: Int,
         invertAosTimeWindow: Boolean,
         modes: List<String>
-    ) {
-        _isCalculating.value = true
-        // Normalize to the start of the current minute so that coarse 60-second stepping
-        // in getLeoPass always begins from the same phase, producing stable AOS/LOS times
-        val normalizedTime = time / 60_000L * 60_000L
-        val currentSatellites = _satellites.value
-        withContext(dispatcher) {
-            val idsWithModes = localStorage.getIdsWithModes(modes)
-            val stationPos = settingsRepo.stationPosition.value
-            val filteredSatellites = if (idsWithModes.isEmpty()) {
-                currentSatellites
-            } else {
-                currentSatellites.filter { it.data.catnum in idsWithModes }
-            }
-            // Compute passes for each satellite in parallel
-            val passLists = coroutineScope {
-                filteredSatellites.map { satellite ->
-                    async { satellite.getPasses(stationPos, normalizedTime, hoursAhead) }
-                }.awaitAll()
-            }
-            // Flatten and filter in a single pass
-            val timeFuture = normalizedTime + (hoursAhead * 60L * 60L * 1000L)
-            val newPasses = ArrayList<OrbitalPass>()
-            for (list in passLists) {
-                for (pass in list) {
-                    if (
-                        pass.losTime > time
-                        && pass.aosTime < timeFuture
-                        && pass.maxElevation > minElevation
-                        && (pass.isDeepSpace || isAosInRange(pass.aosTime, aosStartMinute, aosEndMinute, invertAosTimeWindow))
-                    ) {
-                        newPasses.add(pass)
+    ) = coroutineScope {
+        val (requestGeneration, job) = synchronized(calculationLock) {
+            coroutineContext.ensureActive()
+            val generation = calculationGeneration.incrementAndGet()
+            val newJob = launch(start = CoroutineStart.LAZY) {
+                _isCalculating.value = true
+                try {
+                    // Normalize to the current minute so coarse stepping starts from a stable phase.
+                    val normalizedTime = time / 60_000L * 60_000L
+                    val currentSatellites = _satellites.value
+                    val newPasses = withContext(dispatcher) {
+                        val idsWithModes = if (modes.isEmpty()) emptyList() else localStorage.getIdsWithModes(modes)
+                        val stationPos = settingsRepo.stationPosition.value
+                        val filteredSatellites = filterSatellitesByModes(
+                            currentSatellites,
+                            modes,
+                            idsWithModes
+                        )
+                        val passLists = coroutineScope {
+                            filteredSatellites.map { satellite ->
+                                async {
+                                    coroutineContext.ensureActive()
+                                    satellite.getPasses(stationPos, normalizedTime, hoursAhead)
+                                }
+                            }.awaitAll()
+                        }
+                        val timeFuture = normalizedTime + (hoursAhead * 60L * 60L * 1000L)
+                        val filteredPasses = ArrayList<OrbitalPass>()
+                        for (list in passLists) {
+                            coroutineContext.ensureActive()
+                            for (pass in list) {
+                                if (
+                                    pass.losTime > time &&
+                                    pass.aosTime < timeFuture &&
+                                    pass.maxElevation > minElevation &&
+                                    (pass.isDeepSpace || isAosInRange(
+                                        pass.aosTime,
+                                        aosStartMinute,
+                                        aosEndMinute,
+                                        invertAosTimeWindow
+                                    ))
+                                ) {
+                                    filteredPasses.add(pass)
+                                }
+                            }
+                        }
+                        filteredPasses.sortBy { it.aosTime }
+                        filteredPasses
+                    }
+                    if (calculationGeneration.get() == generation) {
+                        _passes.value = newPasses
+                    }
+                } finally {
+                    if (calculationGeneration.get() == generation) {
+                        _isCalculating.value = false
                     }
                 }
             }
-            newPasses.sortBy { it.aosTime }
-            delay(1000) // Simulate loading time for better UX
-            _passes.update { newPasses }
+            calculationJob?.cancel()
+            calculationJob = newJob
+            newJob.start()
+            generation to newJob
         }
-        _isCalculating.value = false
+        try {
+            job.join()
+        } finally {
+            synchronized(calculationLock) {
+                if (calculationJob === job) calculationJob = null
+            }
+            if (calculationGeneration.get() == requestGeneration) {
+                _isCalculating.value = false
+            }
+        }
     }
 
     private fun isAosInRange(
@@ -186,7 +229,7 @@ class SatelliteRepo(
         return if (invertAosTimeWindow) !inRange else inRange
     }
 
-    private fun OrbitalObject.getPasses(pos: GeoPos, time: Long, hours: Int): List<OrbitalPass> {
+    private suspend fun OrbitalObject.getPasses(pos: GeoPos, time: Long, hours: Int): List<OrbitalPass> {
         val passes = mutableListOf<OrbitalPass>()
         val endDate = time + hours * 60L * 60L * 1000L
         val quarterOrbitMin = (this.data.orbitalPeriod / 4.0).toInt()
@@ -200,6 +243,7 @@ class SatelliteRepo(
                 passes.add(getGeoPass(this, pos, time, decayed))
             } else {
                 do {
+                    coroutineContext.ensureActive()
                     if (count > 0) shouldRewind = false
                     val pass = getLeoPass(this, pos, startDate, shouldRewind, decayed)
                     lastAosDate = pass.aosTime
@@ -222,7 +266,13 @@ class SatelliteRepo(
         return OrbitalPass(aos, az, los, az, alt.toInt(), elev, sat, hasDecayed = decayed)
     }
 
-    private fun getLeoPass(sat: OrbitalObject, pos: GeoPos, time: Long, rewind: Boolean, decayed: Boolean): OrbitalPass {
+    private suspend fun getLeoPass(
+        sat: OrbitalObject,
+        pos: GeoPos,
+        time: Long,
+        rewind: Boolean,
+        decayed: Boolean
+    ): OrbitalPass {
         val quarterOrbitMin = (sat.data.orbitalPeriod / 4.0).toInt()
         var calendarTimeMillis = time
         var elevation: Double
@@ -234,6 +284,7 @@ class SatelliteRepo(
         if (sat.getElevation(pos, calendarTimeMillis) > 0.0) {
             // move forward in 30 second intervals until the sat goes below the horizon
             do {
+                coroutineContext.ensureActive()
                 calendarTimeMillis += 30 * 1000L
             } while (sat.getElevation(pos, calendarTimeMillis) > 0.0)
             // move forward 3/4 of an orbit
@@ -242,6 +293,7 @@ class SatelliteRepo(
 
         // find the next time sat comes above the horizon (coarse: 60s steps)
         do {
+            coroutineContext.ensureActive()
             calendarTimeMillis += 60L * 1000L
             elevation = sat.getElevation(pos, calendarTimeMillis)
             if (elevation > maxElevation) maxElevation = elevation
@@ -250,6 +302,7 @@ class SatelliteRepo(
         // refine AOS to ~500ms precision
         calendarTimeMillis -= 60L * 1000L
         do {
+            coroutineContext.ensureActive()
             calendarTimeMillis += 500L
             elevation = sat.getElevation(pos, calendarTimeMillis)
             if (elevation > maxElevation) maxElevation = elevation
@@ -262,6 +315,7 @@ class SatelliteRepo(
 
         // find when sat goes below (coarse: 30s steps)
         do {
+            coroutineContext.ensureActive()
             calendarTimeMillis += 30L * 1000L
             elevation = sat.getElevation(pos, calendarTimeMillis)
             if (elevation > maxElevation) maxElevation = elevation
@@ -270,6 +324,7 @@ class SatelliteRepo(
         // refine LOS to ~500ms precision
         calendarTimeMillis -= 30L * 1000L
         do {
+            coroutineContext.ensureActive()
             calendarTimeMillis += 500L
             elevation = sat.getElevation(pos, calendarTimeMillis)
             if (elevation > maxElevation) maxElevation = elevation
@@ -288,4 +343,14 @@ class SatelliteRepo(
         val elev = maxElevation.toDegrees().round(1)
         return OrbitalPass(aos, aosAz, los, losAz, alt.toInt(), elev, sat, hasDecayed = decayed)
     }
+}
+
+internal fun filterSatellitesByModes(
+    satellites: List<OrbitalObject>,
+    selectedModes: List<String>,
+    matchingCatalogNumbers: List<Int>
+): List<OrbitalObject> = if (selectedModes.isEmpty()) {
+    satellites
+} else {
+    satellites.filter { it.data.catnum in matchingCatalogNumbers }
 }

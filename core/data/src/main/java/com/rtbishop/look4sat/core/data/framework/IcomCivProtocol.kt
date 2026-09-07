@@ -46,6 +46,8 @@ object IcomCivProtocol {
     // ── Command bytes ──────────────────────────────────────────────────────
     /** Read operating frequency (main VFO). */
     const val CMD_READ_FREQ: Byte           = 0x03
+    /** Read operating mode (main VFO). */
+    const val CMD_READ_MODE: Byte           = 0x04
     /** Set operating frequency (main VFO). */
     const val CMD_SET_FREQ: Byte            = 0x05
     /** Set operating mode. */
@@ -68,6 +70,8 @@ object IcomCivProtocol {
     const val CMD_MISC_SETTING: Byte        = 0x16
     /** Read/write selected-VFO frequency (cmd 0x25). */
     const val CMD_SELECTED_VFO_FREQ: Byte   = 0x25
+    /** Read/write selected or unselected VFO mode (cmd 0x26). */
+    const val CMD_SELECTED_VFO_MODE: Byte   = 0x26
     /** Read/write transceiver state (sub 0x00 controls PTT). */
     const val CMD_TRANSCEIVER_STATUS: Byte  = 0x1C
 
@@ -100,11 +104,14 @@ object IcomCivProtocol {
         "WFM"    to 0x06,
         "CW-R"   to 0x07,
         "RTTY-R" to 0x08,
-        "DV"     to 0x12,
+        "DV"     to 0x17,
         "AFSK"   to 0x05  // AFSK uses FM modulation
     )
 
-    val BYTE_TO_MODE: Map<Byte, String> = MODE_TO_BYTE.entries.associate { it.value to it.key }
+    val BYTE_TO_MODE: Map<Byte, String> = MODE_TO_BYTE
+        .filterKeys { it != "AFSK" }
+        .entries
+        .associate { it.value to it.key }
 
     // ── Frequency BCD encoding ─────────────────────────────────────────────
 
@@ -116,6 +123,7 @@ object IcomCivProtocol {
      *   [00, 00, 50, 45, 01]
      */
     fun encodeFrequencyBcd(frequencyHz: Long): ByteArray {
+        require(frequencyHz in 0L..9_999_999_999L) { "CI-V frequency is outside the 10-digit BCD range" }
         val digits = String.format(Locale.US, "%010d", frequencyHz)
         val bcd = ByteArray(5)
         for (i in 0 until 5) {
@@ -191,6 +199,9 @@ object IcomCivProtocol {
     /** Read operating frequency (CMD 0x03). */
     fun buildReadFreqCommand(): ByteArray = frame(CMD_READ_FREQ)
 
+    /** Read operating mode (CMD 0x04). */
+    fun buildReadModeCommand(): ByteArray = frame(CMD_READ_MODE)
+
     /** Read selected (active) VFO frequency (CMD 0x25 sub 0x00). */
     fun buildReadWorkingFreqCommand(): ByteArray = frame(CMD_SELECTED_VFO_FREQ, SUB_SELECTED_VFO)
 
@@ -232,6 +243,19 @@ object IcomCivProtocol {
     fun buildSetModeCommand(mode: String): ByteArray? {
         val modeByte = MODE_TO_BYTE[mode.uppercase(Locale.US)] ?: return null
         return frame(CMD_SET_MODE, modeByte)
+    }
+
+    /** Set selected (0x00) or unselected (0x01) VFO mode via CMD 0x26. */
+    fun buildSetVfoModeCommand(selected: Boolean, mode: String): ByteArray? {
+        val modeByte = MODE_TO_BYTE[mode.uppercase(Locale.US)] ?: return null
+        val selector = if (selected) SUB_SELECTED_VFO else SUB_UNSELECTED_VFO
+        return frame(CMD_SELECTED_VFO_MODE, selector, modeByte)
+    }
+
+    /** Read selected (0x00) or unselected (0x01) VFO mode via CMD 0x26. */
+    fun buildReadVfoModeCommand(selected: Boolean): ByteArray {
+        val selector = if (selected) SUB_SELECTED_VFO else SUB_UNSELECTED_VFO
+        return frame(CMD_SELECTED_VFO_MODE, selector)
     }
 
     /** Select VFO-A (CMD 0x07 sub 0x00). */
@@ -303,7 +327,8 @@ object IcomCivProtocol {
     fun parseResponse(
         buf: ByteArray,
         expectCmd: Byte?,
-        radioAddress: Byte = ADDR_IC705
+        radioAddress: Byte = ADDR_IC705,
+        payloadMatches: (ByteArray) -> Boolean = { true }
     ): ParsedResponse? {
         var i = 0
         while (i < buf.size - 5) {
@@ -318,7 +343,7 @@ object IcomCivProtocol {
             val fdIdx = buf.indexOf(END_OF_MSG, startIndex = i + 5)
             if (fdIdx < 0) break  // incomplete frame, wait for more data
             val payload = buf.copyOfRange(i + 5, fdIdx)
-            if (expectCmd == null || cmd == expectCmd) {
+            if ((expectCmd == null || cmd == expectCmd) && payloadMatches(payload)) {
                 return ParsedResponse(cmd, payload, fdIdx + 1)
             }
             i = fdIdx + 1
@@ -356,15 +381,34 @@ object IcomCivProtocol {
     fun containsAck(buf: ByteArray, radioAddress: Byte = ADDR_IC705): Boolean =
         ackStatus(buf, radioAddress) == true
 
-    /**
-     * Parse frequency + mode from a CMD_READ_FREQ reply payload.
-     * Payload layout after stripping command byte: [5 freq bytes] [mode byte] [filter byte]
-     */
-    fun parseFreqModePayload(payload: ByteArray): Pair<Long, String>? {
+    /** Parse the five-byte frequency payload returned by CMD 0x03. */
+    fun parseFrequencyPayload(payload: ByteArray): Long? =
+        payload.takeIf { it.size >= 5 && it.copyOfRange(0, 5).all(::isValidBcd) }
+            ?.copyOfRange(0, 5)
+            ?.let(::decodeFrequencyBcd)
+
+    /** Parse a CMD 0x25 response and verify that it belongs to the requested VFO selector. */
+    fun parseVfoFrequencyPayload(payload: ByteArray, selected: Boolean): Long? {
         if (payload.size < 6) return null
-        val freqHz = decodeFrequencyBcd(payload.copyOfRange(0, 5))
-        val mode   = BYTE_TO_MODE[payload[5]] ?: return null
-        return freqHz to mode
+        val expected = if (selected) SUB_SELECTED_VFO else SUB_UNSELECTED_VFO
+        if (payload[0] != expected) return null
+        return parseFrequencyPayload(payload.copyOfRange(1, 6))
+    }
+
+    /** Parse the mode byte returned by CMD 0x04. An optional filter byte follows it. */
+    fun parseModePayload(payload: ByteArray): String? = payload.firstOrNull()?.let(BYTE_TO_MODE::get)
+
+    /** Parse a CMD 0x26 response and verify that it belongs to the requested VFO selector. */
+    fun parseVfoModePayload(payload: ByteArray, selected: Boolean): String? {
+        if (payload.size < 2) return null
+        val expected = if (selected) SUB_SELECTED_VFO else SUB_UNSELECTED_VFO
+        if (payload[0] != expected) return null
+        return BYTE_TO_MODE[payload[1]]
+    }
+
+    private fun isValidBcd(value: Byte): Boolean {
+        val number = value.toInt() and 0xff
+        return number ushr 4 <= 9 && number and 0x0f <= 9
     }
 
     /** Hex dump of bytes, useful for debug logging. */

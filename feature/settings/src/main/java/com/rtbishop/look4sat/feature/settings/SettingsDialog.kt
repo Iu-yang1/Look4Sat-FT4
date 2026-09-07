@@ -23,6 +23,8 @@ import android.bluetooth.BluetoothManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.hardware.usb.UsbConstants
+import android.hardware.usb.UsbDevice
 import android.hardware.usb.UsbManager
 import android.os.Build
 import androidx.core.content.ContextCompat
@@ -864,6 +866,7 @@ fun RadioControlDialog(
     val rxName     = rememberSaveable { mutableStateOf(initialSettings.rxRadioName) }
     val baudRate   = rememberSaveable { mutableIntStateOf(initialSettings.baudRate) }
     val selectingFor = rememberSaveable { mutableStateOf("") } // "tx", "rx", or ""
+    val usbCdcDeviceFormat = stringResource(R.string.rc_usb_cdc_device)
 
     val isIcom = radioModel.value in setOf(
         RadioControlSettings.MODEL_ICOM_IC705,
@@ -880,13 +883,18 @@ fun RadioControlDialog(
     // If current baud rate is not in the new list, default to the first available
     if (baudRate.intValue !in baudRates) baudRate.intValue = baudRates.first()
 
-    val pairedDevices: List<Pair<String, String>> = remember(catTransport.value) {
+    val pairedDevices: List<Pair<String, String>> = remember(catTransport.value, usbCdcDeviceFormat) {
         buildList {
             try {
                 if (catTransport.value == RadioControlSettings.TRANSPORT_USB) {
                     val manager = context.getSystemService(UsbManager::class.java)
                     manager.deviceList.values.forEach { device ->
-                        add((device.productName ?: "USB ${device.vendorId}:${device.productId}") to device.deviceId.toString())
+                        device.cdcAcmInterfacePairs().forEach { (controlId, dataId) ->
+                            val product = device.productName ?: "USB"
+                            val identity = "%04X:%04X".format(device.vendorId, device.productId)
+                            val name = usbCdcDeviceFormat.format(product, controlId, dataId, identity)
+                            add(name to "${device.deviceId}:$controlId:$dataId")
+                        }
                     }
                     return@buildList
                 }
@@ -957,6 +965,18 @@ fun RadioControlDialog(
                         enabled = enabled.value
                     )
                 }
+            }
+            when (catTransport.value) {
+                RadioControlSettings.TRANSPORT_USB -> Text(
+                    stringResource(R.string.rc_usb_cdc_hint),
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                RadioControlSettings.TRANSPORT_TCP -> Text(
+                    stringResource(R.string.rc_tcp_raw_hint),
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
             if (catTransport.value == RadioControlSettings.TRANSPORT_TCP) {
                 OutlinedTextField(
@@ -1073,7 +1093,7 @@ fun RadioControlDialog(
                                     if (catTransport.value == RadioControlSettings.TRANSPORT_USB) {
                                         val usbManager = context.getSystemService(UsbManager::class.java)
                                         val device = usbManager.deviceList.values.firstOrNull {
-                                            it.deviceId.toString() == address
+                                            it.deviceId.toString() == address.substringBefore(':')
                                         }
                                         if (device != null && !usbManager.hasPermission(device)) {
                                             val permissionIntent = PendingIntent.getBroadcast(
@@ -1123,5 +1143,25 @@ fun RadioControlDialog(
             }
             Spacer(modifier = Modifier.height(6.dp))
         }
+    }
+}
+
+private fun UsbDevice.cdcAcmInterfacePairs(): List<Pair<Int, Int>> {
+    val interfaces = (0 until interfaceCount).map(::getInterface)
+    val controls = interfaces.filter {
+        it.interfaceClass == UsbConstants.USB_CLASS_COMM && it.interfaceSubclass == 0x02
+    }
+    val dataInterfaces = interfaces.filter { intf ->
+        intf.interfaceClass == UsbConstants.USB_CLASS_CDC_DATA &&
+            (0 until intf.endpointCount).map(intf::getEndpoint).any {
+                it.type == UsbConstants.USB_ENDPOINT_XFER_BULK && it.direction == UsbConstants.USB_DIR_IN
+            } &&
+            (0 until intf.endpointCount).map(intf::getEndpoint).any {
+                it.type == UsbConstants.USB_ENDPOINT_XFER_BULK && it.direction == UsbConstants.USB_DIR_OUT
+            }
+    }
+    if (controls.size == 1 && dataInterfaces.size == 1) return listOf(controls.single().id to dataInterfaces.single().id)
+    return controls.mapNotNull { control ->
+        dataInterfaces.firstOrNull { it.id == control.id + 1 }?.let { control.id to it.id }
     }
 }

@@ -51,12 +51,12 @@ class LocalSource(private val look4SatDao: Look4SatDao) : ILocalSource {
 
     private fun FrameworkEntry.toDomain() = OrbitalData(
         this.name, this.epoch, this.meanmo, this.eccn, this.incl,
-        this.raan, this.argper, this.meanan, this.catnum, this.bstar
+        this.raan, this.argper, this.meanan, this.catnum, this.bstar, this.ndot
     )
 
     private fun OrbitalData.toEntity() = FrameworkEntry(
         this.name, this.epoch, this.meanmo, this.eccn, this.incl,
-        this.raan, this.argper, this.meanan, this.catnum, this.bstar
+        this.raan, this.argper, this.meanan, this.catnum, this.bstar, this.ndot
     )
 
     private fun List<OrbitalData>.toEntity() = this.map { item -> item.toEntity() }

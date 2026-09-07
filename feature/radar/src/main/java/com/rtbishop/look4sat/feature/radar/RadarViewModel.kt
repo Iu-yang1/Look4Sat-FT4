@@ -34,6 +34,7 @@ import com.rtbishop.look4sat.core.domain.repository.IReporter
 import com.rtbishop.look4sat.core.domain.repository.ISatelliteRepo
 import com.rtbishop.look4sat.core.domain.repository.ISensorsRepo
 import com.rtbishop.look4sat.core.domain.repository.ISettingsRepo
+import com.rtbishop.look4sat.core.domain.repository.TrackingPhase
 import com.rtbishop.look4sat.core.domain.sstv.LineRecoveryStrategy
 import com.rtbishop.look4sat.core.domain.sstv.SstvDecoder
 import com.rtbishop.look4sat.core.domain.cw.CwDecoder
@@ -220,7 +221,7 @@ class RadarViewModel(
                             ),
                             txBaseFrequencyHz = svc.txBaseFrequencyHz,
                             ctcssTone = svc.ctcssTone,
-                            isTracking = svc.isActive,
+                            isTracking = svc.isActive || svc.trackingPhase == TrackingPhase.INITIALIZING,
                             selectedTransponderUuid = svc.selectedTransponder?.uuid,
                             errorMessage = svc.errorMessage
                         )
@@ -263,7 +264,7 @@ class RadarViewModel(
             is RadarAction.SetCtcssTone -> trackingService.setCtcssTone(action.toneHz)
             RadarAction.ToggleTracking -> {
                 val svc = trackingService.state.value
-                if (svc.isActive) {
+                if (svc.isActive || svc.trackingPhase == TrackingPhase.INITIALIZING) {
                     trackingService.stopTracking()
                 } else {
                     val pass = _uiState.value.currentPass ?: return

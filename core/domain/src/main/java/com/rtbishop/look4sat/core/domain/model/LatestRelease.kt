@@ -5,5 +5,5 @@ data class LatestRelease(
     val versionTag: String, // e.g. "v4.4.6-ba7opf.6"
     val title: String,      // release name, may be empty
     val body: String,       // release notes / update description
-    val apkUrl: String?     // first .apk asset download URL, null if absent
+    val apkUrl: String?     // validated release asset URL, null if no compatible APK is published
 )

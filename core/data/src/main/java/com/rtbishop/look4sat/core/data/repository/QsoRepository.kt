@@ -14,11 +14,14 @@ import com.rtbishop.look4sat.core.data.database.entity.QsoEntity
 import com.rtbishop.look4sat.core.domain.logbook.AdifCodec
 import com.rtbishop.look4sat.core.domain.logbook.AdifImportResult
 import com.rtbishop.look4sat.core.domain.logbook.IQsoRepository
+import com.rtbishop.look4sat.core.domain.logbook.QsoEventCodec
 import com.rtbishop.look4sat.core.domain.logbook.QsoRecord
 import com.rtbishop.look4sat.core.domain.logbook.QsoStatus
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.util.Locale
 
@@ -26,6 +29,8 @@ class QsoRepository(
     private val dao: QsoDao,
     private val dispatcher: CoroutineDispatcher
 ) : IQsoRepository {
+    private val importMutex = Mutex()
+
     override val records: Flow<List<QsoRecord>> = dao.observeAll().map { records -> records.map(QsoEntity::toDomain) }
 
     override suspend fun find(id: Long): QsoRecord? = withContext(dispatcher) { dao.find(id)?.toDomain() }
@@ -34,15 +39,24 @@ class QsoRepository(
 
     override suspend fun delete(id: Long) = withContext(dispatcher) { dao.delete(id) }
 
-    override suspend fun exportAdi(ids: Set<Long>?): String = withContext(dispatcher) {
-        val records = dao.getAll().filter { ids == null || it.id in ids }.map(QsoEntity::toDomain)
+    override suspend fun exportAdi(ids: Set<Long>?, includeIncomplete: Boolean): String = withContext(dispatcher) {
+        val records = dao.getAll()
+            .asSequence()
+            .filter { ids == null || it.id in ids }
+            .map(QsoEntity::toDomain)
+            .filter { includeIncomplete || it.status == QsoStatus.COMPLETE }
+            .toList()
         AdifCodec.encode(records)
     }
 
     override suspend fun importAdi(content: String): AdifImportResult = withContext(dispatcher) {
-        val decoded = AdifCodec.decode(content)
-        val inserted = dao.importRecords(decoded.map { it.copy(id = 0L).toEntity() }).count { it != -1L }
-        AdifImportResult(imported = inserted, skipped = decoded.size - inserted)
+        importMutex.withLock {
+            val decoded = AdifCodec.decode(content)
+            val knownKeys = dao.getDedupeKeys().toMutableSet()
+            val uniqueRecords = decoded.filter { knownKeys.add(stableQsoKey(it)) }
+            val inserted = dao.importRecords(uniqueRecords.map { it.copy(id = 0L).toEntity() }).count { it != -1L }
+            AdifImportResult(imported = inserted, skipped = decoded.size - inserted)
+        }
     }
 }
 
@@ -60,6 +74,8 @@ private fun QsoEntity.toDomain() = QsoRecord(
     rxFrequencyHz = rxFrequencyHz,
     band = band,
     rxBand = rxBand,
+    mode = mode,
+    submode = submode,
     satelliteName = satelliteName,
     transponderName = transponderName,
     satelliteMode = satelliteMode,
@@ -67,7 +83,9 @@ private fun QsoEntity.toDomain() = QsoRecord(
     ft4AudioFrequencyHz = ft4AudioFrequencyHz,
     automatic = automatic,
     status = runCatching { QsoStatus.valueOf(status) }.getOrDefault(QsoStatus.DRAFT),
-    rawMessages = rawMessages.lineSequence().filter(String::isNotBlank).toList()
+    rawMessages = rawMessages.lineSequence().filter(String::isNotBlank).toList(),
+    sessionId = sessionId,
+    messageEvents = QsoEventCodec.decode(messageEvents)
 )
 
 private fun QsoRecord.toEntity() = QsoEntity(
@@ -84,6 +102,8 @@ private fun QsoRecord.toEntity() = QsoEntity(
     rxFrequencyHz = rxFrequencyHz,
     band = band,
     rxBand = rxBand,
+    mode = mode.trim(),
+    submode = submode.trim(),
     satelliteName = satelliteName,
     transponderName = transponderName,
     satelliteMode = satelliteMode,
@@ -91,5 +111,18 @@ private fun QsoRecord.toEntity() = QsoEntity(
     ft4AudioFrequencyHz = ft4AudioFrequencyHz,
     automatic = automatic,
     status = status.name,
-    rawMessages = rawMessages.joinToString("\n")
+    rawMessages = rawMessages.joinToString("\n"),
+    dedupeKey = stableQsoKey(this),
+    sessionId = sessionId,
+    messageEvents = QsoEventCodec.encode(messageEvents)
 )
+
+internal fun stableQsoKey(record: QsoRecord): String = listOf(
+    record.startUtcMillis.toString(),
+    record.theirCallsign.trim().uppercase(Locale.US),
+    record.myCallsign.trim().uppercase(Locale.US),
+    record.txFrequencyHz?.toString().orEmpty(),
+    record.mode.trim().uppercase(Locale.US),
+    record.submode.trim().uppercase(Locale.US),
+    record.satelliteName.trim().uppercase(Locale.US)
+).joinToString("|")

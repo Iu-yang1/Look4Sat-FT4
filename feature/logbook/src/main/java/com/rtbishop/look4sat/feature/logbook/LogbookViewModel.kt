@@ -35,6 +35,8 @@ data class LogbookEditor(
     val receivedReport: String = "",
     val txFrequencyHz: String = "",
     val rxFrequencyHz: String = "",
+    val mode: String = "MFSK",
+    val submode: String = "FT4",
     val satelliteName: String = "",
     val transponderName: String = "",
     val satelliteMode: String = "",
@@ -57,6 +59,8 @@ data class LogbookEditor(
             receivedReport = receivedReport.trim(),
             txFrequencyHz = txFrequencyHz.toLongOrNull(),
             rxFrequencyHz = rxFrequencyHz.toLongOrNull(),
+            mode = mode.trim(),
+            submode = submode.trim(),
             satelliteName = satelliteName.trim(),
             transponderName = transponderName.trim(),
             satelliteMode = satelliteMode.trim(),
@@ -119,7 +123,8 @@ class LogbookViewModel(
         }
     }
 
-    suspend fun exportAdi(): String = repository.exportAdi()
+    suspend fun exportAdi(includeIncomplete: Boolean = false): String =
+        repository.exportAdi(includeIncomplete = includeIncomplete)
 
     private fun saveEditor() = viewModelScope.launch {
         val editor = mutableState.value.editor ?: return@launch
@@ -166,6 +171,8 @@ private fun QsoRecord.toEditor() = LogbookEditor(
     receivedReport = receivedReport,
     txFrequencyHz = txFrequencyHz?.toString().orEmpty(),
     rxFrequencyHz = rxFrequencyHz?.toString().orEmpty(),
+    mode = mode,
+    submode = submode,
     satelliteName = satelliteName,
     transponderName = transponderName,
     satelliteMode = satelliteMode,

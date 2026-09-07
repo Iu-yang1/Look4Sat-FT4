@@ -21,6 +21,8 @@ import android.os.SystemClock
 import com.rtbishop.look4sat.core.domain.ft4.Ft4TransmitState
 import com.rtbishop.look4sat.core.domain.ft4.Ft4PlaybackTiming
 import com.rtbishop.look4sat.core.domain.ft4.Ft4TransmissionRequest
+import com.rtbishop.look4sat.core.domain.ft4.Ft4TransmissionProgress
+import com.rtbishop.look4sat.core.domain.ft4.Ft4TransmissionResult
 import com.rtbishop.look4sat.core.domain.ft4.IFt4AudioTransmitter
 import com.rtbishop.look4sat.core.domain.ft4.IFt4Service
 import com.rtbishop.look4sat.core.domain.ft4.IFt4TransmitCoordinator
@@ -69,6 +71,7 @@ class Ft4AudioTransmitter(
             require(request.volume in 0f..1f) { "FT4 output volume is outside 0-1" }
             checkAutomaticClock(request)
             mutableState.value = Ft4TransmitState.Preparing(request.message, request.slotStartUtcMillis)
+            notifyProgress(request, Ft4TransmissionResult.PREPARING)
             val waveform = ft4Service.generateWaveform(
                 message = request.message,
                 audioFrequencyHz = request.audioFrequencyHz,
@@ -80,6 +83,7 @@ class Ft4AudioTransmitter(
             output.prepare(waveform)
 
             waitUntil(request, request.slotStartUtcMillis - coordinator.recommendedPrepareLeadMillis())
+            checkCurrentIntent(request)
             checkAutomaticClock(request)
             lease = coordinator.beginTransmit(
                 TxRequest(
@@ -87,17 +91,21 @@ class Ft4AudioTransmitter(
                     waveformStartUtcMillis = request.slotStartUtcMillis,
                     waveformDurationMillis = WAVEFORM_DURATION_MILLIS,
                     expectedSatelliteCatalogNumber = request.satelliteCatalogNumber,
-                    expectedTransponderUuid = request.transponderUuid
+                    expectedTransponderUuid = request.transponderUuid,
+                    automatic = request.automatic
                 )
             )
+            checkCurrentIntent(request)
             checkAutomaticClock(request)
             coordinator.confirmTransmitReady(lease)
             waitUntil(request, request.slotStartUtcMillis)
+            checkCurrentIntent(request)
             checkAutomaticClock(request)
             check(clock.nowMillis() <= request.slotStartUtcMillis + MAX_START_LATENESS_MILLIS) {
                 "FT4 transmit slot was missed"
             }
             mutableState.value = Ft4TransmitState.Transmitting(request.message, lease)
+            notifyProgress(request, Ft4TransmissionResult.STARTED)
             val playCallErrorMillis = clock.nowMillis() - request.slotStartUtcMillis
             val playback = output.play(waveform)
             mutablePlaybackTiming.value = Ft4PlaybackTiming(
@@ -105,10 +113,13 @@ class Ft4AudioTransmitter(
                 startErrorMillis = playback.startDelayMillis?.plus(playCallErrorMillis),
                 underrunCount = playback.underrunCount
             )
+            notifyProgress(request, Ft4TransmissionResult.COMPLETED)
         } catch (cancelled: CancellationException) {
+            notifyProgress(request, Ft4TransmissionResult.FAILED, cancelled.message ?: "Cancelled")
             throw cancelled
         } catch (error: Throwable) {
             mutableState.value = Ft4TransmitState.Failed(error.message ?: error.javaClass.simpleName)
+            notifyProgress(request, Ft4TransmissionResult.FAILED, error.message ?: error.javaClass.simpleName)
             throw error
         } finally {
             withContext(NonCancellable) {
@@ -155,6 +166,20 @@ class Ft4AudioTransmitter(
                 clock.automaticFt4TransmitBlockReason()
             }
         }
+    }
+
+    private fun checkCurrentIntent(request: Ft4TransmissionRequest) {
+        check(!request.automatic || request.isStillCurrent()) {
+            "FT4 automatic transmit intent became stale"
+        }
+    }
+
+    private fun notifyProgress(
+        request: Ft4TransmissionRequest,
+        result: Ft4TransmissionResult,
+        detail: String = ""
+    ) {
+        runCatching { request.onProgress(Ft4TransmissionProgress(clock.nowMillis(), result, detail)) }
     }
 
     private companion object {

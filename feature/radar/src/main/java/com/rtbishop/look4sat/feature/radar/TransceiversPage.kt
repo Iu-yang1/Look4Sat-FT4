@@ -97,9 +97,9 @@ import com.rtbishop.look4sat.core.presentation.CardButton
 import com.rtbishop.look4sat.core.presentation.R
 import com.rtbishop.look4sat.core.presentation.formatFrequency
 import com.rtbishop.look4sat.core.presentation.infiniteMarquee
-import com.rtbishop.look4sat.feature.cw.CwNativeCapability
-import com.rtbishop.look4sat.feature.cw.MorseExpertAudioBridge
-import com.rtbishop.look4sat.feature.cw.R as CwR
+import com.rtbishop.look4sat.core.cw.CwNativeCapability
+import com.rtbishop.look4sat.core.cw.MorseExpertAudioBridge
+import com.rtbishop.look4sat.core.cw.R as CwR
 import com.ve3nea.morse_expert.MainActivity
 import java.util.Locale
 import kotlin.time.Duration.Companion.milliseconds

@@ -72,6 +72,22 @@ class SntpClientTest {
         assertThrows(IOException::class.java) { discipline.synchronize() }
     }
 
+    @Test
+    fun multiSourceRechecksConsensusAfterOutlierRemoval() {
+        val discipline = MultiSourceNtpDiscipline { host ->
+            val offset = when (host) {
+                "time.google.com" -> -1_000.0
+                "time.cloudflare.com" -> 0.0
+                else -> 1_000.0
+            }
+            measurement(host, offset)
+        }
+
+        val failure = assertThrows(IOException::class.java) { discipline.synchronize() }
+
+        assertTrue(failure.message?.contains("单源降级") == true)
+    }
+
     private fun measurement(host: String, offset: Double): NtpMeasurement = NtpMeasurement(
         server = host,
         offsetMillis = offset,

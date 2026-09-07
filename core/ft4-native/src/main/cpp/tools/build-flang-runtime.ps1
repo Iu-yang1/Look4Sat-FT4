@@ -1,4 +1,4 @@
-﻿param(
+param(
     [string]$OutputDir = '',
     [string]$BuildDir = '',
     [string]$CMakePath = '',
@@ -10,7 +10,7 @@
     [string]$BuildProfile = 'Release',
     [ValidateSet('O2')]
     [string]$Optimization = 'O2',
-    [ValidateSet('arm64-v8a', 'armeabi-v7a')]
+    [ValidateSet('arm64-v8a', 'armeabi-v7a', 'x86_64')]
     [string]$Abi = 'arm64-v8a',
     [string]$TargetTriple = ''
 )
@@ -40,6 +40,7 @@ $roots = @(Get-Ft8cnCandidateRoots -RepoRoot $repoRoot)
 $abiConfiguration = @{
     'arm64-v8a' = @{ Triple = 'aarch64-linux-android24'; Platform = '24' }
     'armeabi-v7a' = @{ Triple = 'armv7a-linux-androideabi24'; Platform = '24' }
+    'x86_64' = @{ Triple = 'x86_64-linux-android24'; Platform = '24' }
 }[$Abi]
 if (-not $TargetTriple) { $TargetTriple = $abiConfiguration.Triple }
 
@@ -58,8 +59,8 @@ $LlvmSourceRoot = Find-Ft8cnDirectory -ExplicitPath $LlvmSourceRoot -CandidateRo
 
 if (-not $OutputDir) { $OutputDir = Join-Path $cppRoot "out\$Abi" }
 if (-not $BuildDir) {
-    # flang-rt 会把绝对源码路径写入对象目录；默认在所选 LLVM 源码旁使用短路径，
-    # 避免 Gradle 深层 .cxx 路径超过 MAX_PATH，并将工具链缓存留在配置的工具盘。
+    # flang-rt embeds absolute source paths in its object tree. Keep the default
+    # workspace beside LLVM to avoid MAX_PATH failures under Gradle's deep .cxx tree.
     $workspaceBase = if ($env:LOOK4SAT_FLANG_RT_WORKSPACE) {
         $env:LOOK4SAT_FLANG_RT_WORKSPACE
     } else {
@@ -133,8 +134,8 @@ $workspaceSourcesComplete =
     (Test-Path (Join-Path $sourceWorkspace 'runtimes\CMakeLists.txt')) -and
     (Test-Path (Join-Path $sourceWorkspace 'cmake\Modules\CMakePolicy.cmake'))
 if (-not $workspaceSourcesComplete) {
-    # 构建中断后可能留下不完整的指纹工作区；将目录内容复制到明确的目标目录，
-    # 使后续构建能安全补齐文件，而不需要删除工具链源码。
+    # An interrupted build can leave a partial fingerprint workspace. Copy its
+    # contents into the explicit target so a later build can safely resume it.
     New-Item -ItemType Directory -Force -Path $sourceWorkspace | Out-Null
     Copy-DirectoryContents (Join-Path $LlvmSourceRoot 'cmake') (Join-Path $sourceWorkspace 'cmake')
     Copy-DirectoryContents (Join-Path $LlvmSourceRoot 'runtimes') (Join-Path $sourceWorkspace 'runtimes')

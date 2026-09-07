@@ -1,9 +1,12 @@
 <resources>
-    <string name="logbook_title">FT4 日志本</string>
-    <string name="logbook_empty">尚无 FT4 通联记录</string>
+    <string name="logbook_title">卫星日志本</string>
+    <string name="logbook_empty">尚无通联记录</string>
     <string name="logbook_add">新增通联</string>
     <string name="logbook_import">导入 ADI</string>
     <string name="logbook_export">导出 ADI</string>
+    <string name="logbook_export_scope_description">默认只导出已完成通联；仅在明确需要时才包含草稿和中止记录。</string>
+    <string name="logbook_export_complete_only">仅已完成</string>
+    <string name="logbook_export_all">包含草稿</string>
     <string name="logbook_edit">编辑通联</string>
     <string name="logbook_delete">删除通联</string>
     <string name="logbook_callsign">对方呼号</string>
@@ -14,6 +17,8 @@
     <string name="logbook_report_received">接收报告</string>
     <string name="logbook_tx_frequency">TX 频率（Hz）</string>
     <string name="logbook_rx_frequency">RX 频率（Hz）</string>
+    <string name="logbook_mode">模式</string>
+    <string name="logbook_submode">子模式</string>
     <string name="logbook_satellite">卫星</string>
     <string name="logbook_transponder">转发器</string>
     <string name="logbook_satellite_mode">卫星模式</string>
@@ -28,7 +33,7 @@
     <string name="logbook_import_result">已导入 %1$d 条，跳过 %2$d 条</string>
     <string name="logbook_exported">ADI 已导出</string>
     <string name="logbook_error">日志本操作失败：%1$s</string>
-    <string name="logbook_qso_summary">%1$s · %2$s · FT4</string>
-    <string name="logbook_frequency_summary">TX %1$s · RX %2$s</string>
+    <string name="logbook_qso_summary">%1$s · %2$s</string>
+    <string name="logbook_frequency_summary">TX %1$s · RX %2$s · %3$s</string>
     <string name="logbook_not_set">未设置</string>
 </resources>

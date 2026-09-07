@@ -27,13 +27,16 @@ import com.rtbishop.look4sat.core.domain.repository.IRadioController
 import com.rtbishop.look4sat.core.domain.repository.ISatelliteRepo
 import com.rtbishop.look4sat.core.domain.repository.ISettingsRepo
 import com.rtbishop.look4sat.core.domain.repository.PttState
+import com.rtbishop.look4sat.core.domain.repository.TrackingPhase
 import com.rtbishop.look4sat.core.domain.time.ClockSample
 import com.rtbishop.look4sat.core.domain.time.ClockSnapshot
 import com.rtbishop.look4sat.core.domain.time.ClockSource
 import com.rtbishop.look4sat.core.domain.time.IDisciplinedClock
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -65,6 +68,76 @@ class RadioTrackingServiceTest {
         }.awaitAll()
 
         assertEquals(1, maximumActive)
+    }
+
+    @Test
+    fun cancelledPttOnIsSkippedAndUrgentPttOffRunsBeforeNormalCommands() = runTest {
+        val actor = RadioCommandActor(backgroundScope) { _, _ -> }
+        val delegate = FakeRadioController()
+        val radio = SerialRadioController(delegate, actor)
+        val started = CompletableDeferred<Unit>()
+        val blocker = async {
+            actor.execute {
+                delegate.operations += "slow:start"
+                started.complete(Unit)
+                CompletableDeferred<Unit>().await()
+                delegate.operations += "slow:end"
+            }
+        }
+        started.await()
+        val pttOn = async { radio.pttOn() }
+        runCurrent()
+        val normal = async { radio.setMode("USB") }
+        runCurrent()
+        pttOn.cancelAndJoin()
+        val pttOff = async { radio.pttOff() }
+
+        assertTrue(pttOff.await())
+        assertTrue(normal.await())
+        assertTrue(runCatching { blocker.await() }.isFailure)
+        assertFalse("slow:end" in delegate.operations)
+        assertFalse("ptt:on" in delegate.operations)
+        assertTrue(delegate.operations.indexOf("ptt:off") < delegate.operations.indexOf("mode:USB"))
+    }
+
+    @Test
+    fun pttPermitCapturedBeforeEmergencyStopCannotBeRearmed() = runTest {
+        val actor = RadioCommandActor(backgroundScope) { _, _ -> }
+        val delegate = FakeRadioController()
+        val radio = SerialRadioController(delegate, actor)
+        val permit = radio.pttSafetyGeneration()
+
+        radio.invalidatePendingPttOn()
+        val result = runCatching { radio.pttOnIfGeneration(permit) }
+
+        assertTrue(result.isFailure)
+        assertFalse("ptt:on" in delegate.operations)
+    }
+
+    @Test
+    fun urgentPttOffSurvivesCallerCancellationWhileQueued() = runTest {
+        val actor = RadioCommandActor(backgroundScope) { _, _ -> }
+        val delegate = FakeRadioController()
+        val radio = SerialRadioController(delegate, actor)
+        val started = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val firstPttOff = async {
+            actor.executePttOff {
+                started.complete(Unit)
+                release.await()
+                true
+            }
+        }
+        started.await()
+        val pttOff = async { radio.pttOff() }
+        runCurrent()
+
+        pttOff.cancelAndJoin()
+        release.complete(Unit)
+        assertTrue(firstPttOff.await())
+        runCurrent()
+
+        assertTrue("ptt:off" in delegate.operations)
     }
 
     @Test
@@ -120,6 +193,44 @@ class RadioTrackingServiceTest {
         )
         assertTrue(lease.waveformMidpointUtcMillis in fixture.satelliteRepo.requestedTimes)
         fixture.service.endTransmit(lease)
+        fixture.close()
+    }
+
+    @Test
+    fun automaticLeaseRequiresReadyTrackingAndEntireWaveformInsidePass() = runTest {
+        val fixture = Fixture(backgroundScope, FakeRadioController(), FakeRadioController())
+        fixture.service.connectRadios()
+        fixture.startTracking()
+        runCurrent()
+        assertEquals(TrackingPhase.READY, fixture.service.state.value.trackingPhase)
+
+        val failure = runCatching {
+            fixture.service.beginTransmit(
+                fixture.request(
+                    generation = 12L,
+                    waveformStartUtcMillis = fixture.afterPassStart,
+                    automatic = true
+                )
+            )
+        }.exceptionOrNull()
+
+        assertTrue(failure?.message?.contains("outside the selected pass") == true)
+        fixture.close()
+    }
+
+    @Test
+    fun failedInitializationNeverPublishesReadyOrActive() = runTest {
+        val fixture = Fixture(
+            backgroundScope,
+            FakeRadioController(setModeSucceeds = false),
+            FakeRadioController()
+        )
+        fixture.service.connectRadios()
+        fixture.startTracking()
+        runCurrent()
+
+        assertFalse(fixture.service.state.value.isActive)
+        assertEquals(TrackingPhase.ERROR, fixture.service.state.value.trackingPhase)
         fixture.close()
     }
 
@@ -249,12 +360,14 @@ class RadioTrackingServiceTest {
         fun request(
             generation: Long,
             maximumPttMillis: Long = 8_500L,
-            waveformStartUtcMillis: Long = now + 5_000L
+            waveformStartUtcMillis: Long = now + 5_000L,
+            automatic: Boolean = false
         ) = TxRequest(
             sessionGeneration = generation,
             waveformStartUtcMillis = waveformStartUtcMillis,
             expectedSatelliteCatalogNumber = pass.catNum,
             expectedTransponderUuid = transponder.uuid,
+            automatic = automatic,
             maximumPttMillis = maximumPttMillis
         )
 
@@ -281,7 +394,8 @@ private class FixedClock(private val now: () -> Long) : IDisciplinedClock {
 }
 
 private class FakeRadioController(
-    private val pttOnSucceeds: Boolean = true
+    private val pttOnSucceeds: Boolean = true,
+    private val setModeSucceeds: Boolean = true
 ) : IRadioController {
     val operations = mutableListOf<String>()
     override var isConnected: Boolean = false
@@ -304,7 +418,7 @@ private class FakeRadioController(
 
     override suspend fun setMode(mode: String): Boolean {
         operations += "mode:$mode"
-        return true
+        return setModeSucceeds
     }
 
     override suspend fun setCtcssMode(enabled: Boolean): Boolean = true

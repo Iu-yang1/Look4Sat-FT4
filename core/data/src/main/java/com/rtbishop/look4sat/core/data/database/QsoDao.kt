@@ -27,6 +27,9 @@ interface QsoDao {
     @Query("SELECT * FROM qso_records ORDER BY startUtcMillis DESC, id DESC")
     suspend fun getAll(): List<QsoEntity>
 
+    @Query("SELECT dedupeKey FROM qso_records")
+    suspend fun getDedupeKeys(): List<String>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun save(record: QsoEntity): Long
 

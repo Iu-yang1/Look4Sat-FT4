@@ -20,6 +20,8 @@ package com.rtbishop.look4sat.core.data.framework
 import android.bluetooth.BluetoothManager
 import android.util.Log
 import com.rtbishop.look4sat.core.domain.repository.IRadioController
+import java.util.Locale
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
@@ -37,10 +39,13 @@ import kotlinx.coroutines.withTimeoutOrNull
  * the very next byte is the response.
  */
 class Ic705Controller(
-    bluetoothManager: BluetoothManager,
+    bluetoothManager: BluetoothManager?,
     private val deviceAddress: String,
     private val civAddress: Byte = IcomCivProtocol.ADDR_IC705,
-    private val transport: RadioTransport = BluetoothSppRadioTransport(bluetoothManager, deviceAddress)
+    private val transport: RadioTransport = BluetoothSppRadioTransport(
+        requireNotNull(bluetoothManager),
+        deviceAddress
+    )
 ) : IRadioController {
 
     private val tag = "IC705"
@@ -69,10 +74,20 @@ class Ic705Controller(
             Log.i(tag, "Connected to $deviceAddress — entering VFO mode")
             val vfoCmd = IcomCivProtocol.buildEnterVfoModeCommand()
             Log.d(tag, "CMD enterVfoMode → ${IcomCivProtocol.toHex(vfoCmd)}")
-            ioMutex.withLock { sendAndWaitAck(vfoCmd) }
-            true
+            val ready = ioMutex.withLock { sendAndWaitAck(vfoCmd) } && readFrequencyAndMode() != null
+            if (!ready) {
+                Log.e(tag, "Connected transport did not return a valid CI-V acknowledgement")
+                transport.disconnect()
+                isConnected = false
+            }
+            ready
+        } catch (cancelled: CancellationException) {
+            runCatching { transport.disconnect() }
+            isConnected = false
+            throw cancelled
         } catch (e: Exception) {
             Log.e(tag, "Connect error: ${e.message}")
+            runCatching { transport.disconnect() }
             isConnected = false
             false
         }
@@ -83,6 +98,8 @@ class Ic705Controller(
             try {
                 if (isConnected) withTimeoutOrNull(PTT_OFF_TIMEOUT_MS) { pttOff() }
                 transport.disconnect()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
             } catch (e: Exception) {
                 Log.e(tag, "Disconnect error: ${e.message}")
             } finally {
@@ -129,14 +146,24 @@ class Ic705Controller(
 
     override suspend fun readFrequencyAndMode(): Pair<Long, String>? = withContext(Dispatchers.IO) {
         ioMutex.withLock {
-            val cmd = IcomCivProtocol.buildReadFreqCommand()
-            Log.d(tag, "CMD readFreq → ${IcomCivProtocol.toHex(cmd)}")
-            val payload = sendAndReadResponse(cmd, IcomCivProtocol.CMD_READ_FREQ) ?: return@withContext null
-            // Read-freq reply payload: [cmd byte already stripped by parseResponse] [5 freq bytes] [mode] [filter]
-            IcomCivProtocol.parseFreqModePayload(payload).also {
-                if (it != null) Log.d(tag, "readFreqMode: ${it.first}Hz, ${it.second}")
-                else Log.w(tag, "readFreqMode: parse failed, payload=${IcomCivProtocol.toHex(payload)}")
-            }
+            val frequencyCommand = IcomCivProtocol.buildReadFreqCommand()
+            Log.d(tag, "CMD readFreq → ${IcomCivProtocol.toHex(frequencyCommand)}")
+            val frequencyPayload = sendAndReadResponse(
+                frequencyCommand,
+                IcomCivProtocol.CMD_READ_FREQ
+            ) ?: return@withLock null
+            val frequency = IcomCivProtocol.parseFrequencyPayload(frequencyPayload)
+                ?: return@withLock null
+
+            val modeCommand = IcomCivProtocol.buildReadModeCommand()
+            Log.d(tag, "CMD readMode → ${IcomCivProtocol.toHex(modeCommand)}")
+            val modePayload = sendAndReadResponse(
+                modeCommand,
+                IcomCivProtocol.CMD_READ_MODE
+            ) ?: return@withLock null
+            val mode = IcomCivProtocol.parseModePayload(modePayload) ?: return@withLock null
+            Log.d(tag, "readFreqMode: ${frequency}Hz, $mode")
+            frequency to mode
         }
     }
 
@@ -177,6 +204,28 @@ class Ic705Controller(
         ioMutex.withLock { sendAndWaitAck(cmd) }
     }
 
+    /** Configure VFO-A/RX and VFO-B/TX modes without changing the active RX VFO. */
+    override suspend fun setSplitModes(rxMode: String?, txMode: String?): Boolean = withContext(Dispatchers.IO) {
+        val rxCommand = rxMode?.let { IcomCivProtocol.buildSetVfoModeCommand(selected = true, it) }
+        val txCommand = txMode?.let { IcomCivProtocol.buildSetVfoModeCommand(selected = false, it) }
+        if (rxMode != null && rxCommand == null || txMode != null && txCommand == null) {
+            Log.w(tag, "setSplitModes: unsupported rx=$rxMode tx=$txMode")
+            return@withContext false
+        }
+        ioMutex.withLock {
+            if (!sendAndWaitAck(IcomCivProtocol.buildSelectVfoACommand())) return@withLock false
+            if (rxCommand != null && !sendAndWaitAck(rxCommand)) return@withLock false
+            if (txCommand != null && !sendAndWaitAck(txCommand)) return@withLock false
+            if (rxMode != null && readVfoModeLocked(selected = true) != normalizedMode(rxMode)) {
+                return@withLock false
+            }
+            if (txMode != null && readVfoModeLocked(selected = false) != normalizedMode(txMode)) {
+                return@withLock false
+            }
+            true
+        }
+    }
+
     /**
      * Set the frequency of the **currently active** VFO (CMD 0x25 sub 0x00).
      * In split mode the radio automatically switches active VFO on PTT, so
@@ -208,15 +257,13 @@ class Ic705Controller(
         ioMutex.withLock {
             val cmd = IcomCivProtocol.buildReadWorkingFreqCommand()
             Log.d(tag, "CMD readWorkingFreq → ${IcomCivProtocol.toHex(cmd)}")
-            val payload = sendAndReadResponse(cmd, IcomCivProtocol.CMD_SELECTED_VFO_FREQ) ?: return@withContext null
+            val payload = sendAndReadResponse(cmd, IcomCivProtocol.CMD_SELECTED_VFO_FREQ) {
+                it.firstOrNull() == IcomCivProtocol.SUB_SELECTED_VFO
+            } ?: return@withContext null
             // Response payload: [sub] [5 freq bytes] — CMD byte already stripped by parseResponse
             Log.d(tag, "readWorkingFreq: got ${payload.size} bytes: ${IcomCivProtocol.toHex(payload)}")
-            if (payload.size < 6) {
-                Log.w(tag, "readWorkingFreq: payload too short (${payload.size} bytes)")
-                return@withContext null
-            }
-            val freqBcd = payload.sliceArray(1..5)
-            val freq = IcomCivProtocol.decodeFrequencyBcd(freqBcd)
+            val freq = IcomCivProtocol.parseVfoFrequencyPayload(payload, selected = true)
+                ?: return@withContext null
             Log.d(tag, "readWorkingFreq: ${freq}Hz")
             freq
         }
@@ -230,15 +277,13 @@ class Ic705Controller(
         ioMutex.withLock {
             val cmd = IcomCivProtocol.buildReadTxVfoFreqCommand()
             Log.d(tag, "CMD readTxVfoFreq → ${IcomCivProtocol.toHex(cmd)}")
-            val payload = sendAndReadResponse(cmd, IcomCivProtocol.CMD_SELECTED_VFO_FREQ) ?: return@withContext null
+            val payload = sendAndReadResponse(cmd, IcomCivProtocol.CMD_SELECTED_VFO_FREQ) {
+                it.firstOrNull() == IcomCivProtocol.SUB_UNSELECTED_VFO
+            } ?: return@withContext null
             // Response payload: [sub] [5 freq bytes] — CMD byte already stripped by parseResponse
             Log.d(tag, "readTxVfoFreq: got ${payload.size} bytes: ${IcomCivProtocol.toHex(payload)}")
-            if (payload.size < 6) {
-                Log.w(tag, "readTxVfoFreq: payload too short (${payload.size} bytes)")
-                return@withContext null
-            }
-            val freqBcd = payload.sliceArray(1..5)
-            val freq = IcomCivProtocol.decodeFrequencyBcd(freqBcd)
+            val freq = IcomCivProtocol.parseVfoFrequencyPayload(payload, selected = false)
+                ?: return@withContext null
             Log.d(tag, "readTxVfoFreq: ${freq}Hz")
             freq
         }
@@ -267,12 +312,20 @@ class Ic705Controller(
      * Returns the payload bytes of that frame, or null on timeout/error.
      */
     private suspend fun sendAndReadResponse(cmd: ByteArray, expectCmd: Byte): ByteArray? {
+        return sendAndReadResponse(cmd, expectCmd) { true }
+    }
+
+    private suspend fun sendAndReadResponse(
+        cmd: ByteArray,
+        expectCmd: Byte,
+        payloadMatches: (ByteArray) -> Boolean
+    ): ByteArray? {
         if (!write(cmd)) return null
         delay(WRITE_SETTLE_MS)
         val buf      = drainWithTimeout(ACK_TIMEOUT_MS) {
-            IcomCivProtocol.parseResponse(it, expectCmd, civAddress) != null
+            IcomCivProtocol.parseResponse(it, expectCmd, civAddress, payloadMatches) != null
         }
-        val response = IcomCivProtocol.parseResponse(buf, expectCmd, civAddress)
+        val response = IcomCivProtocol.parseResponse(buf, expectCmd, civAddress, payloadMatches)
         if (response == null) {
             Log.w(tag, "No response for cmd 0x${String.format("%02X", expectCmd.toInt() and 0xFF)} " +
                     "in ${buf.size} bytes: ${IcomCivProtocol.toHex(buf)}")
@@ -287,7 +340,7 @@ class Ic705Controller(
         val response = sendAndReadResponse(
             IcomCivProtocol.buildReadPttCommand(),
             IcomCivProtocol.CMD_TRANSCEIVER_STATUS
-        ) ?: return false
+        ) { it.firstOrNull() == IcomCivProtocol.SUB_PTT } ?: return false
         val confirmed = IcomCivProtocol.parsePttState(response)
         if (confirmed != enabled) {
             Log.e(tag, "PTT readback mismatch: requested=$enabled read=$confirmed")
@@ -295,6 +348,23 @@ class Ic705Controller(
         }
         return true
     }
+
+    private suspend fun readVfoModeLocked(selected: Boolean): String? {
+        val payload = sendAndReadResponse(
+            IcomCivProtocol.buildReadVfoModeCommand(selected),
+            IcomCivProtocol.CMD_SELECTED_VFO_MODE
+        ) {
+            it.firstOrNull() == if (selected) {
+                IcomCivProtocol.SUB_SELECTED_VFO
+            } else {
+                IcomCivProtocol.SUB_UNSELECTED_VFO
+            }
+        } ?: return null
+        return IcomCivProtocol.parseVfoModePayload(payload, selected)
+    }
+
+    private fun normalizedMode(mode: String): String =
+        if (mode.equals("AFSK", ignoreCase = true)) "FM" else mode.uppercase(Locale.US)
 
     /**
      * Drain whatever bytes the radio has buffered within a [timeoutMs] window.
@@ -307,8 +377,8 @@ class Ic705Controller(
         responseComplete: (ByteArray) -> Boolean
     ): ByteArray {
         val result   = mutableListOf<Byte>()
-        val deadline = System.currentTimeMillis() + timeoutMs
-        while (System.currentTimeMillis() < deadline) {
+        val deadline = System.nanoTime() + timeoutMs * NANOS_PER_MILLISECOND
+        while (System.nanoTime() < deadline) {
             try {
                 val chunk = transport.readAvailable(MAX_READ_CHUNK)
                 if (chunk.isNotEmpty()) {
@@ -317,6 +387,8 @@ class Ic705Controller(
                 } else {
                     delay(POLL_INTERVAL_MS)
                 }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
             } catch (e: Exception) {
                 Log.e(tag, "Drain error: ${e.message}")
                 isConnected = false
@@ -336,6 +408,8 @@ class Ic705Controller(
                 }
             }
             transport.write(addressed)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (e: Exception) {
             Log.e(tag, "Write error: ${e.message}")
             isConnected = false
@@ -346,5 +420,6 @@ class Ic705Controller(
     private companion object {
         const val PTT_OFF_TIMEOUT_MS = 1_500L
         const val MAX_READ_CHUNK = 4_096
+        const val NANOS_PER_MILLISECOND = 1_000_000L
     }
 }

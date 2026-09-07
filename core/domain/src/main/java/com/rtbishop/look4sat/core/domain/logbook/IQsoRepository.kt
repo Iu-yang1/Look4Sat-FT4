@@ -17,6 +17,6 @@ interface IQsoRepository {
     suspend fun find(id: Long): QsoRecord?
     suspend fun save(record: QsoRecord): Long
     suspend fun delete(id: Long)
-    suspend fun exportAdi(ids: Set<Long>? = null): String
+    suspend fun exportAdi(ids: Set<Long>? = null, includeIncomplete: Boolean = false): String
     suspend fun importAdi(content: String): AdifImportResult
 }

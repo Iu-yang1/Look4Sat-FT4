@@ -209,8 +209,11 @@
     <string name="rc_no_paired_devices">未找到可用 CAT 设备。</string>
     <string name="rc_baud_rate">波特率：</string>
     <string name="rc_cat_transport">CAT 传输</string>
-    <string name="rc_tx_tcp_address">TX 主机:端口</string>
-    <string name="rc_rx_tcp_address">RX 主机:端口</string>
+    <string name="rc_tx_tcp_address">TX 原始 CAT 主机:端口</string>
+    <string name="rc_rx_tcp_address">RX 原始 CAT 主机:端口</string>
+    <string name="rc_tcp_raw_hint">TCP 直接发送原始 CAT 字节，不是 rigctld 客户端。</string>
+    <string name="rc_usb_cdc_hint">USB 仅支持标准 CDC-ACM 控制/数据接口对，不支持 vendor-specific 串口驱动。</string>
+    <string name="rc_usb_cdc_device">%1$s · CDC-ACM 控制 #%2$d / 数据 #%3$d · %4$s</string>
 
     <string name="prefs_other_title">其他设置</string>
     <string name="prefs_ft4_title">FT4 与时间同步</string>
@@ -371,6 +374,7 @@
     <string name="ft4_slot_diagnostics">时隙 %1$s · %2$d/90,000 样本</string>
     <string name="ft4_slot_pending">等待下一完整边界</string>
     <string name="ft4_pipeline_diagnostics">捕获队列 %1$d · 解码队列 %2$d · 丢块 %3$d</string>
+    <string name="ft4_pipeline_overload">已丢弃过期解码时隙：%1$d</string>
     <string name="ft4_decode_diagnostics">解码 %1$d ms · %2$d 个结果</string>
     <string name="ft4_decode_diagnostics_pending">解码 -- · 0 个结果</string>
     <string name="ft4_audio_system_silenced">麦克风正被其他应用占用</string>

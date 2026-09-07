@@ -46,11 +46,13 @@ class DatabaseRepo(
         var importedCount = 0
         remoteSource.getFileStream(uri)?.let { stream ->
             val entries = parseSatelliteStream(uri, unwrapIfZipped(uri, stream))
-            localSource.insertEntries(entries)
-            settingsRepo.setSatelliteTypeIds(customSourceType, entries.map { it.catnum })
-            importedCount = entries.size
+            if (entries.isNotEmpty()) {
+                localSource.insertEntries(entries)
+                settingsRepo.setSatelliteTypeIds(customSourceType, entries.map { it.catnum })
+                publishDatabaseContentChanged(System.currentTimeMillis())
+                importedCount = entries.size
+            }
         }
-        setUpdateSuccessful(System.currentTimeMillis())
         importedCount
     }
 
@@ -58,10 +60,12 @@ class DatabaseRepo(
         var importedCount = 0
         remoteSource.getFileStream(uri)?.let { stream ->
             val transceivers = dataParser.parseJSONStream(unwrapIfZipped(uri, stream))
-            localSource.insertRadios(transceivers)
-            importedCount = transceivers.size
+            if (transceivers.isNotEmpty()) {
+                localSource.insertRadios(transceivers)
+                publishDatabaseContentChanged()
+                importedCount = transceivers.size
+            }
         }
-        setUpdateSuccessful(System.currentTimeMillis())
         importedCount
     }
 
@@ -95,26 +99,46 @@ class DatabaseRepo(
         // parse fetched data concurrently and associate known built-in URLs with existing type filters.
         val importedEntries = tleResults.flatMap { (rawUrl, result) ->
             val normUrl = normalizeUrl(rawUrl)
-            val entries = result.stream?.let { parseSatelliteStream(normUrl, unwrapIfZipped(normUrl, it)) }.orEmpty()
+            val entries = if (result.code in 200..299) {
+                result.stream?.let { parseSatelliteStream(normUrl, unwrapIfZipped(normUrl, it)) }.orEmpty()
+            } else {
+                result.stream?.close()
+                emptyList()
+            }
             val type = builtinTypesByUrl[normUrl] ?: customSourceType
-            importedTypeIds.getOrPut(type) { mutableListOf() }.addAll(entries.map { it.catnum })
+            if (entries.isNotEmpty()) {
+                importedTypeIds.getOrPut(type) { mutableListOf() }.addAll(entries.map { it.catnum })
+            }
             entries
         }.distinctBy { it.catnum }
-        importedTypeIds.forEach { (type, ids) -> settingsRepo.setSatelliteTypeIds(type, ids.distinct()) }
         val importedRadios = radioResults.flatMap { (rawUrl, result) ->
             val normUrl = normalizeUrl(rawUrl)
-            result.stream?.let { dataParser.parseJSONStream(unwrapIfZipped(normUrl, it)) }.orEmpty()
+            if (result.code in 200..299) {
+                result.stream?.let { dataParser.parseJSONStream(unwrapIfZipped(normUrl, it)) }.orEmpty()
+            } else {
+                result.stream?.close()
+                emptyList()
+            }
         }.filter { it.uuid.isNotBlank() }.distinctBy { it.uuid }
         // insert parsed data into the database
-        localSource.insertEntries(importedEntries)
-        localSource.insertRadios(importedRadios)
-        setUpdateSuccessful(System.currentTimeMillis())
+        if (importedEntries.isNotEmpty()) {
+            localSource.insertEntries(importedEntries)
+            importedTypeIds.forEach { (type, ids) -> settingsRepo.setSatelliteTypeIds(type, ids.distinct()) }
+        }
+        if (importedRadios.isNotEmpty()) localSource.insertRadios(importedRadios)
+        if (importedEntries.isNotEmpty() || importedRadios.isNotEmpty()) {
+            publishDatabaseContentChanged(
+                successfulEphemerisTimestamp = System.currentTimeMillis().takeIf {
+                    importedEntries.isNotEmpty()
+                }
+            )
+        }
     }
 
     override suspend fun clearAllData() = withContext(dispatcher) {
         localSource.deleteEntries()
         localSource.deleteRadios()
-        setUpdateSuccessful(0L)
+        publishDatabaseContentChanged(0L)
     }
 
     private fun normalizeUrl(url: String): String =
@@ -147,9 +171,15 @@ class DatabaseRepo(
             line.count { it == ',' } >= 4
     }
 
-    private suspend fun setUpdateSuccessful(timestamp: Long) {
+    private suspend fun publishDatabaseContentChanged(successfulEphemerisTimestamp: Long? = null) {
+        val previous = settingsRepo.databaseState.value
         settingsRepo.updateDatabaseState(
-            DatabaseState(localSource.getRadiosTotal(), localSource.getEntriesTotal(), timestamp)
+            DatabaseState(
+                localSource.getRadiosTotal(),
+                localSource.getEntriesTotal(),
+                successfulEphemerisTimestamp ?: previous.updateTimestamp,
+                previous.contentVersion + 1L
+            )
         )
     }
 

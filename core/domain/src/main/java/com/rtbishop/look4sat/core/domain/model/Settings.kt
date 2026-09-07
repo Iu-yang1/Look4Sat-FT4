@@ -20,7 +20,8 @@ package com.rtbishop.look4sat.core.domain.model
 data class DatabaseState(
     val numberOfRadios: Int,
     val numberOfSatellites: Int,
-    val updateTimestamp: Long
+    val updateTimestamp: Long,
+    val contentVersion: Long = 0L
 )
 
 data class PassesSettings(

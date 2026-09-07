@@ -87,6 +87,7 @@ import com.rtbishop.look4sat.core.domain.predict.OrbitalPass
 import com.rtbishop.look4sat.core.domain.repository.PttState
 import com.rtbishop.look4sat.core.domain.repository.RadioTrackingState
 import com.rtbishop.look4sat.core.domain.repository.IContainerProvider
+import com.rtbishop.look4sat.core.domain.repository.TrackingPhase
 import com.rtbishop.look4sat.core.presentation.CardButton
 import com.rtbishop.look4sat.core.presentation.IconCard
 import com.rtbishop.look4sat.core.presentation.R
@@ -424,6 +425,7 @@ private fun SatelliteRadioStatus(
     modifier: Modifier = Modifier
 ) {
     val radio = state.radio
+    val trackingInProgress = radio.isActive || radio.trackingPhase == TrackingPhase.INITIALIZING
     val pass = state.pass
     val transponder = radio.selectedTransponder
     ElevatedCard(modifier = modifier) {
@@ -434,9 +436,10 @@ private fun SatelliteRadioStatus(
             ) {
                 Text(stringResource(R.string.ft4_satellite_radio), fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
                 Text(
-                    if (radio.isActive) stringResource(R.string.ft4_tracking_on)
+                    if (trackingInProgress) stringResource(R.string.ft4_tracking_on)
                     else stringResource(R.string.ft4_tracking_off),
-                    color = if (radio.isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = if (trackingInProgress) MaterialTheme.colorScheme.primary
+                    else MaterialTheme.colorScheme.onSurfaceVariant,
                     fontSize = 12.sp
                 )
                 Icon(
@@ -492,7 +495,7 @@ private fun SatelliteRadioStatus(
                         CardButton(
                             onClick = { onAction(Ft4Action.ToggleTracking) },
                             text = stringResource(
-                                if (radio.isActive) R.string.ft4_stop_tracking else R.string.ft4_start_tracking
+                                if (trackingInProgress) R.string.ft4_stop_tracking else R.string.ft4_start_tracking
                             ),
                             modifier = Modifier.weight(1f)
                         )

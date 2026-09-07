@@ -20,6 +20,7 @@ package com.rtbishop.look4sat.core.data.framework
 import android.bluetooth.BluetoothManager
 import android.util.Log
 import com.rtbishop.look4sat.core.domain.repository.IRadioController
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
@@ -29,9 +30,12 @@ import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.time.Duration.Companion.milliseconds
 
 class Ft817Controller(
-    bluetoothManager: BluetoothManager,
+    bluetoothManager: BluetoothManager?,
     private val deviceAddress: String,
-    private val transport: RadioTransport = BluetoothSppRadioTransport(bluetoothManager, deviceAddress)
+    private val transport: RadioTransport = BluetoothSppRadioTransport(
+        requireNotNull(bluetoothManager),
+        deviceAddress
+    )
 ) : IRadioController {
 
     private val tag = "FT817"
@@ -46,10 +50,20 @@ class Ft817Controller(
         if (deviceAddress.isBlank()) return@withContext false
         try {
             isConnected = transport.connect()
+            if (isConnected && readFrequencyAndMode() == null) {
+                transport.disconnect()
+                isConnected = false
+                Log.e(tag, "Connected transport did not return a valid CAT response")
+            }
             Log.i(tag, "Connected to $deviceAddress")
             isConnected
+        } catch (cancelled: CancellationException) {
+            runCatching { transport.disconnect() }
+            isConnected = false
+            throw cancelled
         } catch (e: Exception) {
             Log.e(tag, "Connect error: ${e.message}")
+            runCatching { transport.disconnect() }
             isConnected = false
             false
         }
@@ -60,6 +74,8 @@ class Ft817Controller(
             try {
                 if (isConnected) withTimeoutOrNull(PTT_OFF_TIMEOUT_MS) { pttOff() }
                 transport.disconnect()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
             } catch (e: Exception) {
                 Log.e(tag, "Disconnect error: ${e.message}")
             } finally {
@@ -116,6 +132,8 @@ class Ft817Controller(
                 if (!transport.write(bytes)) return@withContext false
                 delay(commandDelayMs.milliseconds)
                 true
+            } catch (cancelled: CancellationException) {
+                throw cancelled
             } catch (e: Exception) {
                 Log.e(tag, "Send error: ${e.message}")
                 isConnected = false
@@ -149,6 +167,8 @@ class Ft817Controller(
                     read += chunk.size
                 }
                 buffer
+            } catch (cancelled: CancellationException) {
+                throw cancelled
             } catch (e: Exception) {
                 Log.e(tag, "Read error: ${e.message}")
                 isConnected = false
@@ -166,6 +186,8 @@ class Ft817Controller(
                 delay(POLL_INTERVAL_MS.milliseconds)
             }
             null
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (error: Exception) {
             Log.w(tag, "ACK read error: ${error.message}")
             isConnected = false

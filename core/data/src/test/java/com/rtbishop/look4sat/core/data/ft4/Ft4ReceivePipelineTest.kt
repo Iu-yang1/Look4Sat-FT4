@@ -51,10 +51,12 @@ class Ft4ReceivePipelineTest {
     }
 
     @Test
-    fun `slow native decode does not block capture for twenty slots`() = runBlocking {
+    fun `sustained decode overload drops stale work and keeps both queues bounded`() = runBlocking {
         var decoded = 0
         var latest = Ft4ReceivePipelineSnapshot()
-        val slotCount = 20
+        var maximumCaptureDepth = 0
+        var maximumDecodeDepth = 0
+        val slotCount = 40
         val totalSamples = (slotCount + 1) * Ft4SlotAssembler.SLOT_SAMPLES
         val audio = flow {
             var offset = 0
@@ -75,18 +77,47 @@ class Ft4ReceivePipelineTest {
         Ft4ReceivePipeline(FixedClock()).run(
             audio = audio,
             decodeSlot = { _: Ft4AudioSlot ->
-                delay(25L)
+                delay(250L)
                 decoded++
                 0
             },
-            onSnapshot = { latest = it }
+            onSnapshot = {
+                latest = it
+                maximumCaptureDepth = maxOf(maximumCaptureDepth, it.captureQueueDepth)
+                maximumDecodeDepth = maxOf(maximumDecodeDepth, it.decodeQueueDepth)
+            }
         )
 
-        assertEquals(slotCount, decoded)
-        assertEquals(slotCount.toLong(), latest.decodedSlots)
-        assertEquals(0L, latest.droppedAudioBlocks)
+        assertTrue(decoded < slotCount * 2)
+        assertTrue(latest.droppedAudioBlocks > 0L || latest.droppedDecodeSlots > 0L)
+        assertTrue(maximumCaptureDepth <= 16)
+        assertTrue(maximumDecodeDepth <= 2)
         assertEquals(0, latest.captureQueueDepth)
         assertEquals(0, latest.decodeQueueDepth)
+    }
+
+    @Test
+    fun `clock correction is adopted only at a completed slot boundary`() {
+        val clock = AdjustableClock()
+        val timeline = Ft4ResampledTimeline(clock)
+        val first = timeline.process(chunk(48_000, 0L, 0L))
+        clock.offsetMillis = 25L
+        val second = timeline.process(chunk(48_000, 48_000L, 4_000_000_000L))
+
+        assertTrue(first.reset)
+        assertEquals("initialized", first.resetReason)
+        assertTrue(!second.reset)
+        assertEquals(25_000_000L, second.clockCorrectionNanos)
+        assertEquals(
+            first.firstSampleUtcNanos + first.samples.size.toLong() * NANOS_PER_SECOND / SAMPLE_RATE,
+            second.firstSampleUtcNanos
+        )
+        assertTrue(timeline.applyClockCorrectionAtSlotBoundary(second.clockCorrectionNanos))
+
+        val third = timeline.process(chunk(48_000, 96_000L, 8_000_000_000L))
+        assertEquals(8_025_000_000L, third.firstSampleUtcNanos)
+        assertEquals(0L, third.clockCorrectionNanos)
+        assertTrue(!timeline.applyClockCorrectionAtSlotBoundary(third.clockCorrectionNanos))
     }
 
     private fun chunk(sampleCount: Int, framePosition: Long, bootTimeNanos: Long) = TimestampedAudioChunk(
@@ -115,6 +146,28 @@ class Ft4ReceivePipelineTest {
         override fun utcMillisAt(monotonicNanos: Long) = monotonicNanos / NANOS_PER_MILLISECOND
         override fun submitSample(sample: ClockSample) = true
         override fun refresh() = snapshot
+        override fun automaticFt4TransmitAllowed() = true
+        override fun automaticFt4TransmitBlockReason() = ""
+    }
+
+    private class AdjustableClock : IDisciplinedClock {
+        var offsetMillis = 0L
+        private val mutableState = MutableStateFlow(snapshot())
+        override val state: StateFlow<ClockSnapshot> = mutableState
+        override fun snapshot() = ClockSnapshot(
+            utcMillis = offsetMillis,
+            monotonicNanos = 0L,
+            offsetMillis = offsetMillis.toDouble(),
+            driftPpm = 0.0,
+            uncertaintyMillis = 1.0,
+            source = ClockSource.NTP,
+            sampleAgeMillis = 0L,
+            healthy = true
+        )
+        override fun nowMillis() = offsetMillis
+        override fun utcMillisAt(monotonicNanos: Long) = monotonicNanos / NANOS_PER_MILLISECOND + offsetMillis
+        override fun submitSample(sample: ClockSample) = true
+        override fun refresh() = snapshot()
         override fun automaticFt4TransmitAllowed() = true
         override fun automaticFt4TransmitBlockReason() = ""
     }

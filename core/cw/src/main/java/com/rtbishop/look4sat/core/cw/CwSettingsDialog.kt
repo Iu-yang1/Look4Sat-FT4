@@ -7,7 +7,7 @@
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
  */
-package com.rtbishop.look4sat.feature.cw
+package com.rtbishop.look4sat.core.cw
 
 import android.content.Context
 import androidx.compose.foundation.background

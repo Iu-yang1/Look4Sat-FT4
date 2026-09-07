@@ -6,7 +6,7 @@ plugins {
 }
 
 android {
-    namespace = "com.rtbishop.look4sat.feature.cw"
+    namespace = "com.rtbishop.look4sat.core.cw"
     compileOptions {
         encoding = "UTF-8"
     }

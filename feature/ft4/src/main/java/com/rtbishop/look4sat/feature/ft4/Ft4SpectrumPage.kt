@@ -357,6 +357,13 @@ private fun ReceiveDiagnostics(engineState: Ft4EngineState) {
         color = detailColor,
         fontSize = 11.sp
     )
+    if (receiving.droppedDecodeSlots > 0L) {
+        Text(
+            text = stringResource(R.string.ft4_pipeline_overload, receiving.droppedDecodeSlots),
+            color = MaterialTheme.colorScheme.error,
+            fontSize = 11.sp
+        )
+    }
     Text(
         text = stringResource(
             R.string.ft4_pipeline_diagnostics,
@@ -364,7 +371,9 @@ private fun ReceiveDiagnostics(engineState: Ft4EngineState) {
             receiving.decodeQueueDepth,
             receiving.droppedAudioBlocks
         ),
-        color = if (receiving.droppedAudioBlocks > 0L) MaterialTheme.colorScheme.error else detailColor,
+        color = if (receiving.droppedAudioBlocks > 0L || receiving.droppedDecodeSlots > 0L) {
+            MaterialTheme.colorScheme.error
+        } else detailColor,
         fontSize = 11.sp
     )
     Text(

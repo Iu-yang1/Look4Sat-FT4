@@ -24,6 +24,8 @@ import com.rtbishop.look4sat.core.domain.time.ClockSample
 import com.rtbishop.look4sat.core.domain.time.ClockSnapshot
 import com.rtbishop.look4sat.core.domain.time.ClockSource
 import com.rtbishop.look4sat.core.domain.time.IDisciplinedClock
+import com.rtbishop.look4sat.core.ft4.Ft4Native
+import com.rtbishop.look4sat.core.ft4.Ft4NativeDecoderOptions
 import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
 import kotlinx.coroutines.CoroutineScope
@@ -115,6 +117,32 @@ class Ft4AudioStreamInstrumentedTest {
         val wav = parsePcm16MonoWav(wavBytes)
         for (sourceRate in intArrayOf(24_000, 48_000)) {
             decodeResampledCorpus(wav.samples, sourceRate)
+        }
+    }
+
+    @Test
+    fun officialCorpusDecodesFromSixSecondEarlyWindow() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().context
+        val wavBytes = context.assets.open(SAMPLE_ASSET).use { it.readBytes() }
+        assertEquals(EXPECTED_SAMPLE_SHA256, wavBytes.sha256())
+        val wav = parsePcm16MonoWav(wavBytes)
+        val earlySlot = FloatArray(Ft4Native.SLOT_SAMPLE_COUNT)
+        wav.samples.copyOf(EARLY_DECODE_SAMPLES).copyInto(earlySlot)
+        val decoder = Ft4Native.createDecoder(0L)
+        val results = try {
+            Ft4Native.decodeFt4Slot(
+                decoder = decoder,
+                samples12k = earlySlot,
+                slotUtcMillis = 0L,
+                options = Ft4NativeDecoderOptions(earlyDecodeEnabled = true),
+                myCall = MY_CALL
+            )
+        } finally {
+            decoder.close()
+        }
+
+        EXPECTED_MESSAGES.forEach { expected ->
+            assertTrue("六秒提前窗口未解码到 $expected", results.any { it.text == expected })
         }
     }
 
@@ -279,6 +307,7 @@ class Ft4AudioStreamInstrumentedTest {
         const val SAMPLE_ASSET = "ft4_official_000000_000002.wav"
         const val EXPECTED_SAMPLE_SHA256 = "d9e91fa04ba138a7b9f41b4103823c77ca1c3a9775101f6b14d60935bcd3813b"
         const val EXPECTED_DECODE_COUNT = 16
+        const val EARLY_DECODE_SAMPLES = 72_000
         const val MY_CALL = "BG5JSU"
         const val NANOS_PER_SECOND = 1_000_000_000L
         const val SUBSCRIPTION_TIMEOUT_MILLIS = 15_000L

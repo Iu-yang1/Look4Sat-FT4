@@ -1,6 +1,6 @@
 package F2;
 
-import com.rtbishop.look4sat.feature.cw.R;
+import com.rtbishop.look4sat.core.cw.R;
 import android.view.ActionMode;
 import android.view.Menu;
 import android.view.MenuItem;

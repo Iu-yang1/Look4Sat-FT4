@@ -2,8 +2,8 @@ package k3;
 
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
-import com.rtbishop.look4sat.feature.cw.suncompat.Cleaner;
-import com.rtbishop.look4sat.feature.cw.suncompat.Unsafe;
+import com.rtbishop.look4sat.core.cw.suncompat.Cleaner;
+import com.rtbishop.look4sat.core.cw.suncompat.Unsafe;
 
 /* loaded from: classes.dex */
 public final class s extends g {

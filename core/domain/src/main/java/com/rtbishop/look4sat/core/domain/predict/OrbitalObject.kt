@@ -74,6 +74,7 @@ abstract class OrbitalObject(val data: OrbitalData) {
         }
     }
 
+    @Synchronized
     fun getPosition(pos: GeoPos, time: Long): OrbitalPos {
         orbitalPos = OrbitalPos()
         // Date/time at which the position and velocity were calculated
@@ -91,7 +92,7 @@ abstract class OrbitalObject(val data: OrbitalData) {
         orbitalPos.time = time
         orbitalPos.eclipsed = isEclipsed()
         orbitalPos.eclipseDepth = eclipseDepth
-        return orbitalPos
+        return orbitalPos.copy()
     }
 
     /**
@@ -99,6 +100,7 @@ abstract class OrbitalObject(val data: OrbitalData) {
      * eclipse, and squint calculations that aren't needed when just searching for
      * horizon crossings.
      */
+    @Synchronized
     fun getElevation(pos: GeoPos, time: Long): Double {
         julUTC = calcCurrentDaynum(time) + 2444238.5
         val tsince = (julUTC - julEpoch) * MIN_PER_DAY
@@ -113,6 +115,7 @@ abstract class OrbitalObject(val data: OrbitalData) {
      * Full position calculation that also populates azimuth, altitude, etc.
      * Used when we need all fields (AOS/LOS refinement, track computation).
      */
+    @Synchronized
     fun getFullPosition(pos: GeoPos, time: Long): OrbitalPos {
         orbitalPos = OrbitalPos()
         julUTC = calcCurrentDaynum(time) + 2444238.5
@@ -123,7 +126,7 @@ abstract class OrbitalObject(val data: OrbitalData) {
         calculateObs(julUTC, position, velocity, pos, squintVector)
         calculateLatLonAlt(julUTC)
         orbitalPos.time = time
-        return orbitalPos
+        return orbitalPos.copy()
     }
 
     private fun calcCurrentDaynum(now: Long): Double {

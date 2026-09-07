@@ -13,7 +13,7 @@
  * 注意: 控制器 onCreate 内的 setImmersive(window, false) 会把宿主窗口恢复为
  * decorFitsSystemWindows(true)(原版行为照搬, 会对整个宿主 Activity 生效)。
  */
-package com.rtbishop.look4sat.feature.cw
+package com.rtbishop.look4sat.core.cw
 
 import android.Manifest
 import android.app.Activity

@@ -10,7 +10,7 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 import androidx.constraintlayout.widget.ConstraintLayout;
-import com.rtbishop.look4sat.feature.cw.R;
+import com.rtbishop.look4sat.core.cw.R;
 import E2.g;
 import H2.a;
 import H2.b;

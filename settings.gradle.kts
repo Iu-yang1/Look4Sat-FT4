@@ -16,13 +16,13 @@ dependencyResolutionManagement {
 rootProject.name = "Look4Sat"
 include(":app")
 include(
+    ":core:cw",
     ":core:data",
     ":core:domain",
     ":core:ft4-native",
     ":core:presentation"
 )
 include(
-    ":feature:cw",
     ":feature:ft4",
     ":feature:logbook",
     ":feature:map",

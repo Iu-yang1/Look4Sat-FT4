@@ -33,18 +33,24 @@ internal data class Ft4ReceivePipelineSnapshot(
     val assemblingSlotUtcMillis: Long? = null,
     val assembledSampleCount: Int = 0,
     val droppedAudioBlocks: Long = 0,
+    val droppedDecodeSlots: Long = 0,
     val captureQueueDepth: Int = 0,
     val decodeQueueDepth: Int = 0,
     val audioSampleRate: Int? = null,
-    val timestampResidualMillis: Double? = null
+    val timestampResidualMillis: Double? = null,
+    val clockCorrectionMillis: Double? = null,
+    val lastResetReason: String? = null,
+    val lastDecodeWasEarly: Boolean = false
 )
 
 internal data class Ft4ResampledOutput(
     val samples: FloatArray,
     val firstSampleUtcNanos: Long,
     val reset: Boolean,
+    val resetReason: String?,
     val droppedBlock: Boolean,
-    val timestampResidualNanos: Long?
+    val timestampResidualNanos: Long?,
+    val clockCorrectionNanos: Long?
 )
 
 /**
@@ -55,6 +61,7 @@ internal class Ft4ResampledTimeline(private val clock: IDisciplinedClock) {
     private var resampler: StreamingAudioResampler? = null
     private var inputRate = 0
     private var baseBootTimeNanos = 0L
+    private var baseUtcNanos = 0L
     private var emittedSamples = 0L
     private var expectedFramePosition: Long? = null
     private var expectedChunkBootTimeNanos: Long? = null
@@ -68,10 +75,18 @@ internal class Ft4ResampledTimeline(private val clock: IDisciplinedClock) {
         val rateChange = initialized && inputRate != chunk.sampleRate
         val discontinuity = !initialized || rateChange || frameGap || timeGap
         val droppedBlock = initialized && (rateChange || frameGap || timeGap)
+        val resetReason = when {
+            !initialized -> "initialized"
+            rateChange -> "sample_rate_change"
+            frameGap -> "capture_frame_gap"
+            timeGap -> "capture_timestamp_gap"
+            else -> null
+        }
         if (discontinuity) {
             inputRate = chunk.sampleRate
             resampler = StreamingAudioResampler(inputRate, FT4_SAMPLE_RATE)
             baseBootTimeNanos = chunk.elapsedRealtimeNanos
+            baseUtcNanos = clock.utcMillisAt(baseBootTimeNanos) * NANOS_PER_MILLISECOND
             emittedSamples = 0L
             initialized = true
         }
@@ -81,14 +96,28 @@ internal class Ft4ResampledTimeline(private val clock: IDisciplinedClock) {
 
         val output = requireNotNull(resampler).process(chunk.samples)
         val outputStartBootTime = baseBootTimeNanos + emittedSamples * NANOS_PER_SECOND / FT4_SAMPLE_RATE
+        val stableOutputStartUtc = baseUtcNanos + emittedSamples * NANOS_PER_SECOND / FT4_SAMPLE_RATE
         emittedSamples += output.size
+        val currentClockUtc = clock.utcMillisAt(outputStartBootTime) * NANOS_PER_MILLISECOND
         return Ft4ResampledOutput(
             samples = output,
-            firstSampleUtcNanos = clock.utcMillisAt(outputStartBootTime) * NANOS_PER_MILLISECOND,
+            firstSampleUtcNanos = stableOutputStartUtc,
             reset = discontinuity,
+            resetReason = resetReason,
             droppedBlock = droppedBlock,
-            timestampResidualNanos = timestampResidual
+            timestampResidualNanos = timestampResidual,
+            clockCorrectionNanos = currentClockUtc - stableOutputStartUtc
         )
+    }
+
+    fun applyClockCorrectionAtSlotBoundary(correctionNanos: Long?): Boolean {
+        if (!initialized || correctionNanos == null ||
+            abs(correctionNanos) <= CLOCK_CORRECTION_THRESHOLD_NANOS
+        ) {
+            return false
+        }
+        baseUtcNanos += correctionNanos
+        return true
     }
 
     private companion object {
@@ -96,6 +125,7 @@ internal class Ft4ResampledTimeline(private val clock: IDisciplinedClock) {
         const val NANOS_PER_SECOND = 1_000_000_000L
         const val NANOS_PER_MILLISECOND = 1_000_000L
         const val TIMESTAMP_DISCONTINUITY_NANOS = 20_000_000L
+        const val CLOCK_CORRECTION_THRESHOLD_NANOS = 2_000_000L
     }
 }
 
@@ -116,7 +146,8 @@ internal class Ft4ReceivePipeline(
         val captureDepth = AtomicInteger(0)
         val decodeDepth = AtomicInteger(0)
         val droppedBlocks = AtomicLong(0L)
-        val assembler = Ft4SlotAssembler()
+        val droppedSlots = AtomicLong(0L)
+        val assembler = Ft4SlotAssembler(EARLY_DECODE_SAMPLES)
         val timeline = Ft4ResampledTimeline(clock)
         val snapshotLock = Any()
         var snapshot = Ft4ReceivePipelineSnapshot()
@@ -125,8 +156,9 @@ internal class Ft4ReceivePipeline(
             synchronized(snapshotLock) {
                 snapshot = transform(snapshot).copy(
                     droppedAudioBlocks = droppedBlocks.get(),
-                    captureQueueDepth = captureDepth.get(),
-                    decodeQueueDepth = decodeDepth.get()
+                    droppedDecodeSlots = droppedSlots.get(),
+                    captureQueueDepth = captureDepth.get().coerceIn(0, captureQueueCapacity),
+                    decodeQueueDepth = decodeDepth.get().coerceIn(0, decodeQueueCapacity)
                 )
                 onSnapshot(snapshot)
             }
@@ -143,7 +175,8 @@ internal class Ft4ReceivePipeline(
                         decodedSlots = current.decodedSlots + 1,
                         lastDecodeDurationMillis = duration,
                         lastDecodeResultCount = resultCount,
-                        lastDecodedSlotUtcMillis = slot.utcStartMillis
+                        lastDecodedSlotUtcMillis = slot.utcStartMillis,
+                        lastDecodeWasEarly = !slot.isFinal
                     )
                 }
             }
@@ -153,21 +186,42 @@ internal class Ft4ReceivePipeline(
                 for (chunk in chunks) {
                     captureDepth.decrementAndGet()
                     val output = timeline.process(chunk)
-                    if (output.reset) assembler.reset()
+                    if (output.reset) assembler.reset(output.resetReason ?: "capture_discontinuity")
                     if (output.droppedBlock) droppedBlocks.incrementAndGet()
                     val completed = assembler.append(output.samples, output.firstSampleUtcNanos)
+                    if (completed.any(Ft4AudioSlot::isFinal) &&
+                        timeline.applyClockCorrectionAtSlotBoundary(output.clockCorrectionNanos)
+                    ) {
+                        assembler.reset("clock_correction_at_slot_boundary")
+                    }
                     publish { current ->
                         current.copy(
                             audioSampleRate = chunk.sampleRate,
                             assemblingSlotUtcMillis = assembler.activeSlotStartMillis,
                             assembledSampleCount = assembler.bufferedSampleCount,
                             timestampResidualMillis = output.timestampResidualNanos
-                                ?.div(NANOS_PER_MILLISECOND.toDouble())
+                                ?.div(NANOS_PER_MILLISECOND.toDouble()),
+                            clockCorrectionMillis = output.clockCorrectionNanos
+                                ?.div(NANOS_PER_MILLISECOND.toDouble()),
+                            lastResetReason = assembler.lastResetReason
                         )
                     }
                     for (slot in completed) {
                         decodeDepth.incrementAndGet()
-                        slots.send(slot)
+                        if (slots.trySend(slot).isFailure) {
+                            decodeDepth.decrementAndGet()
+                            val stale = slots.tryReceive().getOrNull()
+                            if (stale != null) {
+                                decodeDepth.decrementAndGet()
+                                droppedSlots.incrementAndGet()
+                            }
+                            decodeDepth.incrementAndGet()
+                            if (slots.trySend(slot).isFailure) {
+                                decodeDepth.decrementAndGet()
+                                droppedSlots.incrementAndGet()
+                            }
+                            publish { it }
+                        }
                     }
                 }
             } finally {
@@ -177,11 +231,20 @@ internal class Ft4ReceivePipeline(
         val captureJob = launch {
             try {
                 audio.collect { chunk ->
+                    captureDepth.incrementAndGet()
                     val result = chunks.trySend(chunk)
-                    if (result.isSuccess) {
+                    if (result.isFailure) {
+                        captureDepth.decrementAndGet()
+                        val stale = chunks.tryReceive().getOrNull()
+                        if (stale != null) {
+                            captureDepth.decrementAndGet()
+                            droppedBlocks.incrementAndGet()
+                        }
                         captureDepth.incrementAndGet()
-                    } else {
-                        droppedBlocks.incrementAndGet()
+                        if (chunks.trySend(chunk).isFailure) {
+                            captureDepth.decrementAndGet()
+                            droppedBlocks.incrementAndGet()
+                        }
                         publish { it }
                     }
                 }
@@ -193,8 +256,9 @@ internal class Ft4ReceivePipeline(
     }
 
     private companion object {
-        const val DEFAULT_CAPTURE_QUEUE_CAPACITY = Channel.UNLIMITED
-        const val DEFAULT_DECODE_QUEUE_CAPACITY = 24
+        const val DEFAULT_CAPTURE_QUEUE_CAPACITY = 16
+        const val DEFAULT_DECODE_QUEUE_CAPACITY = 2
+        const val EARLY_DECODE_SAMPLES = 72_000
         const val NANOS_PER_MILLISECOND = 1_000_000L
     }
 }

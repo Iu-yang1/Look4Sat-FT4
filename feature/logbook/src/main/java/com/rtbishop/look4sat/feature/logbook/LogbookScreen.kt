@@ -76,6 +76,7 @@ fun LogbookScreenDestination(navigateUp: () -> Unit) {
     val scope = rememberCoroutineScope()
     var exportContent by remember { mutableStateOf("") }
     var exportComplete by remember { mutableStateOf(false) }
+    var showExportOptions by remember { mutableStateOf(false) }
     val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri ?: return@rememberLauncherForActivityResult
         scope.launch {
@@ -94,18 +95,38 @@ fun LogbookScreenDestination(navigateUp: () -> Unit) {
             exportComplete = true
         }
     }
+    val exportAdi: (Boolean) -> Unit = { includeIncomplete ->
+        showExportOptions = false
+        scope.launch {
+            exportContent = viewModel.exportAdi(includeIncomplete)
+            exportLauncher.launch("look4sat-${fileDate()}.adi")
+        }
+    }
+
+    if (showExportOptions) {
+        AlertDialog(
+            onDismissRequest = { showExportOptions = false },
+            title = { Text(stringResource(R.string.logbook_export)) },
+            text = { Text(stringResource(R.string.logbook_export_scope_description)) },
+            confirmButton = {
+                TextButton(onClick = { exportAdi(false) }) {
+                    Text(stringResource(R.string.logbook_export_complete_only))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { exportAdi(true) }) {
+                    Text(stringResource(R.string.logbook_export_all))
+                }
+            }
+        )
+    }
 
     LogbookScreen(
         state = state,
         navigateUp = navigateUp,
         onAction = viewModel::onAction,
         onImport = { importLauncher.launch(arrayOf("text/plain", "application/octet-stream", "*/*")) },
-        onExport = {
-            scope.launch {
-                exportContent = viewModel.exportAdi()
-                exportLauncher.launch("look4sat-ft4-${fileDate()}.adi")
-            }
-        },
+        onExport = { showExportOptions = true },
         exportComplete = exportComplete,
         dismissExportComplete = { exportComplete = false }
     )
@@ -224,7 +245,8 @@ private fun QsoCard(record: QsoRecord, onEdit: () -> Unit, onDelete: () -> Unit)
                     stringResource(
                         R.string.logbook_frequency_summary,
                         record.txFrequencyHz?.let(::formatMhz) ?: notSet,
-                        record.rxFrequencyHz?.let(::formatMhz) ?: notSet
+                        record.rxFrequencyHz?.let(::formatMhz) ?: notSet,
+                        record.submode.ifBlank { record.mode }.ifBlank { notSet }
                     ),
                     fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -260,6 +282,10 @@ private fun LogbookEditorDialog(editor: LogbookEditor, onAction: (LogbookAction)
                 }
                 EditorField(editor.txFrequencyHz, R.string.logbook_tx_frequency) { value -> update { it.copy(txFrequencyHz = value) } }
                 EditorField(editor.rxFrequencyHz, R.string.logbook_rx_frequency) { value -> update { it.copy(rxFrequencyHz = value) } }
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    EditorField(editor.mode, R.string.logbook_mode, Modifier.weight(1f)) { value -> update { it.copy(mode = value) } }
+                    EditorField(editor.submode, R.string.logbook_submode, Modifier.weight(1f)) { value -> update { it.copy(submode = value) } }
+                }
                 EditorField(editor.satelliteName, R.string.logbook_satellite) { value -> update { it.copy(satelliteName = value) } }
                 EditorField(editor.transponderName, R.string.logbook_transponder) { value -> update { it.copy(transponderName = value) } }
                 EditorField(editor.satelliteMode, R.string.logbook_satellite_mode) { value -> update { it.copy(satelliteMode = value) } }

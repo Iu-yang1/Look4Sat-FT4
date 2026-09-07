@@ -18,6 +18,94 @@ import org.junit.Test
 
 class IcomCivProtocolTest {
     @Test
+    fun frequencyAndModeUseSeparateStandardReadCommands() {
+        assertArrayEquals(
+            civCommand(0x03),
+            IcomCivProtocol.buildReadFreqCommand()
+        )
+        assertArrayEquals(
+            civCommand(0x04),
+            IcomCivProtocol.buildReadModeCommand()
+        )
+    }
+
+    @Test
+    fun realFrequencyAndModeFramesAreParsedThroughBroadcastNoise() {
+        val noise = byteArrayOf(
+            0xFE.toByte(), 0xFE.toByte(), 0x00, 0xA4.toByte(), 0x03, 0x11, 0xFD.toByte()
+        )
+        val frequencyFrame = byteArrayOf(
+            0xFE.toByte(), 0xFE.toByte(), 0xE0.toByte(), 0xA4.toByte(), 0x03,
+            0x00, 0x00, 0x59, 0x45, 0x01, 0xFD.toByte()
+        )
+        val modeFrame = byteArrayOf(
+            0xFE.toByte(), 0xFE.toByte(), 0xE0.toByte(), 0xA4.toByte(), 0x04,
+            0x01, 0x02, 0xFD.toByte()
+        )
+
+        val frequency = IcomCivProtocol.parseResponse(noise + frequencyFrame, 0x03)
+        val mode = IcomCivProtocol.parseResponse(noise + modeFrame, 0x04)
+
+        assertEquals(145_590_000L, IcomCivProtocol.parseFrequencyPayload(frequency!!.payload))
+        assertEquals("USB", IcomCivProtocol.parseModePayload(mode!!.payload))
+    }
+
+    @Test
+    fun selectedVfoModeCommandsCarrySelectorAndReadbackIsVerified() {
+        assertArrayEquals(
+            civCommand(0x26, 0x00, 0x01),
+            IcomCivProtocol.buildSetVfoModeCommand(selected = true, mode = "USB")
+        )
+        assertArrayEquals(
+            civCommand(0x26, 0x01),
+            IcomCivProtocol.buildReadVfoModeCommand(selected = false)
+        )
+        assertEquals(
+            "FM",
+            IcomCivProtocol.parseVfoModePayload(byteArrayOf(0x01, 0x05, 0x01), selected = false)
+        )
+        assertNull(
+            IcomCivProtocol.parseVfoModePayload(byteArrayOf(0x00, 0x05, 0x01), selected = false)
+        )
+    }
+
+    @Test
+    fun sameCommandBroadcastForOtherVfoIsSkipped() {
+        val wrongVfo = byteArrayOf(
+            0xFE.toByte(), 0xFE.toByte(), 0xE0.toByte(), 0xA4.toByte(), 0x25,
+            0x01, 0x00, 0x00, 0x00, 0x35, 0x04, 0xFD.toByte()
+        )
+        val selectedVfo = byteArrayOf(
+            0xFE.toByte(), 0xFE.toByte(), 0xE0.toByte(), 0xA4.toByte(), 0x25,
+            0x00, 0x00, 0x00, 0x59, 0x45, 0x01, 0xFD.toByte()
+        )
+
+        val response = IcomCivProtocol.parseResponse(wrongVfo + selectedVfo, 0x25) {
+            it.firstOrNull() == IcomCivProtocol.SUB_SELECTED_VFO
+        }
+
+        assertEquals(
+            145_590_000L,
+            IcomCivProtocol.parseVfoFrequencyPayload(requireNotNull(response).payload, selected = true)
+        )
+        assertNull(IcomCivProtocol.parseVfoFrequencyPayload(response.payload, selected = false))
+    }
+
+    @Test
+    fun malformedFrequencyBcdIsRejected() {
+        assertNull(IcomCivProtocol.parseFrequencyPayload(byteArrayOf(0x00, 0x00, 0x5A, 0x45, 0x01)))
+    }
+
+    @Test
+    fun digitalVoiceUsesIcomDvModeIdentifier() {
+        assertArrayEquals(
+            civCommand(0x06, 0x17),
+            IcomCivProtocol.buildSetModeCommand("DV")
+        )
+        assertEquals("DV", IcomCivProtocol.parseModePayload(byteArrayOf(0x17)))
+    }
+
+    @Test
     fun `IC-9700 profile accepts responses from A2 only`() {
         val response = byteArrayOf(
             0xFE.toByte(), 0xFE.toByte(), 0xE0.toByte(), 0xA2.toByte(),
@@ -86,4 +174,13 @@ class IcomCivProtocolTest {
         assertEquals(false, IcomCivProtocol.ackStatus(nak))
         assertNull(IcomCivProtocol.ackStatus(byteArrayOf()))
     }
+
+    private fun civCommand(vararg payload: Int): ByteArray = byteArrayOf(
+        0xFE.toByte(),
+        0xFE.toByte(),
+        0xA4.toByte(),
+        0xE0.toByte(),
+        *payload.map(Int::toByte).toByteArray(),
+        0xFD.toByte()
+    )
 }

@@ -39,6 +39,16 @@ interface IRadioController {
 
     suspend fun pttOff(): Boolean
 
+    /** Generation captured while arming a transmission, before PTT can be requested. */
+    fun pttSafetyGeneration(): Long = 0L
+
+    /** Rejects PTT-ON if an emergency stop invalidated the captured generation. */
+    suspend fun pttOnIfGeneration(expectedGeneration: Long): Boolean =
+        expectedGeneration == pttSafetyGeneration() && pttOn()
+
+    /** Invalidates queued PTT-ON work before an emergency PTT-OFF is enqueued. */
+    fun invalidatePendingPttOn() = Unit
+
     // ── Extended operations (IC-705 / CI-V) ──────────────────────────────
 
     /**
@@ -59,6 +69,18 @@ interface IRadioController {
      * Default: not supported.
      */
     suspend fun setSplitMode(enabled: Boolean): Boolean = false
+
+    /**
+     * Configure both sides of a split setup as one serialized transaction.
+     * Implementations should leave VFO-A selected and verify the written modes.
+     */
+    suspend fun setSplitModes(rxMode: String?, txMode: String?): Boolean {
+        if (!setVfo(vfoA = true)) return false
+        if (rxMode != null && !setMode(rxMode)) return false
+        if (!setVfo(vfoA = false)) return false
+        if (txMode != null && !setMode(txMode)) return false
+        return setVfo(vfoA = true)
+    }
 
     /**
      * Set the frequency of the currently active VFO (IC-705: CMD 0x25 sub 0x00).

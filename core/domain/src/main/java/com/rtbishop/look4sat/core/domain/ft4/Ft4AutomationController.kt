@@ -34,6 +34,10 @@ data class Ft4AutomationSnapshot(
     val nextMessage: String = "",
     val rxSlotParity: Int? = null,
     val txSlotParity: Int? = null,
+    val sentReport: String = "",
+    val receivedReport: String = "",
+    val messageRevision: Long = 0L,
+    val nextEligibleTxSlot: Long = Long.MIN_VALUE,
     val consecutiveCqCount: Int = 0,
     val abortReason: String = ""
 )
@@ -41,7 +45,8 @@ data class Ft4AutomationSnapshot(
 data class Ft4AutomaticTxIntent(
     val generation: Long,
     val slotIndex: Long,
-    val message: String
+    val message: String,
+    val messageRevision: Long
 )
 
 /** 小型标准 FT4 QSO 状态机；调度、时钟和 PTT 由上层服务负责。 */
@@ -86,7 +91,8 @@ class Ft4AutomationController(
             } else {
                 "$normalizedTarget $normalizedMyCall $normalizedGrid"
             },
-            txSlotParity = Math.floorMod(nextSlotIndex, 2L).toInt()
+            txSlotParity = Math.floorMod(nextSlotIndex, 2L).toInt(),
+            nextEligibleTxSlot = nextSlotIndex
         )
         return mutableSnapshot
     }
@@ -94,7 +100,8 @@ class Ft4AutomationController(
     fun onDecode(
         generation: Long,
         result: Ft4DecodeResult,
-        currentSlotIndex: Long
+        currentSlotIndex: Long,
+        receivedAtUtcMillis: Long
     ): Ft4AutomationSnapshot {
         if (!acceptGeneration(generation) || !isActive()) return mutableSnapshot
         val decodedSlot = Math.floorDiv(result.slotUtcMillis, SLOT_MILLIS)
@@ -103,6 +110,7 @@ class Ft4AutomationController(
         }
         val messageKey = "$decodedSlot:${result.messageHash}"
         if (!seenMessages.add(messageKey)) return mutableSnapshot
+        trimHistory(seenMessages)
 
         val source = normalizeCall(result.sourceCall)
         val target = normalizeCall(result.targetCall)
@@ -110,21 +118,35 @@ class Ft4AutomationController(
         val activeTarget = mutableSnapshot.targetCall
         val isCq = result.text.trim().uppercase(Locale.US).startsWith("CQ ")
         val addressedToMe = target == mutableSnapshot.myCall
-        val fromCurrentTarget = activeTarget.isNotBlank() && source == activeTarget
-        if (!isCq && !addressedToMe && !fromCurrentTarget) return mutableSnapshot
-        if (activeTarget.isNotBlank() && source != activeTarget) return mutableSnapshot
+        if (isCq) {
+            if (activeTarget.isNotBlank()) return mutableSnapshot
+        } else {
+            if (!addressedToMe) return mutableSnapshot
+            if (activeTarget.isNotBlank() && source != activeTarget) return mutableSnapshot
+        }
 
         val detail = result.gridOrReport.trim().uppercase(Locale.US)
+        val localReport = formatReport(result.snr)
+        val receivedReport = detail.removePrefix("R").takeIf(REPORT_PATTERN::matches)
+            ?: mutableSnapshot.receivedReport
+        val sentReport = if (GRID_PATTERN.matches(detail) || REPORT_PATTERN.matches(detail)) {
+            localReport
+        } else {
+            mutableSnapshot.sentReport
+        }
         val next = when {
             isCq && activeTarget.isBlank() -> "$source ${mutableSnapshot.myCall} ${defaultGrid()}"
             detail == "73" -> ""
             detail == "RR73" || detail == "RRR" -> "$source ${mutableSnapshot.myCall} 73"
             REPORT_PATTERN.matches(detail.removePrefix("R")) && detail.startsWith("R") ->
                 "$source ${mutableSnapshot.myCall} RR73"
-            REPORT_PATTERN.matches(detail) -> "$source ${mutableSnapshot.myCall} R$detail"
-            GRID_PATTERN.matches(detail) -> "$source ${mutableSnapshot.myCall} $DEFAULT_REPORT"
+            REPORT_PATTERN.matches(detail) -> "$source ${mutableSnapshot.myCall} R$localReport"
+            GRID_PATTERN.matches(detail) -> "$source ${mutableSnapshot.myCall} $localReport"
             else -> return mutableSnapshot
         }
+        val immediateTxSlot = decodedSlot + 1L
+        val resultCutoff = immediateTxSlot * SLOT_MILLIS - RESULT_CUTOFF_AHEAD_MILLIS
+        val eligibleTxSlot = if (receivedAtUtcMillis <= resultCutoff) immediateTxSlot else immediateTxSlot + 2L
         val phase = when {
             isCq -> Ft4AutomationPhase.REPLYING
             detail == "73" -> Ft4AutomationPhase.COMPLETE
@@ -140,6 +162,10 @@ class Ft4AutomationController(
             nextMessage = next,
             rxSlotParity = Math.floorMod(decodedSlot, 2L).toInt(),
             txSlotParity = 1 - Math.floorMod(decodedSlot, 2L).toInt(),
+            sentReport = sentReport,
+            receivedReport = receivedReport,
+            messageRevision = mutableSnapshot.messageRevision + 1L,
+            nextEligibleTxSlot = eligibleTxSlot,
             consecutiveCqCount = 0
         )
         return mutableSnapshot
@@ -149,6 +175,7 @@ class Ft4AutomationController(
         if (!acceptGeneration(generation) || !isActive()) return null
         if (mutableSnapshot.nextMessage.isBlank()) return null
         if (mutableSnapshot.txSlotParity != Math.floorMod(slotIndex, 2L).toInt()) return null
+        if (slotIndex < mutableSnapshot.nextEligibleTxSlot) return null
         if (slotIndex < cqBackoffUntilSlot || !claimedSlots.add(slotIndex)) return null
 
         val message = mutableSnapshot.nextMessage
@@ -167,12 +194,21 @@ class Ft4AutomationController(
             consecutiveCqCount = nextCqCount
         )
         trimHistory(claimedSlots)
-        return Ft4AutomaticTxIntent(generation, slotIndex, message)
+        return Ft4AutomaticTxIntent(generation, slotIndex, message, mutableSnapshot.messageRevision)
     }
+
+    fun isIntentCurrent(intent: Ft4AutomaticTxIntent): Boolean =
+        acceptGeneration(intent.generation) &&
+            intent.messageRevision == mutableSnapshot.messageRevision &&
+            intent.message == mutableSnapshot.currentMessage
 
     fun transmissionFinished(generation: Long, intent: Ft4AutomaticTxIntent, succeeded: Boolean) {
         if (!acceptGeneration(generation) || intent.generation != generation) return
         if (!succeeded) {
+            if (!isIntentCurrent(intent)) {
+                mutableSnapshot = mutableSnapshot.copy(currentMessage = "")
+                return
+            }
             abort(generation, "FT4 transmit failed")
             return
         }
@@ -229,12 +265,13 @@ class Ft4AutomationController(
 
     private companion object {
         const val SLOT_MILLIS = 7_500L
-        const val DEFAULT_REPORT = "-10"
         const val MAX_HISTORY = 64
+        const val RESULT_CUTOFF_AHEAD_MILLIS = 900L
         val REPORT_PATTERN = Regex("[+-]\\d{2}")
         val GRID_PATTERN = Regex("[A-R]{2}\\d{2}")
 
         fun normalizeCall(value: String): String = value.trim().uppercase(Locale.US)
         fun normalizeGrid(value: String): String = value.trim().uppercase(Locale.US).take(4).ifBlank { "AA00" }
+        fun formatReport(snr: Int): String = "%+03d".format(Locale.US, snr.coerceIn(-24, 20))
     }
 }

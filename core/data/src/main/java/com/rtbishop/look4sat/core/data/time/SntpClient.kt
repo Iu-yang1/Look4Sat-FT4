@@ -241,7 +241,12 @@ class MultiSourceNtpDiscipline(private val client: NtpQueryClient = SntpClient()
             abs(it.offsetMillis - medianOffset) <=
                 max(MIN_OUTLIER_WINDOW_MS, it.sample.uncertaintyMillis * 4.0)
         }
-        if (inliers.isEmpty()) throw IOException("NTP 源之间无法达成一致")
+        if (inliers.size < MIN_CONSENSUS_SOURCES) {
+            throw IOException(
+                "NTP 最终一致性集合不足: ${inliers.size}/$MIN_CONSENSUS_SOURCES；" +
+                    "单源降级，禁止自动发射"
+            )
+        }
         val best = inliers.minBy { it.sample.uncertaintyMillis }
         val fusedOffset = inliers.map { it.offsetMillis }.sorted().median()
         val correction = fusedOffset - best.offsetMillis

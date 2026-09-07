@@ -3,7 +3,7 @@ package k3;
 import java.lang.reflect.Field;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
-import com.rtbishop.look4sat.feature.cw.suncompat.Unsafe;
+import com.rtbishop.look4sat.core.cw.suncompat.Unsafe;
 
 /* loaded from: classes.dex */
 public abstract class r {

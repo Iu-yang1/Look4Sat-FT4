@@ -1,4 +1,4 @@
-package com.rtbishop.look4sat.feature.cw.suncompat;
+package com.rtbishop.look4sat.core.cw.suncompat;
 
 /**
  * 编译期 stub:Android 无 sun.misc.Cleaner(照搬 Morse Expert 1.15 k3 FFT 库的清理回调,

@@ -211,9 +211,11 @@
     <string name="rc_tx_name_hint">TX Radio Name</string>
     <string name="rc_rx_name_hint">RX Radio Name</string>
     <string name="rc_enable_switch">Enable CAT Control</string>
-    <string name="rc_split_mode">Split mode (single radio)</string>
-    <string name="rc_split_mode_hint">Use VFO-A/B split on one Icom radio instead of two radios</string>
-    <string name="rc_single_radio">Radio (single split)</string>
+    <string name="rc_split_mode">Single-radio duplex</string>
+    <string name="rc_split_mode_hint">Use one Icom radio for uplink and downlink</string>
+    <string name="rc_satellite_mode">Dedicated satellite mode</string>
+    <string name="rc_satellite_mode_hint">On: SAT MAIN/SUB. Off: ordinary VFO-A/B Split fallback.</string>
+    <string name="rc_single_radio">Radio (single duplex)</string>
     <string name="rc_tx_radio">TX Radio (Uplink)</string>
     <string name="rc_rx_radio">RX Radio (Downlink)</string>
     <string name="rc_select_device">Select Device</string>
@@ -226,8 +228,8 @@
     <string name="rc_tx_tcp_address">TX raw CAT host:port</string>
     <string name="rc_rx_tcp_address">RX raw CAT host:port</string>
     <string name="rc_tcp_raw_hint">TCP sends raw CAT bytes directly; it is not a rigctld client.</string>
-    <string name="rc_usb_cdc_hint">USB supports standard CDC-ACM control/data interface pairs. Vendor-specific serial drivers are not supported.</string>
-    <string name="rc_usb_cdc_device">%1$s · CDC-ACM control #%2$d / data #%3$d · %4$s</string>
+    <string name="rc_usb_cdc_hint">USB supports CDC-ACM, CP210x, FTDI, and CH34x CAT serial ports. Select the radio\'s CAT port, not its audio interface.</string>
+    <string name="rc_usb_cdc_device">%1$s · %2$s port #%3$d · %4$s</string>
 
     <string name="prefs_net_title">Network data output</string>
     <string name="prefs_net_rotator_switch">Enable rotation output</string>
@@ -381,6 +383,7 @@
     <string name="ft4_connected">connected</string>
     <string name="ft4_disconnected">disconnected</string>
     <string name="ft4_split">single-radio split</string>
+    <string name="ft4_satellite_mode">single-radio satellite MAIN/SUB</string>
     <string name="ft4_dual_radio">dual radio</string>
     <string name="ft4_mode_value">Mode TX %1$s / RX %2$s · PTT %3$s</string>
     <string name="ft4_cat_busy">CAT busy</string>

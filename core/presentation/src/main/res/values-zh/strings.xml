@@ -197,9 +197,11 @@
     <string name="rc_tx_name_hint">发射电台名称</string>
     <string name="rc_rx_name_hint">接收电台名称</string>
     <string name="rc_enable_switch">启用 CAT 控制</string>
-    <string name="rc_split_mode">Split 模式（单电台）</string>
-    <string name="rc_split_mode_hint">在一台 Icom 电台上使用 VFO-A/B Split，不使用双电台</string>
-    <string name="rc_single_radio">电台（单机 Split）</string>
+    <string name="rc_split_mode">单电台双工控制</string>
+    <string name="rc_split_mode_hint">使用一台 Icom 电台同时控制上行与下行</string>
+    <string name="rc_satellite_mode">专用卫星模式</string>
+    <string name="rc_satellite_mode_hint">开启：SAT MAIN/SUB；关闭：回退普通 VFO-A/B Split。</string>
+    <string name="rc_single_radio">电台（单机双工）</string>
     <string name="rc_tx_radio">TX 电台（上行）</string>
     <string name="rc_rx_radio">RX 电台（下行）</string>
     <string name="rc_select_device">选择设备</string>
@@ -212,8 +214,8 @@
     <string name="rc_tx_tcp_address">TX 原始 CAT 主机:端口</string>
     <string name="rc_rx_tcp_address">RX 原始 CAT 主机:端口</string>
     <string name="rc_tcp_raw_hint">TCP 直接发送原始 CAT 字节，不是 rigctld 客户端。</string>
-    <string name="rc_usb_cdc_hint">USB 仅支持标准 CDC-ACM 控制/数据接口对，不支持 vendor-specific 串口驱动。</string>
-    <string name="rc_usb_cdc_device">%1$s · CDC-ACM 控制 #%2$d / 数据 #%3$d · %4$s</string>
+    <string name="rc_usb_cdc_hint">USB 支持 CDC-ACM、CP210x、FTDI 与 CH34x CAT 串口。请选择电台 CAT 端口，而不是音频接口。</string>
+    <string name="rc_usb_cdc_device">%1$s · %2$s 端口 #%3$d · %4$s</string>
 
     <string name="prefs_other_title">其他设置</string>
     <string name="prefs_ft4_title">FT4 与时间同步</string>
@@ -346,6 +348,7 @@
     <string name="ft4_connected">已连接</string>
     <string name="ft4_disconnected">未连接</string>
     <string name="ft4_split">单机 split</string>
+    <string name="ft4_satellite_mode">单机卫星 MAIN/SUB</string>
     <string name="ft4_dual_radio">双电台</string>
     <string name="ft4_mode_value">模式 TX %1$s / RX %2$s · PTT %3$s</string>
     <string name="ft4_cat_busy">CAT 忙碌</string>

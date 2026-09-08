@@ -93,7 +93,8 @@ class RadarViewModel(
             orientationValues = sensorsRepo.sensorData.value,
             shouldShowSweep = settingsRepo.otherSettings.value.stateOfSweep,
             shouldUseCompass = settingsRepo.otherSettings.value.stateOfSensors,
-            sstv = SstvSubState(selectedMode = settingsRepo.otherSettings.value.sstvMode)
+            sstv = SstvSubState(selectedMode = settingsRepo.otherSettings.value.sstvMode),
+            radioTransport = settingsRepo.radioControlSettings.value.catTransport
         )
     )
     val uiState: StateFlow<RadarState> = _uiState
@@ -126,6 +127,11 @@ class RadarViewModel(
                         shouldUseCompass = settings.stateOfSensors
                     )
                 }
+            }
+        }
+        viewModelScope.launch {
+            settingsRepo.radioControlSettings.collectLatest { settings ->
+                _uiState.update { it.copy(radioTransport = settings.catTransport) }
             }
         }
     }

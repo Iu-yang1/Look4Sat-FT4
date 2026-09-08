@@ -84,6 +84,7 @@ import androidx.navigation3.runtime.rememberSaveableStateHolderNavEntryDecorator
 import androidx.navigation3.ui.NavDisplay
 import com.rtbishop.look4sat.core.domain.predict.OrbitalPos
 import com.rtbishop.look4sat.core.domain.predict.OrbitalPass
+import com.rtbishop.look4sat.core.domain.model.RadioControlSettings
 import com.rtbishop.look4sat.core.domain.repository.PttState
 import com.rtbishop.look4sat.core.domain.repository.RadioTrackingState
 import com.rtbishop.look4sat.core.domain.repository.IContainerProvider
@@ -134,7 +135,7 @@ fun Ft4ShellDestination(navigateUp: () -> Unit, navigateToLogbook: () -> Unit) {
             activity?.shouldShowRequestPermissionRationale(Manifest.permission.RECORD_AUDIO) == false
         viewModel.onAction(Ft4Action.MicrophonePermissionChanged(granted))
     }
-    val bluetoothLauncher = rememberLauncherForActivityResult(
+    val radioPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted -> if (granted) viewModel.onAction(Ft4Action.ConnectRadios) }
 
@@ -195,17 +196,24 @@ fun Ft4ShellDestination(navigateUp: () -> Unit, navigateToLogbook: () -> Unit) {
             }
         },
         connectRadios = {
-            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S || ContextCompat.checkSelfPermission(
-                    context,
-                    Manifest.permission.BLUETOOTH_CONNECT
-                ) == PackageManager.PERMISSION_GRANTED
-            ) {
+            val permission = requiredRadioPermission(state.radioTransport)
+            if (permission == null || ContextCompat.checkSelfPermission(
+                    context, permission
+                ) == PackageManager.PERMISSION_GRANTED) {
                 viewModel.onAction(Ft4Action.ConnectRadios)
             } else {
-                bluetoothLauncher.launch(Manifest.permission.BLUETOOTH_CONNECT)
+                radioPermissionLauncher.launch(permission)
             }
         }
     )
+}
+
+private fun requiredRadioPermission(transport: String): String? = when {
+    transport == RadioControlSettings.TRANSPORT_BLUETOOTH &&
+        Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> Manifest.permission.BLUETOOTH_CONNECT
+    transport == RadioControlSettings.TRANSPORT_TCP &&
+        Build.VERSION.SDK_INT >= Build.VERSION_CODES.CINNAMON_BUN -> Manifest.permission.ACCESS_LOCAL_NETWORK
+    else -> null
 }
 
 private tailrec fun Context.findActivity(): Activity? = when (this) {
@@ -690,7 +698,13 @@ private fun RadioControlStatus(radio: RadioTrackingState) {
             modifier = Modifier.fillMaxWidth()
         ) {
             Text(
-                text = stringResource(if (radio.splitMode) R.string.ft4_split else R.string.ft4_dual_radio),
+                text = stringResource(
+                    when {
+                        radio.satelliteMode -> R.string.ft4_satellite_mode
+                        radio.splitMode -> R.string.ft4_split
+                        else -> R.string.ft4_dual_radio
+                    }
+                ),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontSize = 11.sp
             )

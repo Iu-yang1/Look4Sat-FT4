@@ -216,12 +216,15 @@ class SerialRadioController(
     override suspend fun setSplitMode(enabled: Boolean) = actor.execute { delegate.setSplitMode(enabled) }
     override suspend fun setSplitModes(rxMode: String?, txMode: String?) =
         actor.execute { delegate.setSplitModes(rxMode, txMode) }
+    override suspend fun configureTxCtcss(toneHz: Double?) =
+        actor.execute { delegate.configureTxCtcss(toneHz) }
     override suspend fun setWorkingFrequency(frequencyHz: Long) = actor.execute { delegate.setWorkingFrequency(frequencyHz) }
     override suspend fun setTxVfoFrequency(frequencyHz: Long) = actor.execute { delegate.setTxVfoFrequency(frequencyHz) }
     override suspend fun readWorkingFrequency() = actor.execute(operation = delegate::readWorkingFrequency)
     override suspend fun readTxVfoFrequency() = actor.execute(operation = delegate::readTxVfoFrequency)
 
     private companion object {
-        const val CONNECT_TIMEOUT_MILLIS = 8_000L
+        // Allows insecure + secure Bluetooth SPP attempts and the model handshake to complete.
+        const val CONNECT_TIMEOUT_MILLIS = 15_000L
     }
 }

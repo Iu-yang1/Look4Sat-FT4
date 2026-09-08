@@ -19,6 +19,7 @@ package com.rtbishop.look4sat.feature.radar
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.LinearEasing
@@ -60,6 +61,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.rtbishop.look4sat.core.domain.predict.OrbitalPos
 import com.rtbishop.look4sat.core.domain.audio.IAudioHub
+import com.rtbishop.look4sat.core.domain.model.RadioControlSettings
 import com.rtbishop.look4sat.core.domain.repository.IContainerProvider
 import com.rtbishop.look4sat.core.domain.repository.MutualPassData
 import com.rtbishop.look4sat.core.domain.utility.DopplerFrequencyCalculator
@@ -129,6 +131,19 @@ fun RadarDestination(navigateUp: () -> Unit, navigateToMap: () -> Unit) {
         viewModel.onAction(RadarAction.SstvPermissionResult(granted))
         viewModel.onAction(RadarAction.CwPermissionResult(granted))
     }
+    val radioPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted -> if (granted) viewModel.onAction(RadarAction.ConnectRadios) }
+    val connectRadios = {
+        val permission = requiredRadioPermission(uiState.radioTransport)
+        if (permission == null || ContextCompat.checkSelfPermission(
+                context, permission
+            ) == PackageManager.PERMISSION_GRANTED) {
+            viewModel.onAction(RadarAction.ConnectRadios)
+        } else {
+            radioPermissionLauncher.launch(permission)
+        }
+    }
     RadarScreen(
         uiState,
         viewModel::onAction,
@@ -136,6 +151,7 @@ fun RadarDestination(navigateUp: () -> Unit, navigateToMap: () -> Unit) {
         navigateToMapAndClearMutual,
         mutualData,
         container.audioHub,
+        connectRadios,
         requestMicPermission = {
         permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
     })
@@ -149,6 +165,7 @@ private fun RadarScreen(
     navigateToMap: () -> Unit,
     mutualData: MutualPassData,
     audioHub: IAudioHub,
+    connectRadios: () -> Unit,
     requestMicPermission: () -> Unit
 ) {
     val upcomingPass = uiState.currentPass ?: getDefaultPass()
@@ -200,11 +217,11 @@ private fun RadarScreen(
         }
         if (isVertical) {
             RadarCard(uiState, trackB, trackBPosition, Modifier.weight(1f))
-            PagerCard(uiState, onAction, audioHub, requestMicPermission, Modifier.weight(1f))
+            PagerCard(uiState, onAction, audioHub, connectRadios, requestMicPermission, Modifier.weight(1f))
         } else {
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 RadarCard(uiState, trackB, trackBPosition, Modifier.weight(1f))
-                PagerCard(uiState, onAction, audioHub, requestMicPermission, Modifier.weight(1f))
+                PagerCard(uiState, onAction, audioHub, connectRadios, requestMicPermission, Modifier.weight(1f))
             }
         }
     }
@@ -215,6 +232,7 @@ private fun PagerCard(
     uiState: RadarState,
     onAction: (RadarAction) -> Unit,
     audioHub: IAudioHub,
+    connectRadios: () -> Unit,
     requestMicPermission: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -257,7 +275,8 @@ private fun PagerCard(
                         transceivers = uiState.transceivers.transmitters,
                         selectedUuid = uiState.transceivers.selectedUuid,
                         radioControl = uiState.radioControl,
-                        onAction = onAction
+                        onAction = onAction,
+                        connectRadios = connectRadios
                     )
                     RadarPage.Calculator -> CalculatorPage(
                         transceivers = uiState.transceivers.transmitters,
@@ -279,6 +298,14 @@ private fun PagerCard(
             }
         }
     }
+}
+
+private fun requiredRadioPermission(transport: String): String? = when {
+    transport == RadioControlSettings.TRANSPORT_BLUETOOTH &&
+        Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> Manifest.permission.BLUETOOTH_CONNECT
+    transport == RadioControlSettings.TRANSPORT_TCP &&
+        Build.VERSION.SDK_INT >= Build.VERSION_CODES.CINNAMON_BUN -> Manifest.permission.ACCESS_LOCAL_NETWORK
+    else -> null
 }
 
 @Composable

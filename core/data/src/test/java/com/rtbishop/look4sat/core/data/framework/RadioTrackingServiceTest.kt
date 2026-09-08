@@ -71,6 +71,30 @@ class RadioTrackingServiceTest {
     }
 
     @Test
+    fun txCtcssSequenceIsOneActorCommand() = runTest {
+        val actor = RadioCommandActor(backgroundScope) { _, _ -> }
+        val delegate = FakeRadioController(ctcssStepDelayMillis = 1L)
+        val radio = SerialRadioController(delegate, actor)
+
+        val configuring = async { radio.configureTxCtcss(88.5) }
+        runCurrent()
+        val competing = async { radio.setFrequency(145_900_000L) }
+
+        assertTrue(configuring.await())
+        assertTrue(competing.await())
+        assertEquals(
+            listOf(
+                "vfo:tx",
+                "tone:88.5",
+                "ctcss:true",
+                "vfo:rx",
+                "frequency:145900000"
+            ),
+            delegate.operations
+        )
+    }
+
+    @Test
     fun cancelledPttOnIsSkippedAndUrgentPttOffRunsBeforeNormalCommands() = runTest {
         val actor = RadioCommandActor(backgroundScope) { _, _ -> }
         val delegate = FakeRadioController()
@@ -197,6 +221,80 @@ class RadioTrackingServiceTest {
     }
 
     @Test
+    fun splitTrackingAndFt4LeaseShareOneRadioWithoutFrequencyCollision() = runTest {
+        val radio = FakeRadioController()
+        val fixture = Fixture(
+            scope = backgroundScope,
+            tx = radio,
+            rx = FakeRadioController(),
+            radioModel = RadioControlSettings.MODEL_ICOM_IC705,
+            splitMode = true
+        )
+        fixture.service.connectRadios()
+        fixture.startTracking()
+        runCurrent()
+        assertTrue(fixture.service.state.value.splitMode)
+        assertEquals(1, fixture.service.state.value.physicalConnectionCount)
+
+        val lease = fixture.service.beginTransmit(fixture.request(generation = 71L))
+        val txUpdatesAfterPrepare = radio.operations.count { it.startsWith("tx-frequency:") }
+        val rxUpdatesBeforePtt = radio.operations.count { it.startsWith("rx-frequency:") }
+        fixture.service.confirmTransmitReady(lease)
+
+        advanceTimeBy(1_100L)
+        runCurrent()
+        assertEquals(txUpdatesAfterPrepare, radio.operations.count { it.startsWith("tx-frequency:") })
+        assertEquals(rxUpdatesBeforePtt, radio.operations.count { it.startsWith("rx-frequency:") })
+
+        fixture.service.endTransmit(lease)
+        assertTrue(radio.operations.indexOf("ptt:on") < radio.operations.lastIndexOf("ptt:off"))
+        fixture.close()
+    }
+
+    @Test
+    fun satelliteCapableRadioEnablesDedicatedModeBeforeMainSubSetup() = runTest {
+        val radio = FakeRadioController()
+        val fixture = Fixture(
+            scope = backgroundScope,
+            tx = radio,
+            rx = FakeRadioController(),
+            radioModel = RadioControlSettings.MODEL_ICOM_IC910,
+            splitMode = true,
+            duplexMode = RadioControlSettings.DUPLEX_MODE_SATELLITE
+        )
+        fixture.service.connectRadios()
+        fixture.startTracking()
+        runCurrent()
+
+        assertEquals(TrackingPhase.READY, fixture.service.state.value.trackingPhase)
+        assertTrue(fixture.service.state.value.satelliteMode)
+        assertTrue(radio.operations.indexOf("split:true") < radio.operations.indexOf("vfo:rx"))
+        assertTrue(radio.operations.indexOf("split:true") < radio.operations.indexOf("vfo:tx"))
+        fixture.close()
+    }
+
+    @Test
+    fun satelliteCapableRadioCanUseOrdinarySplitFallback() = runTest {
+        val radio = FakeRadioController()
+        val fixture = Fixture(
+            scope = backgroundScope,
+            tx = radio,
+            rx = FakeRadioController(),
+            radioModel = RadioControlSettings.MODEL_ICOM_IC9700,
+            splitMode = true,
+            duplexMode = RadioControlSettings.DUPLEX_MODE_SPLIT
+        )
+        fixture.service.connectRadios()
+        fixture.startTracking()
+        runCurrent()
+
+        assertEquals(TrackingPhase.READY, fixture.service.state.value.trackingPhase)
+        assertFalse(fixture.service.state.value.satelliteMode)
+        assertTrue(radio.operations.indexOf("split:true") > radio.operations.indexOf("vfo:tx"))
+        fixture.close()
+    }
+
+    @Test
     fun automaticLeaseRequiresReadyTrackingAndEntireWaveformInsidePass() = runTest {
         val fixture = Fixture(backgroundScope, FakeRadioController(), FakeRadioController())
         fixture.service.connectRadios()
@@ -289,7 +387,12 @@ class RadioTrackingServiceTest {
     @Test
     fun trackingOrbitCalculationUsesDisciplinedUtc() = runTest {
         var disciplinedNow = 1_800_000_000_000L
-        val fixture = Fixture(backgroundScope, FakeRadioController(), FakeRadioController()) { disciplinedNow }
+        val fixture = Fixture(
+            backgroundScope,
+            FakeRadioController(),
+            FakeRadioController(),
+            nowProvider = { disciplinedNow }
+        )
         fixture.service.connectRadios()
         fixture.startTracking()
         runCurrent()
@@ -306,11 +409,14 @@ class RadioTrackingServiceTest {
         scope: kotlinx.coroutines.CoroutineScope,
         private val tx: FakeRadioController,
         private val rx: FakeRadioController,
-        nowProvider: () -> Long = System::currentTimeMillis
+        nowProvider: () -> Long = System::currentTimeMillis,
+        radioModel: String = RadioControlSettings.MODEL_YAESU_FT817,
+        splitMode: Boolean = false,
+        duplexMode: String = RadioControlSettings.DUPLEX_MODE_SPLIT
     ) {
         val nominalTxHz = 145_900_000L
         val position = OrbitalPos(elevation = 0.5, distanceRate = 1.2, aboveHorizon = true)
-        private val settings = FakeSettingsRepo()
+        private val settings = FakeSettingsRepo(radioModel, splitMode, duplexMode)
         val satelliteRepo = FakeSatelliteRepo(position)
         private val now = nowProvider()
         val afterPassStart = now + 180_000L
@@ -395,7 +501,8 @@ private class FixedClock(private val now: () -> Long) : IDisciplinedClock {
 
 private class FakeRadioController(
     private val pttOnSucceeds: Boolean = true,
-    private val setModeSucceeds: Boolean = true
+    private val setModeSucceeds: Boolean = true,
+    private val ctcssStepDelayMillis: Long = 0L
 ) : IRadioController {
     val operations = mutableListOf<String>()
     override var isConnected: Boolean = false
@@ -421,9 +528,49 @@ private class FakeRadioController(
         return setModeSucceeds
     }
 
-    override suspend fun setCtcssMode(enabled: Boolean): Boolean = true
-    override suspend fun setCtcssTone(toneHz: Double): Boolean = true
+    override suspend fun setCtcssMode(enabled: Boolean): Boolean {
+        operations += "ctcss:$enabled"
+        if (ctcssStepDelayMillis > 0L) delay(ctcssStepDelayMillis)
+        return true
+    }
+
+    override suspend fun setCtcssTone(toneHz: Double): Boolean {
+        operations += "tone:$toneHz"
+        if (ctcssStepDelayMillis > 0L) delay(ctcssStepDelayMillis)
+        return true
+    }
     override suspend fun readFrequencyAndMode(): Pair<Long, String>? = null
+
+    override suspend fun setBand(frequencyHz: Long): Boolean {
+        operations += "band:$frequencyHz"
+        return true
+    }
+
+    override suspend fun setVfo(vfoA: Boolean): Boolean {
+        operations += "vfo:${if (vfoA) "rx" else "tx"}"
+        if (ctcssStepDelayMillis > 0L) delay(ctcssStepDelayMillis)
+        return true
+    }
+
+    override suspend fun setSplitMode(enabled: Boolean): Boolean {
+        operations += "split:$enabled"
+        return true
+    }
+
+    override suspend fun setSplitModes(rxMode: String?, txMode: String?): Boolean {
+        operations += "split-modes:$rxMode:$txMode"
+        return true
+    }
+
+    override suspend fun setWorkingFrequency(frequencyHz: Long): Boolean {
+        operations += "rx-frequency:$frequencyHz"
+        return true
+    }
+
+    override suspend fun setTxVfoFrequency(frequencyHz: Long): Boolean {
+        operations += "tx-frequency:$frequencyHz"
+        return true
+    }
 
     override suspend fun pttOn(): Boolean {
         operations += "ptt:on"
@@ -468,7 +615,11 @@ private class FakeSatelliteRepo(private val position: OrbitalPos) : ISatelliteRe
     override suspend fun getRadiosWithId(id: Int) = emptyList<SatRadio>()
 }
 
-private class FakeSettingsRepo : ISettingsRepo {
+private class FakeSettingsRepo(
+    radioModel: String = RadioControlSettings.MODEL_YAESU_FT817,
+    splitMode: Boolean = false,
+    duplexMode: String = RadioControlSettings.DUPLEX_MODE_SPLIT
+) : ISettingsRepo {
     override val appVersionName = "test"
     override val selectedIds = MutableStateFlow<List<Int>>(emptyList())
     override val selectedTypes = MutableStateFlow<List<String>>(emptyList())
@@ -489,12 +640,14 @@ private class FakeSettingsRepo : ISettingsRepo {
     override val radioControlSettings = MutableStateFlow(
         RadioControlSettings(
             enabled = true,
-            radioModel = RadioControlSettings.MODEL_YAESU_FT817,
+            radioModel = radioModel,
             txRadioAddress = "TX",
             rxRadioAddress = "RX",
             txRadioName = "TX",
             rxRadioName = "RX",
-            baudRate = 9_600
+            baudRate = 9_600,
+            splitMode = splitMode,
+            duplexMode = duplexMode
         )
     )
 

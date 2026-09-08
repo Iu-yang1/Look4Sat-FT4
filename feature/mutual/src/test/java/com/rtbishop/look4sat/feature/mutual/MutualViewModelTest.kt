@@ -181,7 +181,7 @@ class MutualViewModelTest {
 
     @Test
     fun `query finds mutual passes reusing the main pass list`() = runTest(mainDispatcherRule.dispatcher.scheduler) {
-        val windows = TestOrbits.findPassWindows(hoursAhead = 12)
+        val windows = TestOrbits.findPassWindows(hoursAhead = 24)
         assertTrue("test fixture must produce ISS passes over Guangzhou", windows.isNotEmpty())
 
         val vm = createVm(
@@ -189,7 +189,7 @@ class MutualViewModelTest {
             passes = windows
         )
         vm.onStationBGrid("OL62")
-        vm.onHoursAhead(12)
+        vm.onHoursAhead(24)
 
         queryAndSettle(vm)
 
@@ -203,7 +203,7 @@ class MutualViewModelTest {
         // AOS/LOS within the searched horizon
         val now = System.currentTimeMillis()
         assertTrue(state.mutualPasses.all { it.startTime >= now - 120_000L })
-        assertTrue(state.mutualPasses.all { it.endTime <= now + 12 * 3600_000L + 120_000L })
+        assertTrue(state.mutualPasses.all { it.endTime <= now + 24 * 3600_000L + 120_000L })
     }
 
     @Test
@@ -244,14 +244,14 @@ class MutualViewModelTest {
             passes = emptyList()
         )
         vm.onStationBGrid("OL62")
-        vm.onHoursAhead(12)
+        vm.onHoursAhead(24)
 
         queryAndSettle(vm)
 
         val state = vm.uiState.value
         assertFalse(state.isCalculating)
         assertTrue(state.hasSearched)
-        // GZ + SZ are ~100km apart: a 12h ISS window must yield at least one mutual pass
+        // GZ + SZ are ~100km apart: a full day reliably contains a mutual ISS window.
         assertNull(state.errorMessage)
         assertTrue("fallback should find mutual passes", state.mutualPasses.isNotEmpty())
     }

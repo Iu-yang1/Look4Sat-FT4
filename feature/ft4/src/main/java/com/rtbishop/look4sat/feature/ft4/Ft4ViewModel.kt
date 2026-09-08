@@ -77,6 +77,7 @@ class Ft4ViewModel(
             radio = radioService.state.value,
             audioHub = container.audioHub.state.value,
             transmitState = transmitter.state.value,
+            radioTransport = container.settingsRepo.radioControlSettings.value.catTransport,
             stationGrid = container.settingsRepo.stationPosition.value.qthLocator
         )
     )
@@ -181,6 +182,11 @@ class Ft4ViewModel(
         viewModelScope.launch {
             container.settingsRepo.stationPosition.collect { position ->
                 mutableState.update { it.copy(stationGrid = position.qthLocator) }
+            }
+        }
+        viewModelScope.launch {
+            container.settingsRepo.radioControlSettings.collect { settings ->
+                mutableState.update { it.copy(radioTransport = settings.catTransport) }
             }
         }
         viewModelScope.launch {

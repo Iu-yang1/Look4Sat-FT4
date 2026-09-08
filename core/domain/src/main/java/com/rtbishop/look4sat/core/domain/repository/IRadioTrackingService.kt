@@ -59,6 +59,7 @@ data class RadioTrackingState(
     val txLeaseId: Long? = null,
     val txLeaseGeneration: Long = 0L,
     val splitMode: Boolean = false,
+    val satelliteMode: Boolean = false,
     val nominalTxFrequencyHz: Long? = null,
     val nominalRxFrequencyHz: Long? = null,
     val txDopplerCorrectionHz: Long? = null,

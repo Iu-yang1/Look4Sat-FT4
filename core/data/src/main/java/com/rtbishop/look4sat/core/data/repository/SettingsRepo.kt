@@ -168,7 +168,7 @@ class SettingsRepo(
         val aosEndMinute = preferences.getInt(keyFilterAosEndMinute, 23 * 60 + 59).coerceIn(0, 23 * 60 + 59)
         val invertAosTimeWindow = preferences.getBoolean(keyFilterAosInvert, false)
         val selectedModesString = preferences.getString(keySelectedModes, null)
-        val selectedModes = selectedModesString?.split(separatorComma)?.sorted() ?: emptyList()
+        val selectedModes = parseSelectedModes(selectedModesString)
         return PassesSettings(
             showDeepSpace,
             hoursAhead,
@@ -650,3 +650,6 @@ class SettingsRepo(
     }
     //endregion
 }
+
+internal fun parseSelectedModes(value: String?): List<String> =
+    value.orEmpty().split(',').map { it.trim() }.filter { it.isNotEmpty() }.distinct().sorted()

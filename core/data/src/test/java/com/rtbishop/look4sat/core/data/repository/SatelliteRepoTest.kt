@@ -21,12 +21,23 @@ import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class SatelliteRepoTest {
+    @Test
+    fun reloadedEmptyModeFilterKeepsSelectedSatellitesWithoutRadioMetadata() {
+        val satellites = listOf(orbitalData(1).getObject(), orbitalData(2).getObject())
+        val savedModes = emptyList<String>().joinToString(",")
+
+        val filtered = filterSatellitesByModes(satellites, parseSelectedModes(savedModes), emptyList())
+
+        assertEquals(satellites, filtered)
+    }
+
     @Test
     fun selectedModeWithNoMatchesProducesNoSatellites() {
         val satellite = orbitalData(1).getObject()

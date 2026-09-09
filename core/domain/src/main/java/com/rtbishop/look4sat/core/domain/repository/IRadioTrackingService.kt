@@ -29,8 +29,16 @@ enum class PttState {
     ERROR
 }
 
+enum class TrackingPhase {
+    IDLE,
+    INITIALIZING,
+    READY,
+    ERROR
+}
+
 data class RadioTrackingState(
     val isActive: Boolean = false,
+    val trackingPhase: TrackingPhase = TrackingPhase.IDLE,
     val txConnected: Boolean = false,
     val rxConnected: Boolean = false,
     val txFrequencyHz: Long? = null,
@@ -51,6 +59,7 @@ data class RadioTrackingState(
     val txLeaseId: Long? = null,
     val txLeaseGeneration: Long = 0L,
     val splitMode: Boolean = false,
+    val satelliteMode: Boolean = false,
     val nominalTxFrequencyHz: Long? = null,
     val nominalRxFrequencyHz: Long? = null,
     val txDopplerCorrectionHz: Long? = null,

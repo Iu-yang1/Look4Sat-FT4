@@ -13,6 +13,7 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Transaction
 import com.rtbishop.look4sat.core.data.database.entity.QsoEntity
 import kotlinx.coroutines.flow.Flow
 
@@ -27,11 +28,19 @@ interface QsoDao {
     @Query("SELECT * FROM qso_records ORDER BY startUtcMillis DESC, id DESC")
     suspend fun getAll(): List<QsoEntity>
 
+    @Query("SELECT dedupeKey FROM qso_records")
+    suspend fun getDedupeKeys(): List<String>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun save(record: QsoEntity): Long
 
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun importRecords(records: List<QsoEntity>): List<Long>
+
+    @Transaction
+    suspend fun saveBatch(records: List<QsoEntity>) {
+        records.forEach { save(it) }
+    }
 
     @Query("DELETE FROM qso_records WHERE id = :id")
     suspend fun delete(id: Long)

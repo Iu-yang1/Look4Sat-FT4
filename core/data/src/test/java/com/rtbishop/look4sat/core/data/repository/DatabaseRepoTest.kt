@@ -67,6 +67,7 @@ class DatabaseRepoTest {
         assertEquals(25544, localSource.insertedEntries.first().catnum)
         assertEquals(listOf(25544), settingsRepo.satelliteTypeIdsByType["Other"])
         assertTrue(settingsRepo.databaseState.value.numberOfSatellites > 0)
+        assertEquals(1L, settingsRepo.databaseState.value.contentVersion)
     }
 
     @Test
@@ -127,6 +128,57 @@ class DatabaseRepoTest {
         assertEquals(listOf(98248), settingsRepo.satelliteTypeIdsByType["SatNOGS"])
     }
 
+    @Test
+    fun `failed and empty remote updates preserve timestamp version and source categories`() = runTest(dispatcher) {
+        val failedUrl = "https://example.com/failed.tle"
+        val emptyUrl = "https://example.com/empty.tle"
+        val localSource = FakeLocalSource()
+        val remoteSource = FakeRemoteSource().apply {
+            networkStreams[emptyUrl] = { ByteArray(0).inputStream() }
+        }
+        val settingsRepo = FakeSettingsRepo(
+            dataSources = DataSourcesSettings(
+                satelliteUrls = listOf(failedUrl, emptyUrl),
+                transceiversUrls = emptyList()
+            )
+        )
+        settingsRepo.databaseState.value = DatabaseState(4, 12, 123_456L, contentVersion = 7L)
+        settingsRepo.satelliteTypeIdsByType["Other"] = listOf(100, 200)
+        val repository = DatabaseRepo(dispatcher, dataParser, localSource, remoteSource, settingsRepo)
+
+        repository.updateFromRemote()
+
+        assertEquals(123_456L, settingsRepo.databaseState.value.updateTimestamp)
+        assertEquals(7L, settingsRepo.databaseState.value.contentVersion)
+        assertEquals(listOf(100, 200), settingsRepo.satelliteTypeIdsByType["Other"])
+        assertTrue(localSource.insertedEntries.isEmpty())
+    }
+
+    @Test
+    fun `radios only update preserves ephemeris timestamp and publishes new content version`() = runTest(dispatcher) {
+        val radioUrl = "https://example.com/transmitters.json"
+        val localSource = FakeLocalSource()
+        val remoteSource = FakeRemoteSource().apply {
+            networkStreams[radioUrl] = { validRadioStream() }
+        }
+        val settingsRepo = FakeSettingsRepo(
+            dataSources = DataSourcesSettings(
+                satelliteUrls = emptyList(),
+                transceiversUrls = listOf(radioUrl)
+            )
+        )
+        settingsRepo.databaseState.value = DatabaseState(0, 12, 123_456L, contentVersion = 7L)
+        val repository = DatabaseRepo(dispatcher, dataParser, localSource, remoteSource, settingsRepo)
+
+        repository.updateFromRemote()
+
+        assertEquals(1, localSource.getRadiosTotal())
+        assertEquals(123_456L, settingsRepo.databaseState.value.updateTimestamp)
+        assertEquals(8L, settingsRepo.databaseState.value.contentVersion)
+        assertEquals(1, settingsRepo.databaseState.value.numberOfRadios)
+        assertEquals(0, settingsRepo.databaseState.value.numberOfSatellites)
+    }
+
     private fun validCsvStream(): InputStream = """
         OBJECT_NAME,OBJECT_ID,EPOCH,MEAN_MOTION,ECCENTRICITY,INCLINATION,RA_OF_ASC_NODE,ARG_OF_PERICENTER,MEAN_ANOMALY,EPHEMERIS_TYPE,CLASSIFICATION_TYPE,NORAD_CAT_ID,ELEMENT_SET_NO,REV_AT_EPOCH,BSTAR,MEAN_MOTION_DOT,MEAN_MOTION_DDOT
         ISS (ZARYA),1998-067A,2021-11-16T12:28:09.322176,15.48582035,.0004694,51.6447,309.4881,203.6966,299.8876,0,U,25544,999,31220,.31985E-4,.1288E-4,0
@@ -142,6 +194,10 @@ class DatabaseRepoTest {
         JAMX-0825b
         1 98248U          26237.16675926  .00015724  00000-0  97477-3 0 00013
         2 98248 097.5373 310.9694 0011309 278.1232 340.7230 15.09766181000012
+    """.trimIndent().byteInputStream()
+
+    private fun validRadioStream(): InputStream = """
+        [{"uuid":"radio-1","description":"FT4 transceiver","alive":true,"downlink_low":145800000,"downlink_high":null,"mode":"USB","uplink_low":435000000,"uplink_high":null,"uplink_mode":"USB","invert":false,"norad_cat_id":25544}]
     """.trimIndent().byteInputStream()
 }
 
@@ -194,7 +250,7 @@ private class FakeLocalSource : ILocalSource {
     }
 }
 
-private class FakeSettingsRepo(dataSources: DataSourcesSettings = defaultDataSourcesSettings()) : ISettingsRepo {
+internal class FakeSettingsRepo(dataSources: DataSourcesSettings = defaultDataSourcesSettings()) : ISettingsRepo {
 
     override val appVersionName: String = "test"
 

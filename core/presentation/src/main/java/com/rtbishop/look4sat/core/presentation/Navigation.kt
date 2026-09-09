@@ -42,6 +42,9 @@ sealed class Screen(val iconResId: Int, val titleResId: Int) : NavKey {
     data object Ft4 : Screen(R.drawable.ic_radio_tower, R.string.nav_ft4)
 
     @Serializable
+    data object Logbook : Screen(R.drawable.ic_logbook, R.string.nav_logbook)
+
+    @Serializable
     data object Settings : Screen(R.drawable.ic_settings, R.string.nav_prefs)
 }
 

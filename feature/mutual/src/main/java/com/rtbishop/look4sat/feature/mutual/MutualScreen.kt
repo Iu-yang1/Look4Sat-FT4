@@ -66,6 +66,10 @@ import com.rtbishop.look4sat.core.domain.repository.TrackSampleData
 import com.rtbishop.look4sat.core.presentation.R
 import com.rtbishop.look4sat.core.presentation.ScreenColumn
 import com.rtbishop.look4sat.core.presentation.TopBar
+import com.rtbishop.look4sat.core.presentation.GridTargetChip
+import com.rtbishop.look4sat.core.presentation.greatCircleBearingDeg
+import com.rtbishop.look4sat.core.presentation.greatCircleDistanceKm
+import com.rtbishop.look4sat.core.domain.utility.positionToQth
 import com.rtbishop.look4sat.core.presentation.isVerticalLayout
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -78,6 +82,11 @@ fun MutualScreen(
     modifier: Modifier = Modifier
 ) {
     val state by viewModel.uiState.collectAsState()
+    val latA = state.stationALat.toDoubleOrNull()?.takeIf { it.isFinite() && it in -90.0..90.0 }
+    val lonA = state.stationALon.toDoubleOrNull()?.takeIf { it.isFinite() && it in -180.0..180.0 }
+    val latB = state.stationBLat.toDoubleOrNull()?.takeIf { it.isFinite() && it in -90.0..90.0 }
+    val lonB = state.stationBLon.toDoubleOrNull()?.takeIf { it.isFinite() && it in -180.0..180.0 }
+    val hasTarget = latA != null && lonA != null && latB != null && lonB != null
 
     ScreenColumn(
         topBar = { isVertical ->
@@ -92,12 +101,10 @@ fun MutualScreen(
                     )
                 },
                 bottomInfo = {
-                    Text(
-                        text = mutualStatusText(state),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
+                    GridTargetChip(
+                        grid = if (latB != null && lonB != null) positionToQth(latB, lonB) else null,
+                        distanceKm = if (hasTarget) greatCircleDistanceKm(latA, lonA, latB, lonB) else null,
+                        bearingDeg = if (hasTarget) greatCircleBearingDeg(latA, lonA, latB, lonB) else null,
                         modifier = Modifier.weight(1f)
                     )
                 },

@@ -20,7 +20,9 @@ package com.rtbishop.look4sat.core.data.framework
 import android.bluetooth.BluetoothManager
 import android.util.Log
 import com.rtbishop.look4sat.core.domain.repository.IRadioController
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -29,14 +31,20 @@ import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.time.Duration.Companion.milliseconds
 
 class Ft817Controller(
-    bluetoothManager: BluetoothManager,
+    bluetoothManager: BluetoothManager?,
     private val deviceAddress: String,
-    private val transport: RadioTransport = BluetoothSppRadioTransport(bluetoothManager, deviceAddress)
+    private val transport: RadioTransport = BluetoothSppRadioTransport(
+        requireNotNull(bluetoothManager),
+        deviceAddress
+    ),
+    private val variant: YaesuCatVariant = YaesuCatVariant.FT817
 ) : IRadioController {
 
-    private val tag = "FT817"
+    private val tag = if (variant == YaesuCatVariant.FT817) "FT817" else "FT857"
     private val ioMutex = Mutex()
-    private val commandDelayMs = 200L
+    private val responseTimeoutMs = if (variant == YaesuCatVariant.FT817) 3_000L else 200L
+    private val pttRetries = if (variant == YaesuCatVariant.FT817) 5 else 0
+    private var readCommandAcks = true
 
     override var isConnected: Boolean = false
         private set
@@ -45,33 +53,47 @@ class Ft817Controller(
         if (isConnected) return@withContext true
         if (deviceAddress.isBlank()) return@withContext false
         try {
+            readCommandAcks = true
             isConnected = transport.connect()
+            if (isConnected && readFrequencyAndMode() == null) {
+                transport.disconnect()
+                isConnected = false
+                Log.e(tag, "Connected transport did not return a valid CAT response")
+            }
             Log.i(tag, "Connected to $deviceAddress")
             isConnected
+        } catch (cancelled: CancellationException) {
+            runCatching { transport.disconnect() }
+            isConnected = false
+            throw cancelled
         } catch (e: Exception) {
             Log.e(tag, "Connect error: ${e.message}")
+            runCatching { transport.disconnect() }
             isConnected = false
             false
         }
     }
 
-    override suspend fun disconnect() {
-        withContext(Dispatchers.IO) {
-            try {
-                if (isConnected) withTimeoutOrNull(PTT_OFF_TIMEOUT_MS) { pttOff() }
-                transport.disconnect()
-            } catch (e: Exception) {
-                Log.e(tag, "Disconnect error: ${e.message}")
-            } finally {
-                isConnected = false
-                Log.i(tag, "Disconnected from $deviceAddress")
-            }
+    override suspend fun disconnect(): Unit = withContext(Dispatchers.IO + NonCancellable) {
+        try {
+            if (isConnected) withTimeoutOrNull(PTT_OFF_TIMEOUT_MS) { pttOff() }
+            transport.disconnect()
+        } catch (e: Exception) {
+            Log.e(tag, "Disconnect error: ${e.message}")
+            runCatching { transport.disconnect() }
+        } finally {
+            isConnected = false
+            Log.i(tag, "Disconnected from $deviceAddress")
         }
     }
 
     override suspend fun setFrequency(frequencyHz: Long): Boolean = withContext(Dispatchers.IO) {
         ioMutex.withLock {
-            sendCommandWithAck(Ft817CatProtocol.buildSetFreqCommand(frequencyHz))
+            val command = runCatching { Ft817CatProtocol.buildSetFreqCommand(frequencyHz) }
+                .getOrElse { return@withLock false }
+            val acknowledged = sendCommandWithAck(command)
+            if (acknowledged && variant == YaesuCatVariant.FT817) delay(FT817_FREQUENCY_SETTLE_MS)
+            acknowledged
         }
     }
 
@@ -96,26 +118,26 @@ class Ft817Controller(
         ioMutex.withLock {
             val sent = sendCommand(Ft817CatProtocol.buildReadFreqModeCommand())
             if (!sent) return@withContext null
-            delay(commandDelayMs.milliseconds)
-            val response = readResponse() ?: return@withContext null
+            val response = readExact(RESPONSE_SIZE, responseTimeoutMs) ?: return@withContext null
             Ft817CatProtocol.parseReadResponse(response)
         }
     }
 
     override suspend fun pttOn(): Boolean = withContext(Dispatchers.IO) {
-        ioMutex.withLock { sendCommandWithAck(Ft817CatProtocol.buildPttOnCommand()) }
+        ioMutex.withLock { setPttAndConfirm(enabled = true) }
     }
 
     override suspend fun pttOff(): Boolean = withContext(Dispatchers.IO) {
-        ioMutex.withLock { sendCommandWithAck(Ft817CatProtocol.buildPttOffCommand()) }
+        ioMutex.withLock { setPttAndConfirm(enabled = false) }
     }
 
     private suspend fun sendCommand(bytes: ByteArray): Boolean {
         return withContext(Dispatchers.IO) {
             try {
                 if (!transport.write(bytes)) return@withContext false
-                delay(commandDelayMs.milliseconds)
                 true
+            } catch (cancelled: CancellationException) {
+                throw cancelled
             } catch (e: Exception) {
                 Log.e(tag, "Send error: ${e.message}")
                 isConnected = false
@@ -124,22 +146,56 @@ class Ft817Controller(
         }
     }
 
-    /** Send command and read the 1-byte ACK response (0x00 = OK). */
+    /**
+     * Legacy Yaesu CAT documents a one-byte command acknowledgement but does not define its value.
+     * Some compatible interfaces omit it entirely, which Hamlib handles by disabling ACK reads after
+     * the first timeout. Mirror that behaviour instead of incorrectly requiring an ACK value of zero.
+     */
     private suspend fun sendCommandWithAck(bytes: ByteArray): Boolean {
         if (!sendCommand(bytes)) return false
-        val ack = readByteWithTimeout(ACK_TIMEOUT_MS) ?: return false
-        return ack == 0x00
+        if (!readCommandAcks) {
+            delay(NO_ACK_POST_WRITE_DELAY_MS)
+            return true
+        }
+        if (readByteWithTimeout(ACK_TIMEOUT_MS) == null) {
+            if (!isConnected) return false
+            readCommandAcks = false
+            Log.i(tag, "CAT interface does not return command ACK bytes; continuing without ACK reads")
+        }
+        return true
     }
 
-    private suspend fun readResponse(): ByteArray? {
+    private suspend fun setPttAndConfirm(enabled: Boolean): Boolean {
+        val command = if (enabled) {
+            Ft817CatProtocol.buildPttOnCommand()
+        } else {
+            Ft817CatProtocol.buildPttOffCommand()
+        }
+        if (variant == YaesuCatVariant.FT857) {
+            val sent = sendCommandWithAck(command)
+            if (sent && !enabled) delay(FT857_PTT_OFF_SETTLE_MS)
+            return sent
+        }
+
+        repeat(pttRetries + 1) { attempt ->
+            if (!sendCommandWithAck(command)) return false
+            if (!sendCommand(Ft817CatProtocol.buildReadTxStatusCommand())) return false
+            val status = readExact(1, PTT_STATUS_TIMEOUT_MS)?.singleOrNull()
+            if (status != null && Ft817CatProtocol.parsePttState(status, variant) == enabled) return true
+            if (attempt < pttRetries) delay(FT817_PTT_RETRY_DELAY_MS)
+        }
+        Log.e(tag, "PTT ${if (enabled) "ON" else "OFF"} was not confirmed by TX status")
+        return false
+    }
+
+    private suspend fun readExact(size: Int, timeoutMs: Long): ByteArray? {
         return withContext(Dispatchers.IO) {
             try {
-                val responseSize = 5
-                val buffer = ByteArray(responseSize)
+                val buffer = ByteArray(size)
                 var read = 0
-                val deadline = System.nanoTime() + RESPONSE_TIMEOUT_MS * 1_000_000L
-                while (read < responseSize) {
-                    val chunk = transport.readAvailable(responseSize - read)
+                val deadline = System.nanoTime() + timeoutMs * NANOS_PER_MILLISECOND
+                while (read < size) {
+                    val chunk = transport.readAvailable(size - read)
                     if (chunk.isEmpty()) {
                         if (System.nanoTime() >= deadline) return@withContext null
                         delay(POLL_INTERVAL_MS.milliseconds)
@@ -149,6 +205,8 @@ class Ft817Controller(
                     read += chunk.size
                 }
                 buffer
+            } catch (cancelled: CancellationException) {
+                throw cancelled
             } catch (e: Exception) {
                 Log.e(tag, "Read error: ${e.message}")
                 isConnected = false
@@ -158,7 +216,7 @@ class Ft817Controller(
     }
 
     private suspend fun readByteWithTimeout(timeoutMs: Long): Int? = withContext(Dispatchers.IO) {
-        val deadline = System.nanoTime() + timeoutMs * 1_000_000L
+        val deadline = System.nanoTime() + timeoutMs * NANOS_PER_MILLISECOND
         try {
             while (System.nanoTime() < deadline) {
                 val value = transport.readAvailable(1).firstOrNull()
@@ -166,6 +224,8 @@ class Ft817Controller(
                 delay(POLL_INTERVAL_MS.milliseconds)
             }
             null
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (error: Exception) {
             Log.w(tag, "ACK read error: ${error.message}")
             isConnected = false
@@ -174,9 +234,15 @@ class Ft817Controller(
     }
 
     private companion object {
-        const val ACK_TIMEOUT_MS = 1_000L
-        const val RESPONSE_TIMEOUT_MS = 1_500L
+        const val RESPONSE_SIZE = 5
+        const val ACK_TIMEOUT_MS = 200L
+        const val PTT_STATUS_TIMEOUT_MS = 200L
         const val PTT_OFF_TIMEOUT_MS = 1_500L
         const val POLL_INTERVAL_MS = 10L
+        const val FT817_FREQUENCY_SETTLE_MS = 50L
+        const val FT817_PTT_RETRY_DELAY_MS = 100L
+        const val FT857_PTT_OFF_SETTLE_MS = 200L
+        const val NO_ACK_POST_WRITE_DELAY_MS = 10L
+        const val NANOS_PER_MILLISECOND = 1_000_000L
     }
 }

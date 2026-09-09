@@ -16,6 +16,8 @@ import com.rtbishop.look4sat.core.domain.ft4.Ft4EngineState
 import com.rtbishop.look4sat.core.domain.ft4.Ft4MessageValidation
 import com.rtbishop.look4sat.core.domain.ft4.Ft4SpectrumFrame
 import com.rtbishop.look4sat.core.domain.ft4.Ft4TransmissionRequest
+import com.rtbishop.look4sat.core.domain.ft4.Ft4TransmissionProgress
+import com.rtbishop.look4sat.core.domain.ft4.Ft4TransmissionResult
 import com.rtbishop.look4sat.core.domain.ft4.IFt4Service
 import com.rtbishop.look4sat.core.domain.ft4.IFt4TransmitCoordinator
 import com.rtbishop.look4sat.core.domain.ft4.TxLease
@@ -42,6 +44,7 @@ class Ft4AudioTransmitterTest {
     @Test
     fun pttIsConfirmedBeforeWaveformAndReleasedAfterwards() = runTest {
         val events = mutableListOf<String>()
+        val progress = mutableListOf<Ft4TransmissionProgress>()
         val coordinator = FakeCoordinator(events)
         val transmitter = Ft4AudioTransmitter(
             context = null,
@@ -51,15 +54,20 @@ class Ft4AudioTransmitterTest {
             outputFactory = Ft4AudioOutputFactory { _, _ -> FakeOutput(events) }
         )
 
-        transmitter.transmit(request(slotStart = 1_000L, automatic = true))
+        transmitter.transmit(request(slotStart = 1_000L, automatic = true).copy(onProgress = progress::add))
 
         assertEquals(listOf("generate", "output", "prepare", "begin", "confirm", "play", "close", "end"), events)
+        assertEquals(
+            listOf(Ft4TransmissionResult.PREPARING, Ft4TransmissionResult.STARTED, Ft4TransmissionResult.COMPLETED),
+            progress.map { it.result }
+        )
         assertEquals(1, coordinator.offCount)
     }
 
     @Test
     fun playbackFailureStillEndsLease() = runTest {
         val events = mutableListOf<String>()
+        val progress = mutableListOf<Ft4TransmissionProgress>()
         val coordinator = FakeCoordinator(events)
         val transmitter = Ft4AudioTransmitter(
             context = null,
@@ -69,9 +77,12 @@ class Ft4AudioTransmitterTest {
             outputFactory = Ft4AudioOutputFactory { _, _ -> FakeOutput(events, fail = true) }
         )
 
-        val failure = runCatching { transmitter.transmit(request(1_000L, automatic = false)) }.exceptionOrNull()
+        val failure = runCatching {
+            transmitter.transmit(request(1_000L, automatic = false).copy(onProgress = progress::add))
+        }.exceptionOrNull()
 
         assertTrue(failure?.message?.contains("audio failed") == true)
+        assertEquals(Ft4TransmissionResult.FAILED, progress.last().result)
         assertEquals(1, coordinator.offCount)
         assertTrue(events.indexOf("close") < events.indexOf("end"))
     }
@@ -116,11 +127,40 @@ class Ft4AudioTransmitterTest {
         assertTrue("generate" !in events)
     }
 
+    @Test
+    fun staleAutomaticIntentIsRejectedBeforeCatOrPtt() = runTest {
+        val events = mutableListOf<String>()
+        var current = true
+        val transmitter = Ft4AudioTransmitter(
+            context = null,
+            ft4Service = FakeFt4Service(events),
+            coordinator = FakeCoordinator(events),
+            clock = FakeClock({ testScheduler.currentTime }, allowed = true),
+            outputFactory = Ft4AudioOutputFactory { _, _ -> FakeOutput(events) }
+        )
+        val transmission = async {
+            runCatching {
+                transmitter.transmit(request(1_000L, automatic = true).copy(isStillCurrent = { current }))
+            }
+        }
+        runCurrent()
+        current = false
+        advanceTimeBy(650L)
+        runCurrent()
+
+        val failure = transmission.await().exceptionOrNull()
+        assertTrue(failure?.message?.contains("intent became stale") == true)
+        assertTrue("begin" !in events)
+        assertTrue("confirm" !in events)
+        assertTrue("play" !in events)
+    }
+
     private fun request(slotStart: Long, automatic: Boolean) = Ft4TransmissionRequest(
         message = "CQ N0CALL FN42",
         audioFrequencyHz = 1_500f,
         slotStartUtcMillis = slotStart,
         sessionGeneration = 3,
+        sessionId = "test-session",
         satelliteCatalogNumber = 25544,
         transponderUuid = "xpdr",
         automatic = automatic
@@ -153,7 +193,20 @@ private class FakeCoordinator(private val events: MutableList<String>) : IFt4Tra
 
     override suspend fun beginTransmit(request: TxRequest): TxLease {
         events += "begin"
-        return TxLease(1, request.sessionGeneration, 145_900_000, 1_000, 0, request.maximumPttMillis)
+        return TxLease(
+            id = 1,
+            sessionGeneration = request.sessionGeneration,
+            effectiveTxFrequencyHz = 145_900_000,
+            txDopplerCorrectionHz = 1_000,
+            waveformStartUtcMillis = request.waveformStartUtcMillis,
+            waveformMidpointUtcMillis = request.waveformStartUtcMillis + request.waveformDurationMillis / 2,
+            waveformDurationMillis = request.waveformDurationMillis,
+            maximumPttMillis = request.maximumPttMillis,
+            expectedSatelliteCatalogNumber = request.expectedSatelliteCatalogNumber,
+            expectedTransponderUuid = request.expectedTransponderUuid,
+            pttSafetyGeneration = 0L,
+            automatic = request.automatic
+        )
     }
 
     override suspend fun confirmTransmitReady(lease: TxLease) {

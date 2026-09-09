@@ -16,10 +16,21 @@ data class Ft4TransmissionRequest(
     val audioFrequencyHz: Float,
     val slotStartUtcMillis: Long,
     val sessionGeneration: Long,
+    val sessionId: String,
     val satelliteCatalogNumber: Int,
     val transponderUuid: String,
     val automatic: Boolean,
-    val volume: Float = 0.8f
+    val volume: Float = 0.8f,
+    val isStillCurrent: () -> Boolean = { true },
+    val onProgress: (Ft4TransmissionProgress) -> Unit = {}
+)
+
+enum class Ft4TransmissionResult { PREPARING, STARTED, COMPLETED, FAILED }
+
+data class Ft4TransmissionProgress(
+    val utcMillis: Long,
+    val result: Ft4TransmissionResult,
+    val detail: String = ""
 )
 
 sealed interface Ft4TransmitState {

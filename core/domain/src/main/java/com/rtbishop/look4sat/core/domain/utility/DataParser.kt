@@ -25,7 +25,6 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.decodeFromJsonElement
 import java.io.InputStream
-import kotlin.math.pow
 
 class DataParser(private val dispatcher: CoroutineDispatcher) {
 
@@ -41,21 +40,25 @@ class DataParser(private val dispatcher: CoroutineDispatcher) {
     }
 
     suspend fun parseTLEStream(stream: InputStream): List<OrbitalData> = withContext(dispatcher) {
-        stream.bufferedReader().readLines()
-            .chunked(3)
-            .filter { it.size == 3 && it[1].startsWith("1") && it[2].startsWith("2") }
-            .mapNotNull { parseTLE(it) }
+        stream.bufferedReader().use { reader ->
+            reader.readLines()
+                .chunked(3)
+                .filter { it.size == 3 && it[1].startsWith("1") && it[2].startsWith("2") }
+                .mapNotNull { parseTLE(it) }
+        }
     }
 
     suspend fun parseJSONStream(stream: InputStream): List<SatRadio> = withContext(dispatcher) {
-        runCatching {
-            val root = json.parseToJsonElement(stream.bufferedReader().readText())
-            (root as? JsonArray)?.mapNotNull { element ->
-                runCatching { json.decodeFromJsonElement<SatRadio>(element) }
-                    .onFailure { println("JSON parsing exception: $it") }
-                    .getOrNull()
-            } ?: emptyList()
-        }.getOrDefault(emptyList())
+        stream.bufferedReader().use { reader ->
+            runCatching {
+                val root = json.parseToJsonElement(reader.readText())
+                (root as? JsonArray)?.mapNotNull { element ->
+                    runCatching { json.decodeFromJsonElement<SatRadio>(element) }
+                        .onFailure { println("JSON parsing exception: $it") }
+                        .getOrNull()
+                } ?: emptyList()
+            }.getOrDefault(emptyList())
+        }
     }
 
     private fun parseCSV(values: List<String>): OrbitalData? = runCatching {
@@ -100,10 +103,20 @@ class DataParser(private val dispatcher: CoroutineDispatcher) {
             argper = line2.substring(34, 42).toDouble(),
             meanan = line2.substring(43, 51).toDouble(),
             catnum = line1.substring(2, 7).trim().toInt(),
-            bstar = 1e-5 * line1.substring(53, 59).toDouble() / 10.0.pow(line1.substring(60, 61).toDouble()),
+            bstar = parseTleExponent(line1.substring(53, 61)),
             ndot = line1.substring(33, 43).trim().toDouble()
         )
     }.onFailure { println("TLE parsing exception: $it") }.getOrNull()
+
+    private fun parseTleExponent(field: String): Double {
+        require(field.length == 8)
+        require(field[0] == ' ' || field[0] == '+' || field[0] == '-')
+        require(field.substring(1, 6).all(Char::isDigit))
+        require(field[6] == '+' || field[6] == '-')
+        require(field[7].isDigit())
+        val mantissaSign = if (field[0] == '-') "-" else ""
+        return "${mantissaSign}0.${field.substring(1, 6)}E${field.substring(6)}".toDouble()
+    }
 
     fun isLeapYear(year: Int): Boolean = (year % 4 == 0 && year % 100 != 0) || year % 400 == 0
 

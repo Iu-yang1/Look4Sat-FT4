@@ -197,9 +197,11 @@
     <string name="rc_tx_name_hint">发射电台名称</string>
     <string name="rc_rx_name_hint">接收电台名称</string>
     <string name="rc_enable_switch">启用 CAT 控制</string>
-    <string name="rc_split_mode">Split 模式（单电台）</string>
-    <string name="rc_split_mode_hint">在一台 Icom 电台上使用 VFO-A/B Split，不使用双电台</string>
-    <string name="rc_single_radio">电台（单机 Split）</string>
+    <string name="rc_split_mode">单电台双工控制</string>
+    <string name="rc_split_mode_hint">使用一台 Icom 电台同时控制上行与下行</string>
+    <string name="rc_satellite_mode">专用卫星模式</string>
+    <string name="rc_satellite_mode_hint">开启：SAT MAIN/SUB；关闭：回退普通 VFO-A/B Split。</string>
+    <string name="rc_single_radio">电台（单机双工）</string>
     <string name="rc_tx_radio">TX 电台（上行）</string>
     <string name="rc_rx_radio">RX 电台（下行）</string>
     <string name="rc_select_device">选择设备</string>
@@ -209,8 +211,11 @@
     <string name="rc_no_paired_devices">未找到可用 CAT 设备。</string>
     <string name="rc_baud_rate">波特率：</string>
     <string name="rc_cat_transport">CAT 传输</string>
-    <string name="rc_tx_tcp_address">TX 主机:端口</string>
-    <string name="rc_rx_tcp_address">RX 主机:端口</string>
+    <string name="rc_tx_tcp_address">TX 原始 CAT 主机:端口</string>
+    <string name="rc_rx_tcp_address">RX 原始 CAT 主机:端口</string>
+    <string name="rc_tcp_raw_hint">TCP 直接发送原始 CAT 字节，不是 rigctld 客户端。</string>
+    <string name="rc_usb_cdc_hint">USB 支持 CDC-ACM、CP210x、FTDI 与 CH34x CAT 串口。请选择电台 CAT 端口，而不是音频接口。</string>
+    <string name="rc_usb_cdc_device">%1$s · %2$s 端口 #%3$d · %4$s</string>
 
     <string name="prefs_other_title">其他设置</string>
     <string name="prefs_ft4_title">FT4 与时间同步</string>
@@ -343,6 +348,7 @@
     <string name="ft4_connected">已连接</string>
     <string name="ft4_disconnected">未连接</string>
     <string name="ft4_split">单机 split</string>
+    <string name="ft4_satellite_mode">单机卫星 MAIN/SUB</string>
     <string name="ft4_dual_radio">双电台</string>
     <string name="ft4_mode_value">模式 TX %1$s / RX %2$s · PTT %3$s</string>
     <string name="ft4_cat_busy">CAT 忙碌</string>
@@ -371,6 +377,7 @@
     <string name="ft4_slot_diagnostics">时隙 %1$s · %2$d/90,000 样本</string>
     <string name="ft4_slot_pending">等待下一完整边界</string>
     <string name="ft4_pipeline_diagnostics">捕获队列 %1$d · 解码队列 %2$d · 丢块 %3$d</string>
+    <string name="ft4_pipeline_overload">已丢弃过期解码时隙：%1$d</string>
     <string name="ft4_decode_diagnostics">解码 %1$d ms · %2$d 个结果</string>
     <string name="ft4_decode_diagnostics_pending">解码 -- · 0 个结果</string>
     <string name="ft4_audio_system_silenced">麦克风正被其他应用占用</string>
@@ -452,4 +459,22 @@
     <string name="ft4_gate_pass">尚未选择过境</string>
     <string name="ft4_gate_transponder">尚未选择转发器</string>
     <string name="ft4_gate_callsign">尚未设置本机呼号</string>
+    <string name="map_grid_mode">网格模式</string>
+    <string name="map_satellite_mode">卫星模式</string>
+    <string name="grid_qso_calls_count">%1$d 个呼号 · %2$d 次通联</string>
+    <string name="grid_qso_first">首通</string>
+    <string name="grid_qso_no_sat">卫星未知</string>
+    <string name="nav_logbook">日志本</string>
+    <string name="quicklog_select_satellite">选择卫星 ▾</string>
+    <string name="quicklog_no_passes">暂无可选过境</string>
+    <string name="quicklog_callsign">对方呼号</string>
+    <string name="quicklog_sent">发</string>
+    <string name="quicklog_received">收</string>
+    <string name="quicklog_save">保存</string>
+    <string name="quicklog_invalid_callsign">请输入有效呼号。</string>
+    <string name="quicklog_invalid_report">话音使用 RS（59），CW 使用 RST（599）。</string>
+    <string name="quicklog_save_failed">保存失败，输入已保留，请重试。</string>
+    <string name="quicklog_saved">已保存 %1$s</string>
+    <string name="map_grid_empty">在日志本同步 LoTW，可显示已确认网格与奖项进度。</string>
+    <string name="map_boundaries_loading">正在加载边界…</string>
 </resources>

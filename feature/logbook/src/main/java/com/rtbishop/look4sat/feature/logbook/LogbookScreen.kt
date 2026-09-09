@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -53,6 +54,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.rtbishop.look4sat.core.domain.logbook.QsoRecord
 import com.rtbishop.look4sat.core.domain.logbook.QsoStatus
+import com.rtbishop.look4sat.core.domain.logbook.displayMode
 import com.rtbishop.look4sat.core.domain.repository.IContainerProvider
 import com.rtbishop.look4sat.core.presentation.CardButton
 import com.rtbishop.look4sat.core.presentation.IconCard
@@ -68,7 +70,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 @Composable
-fun LogbookScreenDestination(navigateUp: () -> Unit) {
+fun LogbookScreenDestination(navigateUp: () -> Unit, navigateToMap: () -> Unit = {}) {
     val context = LocalContext.current
     val container = (context.applicationContext as IContainerProvider).getMainContainer()
     val viewModel: LogbookViewModel = viewModel(factory = LogbookViewModel.factory(container))
@@ -76,23 +78,69 @@ fun LogbookScreenDestination(navigateUp: () -> Unit) {
     val scope = rememberCoroutineScope()
     var exportContent by remember { mutableStateOf("") }
     var exportComplete by remember { mutableStateOf(false) }
+    var showExportOptions by remember { mutableStateOf(false) }
     val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri ?: return@rememberLauncherForActivityResult
         scope.launch {
-            val content = withContext(Dispatchers.IO) {
-                context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }.orEmpty()
+            try {
+                val content = withContext(Dispatchers.IO) {
+                    context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
+                        ?: error("Cannot read ADI file")
+                }
+                viewModel.onAction(LogbookAction.Import(content))
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                viewModel.onAction(LogbookAction.Error(error.message.orEmpty()))
             }
-            viewModel.onAction(LogbookAction.Import(content))
         }
     }
     val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/plain")) { uri ->
         uri ?: return@rememberLauncherForActivityResult
         scope.launch {
-            withContext(Dispatchers.IO) {
-                context.contentResolver.openOutputStream(uri, "wt")?.bufferedWriter()?.use { it.write(exportContent) }
+            try {
+                withContext(Dispatchers.IO) {
+                    val stream = context.contentResolver.openOutputStream(uri, "wt") ?: error("Cannot write ADI file")
+                    stream.bufferedWriter().use { it.write(exportContent) }
+                }
+                exportComplete = true
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                viewModel.onAction(LogbookAction.Error(error.message.orEmpty()))
             }
-            exportComplete = true
         }
+    }
+    val exportAdi: (Boolean) -> Unit = { includeIncomplete ->
+        showExportOptions = false
+        scope.launch {
+            try {
+                exportContent = viewModel.exportAdi(includeIncomplete)
+                exportLauncher.launch("look4sat-${fileDate()}.adi")
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                viewModel.onAction(LogbookAction.Error(error.message.orEmpty()))
+            }
+        }
+    }
+
+    if (showExportOptions) {
+        AlertDialog(
+            onDismissRequest = { showExportOptions = false },
+            title = { Text(stringResource(R.string.logbook_export)) },
+            text = { Text(stringResource(R.string.logbook_export_scope_description)) },
+            confirmButton = {
+                TextButton(onClick = { exportAdi(false) }) {
+                    Text(stringResource(R.string.logbook_export_complete_only))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { exportAdi(true) }) {
+                    Text(stringResource(R.string.logbook_export_all))
+                }
+            }
+        )
     }
 
     LogbookScreen(
@@ -100,11 +148,10 @@ fun LogbookScreenDestination(navigateUp: () -> Unit) {
         navigateUp = navigateUp,
         onAction = viewModel::onAction,
         onImport = { importLauncher.launch(arrayOf("text/plain", "application/octet-stream", "*/*")) },
-        onExport = {
-            scope.launch {
-                exportContent = viewModel.exportAdi()
-                exportLauncher.launch("look4sat-ft4-${fileDate()}.adi")
-            }
+        onExport = { showExportOptions = true },
+        onMap = {
+            container.settingsRepo.updateOtherSettings { it.copy(stateOfMapGrid = true) }
+            navigateToMap()
         },
         exportComplete = exportComplete,
         dismissExportComplete = { exportComplete = false }
@@ -118,10 +165,13 @@ private fun LogbookScreen(
     onAction: (LogbookAction) -> Unit,
     onImport: () -> Unit,
     onExport: () -> Unit,
+    onMap: () -> Unit,
     exportComplete: Boolean,
     dismissExportComplete: () -> Unit
 ) {
-    state.editor?.let { LogbookEditorDialog(it, onAction) }
+    state.editor?.let { LogbookEditorDialog(it, onAction, state.isBusy, state.error) }
+    if (state.showLoTW) LoTWDialog(state, onAction)
+    if (state.showStation) LogbookStationDialog(state, onAction)
     state.deleteCandidate?.let { record ->
         AlertDialog(
             onDismissRequest = { onAction(LogbookAction.DismissDelete) },
@@ -140,57 +190,94 @@ private fun LogbookScreen(
         )
     }
     ScreenColumn {
-        TopBar {
-            IconCard(action = navigateUp, resId = CoreR.drawable.ic_back)
-            ElevatedCard(modifier = Modifier.weight(1f)) {
-                Text(
-                    stringResource(R.string.logbook_title),
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 12.dp)
-                )
-            }
-            IconCard(action = { onAction(LogbookAction.Add) }, resId = CoreR.drawable.ic_add)
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
-            CardButton(onClick = onImport, text = stringResource(R.string.logbook_import), modifier = Modifier.weight(1f))
-            CardButton(
-                onClick = onExport,
-                text = stringResource(R.string.logbook_export),
-                enabled = state.records.isNotEmpty(),
-                modifier = Modifier.weight(1f)
-            )
-        }
-        val notice = when {
-            state.error.isNotBlank() -> stringResource(R.string.logbook_error, state.error)
-            state.importResult != null -> stringResource(
-                R.string.logbook_import_result,
-                state.importResult.imported,
-                state.importResult.skipped
-            )
-            exportComplete -> stringResource(R.string.logbook_exported)
-            else -> null
-        }
-        notice?.let {
-            ElevatedCard(
-                modifier = Modifier.fillMaxWidth().clickable {
-                    onAction(LogbookAction.ClearNotice)
-                    dismissExportComplete()
+        Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            TopBar {
+                IconCard(action = navigateUp, resId = CoreR.drawable.ic_back)
+                ElevatedCard(modifier = Modifier.weight(1f)) {
+                    Column(Modifier.padding(horizontal = 12.dp, vertical = 6.dp)) {
+                        Text(stringResource(R.string.logbook_title), fontWeight = FontWeight.Bold)
+                        Text(
+                            stringResource(R.string.logbook_counts, state.records.size, state.records.count { it.lotwConfirmed }),
+                            style = MaterialTheme.typography.labelSmall
+                        )
+                    }
                 }
-            ) { Text(it, modifier = Modifier.padding(10.dp)) }
-        }
-        if (state.records.isEmpty()) {
-            ElevatedCard(modifier = Modifier.fillMaxWidth()) {
-                Text(stringResource(R.string.logbook_empty), modifier = Modifier.padding(16.dp))
+                IconCard(action = { onAction(LogbookAction.ShowStation) }, resId = CoreR.drawable.ic_settings)
+                IconCard(action = { onAction(LogbookAction.Add) }, resId = CoreR.drawable.ic_add)
             }
-        } else {
-            LazyColumn(
-                modifier = Modifier.fillMaxSize(),
-                verticalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                items(state.records, key = { it.id }) { record ->
-                    QsoCard(record, onEdit = { onAction(LogbookAction.Edit(record)) }, onDelete = {
-                        onAction(LogbookAction.RequestDelete(record))
-                    })
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
+                CardButton(onClick = onImport, text = stringResource(R.string.logbook_import), modifier = Modifier.weight(1f))
+                CardButton(
+                    onClick = onExport,
+                    text = stringResource(R.string.logbook_export),
+                    enabled = state.records.isNotEmpty(),
+                    modifier = Modifier.weight(1f)
+                )
+                CardButton(
+                    onClick = { onAction(LogbookAction.ShowLoTW) },
+                    text = "LoTW", modifier = Modifier.weight(1f)
+                )
+                IconButton(onClick = onMap) {
+                    Icon(painterResource(CoreR.drawable.ic_map), stringResource(R.string.logbook_grid_map))
+                }
+            }
+            LogbookFilters(state, onAction)
+            val notice = when {
+                state.error.isNotBlank() -> stringResource(R.string.logbook_error, state.error)
+                state.importResult != null -> stringResource(
+                    R.string.logbook_import_result,
+                    state.importResult.imported,
+                    state.importResult.skipped,
+                    state.importResult.updated
+                )
+                state.lotwResult != null -> stringResource(
+                    R.string.logbook_sync_result, state.lotwResult.imported, state.lotwResult.updated, state.lotwResult.skipped
+                )
+                exportComplete -> stringResource(R.string.logbook_exported)
+                else -> null
+            }
+            notice?.let {
+                ElevatedCard(
+                    modifier = Modifier.fillMaxWidth().clickable {
+                        onAction(LogbookAction.ClearNotice)
+                        dismissExportComplete()
+                    }
+                ) { Text(it, modifier = Modifier.padding(10.dp)) }
+            }
+            val filtered = remember(state.records, state.query, state.modeFilter, state.confirmationFilter) { state.filteredRecords }
+            if (filtered.isEmpty()) {
+                ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+                    Text(stringResource(if (state.records.isEmpty()) R.string.logbook_empty else R.string.logbook_no_matches), modifier = Modifier.padding(16.dp))
+                }
+            } else {
+                LazyColumn(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    if (state.groupByCallsign) {
+                        val groups = filtered.groupBy { it.theirCallsign }
+                        groups.forEach { (call, contacts) ->
+                            item(key = "call_$call") {
+                                Text(
+                                    "$call · ${contacts.size}",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                )
+                            }
+                            items(contacts, key = { it.id }) { record ->
+                                QsoCard(record, onEdit = { onAction(LogbookAction.Edit(record)) }, onDelete = {
+                                    onAction(LogbookAction.RequestDelete(record))
+                                })
+                            }
+                        }
+                    } else {
+                        items(filtered, key = { it.id }) { record ->
+                            QsoCard(record, onEdit = { onAction(LogbookAction.Edit(record)) }, onDelete = {
+                                onAction(LogbookAction.RequestDelete(record))
+                            })
+                        }
+                    }
                 }
             }
         }
@@ -208,8 +295,13 @@ private fun QsoCard(record: QsoRecord, onEdit: () -> Unit, onDelete: () -> Unit)
         ) {
             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(record.theirCallsign, fontWeight = FontWeight.Bold, fontSize = 18.sp)
-                    Text(statusLabel(record.status), color = MaterialTheme.colorScheme.primary, fontSize = 12.sp)
+                    Text(record.theirCallsign, fontWeight = FontWeight.Bold, fontSize = 18.sp,
+                        modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(
+                        if (record.lotwConfirmed) "✓ LoTW" else statusLabel(record.status),
+                        color = MaterialTheme.colorScheme.primary, fontSize = 12.sp
+                    )
+                    Text(record.displayMode, style = MaterialTheme.typography.labelMedium)
                 }
                 Text(
                     stringResource(
@@ -221,13 +313,23 @@ private fun QsoCard(record: QsoRecord, onEdit: () -> Unit, onDelete: () -> Unit)
                     overflow = TextOverflow.Ellipsis
                 )
                 Text(
+                    "${record.sentReport.ifBlank { "—" }} / ${record.receivedReport.ifBlank { "—" }} · ${record.theirGrid.ifBlank { "—" }}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
                     stringResource(
                         R.string.logbook_frequency_summary,
                         record.txFrequencyHz?.let(::formatMhz) ?: notSet,
-                        record.rxFrequencyHz?.let(::formatMhz) ?: notSet
+                        record.rxFrequencyHz?.let(::formatMhz) ?: notSet,
+                        record.submode.ifBlank { record.mode }.ifBlank { notSet }
                     ),
                     fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                if (record.comment.isNotBlank()) Text(
+                    record.comment, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    style = MaterialTheme.typography.bodySmall
                 )
             }
             IconButton(onClick = onDelete) {
@@ -238,7 +340,8 @@ private fun QsoCard(record: QsoRecord, onEdit: () -> Unit, onDelete: () -> Unit)
 }
 
 @Composable
-private fun LogbookEditorDialog(editor: LogbookEditor, onAction: (LogbookAction) -> Unit) {
+private fun LogbookEditorDialog(editor: LogbookEditor, onAction: (LogbookAction) -> Unit, busy: Boolean, error: String) {
+    var showDetails by remember(editor.id) { mutableStateOf(false) }
     fun update(transform: (LogbookEditor) -> LogbookEditor) = onAction(LogbookAction.Update(transform(editor)))
     AlertDialog(
         onDismissRequest = { onAction(LogbookAction.DismissEditor) },
@@ -248,24 +351,48 @@ private fun LogbookEditorDialog(editor: LogbookEditor, onAction: (LogbookAction)
                 modifier = Modifier.heightIn(max = 520.dp).verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
+                if (error.isNotBlank()) Text(error, color = MaterialTheme.colorScheme.error)
+                EditorField(editor.utcText, R.string.logbook_utc_time) { value -> update { it.copy(utcText = value) } }
                 EditorField(editor.theirCallsign, R.string.logbook_callsign) { value -> update { it.copy(theirCallsign = value) } }
-                EditorField(editor.myCallsign, R.string.logbook_my_callsign) { value -> update { it.copy(myCallsign = value) } }
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    EditorField(editor.theirGrid, R.string.logbook_grid, Modifier.weight(1f)) { value -> update { it.copy(theirGrid = value) } }
-                    EditorField(editor.myGrid, R.string.logbook_my_grid, Modifier.weight(1f)) { value -> update { it.copy(myGrid = value) } }
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    items(listOf("CW", "SSB", "FM", "FT4", "FT8", "RTTY", "AM")) { mode ->
+                        FilterChip(
+                            selected = (editor.submode.ifBlank { editor.mode }) == mode,
+                            onClick = { update { it.copy(mode = if (mode == "FT4") "MFSK" else mode, submode = if (mode == "FT4") "FT4" else "") } },
+                            label = { Text(mode) }
+                        )
+                    }
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     EditorField(editor.sentReport, R.string.logbook_report_sent, Modifier.weight(1f)) { value -> update { it.copy(sentReport = value) } }
                     EditorField(editor.receivedReport, R.string.logbook_report_received, Modifier.weight(1f)) { value -> update { it.copy(receivedReport = value) } }
                 }
-                EditorField(editor.txFrequencyHz, R.string.logbook_tx_frequency) { value -> update { it.copy(txFrequencyHz = value) } }
-                EditorField(editor.rxFrequencyHz, R.string.logbook_rx_frequency) { value -> update { it.copy(rxFrequencyHz = value) } }
                 EditorField(editor.satelliteName, R.string.logbook_satellite) { value -> update { it.copy(satelliteName = value) } }
-                EditorField(editor.transponderName, R.string.logbook_transponder) { value -> update { it.copy(transponderName = value) } }
-                EditorField(editor.satelliteMode, R.string.logbook_satellite_mode) { value -> update { it.copy(satelliteMode = value) } }
+                EditorField(editor.comment, R.string.logbook_comment) { value -> update { it.copy(comment = value) } }
+                TextButton(onClick = { showDetails = !showDetails }) {
+                    Text(stringResource(R.string.logbook_advanced) + if (showDetails) " ▴" else " ▾")
+                }
+                if (showDetails) {
+                    EditorField(editor.myCallsign, R.string.logbook_my_callsign) { value -> update { it.copy(myCallsign = value) } }
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        EditorField(editor.theirGrid, R.string.logbook_grid, Modifier.weight(1f)) { value -> update { it.copy(theirGrid = value) } }
+                        EditorField(editor.myGrid, R.string.logbook_my_grid, Modifier.weight(1f)) { value -> update { it.copy(myGrid = value) } }
+                    }
+                    EditorField(editor.txFrequencyHz, R.string.logbook_tx_frequency) { value -> update { it.copy(txFrequencyHz = value) } }
+                    EditorField(editor.rxFrequencyHz, R.string.logbook_rx_frequency) { value -> update { it.copy(rxFrequencyHz = value) } }
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        EditorField(editor.mode, R.string.logbook_mode, Modifier.weight(1f)) { value -> update { it.copy(mode = value) } }
+                        EditorField(editor.submode, R.string.logbook_submode, Modifier.weight(1f)) { value -> update { it.copy(submode = value) } }
+                    }
+                    EditorField(editor.transponderName, R.string.logbook_transponder) { value -> update { it.copy(transponderName = value) } }
+                    EditorField(editor.satelliteMode, R.string.logbook_satellite_mode) { value -> update { it.copy(satelliteMode = value) } }
+                }
+                if (editor.source?.lotwConfirmed == true) {
+                    Text(stringResource(R.string.logbook_confirmed), color = MaterialTheme.colorScheme.primary)
+                }
                 Text(stringResource(R.string.logbook_status), fontWeight = FontWeight.Medium)
-                Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                    QsoStatus.entries.forEach { status ->
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                    items(QsoStatus.entries) { status ->
                         FilterChip(
                             selected = editor.status == status,
                             onClick = { update { it.copy(status = status) } },
@@ -280,10 +407,10 @@ private fun LogbookEditorDialog(editor: LogbookEditor, onAction: (LogbookAction)
             }
         },
         confirmButton = {
-            TextButton(onClick = { onAction(LogbookAction.Save) }) { Text(stringResource(R.string.logbook_save)) }
+            TextButton(enabled = !busy, onClick = { onAction(LogbookAction.Save) }) { Text(stringResource(R.string.logbook_save)) }
         },
         dismissButton = {
-            TextButton(onClick = { onAction(LogbookAction.DismissEditor) }) { Text(stringResource(R.string.logbook_cancel)) }
+            TextButton(enabled = !busy, onClick = { onAction(LogbookAction.DismissEditor) }) { Text(stringResource(R.string.logbook_cancel)) }
         }
     )
 }

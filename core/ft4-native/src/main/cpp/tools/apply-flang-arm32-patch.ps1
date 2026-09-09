@@ -28,7 +28,7 @@ try {
     & $GitPath apply --reverse --check $patchFile 2>$null
     if ($LASTEXITCODE -eq 0) {
         Write-Host "Flang ARM32 patch is already applied: $LlvmSourceRoot"
-        exit 0
+        return
     }
     & $GitPath apply --check $patchFile
     if ($LASTEXITCODE -ne 0) {

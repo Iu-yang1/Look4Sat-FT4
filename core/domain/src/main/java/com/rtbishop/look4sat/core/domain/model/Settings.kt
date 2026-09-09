@@ -20,7 +20,8 @@ package com.rtbishop.look4sat.core.domain.model
 data class DatabaseState(
     val numberOfRadios: Int,
     val numberOfSatellites: Int,
-    val updateTimestamp: Long
+    val updateTimestamp: Long,
+    val contentVersion: Long = 0L
 )
 
 data class PassesSettings(
@@ -63,7 +64,8 @@ data class OtherSettings(
     val shouldSeeWhatsNew: Boolean,
     val sstvMode: String = "Auto",
     val lowElevation: Double = 15.0,
-    val highElevation: Double = 45.0
+    val highElevation: Double = 45.0,
+    val stateOfMapGrid: Boolean = false
 )
 
 data class Ft4Settings(
@@ -92,26 +94,41 @@ data class RadioControlSettings(
     val rxRadioAddress: String,
     val txRadioName: String,
     val rxRadioName: String,
-      val baudRate: Int,
-      /** IC-705 only: use single-radio split-VFO mode instead of two radios. */
-      val splitMode: Boolean = false,
-      val catTransport: String = TRANSPORT_BLUETOOTH
+    val baudRate: Int,
+    /** Use one Icom radio with VFO-A/B split or supported satellite MAIN/SUB control. */
+    val splitMode: Boolean = false,
+    val catTransport: String = TRANSPORT_BLUETOOTH,
+    /** Dedicated satellite MAIN/SUB when supported; ordinary VFO-A/B split otherwise. */
+    val duplexMode: String = DUPLEX_MODE_SPLIT
 ) {
     companion object {
-        const val MODEL_YAESU_FT817   = "Yaesu FT-817/818"
-        const val MODEL_YAESU_FT857   = "Yaesu FT-857/897"
-        const val MODEL_ICOM_IC705    = "Icom IC-705"
-          const val MODEL_ICOM_IC9700   = "Icom IC-9700"
-          const val TRANSPORT_BLUETOOTH = "BLUETOOTH"
-          const val TRANSPORT_USB = "USB"
-          const val TRANSPORT_TCP = "TCP"
+        const val MODEL_YAESU_FT817 = "Yaesu FT-817/818"
+        const val MODEL_YAESU_FT857 = "Yaesu FT-857/897"
+        const val MODEL_ICOM_IC705 = "Icom IC-705"
+        const val MODEL_ICOM_IC9700 = "Icom IC-9700"
+        const val MODEL_ICOM_IC910 = "Icom IC-910/D/H"
+        const val TRANSPORT_BLUETOOTH = "BLUETOOTH"
+        const val TRANSPORT_USB = "USB"
+        const val TRANSPORT_TCP = "TCP"
+        const val DUPLEX_MODE_SPLIT = "SPLIT"
+        const val DUPLEX_MODE_SATELLITE = "SATELLITE"
 
-          val SUPPORTED_RADIOS = listOf(MODEL_YAESU_FT817, MODEL_YAESU_FT857, MODEL_ICOM_IC705, MODEL_ICOM_IC9700)
-          val SUPPORTED_TRANSPORTS = listOf(TRANSPORT_BLUETOOTH, TRANSPORT_USB, TRANSPORT_TCP)
+        val SUPPORTED_RADIOS = listOf(
+            MODEL_YAESU_FT817,
+            MODEL_YAESU_FT857,
+            MODEL_ICOM_IC705,
+            MODEL_ICOM_IC9700,
+            MODEL_ICOM_IC910
+        )
+        val ICOM_RADIOS = setOf(MODEL_ICOM_IC705, MODEL_ICOM_IC9700, MODEL_ICOM_IC910)
+        val SATELLITE_MODE_RADIOS = setOf(MODEL_ICOM_IC9700, MODEL_ICOM_IC910)
+        val SUPPORTED_TRANSPORTS = listOf(TRANSPORT_BLUETOOTH, TRANSPORT_USB, TRANSPORT_TCP)
 
         /** Baud rates available for Yaesu radios. */
         val BAUD_RATES_YAESU = listOf(4800, 9600, 38400)
-        /** Baud rates available for Icom IC-705 (higher speeds supported via CI-V USB/BT). */
+        /** Baud rates available for modern Icom CI-V USB/Bluetooth interfaces. */
         val BAUD_RATES_ICOM  = listOf(4800, 9600, 19200, 38400, 57600, 115200)
+        /** Hamlib documents the IC-910 family serial interface as 300–19200 baud. */
+        val BAUD_RATES_IC910 = listOf(9600, 19200, 4800, 1200, 300)
     }
 }

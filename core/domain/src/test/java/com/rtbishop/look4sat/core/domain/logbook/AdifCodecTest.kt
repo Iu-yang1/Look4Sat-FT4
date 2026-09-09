@@ -54,4 +54,44 @@ class AdifCodecTest {
         assertEquals(1, decoded.size)
         assertEquals("K1ABC", decoded.single().theirCallsign)
     }
+
+    @Test
+    fun `mixed modes and structured events survive import and export`() {
+        val events = listOf(
+            QsoMessageEvent(
+                direction = QsoEventDirection.TX,
+                utcMillis = 1_725_189_306_100L,
+                result = QsoEventResult.COMPLETED,
+                sessionId = "session-1",
+                message = "K1ABC BA7OPF -08"
+            )
+        )
+        val records = listOf(
+            QsoRecord(
+                startUtcMillis = 1_725_189_306_000L,
+                theirCallsign = "K1ABC",
+                myCallsign = "BA7OPF",
+                mode = "FM",
+                submode = "",
+                status = QsoStatus.COMPLETE
+            ),
+            QsoRecord(
+                startUtcMillis = 1_725_189_313_500L,
+                theirCallsign = "K2XYZ",
+                myCallsign = "BA7OPF",
+                mode = "MFSK",
+                submode = "FT8",
+                sessionId = "session-1",
+                messageEvents = events,
+                status = QsoStatus.COMPLETE
+            )
+        )
+
+        val decoded = AdifCodec.decode(AdifCodec.encode(records))
+
+        assertEquals(listOf("FM", "MFSK"), decoded.map { it.mode })
+        assertEquals(listOf("", "FT8"), decoded.map { it.submode })
+        assertEquals(events, decoded.last().messageEvents)
+        assertEquals("session-1", decoded.last().sessionId)
+    }
 }

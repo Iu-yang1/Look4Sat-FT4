@@ -18,6 +18,7 @@
 package com.rtbishop.look4sat.feature.radar
 
 import com.rtbishop.look4sat.core.domain.model.SatRadio
+import com.rtbishop.look4sat.core.domain.model.RadioControlSettings
 import com.rtbishop.look4sat.core.domain.predict.CelestialComputer
 import com.rtbishop.look4sat.core.domain.predict.OrbitalPass
 import com.rtbishop.look4sat.core.domain.predict.OrbitalPos
@@ -70,7 +71,8 @@ data class RadarState(
     val mutualMaxElev: Double = 10.0,
     val mutualLabelA: String = "你",
     val mutualLabelB: String = "友台",
-    val calculatorOffsetKHz: String = ""
+    val calculatorOffsetKHz: String = "",
+    val radioTransport: String = RadioControlSettings.TRANSPORT_BLUETOOTH
 )
 
 enum class SstvStatus { Idle, Recording }

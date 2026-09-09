@@ -18,9 +18,10 @@
 package com.rtbishop.look4sat.core.data.framework
 
 import java.util.Locale
+import kotlin.math.roundToLong
 
 /**
- * Icom CI-V protocol encoder/decoder for the IC-705.
+ * Icom CI-V protocol encoder/decoder for the IC-705, IC-9700, and IC-910 family.
  *
  * Frame structure:
  *   FE FE <DEST> <SRC> <CMD> [<SUB>] [<DATA...>] FD
@@ -40,34 +41,33 @@ object IcomCivProtocol {
     /** Default CI-V address of the IC-705. */
     const val ADDR_IC705: Byte    = 0xA4.toByte()
     const val ADDR_IC9700: Byte   = 0xA2.toByte()
+    const val ADDR_IC910: Byte    = 0x60
     /** Default CI-V address of the controller (us). */
     const val ADDR_CTRL: Byte     = 0xE0.toByte()
 
     // ── Command bytes ──────────────────────────────────────────────────────
     /** Read operating frequency (main VFO). */
     const val CMD_READ_FREQ: Byte           = 0x03
+    /** Read operating mode (main VFO). */
+    const val CMD_READ_MODE: Byte           = 0x04
     /** Set operating frequency (main VFO). */
     const val CMD_SET_FREQ: Byte            = 0x05
     /** Set operating mode. */
     const val CMD_SET_MODE: Byte            = 0x06
-    /** Select VFO / memory. */
+    /** Select VFO mode or a specific VFO. */
     const val CMD_SELECT_VFO: Byte          = 0x07
-    /**
-     * Select operating mode (VFO vs memory-channel).
-     * Sub 0x00 = VFO mode. Must be sent after connect if the radio is in
-     * memory-channel mode — frequency/mode commands return FA until it is.
-     */
-    const val CMD_SELECT_OP_MODE: Byte      = 0x08
     /** Set repeater duplex / SPLIT. */
     const val CMD_DUPLEX_SPLIT: Byte        = 0x0F
-    /** Band stacking register / band select (sub 0x00 = select, data = BCD band number). */
-    const val CMD_BAND_SELECT: Byte         = 0x1A
+    /** Read/write memory and model-specific settings. */
+    const val CMD_MEMORY_CONTROL: Byte      = 0x1A
     /** Read/write CTCSS tone frequency. */
     const val CMD_CTCSS_TONE: Byte          = 0x1B
     /** Read/write misc settings (used for enabling CTCSS encode). */
     const val CMD_MISC_SETTING: Byte        = 0x16
     /** Read/write selected-VFO frequency (cmd 0x25). */
     const val CMD_SELECTED_VFO_FREQ: Byte   = 0x25
+    /** Read/write selected or unselected VFO mode (cmd 0x26). */
+    const val CMD_SELECTED_VFO_MODE: Byte   = 0x26
     /** Read/write transceiver state (sub 0x00 controls PTT). */
     const val CMD_TRANSCEIVER_STATUS: Byte  = 0x1C
 
@@ -76,6 +76,10 @@ object IcomCivProtocol {
     const val SUB_VFO_A: Byte   = 0x00
     /** Sub for CMD_SELECT_VFO: select VFO-B (sub). */
     const val SUB_VFO_B: Byte   = 0x01
+    /** Satellite-mode receiver (MAIN) selection. */
+    const val SUB_MAIN: Byte = 0xD0.toByte()
+    /** Satellite-mode transmitter (SUB) selection. */
+    const val SUB_SUB: Byte = 0xD1.toByte()
     /** Sub for CMD_DUPLEX_SPLIT: simplex / split OFF. */
     const val SUB_SPLIT_OFF: Byte = 0x00
     /** Sub for CMD_DUPLEX_SPLIT: SPLIT ON. */
@@ -86,10 +90,14 @@ object IcomCivProtocol {
     const val SUB_UNSELECTED_VFO: Byte = 0x01
     /** Sub for CMD_MISC_SETTING: CTCSS/DTCS tone squelch. */
     const val SUB_CTCSS_SETTING: Byte = 0x42.toByte()
+    /** Sub for CMD_MISC_SETTING: IC-9700 satellite mode. */
+    const val SUB_SATELLITE_MODE: Byte = 0x5A
+    /** IC-910 family satellite mode under CMD 0x1A. */
+    const val SUB_IC910_SATELLITE_MODE: Byte = 0x07
     const val SUB_PTT: Byte = 0x00
 
     // ── Mode bytes ────────────────────────────────────────────────────────
-    /** Maps mode strings (upper-case) → IC-705 mode bytes. */
+    /** Maps mode strings (upper-case) to CI-V mode bytes used by supported radios. */
     val MODE_TO_BYTE: Map<String, Byte> = mapOf(
         "LSB"    to 0x00,
         "USB"    to 0x01,
@@ -100,11 +108,14 @@ object IcomCivProtocol {
         "WFM"    to 0x06,
         "CW-R"   to 0x07,
         "RTTY-R" to 0x08,
-        "DV"     to 0x12,
+        "DV"     to 0x17,
         "AFSK"   to 0x05  // AFSK uses FM modulation
     )
 
-    val BYTE_TO_MODE: Map<Byte, String> = MODE_TO_BYTE.entries.associate { it.value to it.key }
+    val BYTE_TO_MODE: Map<Byte, String> = MODE_TO_BYTE
+        .filterKeys { it != "AFSK" }
+        .entries
+        .associate { it.value to it.key }
 
     // ── Frequency BCD encoding ─────────────────────────────────────────────
 
@@ -116,6 +127,7 @@ object IcomCivProtocol {
      *   [00, 00, 50, 45, 01]
      */
     fun encodeFrequencyBcd(frequencyHz: Long): ByteArray {
+        require(frequencyHz in 0L..9_999_999_999L) { "CI-V frequency is outside the 10-digit BCD range" }
         val digits = String.format(Locale.US, "%010d", frequencyHz)
         val bcd = ByteArray(5)
         for (i in 0 until 5) {
@@ -132,6 +144,7 @@ object IcomCivProtocol {
      * Decode 5-byte BCD frequency (LSB pair first) to Hz.
      */
     fun decodeFrequencyBcd(bcd: ByteArray): Long {
+        require(bcd.size == 5 && bcd.all(::isValidBcd)) { "Invalid CI-V frequency BCD" }
         // Build digit string MSB→LSB by reversing the byte order
         var freqHz = 0L
         for (i in 4 downTo 0) {
@@ -144,15 +157,17 @@ object IcomCivProtocol {
     }
 
     /**
-     * Encode a CTCSS tone (Hz, e.g. 67.0) to 2-byte BCD (0.1 Hz resolution).
-     * 67.0 → 670 (tenths of Hz) → BCD bytes [0x06, 0x70].
+     * Encode a CTCSS tone (Hz, e.g. 67.0) to CI-V's 3-byte big-endian BCD.
+     * 67.0 → 670 (tenths of Hz) → BCD bytes [0x00, 0x06, 0x70].
      */
     fun encodeCtcssToneBcd(toneHz: Double): ByteArray {
-        val tone01 = (toneHz * 10).toLong()
-        val digits = String.format(Locale.US, "%04d", tone01)
+        require(toneHz.isFinite() && toneHz in 0.0..999.9) { "Invalid CTCSS tone" }
+        val tone01 = (toneHz * 10).roundToLong()
+        val digits = String.format(Locale.US, "%06d", tone01)
         return byteArrayOf(
             ((digits[0] - '0') shl 4 or (digits[1] - '0')).toByte(),
-            ((digits[2] - '0') shl 4 or (digits[3] - '0')).toByte()
+            ((digits[2] - '0') shl 4 or (digits[3] - '0')).toByte(),
+            ((digits[4] - '0') shl 4 or (digits[5] - '0')).toByte()
         )
     }
 
@@ -191,47 +206,32 @@ object IcomCivProtocol {
     /** Read operating frequency (CMD 0x03). */
     fun buildReadFreqCommand(): ByteArray = frame(CMD_READ_FREQ)
 
+    /** Read operating mode (CMD 0x04). */
+    fun buildReadModeCommand(): ByteArray = frame(CMD_READ_MODE)
+
     /** Read selected (active) VFO frequency (CMD 0x25 sub 0x00). */
     fun buildReadWorkingFreqCommand(): ByteArray = frame(CMD_SELECTED_VFO_FREQ, SUB_SELECTED_VFO)
 
     /** Read unselected (inactive/TX in split) VFO frequency (CMD 0x25 sub 0x01). */
     fun buildReadTxVfoFreqCommand(): ByteArray = frame(CMD_SELECTED_VFO_FREQ, SUB_UNSELECTED_VFO)
 
-    /**
-     * Select band via CMD 0x1A sub 0x00.
-     * Band codes are BCD-numbered: 1=160m, 2=80m, …, 9=10m, 0x10=6m, 0x11=2m, 0x12=70cm, 0x13=23cm.
-     * Returns null if [frequencyHz] doesn't fall in a known amateur band.
-     */
-    fun buildBandSelectCommand(frequencyHz: Long): ByteArray? {
-        val code = bandCodeForFrequency(frequencyHz) ?: return null
-        return frame(CMD_BAND_SELECT, 0x00, code)
-    }
-
-    /**
-     * Map a frequency in Hz to the IC-705 band stacking register code.
-     * Codes are BCD (band number in decimal expressed as hex nibbles).
-     */
-    fun bandCodeForFrequency(frequencyHz: Long): Byte? = when {
-        frequencyHz in 1_800_000L     ..1_999_999L     -> 0x01 // 160 m
-        frequencyHz in 3_500_000L     ..3_999_999L     -> 0x02 // 80 m
-        frequencyHz in 7_000_000L     ..7_299_999L     -> 0x03 // 40 m
-        frequencyHz in 10_100_000L    ..10_149_999L    -> 0x04 // 30 m
-        frequencyHz in 14_000_000L    ..14_349_999L    -> 0x05 // 20 m
-        frequencyHz in 18_068_000L    ..18_167_999L    -> 0x06 // 17 m
-        frequencyHz in 21_000_000L    ..21_449_999L    -> 0x07 // 15 m
-        frequencyHz in 24_890_000L    ..24_989_999L    -> 0x08 // 12 m
-        frequencyHz in 28_000_000L    ..29_699_999L    -> 0x09 // 10 m
-        frequencyHz in 50_000_000L    ..53_999_999L    -> 0x10 // 6 m  (BCD 10)
-        frequencyHz in 144_000_000L   ..147_999_999L   -> 0x11 // 2 m  (BCD 11)
-        frequencyHz in 420_000_000L   ..449_999_999L   -> 0x12 // 70 cm (BCD 12)
-        frequencyHz in 1_240_000_000L ..1_299_999_999L -> 0x13 // 23 cm (BCD 13)
-        else -> null
-    }
-
     /** Set operating mode (CMD 0x06). Filter byte is omitted — radio uses its default filter for the mode. */
     fun buildSetModeCommand(mode: String): ByteArray? {
         val modeByte = MODE_TO_BYTE[mode.uppercase(Locale.US)] ?: return null
         return frame(CMD_SET_MODE, modeByte)
+    }
+
+    /** Set selected (0x00) or unselected (0x01) VFO mode via CMD 0x26. */
+    fun buildSetVfoModeCommand(selected: Boolean, mode: String): ByteArray? {
+        val modeByte = MODE_TO_BYTE[mode.uppercase(Locale.US)] ?: return null
+        val selector = if (selected) SUB_SELECTED_VFO else SUB_UNSELECTED_VFO
+        return frame(CMD_SELECTED_VFO_MODE, selector, modeByte)
+    }
+
+    /** Read selected (0x00) or unselected (0x01) VFO mode via CMD 0x26. */
+    fun buildReadVfoModeCommand(selected: Boolean): ByteArray {
+        val selector = if (selected) SUB_SELECTED_VFO else SUB_UNSELECTED_VFO
+        return frame(CMD_SELECTED_VFO_MODE, selector)
     }
 
     /** Select VFO-A (CMD 0x07 sub 0x00). */
@@ -240,18 +240,37 @@ object IcomCivProtocol {
     /** Select VFO-B (CMD 0x07 sub 0x01). */
     fun buildSelectVfoBCommand(): ByteArray = frame(CMD_SELECT_VFO, SUB_VFO_B)
 
-    /**
-     * Enter VFO operating mode (CMD 0x08 sub 0x00).
-     * Sent after connect — if the radio is in memory-channel mode frequency
-     * and mode commands return FA until this is issued.
-     */
-    fun buildEnterVfoModeCommand(): ByteArray = frame(CMD_SELECT_OP_MODE, 0x00)
+    /** Select the MAIN receiver while dedicated satellite mode is active. */
+    fun buildSelectMainCommand(): ByteArray = frame(CMD_SELECT_VFO, SUB_MAIN)
+
+    /** Select the SUB transmitter while dedicated satellite mode is active. */
+    fun buildSelectSubCommand(): ByteArray = frame(CMD_SELECT_VFO, SUB_SUB)
+
+    /** Enter VFO operating mode (CMD 0x07 with no sub-command). */
+    fun buildEnterVfoModeCommand(): ByteArray = frame(CMD_SELECT_VFO)
 
     /** Enable or disable SPLIT mode (CMD 0x0F). */
     fun buildSplitModeCommand(enable: Boolean): ByteArray {
         val sub = if (enable) SUB_SPLIT_ON else SUB_SPLIT_OFF
         return frame(CMD_DUPLEX_SPLIT, sub)
     }
+
+    /** Enable or disable the IC-9700's dedicated satellite mode. */
+    fun buildSatelliteModeCommand(enable: Boolean): ByteArray {
+        return frame(CMD_MISC_SETTING, SUB_SATELLITE_MODE, if (enable) 0x01 else 0x00)
+    }
+
+    /** Read the IC-9700's dedicated satellite-mode state. */
+    fun buildReadSatelliteModeCommand(): ByteArray = frame(CMD_MISC_SETTING, SUB_SATELLITE_MODE)
+
+    /** Enable or disable the IC-910 family's dedicated satellite mode (CMD 0x1A sub 0x07). */
+    fun buildIc910SatelliteModeCommand(enable: Boolean): ByteArray {
+        return frame(CMD_MEMORY_CONTROL, SUB_IC910_SATELLITE_MODE, if (enable) 0x01 else 0x00)
+    }
+
+    /** Read the IC-910 family's dedicated satellite-mode state. */
+    fun buildReadIc910SatelliteModeCommand(): ByteArray =
+        frame(CMD_MEMORY_CONTROL, SUB_IC910_SATELLITE_MODE)
 
     /**
      * Enable/disable CTCSS encode (CMD 0x16 sub 0x42).
@@ -303,7 +322,8 @@ object IcomCivProtocol {
     fun parseResponse(
         buf: ByteArray,
         expectCmd: Byte?,
-        radioAddress: Byte = ADDR_IC705
+        radioAddress: Byte = ADDR_IC705,
+        payloadMatches: (ByteArray) -> Boolean = { true }
     ): ParsedResponse? {
         var i = 0
         while (i < buf.size - 5) {
@@ -318,7 +338,7 @@ object IcomCivProtocol {
             val fdIdx = buf.indexOf(END_OF_MSG, startIndex = i + 5)
             if (fdIdx < 0) break  // incomplete frame, wait for more data
             val payload = buf.copyOfRange(i + 5, fdIdx)
-            if (expectCmd == null || cmd == expectCmd) {
+            if ((expectCmd == null || cmd == expectCmd) && payloadMatches(payload)) {
                 return ParsedResponse(cmd, payload, fdIdx + 1)
             }
             i = fdIdx + 1
@@ -356,15 +376,47 @@ object IcomCivProtocol {
     fun containsAck(buf: ByteArray, radioAddress: Byte = ADDR_IC705): Boolean =
         ackStatus(buf, radioAddress) == true
 
-    /**
-     * Parse frequency + mode from a CMD_READ_FREQ reply payload.
-     * Payload layout after stripping command byte: [5 freq bytes] [mode byte] [filter byte]
-     */
-    fun parseFreqModePayload(payload: ByteArray): Pair<Long, String>? {
+    /** Parse the five-byte frequency payload returned by CMD 0x03. */
+    fun parseFrequencyPayload(payload: ByteArray): Long? =
+        payload.takeIf { it.size >= 5 && it.copyOfRange(0, 5).all(::isValidBcd) }
+            ?.copyOfRange(0, 5)
+            ?.let(::decodeFrequencyBcd)
+
+    /** Parse a CMD 0x25 response and verify that it belongs to the requested VFO selector. */
+    fun parseVfoFrequencyPayload(payload: ByteArray, selected: Boolean): Long? {
         if (payload.size < 6) return null
-        val freqHz = decodeFrequencyBcd(payload.copyOfRange(0, 5))
-        val mode   = BYTE_TO_MODE[payload[5]] ?: return null
-        return freqHz to mode
+        val expected = if (selected) SUB_SELECTED_VFO else SUB_UNSELECTED_VFO
+        if (payload[0] != expected) return null
+        return parseFrequencyPayload(payload.copyOfRange(1, 6))
+    }
+
+    /** Parse [subcommand, state] from an IC-9700 or IC-910 satellite-mode response. */
+    fun parseSatelliteModeState(
+        payload: ByteArray,
+        subcommand: Byte = SUB_SATELLITE_MODE
+    ): Boolean? {
+        if (payload.size < 2 || payload[0] != subcommand) return null
+        return when (payload[1]) {
+            0x00.toByte() -> false
+            0x01.toByte() -> true
+            else -> null
+        }
+    }
+
+    /** Parse the mode byte returned by CMD 0x04. An optional filter byte follows it. */
+    fun parseModePayload(payload: ByteArray): String? = payload.firstOrNull()?.let(BYTE_TO_MODE::get)
+
+    /** Parse a CMD 0x26 response and verify that it belongs to the requested VFO selector. */
+    fun parseVfoModePayload(payload: ByteArray, selected: Boolean): String? {
+        if (payload.size < 2) return null
+        val expected = if (selected) SUB_SELECTED_VFO else SUB_UNSELECTED_VFO
+        if (payload[0] != expected) return null
+        return BYTE_TO_MODE[payload[1]]
+    }
+
+    private fun isValidBcd(value: Byte): Boolean {
+        val number = value.toInt() and 0xff
+        return number ushr 4 <= 9 && number and 0x0f <= 9
     }
 
     /** Hex dump of bytes, useful for debug logging. */

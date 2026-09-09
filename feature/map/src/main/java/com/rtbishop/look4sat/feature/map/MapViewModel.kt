@@ -29,6 +29,10 @@ import com.rtbishop.look4sat.core.domain.predict.OrbitalPos
 import com.rtbishop.look4sat.core.domain.repository.IMainContainer
 import com.rtbishop.look4sat.core.domain.repository.ISatelliteRepo
 import com.rtbishop.look4sat.core.domain.repository.ISettingsRepo
+import com.rtbishop.look4sat.core.domain.logbook.IQsoRepository
+import com.rtbishop.look4sat.core.domain.logbook.confirmedGridStore
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import com.rtbishop.look4sat.core.domain.utility.clipLat
 import com.rtbishop.look4sat.core.domain.utility.clipLon
 import com.rtbishop.look4sat.core.domain.utility.positionToQth
@@ -52,10 +56,11 @@ import java.util.Date
 
 class MapViewModel(
     private val satelliteRepo: ISatelliteRepo,
-    private val settingsRepo: ISettingsRepo
+    private val settingsRepo: ISettingsRepo,
+    private val qsoRepository: IQsoRepository
 ) : ViewModel() {
 
-    private val stationPos = settingsRepo.stationPosition.value
+    private val stationPos get() = settingsRepo.stationPosition.value
     private val defaultPass = getDefaultPass()
     private val _uiState = MutableStateFlow(
         MapState(
@@ -74,11 +79,27 @@ class MapViewModel(
     init {
         viewModelScope.launch {
             settingsRepo.otherSettings.collectLatest { settings ->
-                _uiState.update { it.copy(isUtc = settings.stateOfUtc) }
+                _uiState.update { it.copy(isUtc = settings.stateOfUtc, isGridMode = settings.stateOfMapGrid) }
             }
+        }
+        viewModelScope.launch {
+            qsoRepository.records.collectLatest { records ->
+                val store = withContext(Dispatchers.Default) { confirmedGridStore(records) }
+                _uiState.update {
+                    it.copy(
+                        workedGrids = store.qsosByGrid.keys,
+                        workedGridQsos = store.qsosByGrid,
+                        awardProgress = store.awards
+                    )
+                }
+            }
+        }
+        viewModelScope.launch {
+            settingsRepo.stationPosition.collectLatest { getStationPosition() }
         }
         val (selectedCatNum, _) = satelliteRepo.selectedPass.value
         selectDefaultSatellite(if (selectedCatNum != 0) selectedCatNum else -1)
+        getStationPosition()
     }
 
     fun onAction(action: MapAction) {
@@ -87,6 +108,7 @@ class MapViewModel(
             MapAction.SelectNext -> scrollSelection(false)
             is MapAction.SelectItem -> selectSatellite(action.item)
             is MapAction.SelectDefaultItem -> selectDefaultSatellite(action.catnum)
+            is MapAction.ToggleGridMode -> settingsRepo.updateOtherSettings { it.copy(stateOfMapGrid = action.value) }
         }
     }
 
@@ -300,7 +322,8 @@ class MapViewModel(
             initializer {
                 MapViewModel(
                     satelliteRepo = container.satelliteRepo,
-                    settingsRepo = container.settingsRepo
+                    settingsRepo = container.settingsRepo,
+                    qsoRepository = container.qsoRepository
                 )
             }
         }

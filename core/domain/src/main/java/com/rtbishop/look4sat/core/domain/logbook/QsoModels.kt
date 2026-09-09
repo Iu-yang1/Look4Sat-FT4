@@ -9,7 +9,25 @@
  */
 package com.rtbishop.look4sat.core.domain.logbook
 
+import kotlinx.serialization.Serializable
+
 enum class QsoStatus { DRAFT, COMPLETE, ABORTED }
+
+@Serializable
+enum class QsoEventDirection { TX, RX }
+
+@Serializable
+enum class QsoEventResult { PREPARING, STARTED, COMPLETED, FAILED, RECEIVED }
+
+@Serializable
+data class QsoMessageEvent(
+    val direction: QsoEventDirection,
+    val utcMillis: Long,
+    val result: QsoEventResult,
+    val sessionId: String,
+    val message: String,
+    val detail: String = ""
+)
 
 data class QsoRecord(
     val id: Long = 0L,
@@ -25,6 +43,8 @@ data class QsoRecord(
     val rxFrequencyHz: Long? = null,
     val band: String = "",
     val rxBand: String = "",
+    val mode: String = "MFSK",
+    val submode: String = "FT4",
     val satelliteName: String = "",
     val transponderName: String = "",
     val satelliteMode: String = "",
@@ -32,7 +52,18 @@ data class QsoRecord(
     val ft4AudioFrequencyHz: Int? = null,
     val automatic: Boolean = false,
     val status: QsoStatus = QsoStatus.DRAFT,
-    val rawMessages: List<String> = emptyList()
+    val rawMessages: List<String> = emptyList(),
+    val sessionId: String = "",
+    val messageEvents: List<QsoMessageEvent> = emptyList(),
+    val propagationMode: String = if (satelliteName.isNotBlank()) "SAT" else "",
+    val lotwConfirmed: Boolean = false,
+    val lotwQslDate: String = "",
+    val vuccGrids: List<String> = emptyList(),
+    val dxcc: Int? = null,
+    val country: String = "",
+    val cqZone: Int? = null,
+    val region: String = "",
+    val comment: String = ""
 )
 
-data class AdifImportResult(val imported: Int, val skipped: Int)
+data class AdifImportResult(val imported: Int, val skipped: Int, val updated: Int = 0)

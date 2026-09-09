@@ -69,6 +69,7 @@ import com.rtbishop.look4sat.core.presentation.EmptyListCard
 import com.rtbishop.look4sat.core.presentation.IconCard
 import com.rtbishop.look4sat.core.presentation.MainTheme
 import com.rtbishop.look4sat.core.presentation.NextPassRow
+import com.rtbishop.look4sat.core.presentation.QuickLogBar
 import com.rtbishop.look4sat.core.presentation.R
 import com.rtbishop.look4sat.core.presentation.ScreenColumn
 import com.rtbishop.look4sat.core.presentation.SharedDialog
@@ -86,13 +87,16 @@ import java.util.TimeZone
 @Composable
 fun PassesDestination(
     navigateToRadar: (Int, Long) -> Unit,
-    navigateToMap: () -> Unit
+    navigateToMap: () -> Unit,
+    navigateToLogbook: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val container = (context.applicationContext as IContainerProvider).getMainContainer()
     val viewModel: PassesViewModel = viewModel(factory = PassesViewModel.factory(container))
     val uiState = viewModel.uiState.collectAsStateWithLifecycle().value
-    PassesScreen(uiState, viewModel::onAction, navigateToRadar, navigateToMap)
+    PassesScreen(uiState, viewModel::onAction, navigateToRadar, navigateToMap) {
+        QuickLogBar(container, navigateToLogbook)
+    }
 }
 
 @Composable
@@ -100,7 +104,8 @@ private fun PassesScreen(
     uiState: PassesState,
     onAction: (PassesAction) -> Unit,
     navigateToRadar: (Int, Long) -> Unit,
-    navigateToMap: () -> Unit
+    navigateToMap: () -> Unit,
+    quickLog: @Composable () -> Unit = {}
 ) {
     if (uiState.isPassesDialogShown) {
         PassesFilterDialog(
@@ -172,16 +177,21 @@ private fun PassesScreen(
             )
         }
     ) { _ ->
-        PassesList(
-            isRefreshing = uiState.isRefreshing,
-            isUtc = uiState.isUtc,
-            passes = uiState.itemsList,
-            groupedPasses = uiState.groupedPasses,
-            sunTimes = uiState.sunTimes,
-            focusedCatNum = uiState.focusedCatNum,
-            navigateToRadar = navigateToRadar,
-            onAction = onAction
-        )
+        Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            androidx.compose.foundation.layout.Box(Modifier.weight(1f)) {
+                PassesList(
+                    isRefreshing = uiState.isRefreshing,
+                    isUtc = uiState.isUtc,
+                    passes = uiState.itemsList,
+                    groupedPasses = uiState.groupedPasses,
+                    sunTimes = uiState.sunTimes,
+                    focusedCatNum = uiState.focusedCatNum,
+                    navigateToRadar = navigateToRadar,
+                    onAction = onAction
+                )
+            }
+            quickLog()
+        }
     }
 }
 

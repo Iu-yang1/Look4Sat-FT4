@@ -244,9 +244,13 @@ class Ft4Service(
                         assemblingSlotUtcMillis = pipeline.assemblingSlotUtcMillis,
                         assembledSampleCount = pipeline.assembledSampleCount,
                         droppedAudioBlocks = pipeline.droppedAudioBlocks,
+                        droppedDecodeSlots = pipeline.droppedDecodeSlots,
                         captureQueueDepth = pipeline.captureQueueDepth,
                         decodeQueueDepth = pipeline.decodeQueueDepth,
-                        timestampResidualMillis = pipeline.timestampResidualMillis
+                        timestampResidualMillis = pipeline.timestampResidualMillis,
+                        clockCorrectionMillis = pipeline.clockCorrectionMillis,
+                        lastResetReason = pipeline.lastResetReason,
+                        lastDecodeWasEarly = pipeline.lastDecodeWasEarly
                     )
                 }
             )

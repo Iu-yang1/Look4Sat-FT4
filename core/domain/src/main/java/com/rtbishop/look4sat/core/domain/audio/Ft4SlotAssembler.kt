@@ -14,15 +14,27 @@ import kotlin.math.roundToInt
 
 data class Ft4AudioSlot(
     val utcStartMillis: Long,
-    val samples: FloatArray
+    val samples: FloatArray,
+    val isFinal: Boolean = true,
+    val validSampleCount: Int = samples.size
 )
 
 /** 将连续 12 kHz 音频按纪律 UTC 对齐为完整的 7.5 秒 FT4 时隙。 */
-class Ft4SlotAssembler {
+class Ft4SlotAssembler(
+    private val earlyDecodeSamples: Int? = null
+) {
     private val slotBuffer = FloatArray(SLOT_SAMPLES)
     private var buffered = 0
     private var targetSlotStartNanos: Long? = null
     private var expectedNextChunkNanos: Long? = null
+    private var earlyDecodeEmitted = false
+
+    var lastResetReason: String? = null
+        private set
+
+    init {
+        require(earlyDecodeSamples == null || earlyDecodeSamples in 1 until SLOT_SAMPLES)
+    }
 
     val bufferedSampleCount: Int
         get() = buffered
@@ -34,7 +46,7 @@ class Ft4SlotAssembler {
         if (samples.isEmpty()) return emptyList()
         val expected = expectedNextChunkNanos
         if (expected != null && abs(firstSampleUtcNanos - expected) > DISCONTINUITY_TOLERANCE_NANOS) {
-            reset()
+            reset("timestamp_discontinuity")
         }
         expectedNextChunkNanos = firstSampleUtcNanos +
             samples.size.toLong() * NANOS_PER_SECOND / SAMPLE_RATE
@@ -70,20 +82,34 @@ class Ft4SlotAssembler {
             samples.copyInto(slotBuffer, buffered, sourceOffset, sourceOffset + copyCount)
             buffered += copyCount
             sourceOffset += copyCount
+            if (!earlyDecodeEmitted && earlyDecodeSamples != null &&
+                buffered >= earlyDecodeSamples && buffered < SLOT_SAMPLES
+            ) {
+                completed += Ft4AudioSlot(
+                    utcStartMillis = target / NANOS_PER_MILLISECOND,
+                    samples = slotBuffer.copyOf(),
+                    isFinal = false,
+                    validSampleCount = buffered
+                )
+                earlyDecodeEmitted = true
+            }
             if (buffered == SLOT_SAMPLES) {
                 completed += Ft4AudioSlot(target / NANOS_PER_MILLISECOND, slotBuffer.copyOf())
                 buffered = 0
+                earlyDecodeEmitted = false
                 targetSlotStartNanos = target + SLOT_NANOS
             }
         }
         return completed
     }
 
-    fun reset() {
+    fun reset(reason: String = "manual") {
         slotBuffer.fill(0f)
         buffered = 0
+        earlyDecodeEmitted = false
         targetSlotStartNanos = null
         expectedNextChunkNanos = null
+        lastResetReason = reason
     }
 
     private fun nextBoundary(utcNanos: Long): Long =

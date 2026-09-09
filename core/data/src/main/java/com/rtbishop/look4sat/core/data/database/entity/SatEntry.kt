@@ -17,6 +17,7 @@
  */
 package com.rtbishop.look4sat.core.data.database.entity
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 
 @Entity(tableName = "entries", primaryKeys = ["catnum"])
@@ -30,5 +31,6 @@ data class SatEntry(
     val argper: Double,
     val meanan: Double,
     val catnum: Int,
-    val bstar: Double
+    val bstar: Double,
+    @ColumnInfo(defaultValue = "0") val ndot: Double = 0.0
 )

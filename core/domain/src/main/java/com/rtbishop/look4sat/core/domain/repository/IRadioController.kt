@@ -17,6 +17,9 @@
  */
 package com.rtbishop.look4sat.core.domain.repository
 
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
+
 interface IRadioController {
 
     val isConnected: Boolean
@@ -39,12 +42,21 @@ interface IRadioController {
 
     suspend fun pttOff(): Boolean
 
-    // ── Extended operations (IC-705 / CI-V) ──────────────────────────────
+    /** Generation captured while arming a transmission, before PTT can be requested. */
+    fun pttSafetyGeneration(): Long = 0L
+
+    /** Rejects PTT-ON if an emergency stop invalidated the captured generation. */
+    suspend fun pttOnIfGeneration(expectedGeneration: Long): Boolean =
+        expectedGeneration == pttSafetyGeneration() && pttOn()
+
+    /** Invalidates queued PTT-ON work before an emergency PTT-OFF is enqueued. */
+    fun invalidatePendingPttOn() = Unit
+
+    // ── Extended duplex operations ────────────────────────────────
 
     /**
-     * Select the band matching [frequencyHz] via the band stacking register.
-     * Must be called before [setFrequency] and [setMode] when first tracking.
-     * Default: no-op (Yaesu radios auto-switch band via frequency).
+     * Prepare the radio for the band containing [frequencyHz], when required.
+     * The default reports that explicit band preparation is unsupported.
      */
     suspend fun setBand(frequencyHz: Long): Boolean = false
 
@@ -61,26 +73,58 @@ interface IRadioController {
     suspend fun setSplitMode(enabled: Boolean): Boolean = false
 
     /**
-     * Set the frequency of the currently active VFO (IC-705: CMD 0x25 sub 0x00).
+     * Configure both sides of a split setup as one serialized transaction.
+     * Implementations should leave VFO-A selected and verify the written modes.
+     */
+    suspend fun setSplitModes(rxMode: String?, txMode: String?): Boolean {
+        if (!setVfo(vfoA = true)) return false
+        if (rxMode != null && !setMode(rxMode)) return false
+        if (!setVfo(vfoA = false)) return false
+        if (txMode != null && !setMode(txMode)) return false
+        return setVfo(vfoA = true)
+    }
+
+    /**
+     * Configure the TX side's CTCSS state and leave the RX side selected.
+     * Serialized controller wrappers execute this complete sequence atomically.
+     */
+    suspend fun configureTxCtcss(toneHz: Double?): Boolean {
+        var rxRestored = false
+        val configured = try {
+            if (!setVfo(vfoA = false)) {
+                false
+            } else if (toneHz != null) {
+                setCtcssTone(toneHz) && setCtcssMode(true)
+            } else {
+                setCtcssMode(false)
+            }
+        } finally {
+            rxRestored = withContext(NonCancellable) { setVfo(vfoA = true) }
+        }
+        return configured && rxRestored
+    }
+
+    /**
+     * Set the current RX side (IC-705 selected VFO or IC-9700 MAIN).
      * Default: delegates to [setFrequency].
      */
     suspend fun setWorkingFrequency(frequencyHz: Long): Boolean = setFrequency(frequencyHz)
 
     /**
-     * Set the frequency of the inactive/TX VFO (IC-705: CMD 0x25 sub 0x01).
+     * Set the TX side (IC-705 unselected VFO or IC-9700 SUB).
      * Sent every tracking cycle alongside [setWorkingFrequency] in split mode.
      * Default: delegates to [setWorkingFrequency].
      */
     suspend fun setTxVfoFrequency(frequencyHz: Long): Boolean = setWorkingFrequency(frequencyHz)
 
     /**
-     * Read the frequency of the currently active VFO (IC-705: CMD 0x25 sub 0x00).
+     * Read the current RX side.
      * Default: delegates to [readFrequencyAndMode].
      */
     suspend fun readWorkingFrequency(): Long? = readFrequencyAndMode()?.first
 
     /**
-     * Read the frequency of the inactive/TX VFO (IC-705: CMD 0x25 sub 0x01).
+     * Read the TX side.
      * Used for tuning detection in split mode.
      * Default: delegates to [readWorkingFrequency].
      */

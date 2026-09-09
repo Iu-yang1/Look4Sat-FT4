@@ -2,8 +2,10 @@ package com.rtbishop.look4sat.core.data.framework
 
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class Ft817CatProtocolTest {
@@ -86,13 +88,13 @@ class Ft817CatProtocolTest {
         val cmd = Ft817CatProtocol.buildSetCtcssToneCommand(67.0)
         assertEquals(5, cmd.size)
         assertEquals(0x0B.toByte(), cmd[4])
-        assertArrayEquals(byteArrayOf(0x06, 0x70, 0x00, 0x00, 0x0B), cmd)
+        assertArrayEquals(byteArrayOf(0x06, 0x70, 0x06, 0x70, 0x0B), cmd)
     }
 
     @Test
     fun buildCtcssModeCommand_enable() {
         val cmd = Ft817CatProtocol.buildCtcssModeCommand(true)
-        assertArrayEquals(byteArrayOf(0x2A, 0x00, 0x00, 0x00, 0x0A), cmd)
+        assertArrayEquals(byteArrayOf(0x4A, 0x00, 0x00, 0x00, 0x0A), cmd)
     }
 
     @Test
@@ -123,6 +125,17 @@ class Ft817CatProtocolTest {
     }
 
     @Test
+    fun parseReadResponse_masksNarrowModeFlag() {
+        val response = byteArrayOf(0x14, 0x60, 0x00, 0x00, 0x88.toByte())
+        assertEquals(146000000L to "FM", Ft817CatProtocol.parseReadResponse(response))
+    }
+
+    @Test
+    fun parseReadResponse_rejectsInvalidBcdNibble() {
+        assertNull(Ft817CatProtocol.parseReadResponse(byteArrayOf(0x1A, 0x55, 0x00, 0x00, 0x01)))
+    }
+
+    @Test
     fun parseReadResponse_tooShort() {
         assertNull(Ft817CatProtocol.parseReadResponse(byteArrayOf(0x14, 0x55, 0x00)))
     }
@@ -140,6 +153,18 @@ class Ft817CatProtocolTest {
 
         val off = Ft817CatProtocol.buildPttOffCommand()
         assertEquals(0x88.toByte(), off[4])
+    }
+
+    @Test
+    fun pttStatusUsesModelSpecificHamlibRules() {
+        assertFalse(Ft817CatProtocol.parsePttState(0xFF.toByte(), YaesuCatVariant.FT817))
+        assertTrue(Ft817CatProtocol.parsePttState(0x7F, YaesuCatVariant.FT817))
+        assertFalse(Ft817CatProtocol.parsePttState(0x80.toByte(), YaesuCatVariant.FT857))
+        assertTrue(Ft817CatProtocol.parsePttState(0x00, YaesuCatVariant.FT857))
+        assertArrayEquals(
+            byteArrayOf(0x00, 0x00, 0x00, 0x00, 0xF7.toByte()),
+            Ft817CatProtocol.buildReadTxStatusCommand()
+        )
     }
 
     @Test

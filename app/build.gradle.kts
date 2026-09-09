@@ -30,7 +30,7 @@ android {
     defaultConfig {
         applicationId = "cn.ba7opf.look4sat"
         ndk {
-            abiFilters += listOf("arm64-v8a", "armeabi-v7a")
+            abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64")
         }
     }
     signingConfigs {

@@ -10,42 +10,186 @@
 package com.rtbishop.look4sat.core.data.framework
 
 import com.rtbishop.look4sat.core.domain.repository.IRadioController
+import java.util.concurrent.atomic.AtomicLong
+import kotlin.coroutines.coroutineContext
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.selects.select
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 
 /** 所有 CAT、频率、模式、tone 与 PTT 操作共用的串行命令通道。 */
 class RadioCommandActor(
     scope: CoroutineScope,
     private val stateChanged: (busy: Boolean, failure: String?) -> Unit
 ) {
+    private enum class Kind { NORMAL, PTT_ON, PTT_OFF }
+
     private class Command<T>(
         val operation: suspend () -> T,
-        val result: CompletableDeferred<Result<T>>
+        val result: CompletableDeferred<Result<T>>,
+        val kind: Kind,
+        val pttGeneration: Long,
+        val deadlineNanos: Long,
+        val timeoutMillis: Long
     )
 
-    private val queue = Channel<Command<*>>(Channel.UNLIMITED)
+    private val queue = Channel<Command<*>>(NORMAL_QUEUE_CAPACITY)
+    private val urgentQueue = Channel<Command<*>>(URGENT_QUEUE_CAPACITY)
+    private val pttGeneration = AtomicLong(0L)
+    private val commandStateLock = Any()
+    private var urgentPending = 0
+    private var activeInterruptible: CompletableDeferred<*>? = null
+    private var activePttOn: CompletableDeferred<*>? = null
 
     init {
         scope.launch {
-            for (command in queue) executeUnchecked(command)
+            while (isActive) executeUnchecked(nextCommand())
         }
     }
 
-    suspend fun <T> execute(operation: suspend () -> T): T {
-        val result = CompletableDeferred<Result<T>>()
-        queue.send(Command(operation, result))
+    suspend fun <T> execute(
+        timeoutMillis: Long = DEFAULT_COMMAND_TIMEOUT_MILLIS,
+        operation: suspend () -> T
+    ): T = enqueue(Kind.NORMAL, timeoutMillis, operation)
+
+    fun currentPttGeneration(): Long = pttGeneration.get()
+
+    suspend fun <T> executePttOn(
+        expectedGeneration: Long = currentPttGeneration(),
+        operation: suspend () -> T
+    ): T = enqueue(
+        kind = Kind.PTT_ON,
+        timeoutMillis = PTT_COMMAND_TIMEOUT_MILLIS,
+        operation = operation,
+        expectedPttGeneration = expectedGeneration
+    )
+
+    suspend fun <T> executePttOff(operation: suspend () -> T): T {
+        synchronized(commandStateLock) {
+            pttGeneration.incrementAndGet()
+            urgentPending++
+            val reason = CancellationException("Radio command was preempted by PTT OFF")
+            activePttOn?.cancel(reason)
+            activeInterruptible?.cancel(reason)
+        }
+        return enqueue(Kind.PTT_OFF, PTT_COMMAND_TIMEOUT_MILLIS, operation, urgent = true)
+    }
+
+    fun invalidatePendingPttOn() {
+        synchronized(commandStateLock) {
+            pttGeneration.incrementAndGet()
+            activePttOn?.cancel(CancellationException("PTT ON command was invalidated"))
+        }
+    }
+
+    private suspend fun <T> enqueue(
+        kind: Kind,
+        timeoutMillis: Long,
+        operation: suspend () -> T,
+        urgent: Boolean = false,
+        expectedPttGeneration: Long = pttGeneration.get()
+    ): T {
+        val result = CompletableDeferred<Result<T>>(
+            if (kind == Kind.PTT_OFF) null else coroutineContext[Job]
+        )
+        val command = Command(
+            operation = operation,
+            result = result,
+            kind = kind,
+            pttGeneration = expectedPttGeneration,
+            deadlineNanos = if (kind == Kind.PTT_OFF) {
+                Long.MAX_VALUE
+            } else {
+                System.nanoTime() + timeoutMillis * NANOS_PER_MILLI
+            },
+            timeoutMillis = timeoutMillis
+        )
+        if (urgent) {
+            withContext(NonCancellable) { urgentQueue.send(command) }
+        } else {
+            queue.send(command)
+        }
         return result.await().getOrThrow()
     }
+
+    private suspend fun nextCommand(): Command<*> =
+        urgentQueue.tryReceive().getOrNull()
+            ?: queue.tryReceive().getOrNull()
+            ?: select {
+                urgentQueue.onReceive { it }
+                queue.onReceive { it }
+            }
 
     @Suppress("UNCHECKED_CAST")
     private suspend fun executeUnchecked(command: Command<*>) {
         command as Command<Any?>
-        stateChanged(true, null)
-        val result = runCatching { command.operation() }
-        stateChanged(false, result.exceptionOrNull()?.message)
-        command.result.complete(result)
+        if (command.kind != Kind.PTT_OFF) prioritizeUrgentAndMarkActive(command)
+        try {
+            val skipReason = when {
+                !command.result.isActive -> "Command caller was cancelled"
+                System.nanoTime() >= command.deadlineNanos -> "Radio command expired in queue"
+                command.kind == Kind.PTT_ON && command.pttGeneration != pttGeneration.get() ->
+                    "PTT ON command was invalidated"
+                else -> null
+            }
+            if (skipReason != null) {
+                command.result.complete(Result.failure(CancellationException(skipReason)))
+                return
+            }
+            stateChanged(true, null)
+            val result = runCatching {
+                withContext(command.result) {
+                    withTimeout(command.timeoutMillis) { command.operation() }
+                }
+            }
+            val error = result.exceptionOrNull()
+            val reportableFailure = when (error) {
+                null -> null
+                is TimeoutCancellationException -> "Radio command timed out"
+                is CancellationException -> null
+                else -> error.message ?: error.javaClass.simpleName
+            }
+            stateChanged(false, reportableFailure)
+            command.result.complete(result)
+        } finally {
+            synchronized(commandStateLock) {
+                if (activeInterruptible === command.result) activeInterruptible = null
+                if (activePttOn === command.result) activePttOn = null
+                if (command.kind == Kind.PTT_OFF) urgentPending = (urgentPending - 1).coerceAtLeast(0)
+            }
+        }
+    }
+
+    private suspend fun prioritizeUrgentAndMarkActive(command: Command<*>) {
+        while (true) {
+            val canStart = synchronized(commandStateLock) {
+                if (urgentPending == 0) {
+                    activeInterruptible = command.result
+                    if (command.kind == Kind.PTT_ON) activePttOn = command.result
+                    true
+                } else {
+                    false
+                }
+            }
+            if (canStart) return
+            executeUnchecked(urgentQueue.receive())
+        }
+    }
+
+    private companion object {
+        const val NORMAL_QUEUE_CAPACITY = 64
+        const val URGENT_QUEUE_CAPACITY = 8
+        const val DEFAULT_COMMAND_TIMEOUT_MILLIS = 3_000L
+        const val PTT_COMMAND_TIMEOUT_MILLIS = 2_000L
+        const val NANOS_PER_MILLI = 1_000_000L
     }
 }
 
@@ -54,20 +198,33 @@ class SerialRadioController(
     private val actor: RadioCommandActor
 ) : IRadioController {
     override val isConnected: Boolean get() = delegate.isConnected
-    override suspend fun connect() = actor.execute(delegate::connect)
-    override suspend fun disconnect() = actor.execute(delegate::disconnect)
+    override suspend fun connect() = actor.execute(CONNECT_TIMEOUT_MILLIS, delegate::connect)
+    override suspend fun disconnect() = actor.execute(operation = delegate::disconnect)
     override suspend fun setFrequency(frequencyHz: Long) = actor.execute { delegate.setFrequency(frequencyHz) }
     override suspend fun setMode(mode: String) = actor.execute { delegate.setMode(mode) }
     override suspend fun setCtcssMode(enabled: Boolean) = actor.execute { delegate.setCtcssMode(enabled) }
     override suspend fun setCtcssTone(toneHz: Double) = actor.execute { delegate.setCtcssTone(toneHz) }
-    override suspend fun readFrequencyAndMode() = actor.execute(delegate::readFrequencyAndMode)
-    override suspend fun pttOn() = actor.execute(delegate::pttOn)
-    override suspend fun pttOff() = actor.execute(delegate::pttOff)
+    override suspend fun readFrequencyAndMode() = actor.execute(operation = delegate::readFrequencyAndMode)
+    override suspend fun pttOn() = actor.executePttOn(operation = delegate::pttOn)
+    override fun pttSafetyGeneration() = actor.currentPttGeneration()
+    override suspend fun pttOnIfGeneration(expectedGeneration: Long) =
+        actor.executePttOn(expectedGeneration, delegate::pttOn)
+    override suspend fun pttOff() = actor.executePttOff(delegate::pttOff)
+    override fun invalidatePendingPttOn() = actor.invalidatePendingPttOn()
     override suspend fun setBand(frequencyHz: Long) = actor.execute { delegate.setBand(frequencyHz) }
     override suspend fun setVfo(vfoA: Boolean) = actor.execute { delegate.setVfo(vfoA) }
     override suspend fun setSplitMode(enabled: Boolean) = actor.execute { delegate.setSplitMode(enabled) }
+    override suspend fun setSplitModes(rxMode: String?, txMode: String?) =
+        actor.execute { delegate.setSplitModes(rxMode, txMode) }
+    override suspend fun configureTxCtcss(toneHz: Double?) =
+        actor.execute { delegate.configureTxCtcss(toneHz) }
     override suspend fun setWorkingFrequency(frequencyHz: Long) = actor.execute { delegate.setWorkingFrequency(frequencyHz) }
     override suspend fun setTxVfoFrequency(frequencyHz: Long) = actor.execute { delegate.setTxVfoFrequency(frequencyHz) }
-    override suspend fun readWorkingFrequency() = actor.execute(delegate::readWorkingFrequency)
-    override suspend fun readTxVfoFrequency() = actor.execute(delegate::readTxVfoFrequency)
+    override suspend fun readWorkingFrequency() = actor.execute(operation = delegate::readWorkingFrequency)
+    override suspend fun readTxVfoFrequency() = actor.execute(operation = delegate::readTxVfoFrequency)
+
+    private companion object {
+        // Allows insecure + secure Bluetooth SPP attempts and the model handshake to complete.
+        const val CONNECT_TIMEOUT_MILLIS = 15_000L
+    }
 }

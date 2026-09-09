@@ -88,6 +88,7 @@ class SettingsRepo(
     private val keyStationQth = "stationQth"
     private val keyStationTimestamp = "stationTimestamp"
     private val keyUpdateTimestamp = "updateTimestamp"
+    private val keyDatabaseContentVersion = "databaseContentVersion"
     private val keyShouldSeeWarning = "shouldSeeWarning"
     private val keyShouldSeeWhatsNew = "shouldSeeWhatsNew_v$appVersionName"
     private val keySstvMode = "sstvMode"
@@ -167,7 +168,7 @@ class SettingsRepo(
         val aosEndMinute = preferences.getInt(keyFilterAosEndMinute, 23 * 60 + 59).coerceIn(0, 23 * 60 + 59)
         val invertAosTimeWindow = preferences.getBoolean(keyFilterAosInvert, false)
         val selectedModesString = preferences.getString(keySelectedModes, null)
-        val selectedModes = selectedModesString?.split(separatorComma)?.sorted() ?: emptyList()
+        val selectedModes = parseSelectedModes(selectedModesString)
         return PassesSettings(
             showDeepSpace,
             hoursAhead,
@@ -279,6 +280,7 @@ class SettingsRepo(
         putInt(keyNumberOfSatellites, state.numberOfSatellites)
         putInt(keyNumberOfRadios, state.numberOfRadios)
         putLong(keyUpdateTimestamp, state.updateTimestamp)
+        putLong(keyDatabaseContentVersion, state.contentVersion)
         _databaseState.value = state
     }
 
@@ -286,7 +288,8 @@ class SettingsRepo(
         val numberOfRadios = preferences.getInt(keyNumberOfRadios, 0)
         val numberOfSatellites = preferences.getInt(keyNumberOfSatellites, 0)
         val updateTimestamp = preferences.getLong(keyUpdateTimestamp, 0L)
-        return DatabaseState(numberOfRadios, numberOfSatellites, updateTimestamp)
+        val contentVersion = preferences.getLong(keyDatabaseContentVersion, 0L)
+        return DatabaseState(numberOfRadios, numberOfSatellites, updateTimestamp, contentVersion)
     }
     //endregion
 
@@ -376,6 +379,7 @@ class SettingsRepo(
                 putBoolean(keyStateOfSensors, new.stateOfSensors)
                 putBoolean(keyStateOfSweep, new.stateOfSweep)
                 putBoolean(keyStateOfUtc, new.stateOfUtc)
+                putBoolean("stateOfMapGrid", new.stateOfMapGrid)
                 putBoolean(keyStateOfLightTheme, new.stateOfLightTheme)
                 putBoolean(keyStateOfNightMode, new.stateOfNightMode)
                 putBoolean(keyShouldSeeWarning, new.shouldSeeWarning)
@@ -393,6 +397,7 @@ class SettingsRepo(
         stateOfSensors = preferences.getBoolean(keyStateOfSensors, true),
         stateOfSweep = preferences.getBoolean(keyStateOfSweep, true),
         stateOfUtc = preferences.getBoolean(keyStateOfUtc, false),
+        stateOfMapGrid = preferences.getBoolean("stateOfMapGrid", false),
         stateOfLightTheme = preferences.getBoolean(keyStateOfLightTheme, false),
         stateOfNightMode = preferences.getBoolean(keyStateOfNightMode, false),
         shouldSeeWarning = preferences.getBoolean(keyShouldSeeWarning, true),
@@ -555,6 +560,7 @@ class SettingsRepo(
     private val keyRadioBaudRate = "radioBaudRate"
     private val keyRadioSplitMode = "radioSplitMode"
     private val keyRadioCatTransport = "radioCatTransport"
+    private val keyRadioDuplexMode = "radioDuplexMode"
 
     private val _radioControlSettings = MutableStateFlow(getRadioControlSettings())
     override val radioControlSettings: StateFlow<RadioControlSettings> = _radioControlSettings
@@ -570,6 +576,7 @@ class SettingsRepo(
             putInt(keyRadioBaudRate, settings.baudRate)
             putBoolean(keyRadioSplitMode, settings.splitMode)
             putString(keyRadioCatTransport, settings.catTransport)
+            putString(keyRadioDuplexMode, settings.duplexMode)
         }
         _radioControlSettings.value = settings
     }
@@ -584,7 +591,13 @@ class SettingsRepo(
         baudRate = preferences.getInt(keyRadioBaudRate, 4800),
         splitMode = preferences.getBoolean(keyRadioSplitMode, false),
         catTransport = preferences.getString(keyRadioCatTransport, null)
-            ?: RadioControlSettings.TRANSPORT_BLUETOOTH
+            ?: RadioControlSettings.TRANSPORT_BLUETOOTH,
+        duplexMode = preferences.getString(keyRadioDuplexMode, null)
+            ?.takeIf {
+                it == RadioControlSettings.DUPLEX_MODE_SATELLITE ||
+                    it == RadioControlSettings.DUPLEX_MODE_SPLIT
+            }
+            ?: RadioControlSettings.DUPLEX_MODE_SPLIT
     )
     //endregion
 
@@ -639,3 +652,6 @@ class SettingsRepo(
     }
     //endregion
 }
+
+internal fun parseSelectedModes(value: String?): List<String> =
+    value.orEmpty().split(',').map { it.trim() }.filter { it.isNotEmpty() }.distinct().sorted()

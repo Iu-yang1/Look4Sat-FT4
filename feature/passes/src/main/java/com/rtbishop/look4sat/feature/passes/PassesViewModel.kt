@@ -108,7 +108,10 @@ class PassesViewModel(
                             sunTimes = sunTimes,
                             nextPass = nextPass,
                             nextTime = nextTime,
-                            isNextTimeAos = isAos
+                            isNextTimeAos = isAos,
+                            focusedCatNum = it.focusedCatNum?.takeIf { catNum ->
+                                processed.any { pass -> pass.catNum == catNum }
+                            }
                         )
                     }
                     delay(1000)

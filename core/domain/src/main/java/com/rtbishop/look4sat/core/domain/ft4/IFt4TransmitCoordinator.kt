@@ -15,6 +15,7 @@ data class TxRequest(
     val waveformDurationMillis: Long = 5_040L,
     val expectedSatelliteCatalogNumber: Int,
     val expectedTransponderUuid: String,
+    val automatic: Boolean,
     val maximumPttMillis: Long = 8_500L
 )
 
@@ -23,8 +24,14 @@ data class TxLease(
     val sessionGeneration: Long,
     val effectiveTxFrequencyHz: Long,
     val txDopplerCorrectionHz: Long,
+    val waveformStartUtcMillis: Long,
     val waveformMidpointUtcMillis: Long,
-    val maximumPttMillis: Long
+    val waveformDurationMillis: Long,
+    val maximumPttMillis: Long,
+    val expectedSatelliteCatalogNumber: Int,
+    val expectedTransponderUuid: String,
+    val pttSafetyGeneration: Long,
+    val automatic: Boolean
 )
 
 interface IFt4TransmitCoordinator {

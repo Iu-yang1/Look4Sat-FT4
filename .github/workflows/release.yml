@@ -3,79 +3,205 @@ name: release
 on:
   push:
     tags:
-      - v**
+      - v*
 
 env:
   TAG_NAME: ${{ github.ref_name }}
-  GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+  GH_TOKEN: ${{ github.token }}
+  LOOK4SAT_RELEASE_STORE_PASSWORD: ${{ secrets.KEY_STORE_PASSWORD }}
+  LOOK4SAT_RELEASE_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+  LOOK4SAT_RELEASE_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+  PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.SERVICE_ACCOUNT_JSON }}
 
 jobs:
   release:
-    runs-on: ubuntu-latest
+    runs-on: windows-2025
+    timeout-minutes: 180
     permissions:
       contents: write
     steps:
-      - name: Checkout Repository
+      - name: Checkout repository
         uses: actions/checkout@v7
 
       - name: Setup Java
         uses: actions/setup-java@v5
         with:
-          distribution: 'temurin'
+          distribution: temurin
           java-version: '21'
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v6
 
-      - name: Assemble Artifacts
-        run: ./gradlew assembleRelease bundleRelease
-
-      - name: Sign APK
+      - name: Install pinned Android native tools
+        shell: pwsh
         run: |
-          echo "${{ secrets.KEY_STORE }}" | base64 -d > keystore.jks
-          APK=$(find app/build/outputs/apk/release -name "*.apk" | head -1)
-          BUILD_TOOLS=$(ls -d ${ANDROID_HOME}/build-tools/*/ | sort -V | tail -1)
-          ${BUILD_TOOLS}apksigner sign \
-            --ks keystore.jks \
-            --ks-pass pass:${{ secrets.KEY_STORE_PASSWORD }} \
-            --ks-key-alias ${{ secrets.KEY_ALIAS }} \
-            --key-pass pass:${{ secrets.KEY_PASSWORD }} \
-            --out app/build/outputs/apk/release/look4sat.apk \
-            "$APK"
-          rm keystore.jks
+          $sdkManager = Join-Path $env:ANDROID_HOME 'cmdline-tools\latest\bin\sdkmanager.bat'
+          if (-not (Test-Path -LiteralPath $sdkManager)) {
+            throw "Android sdkmanager not found: $sdkManager"
+          }
+          & $sdkManager 'ndk;26.1.10909125' 'cmake;3.22.1'
+          if ($LASTEXITCODE -ne 0) { throw 'Unable to install pinned Android native tools' }
 
-      - name: Sign Bundle
+      - name: Restore pinned FT4 toolchain
+        uses: actions/cache@v5
+        with:
+          path: ${{ runner.temp }}\look4sat-toolchain
+          key: ft4-toolchain-windows-x64-v1-${{ hashFiles('core/ft4-native/src/main/cpp/tools/prepare-release-toolchain.ps1', 'core/ft4-native/src/main/cpp/tools/apply-flang-arm32-patch.ps1', 'core/ft4-native/src/main/cpp/tools/patches/flang-22.1-arm32-codegen.patch') }}
+
+      - name: Prepare pinned FT4 toolchain
+        shell: pwsh
         run: |
-          echo "${{ secrets.KEY_STORE }}" | base64 -d > keystore.jks
-          AAB=$(find app/build/outputs/bundle/release -name "*.aab" | head -1)
-          jarsigner -verbose -sigalg SHA256withRSA -digestalg SHA-256 \
-            -keystore keystore.jks \
-            -storepass ${{ secrets.KEY_STORE_PASSWORD }} \
-            -keypass ${{ secrets.KEY_PASSWORD }} \
-            "$AAB" ${{ secrets.KEY_ALIAS }}
-          rm keystore.jks
+          ./core/ft4-native/src/main/cpp/tools/prepare-release-toolchain.ps1 `
+            -ToolchainRoot (Join-Path $env:RUNNER_TEMP 'look4sat-toolchain')
+
+      - name: Prepare release signing
+        shell: pwsh
+        env:
+          KEY_STORE_BASE64: ${{ secrets.KEY_STORE }}
+        run: |
+          $required = @(
+            'KEY_STORE_BASE64',
+            'LOOK4SAT_RELEASE_STORE_PASSWORD',
+            'LOOK4SAT_RELEASE_KEY_ALIAS',
+            'LOOK4SAT_RELEASE_KEY_PASSWORD'
+          )
+          foreach ($name in $required) {
+            if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($name))) {
+              throw "Missing required release signing secret: $name"
+            }
+          }
+          $storePath = Join-Path $env:RUNNER_TEMP 'look4sat-release.jks'
+          [IO.File]::WriteAllBytes($storePath, [Convert]::FromBase64String($env:KEY_STORE_BASE64))
+          "LOOK4SAT_RELEASE_STORE_FILE=$storePath" | Out-File `
+            -LiteralPath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Assemble signed artifacts
+        shell: pwsh
+        run: ./gradlew.bat --no-daemon assembleRelease bundleRelease
+
+      - name: Collect release artifacts
+        shell: pwsh
+        run: |
+          $apks = @(Get-ChildItem -LiteralPath 'app\build\outputs\apk\release' -Filter '*.apk' -File)
+          $bundles = @(Get-ChildItem -LiteralPath 'app\build\outputs\bundle\release' -Filter '*.aab' -File)
+          if ($apks.Count -ne 1) { throw "Expected one release APK, found $($apks.Count)" }
+          if ($bundles.Count -ne 1) { throw "Expected one release AAB, found $($bundles.Count)" }
+          $dist = Join-Path $PWD 'dist'
+          New-Item -ItemType Directory -Path $dist -Force | Out-Null
+          $apkName = "Look4Sat-FT4-$env:TAG_NAME-universal-release.apk"
+          $releaseApk = Join-Path $dist $apkName
+          Copy-Item -LiteralPath $apks[0].FullName -Destination $releaseApk -Force
+          "RELEASE_APK=$releaseApk" | Out-File -LiteralPath $env:GITHUB_ENV -Encoding utf8 -Append
+          "RELEASE_AAB=$($bundles[0].FullName)" | Out-File -LiteralPath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Verify package, signature, and ABI gate
+        shell: pwsh
+        run: |
+          $buildTools = Get-ChildItem -LiteralPath (Join-Path $env:ANDROID_HOME 'build-tools') -Directory |
+            Where-Object Name -Match '^\d+\.\d+\.\d+$' |
+            Sort-Object { [version]$_.Name } -Descending |
+            Select-Object -First 1
+          if ($null -eq $buildTools) { throw 'Android Build Tools are unavailable' }
+          $apkSigner = Join-Path $buildTools.FullName 'apksigner.bat'
+          $aapt2 = Join-Path $buildTools.FullName 'aapt2.exe'
+          if (-not (Test-Path -LiteralPath $apkSigner) -or -not (Test-Path -LiteralPath $aapt2)) {
+            throw "Android package verification tools are incomplete: $($buildTools.FullName)"
+          }
+          $signerDetails = (& $apkSigner verify --verbose --print-certs $env:RELEASE_APK) -join "`n"
+          if ($LASTEXITCODE -ne 0) { throw 'APK signature verification failed' }
+
+          $packageName = ((& $aapt2 dump packagename $env:RELEASE_APK) -join '').Trim()
+          if ($LASTEXITCODE -ne 0 -or $packageName -ne 'cn.ba7opf.look4sat') {
+            throw 'APK applicationId does not match cn.ba7opf.look4sat'
+          }
+
+          $certificate = Join-Path $env:RUNNER_TEMP 'look4sat-release-cert.der'
+          & keytool -exportcert -noprompt `
+            -keystore $env:LOOK4SAT_RELEASE_STORE_FILE `
+            -alias $env:LOOK4SAT_RELEASE_KEY_ALIAS `
+            '-storepass:env' 'LOOK4SAT_RELEASE_STORE_PASSWORD' `
+            -file $certificate
+          if ($LASTEXITCODE -ne 0) { throw 'Unable to export the release signing certificate' }
+          $expectedDigest = (Get-FileHash -LiteralPath $certificate -Algorithm SHA256).Hash.ToLowerInvariant()
+          Remove-Item -LiteralPath $certificate -Force
+          $actualDigest = [regex]::Match(
+            $signerDetails,
+            'SHA-256 digest:\s*([0-9A-Fa-f]+)'
+          ).Groups[1].Value.ToLowerInvariant()
+          if (-not $expectedDigest -or $expectedDigest -ne $actualDigest) {
+            throw 'APK signer certificate does not match the configured release key'
+          }
+
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $archive = [IO.Compression.ZipFile]::OpenRead($env:RELEASE_APK)
+          try {
+            $entries = @($archive.Entries | ForEach-Object FullName)
+          } finally {
+            $archive.Dispose()
+          }
+          $expectedAbis = @('arm64-v8a', 'armeabi-v7a', 'x86_64')
+          foreach ($abi in $expectedAbis) {
+            if ("lib/$abi/liblook4sat_ft4.so" -notin $entries) {
+              throw "Release APK is missing the official FT4 core for ABI $abi"
+            }
+          }
+          $apkSize = (Get-Item -LiteralPath $env:RELEASE_APK).Length
+          if ($apkSize -lt 100000 -or $apkSize -gt 250000000) {
+            throw "Release APK size is outside the updater safety range: $apkSize"
+          }
+
+          & jarsigner -verify -strict $env:RELEASE_AAB
+          if ($LASTEXITCODE -ne 0) { throw 'AAB signature verification failed' }
 
       - name: Setup Ruby
+        if: env.PLAY_SERVICE_ACCOUNT_JSON != ''
         uses: ruby/setup-ruby@v1
         with:
           ruby-version: '3.4'
 
-      - name: Deploy Bundle to Google Play
+      - name: Deploy bundle to Google Play
+        if: env.PLAY_SERVICE_ACCOUNT_JSON != ''
+        shell: pwsh
         run: |
-          gem install multi_json
           gem install fastlane --no-document
-          AAB=$(find app/build/outputs/bundle/release -name "*.aab" | head -1)
-          echo '${{ secrets.SERVICE_ACCOUNT_JSON }}' > service_account.json
-          fastlane supply \
-            --aab "$AAB" \
-            --json_key service_account.json \
-            --package_name com.rtbishop.look4sat \
-            --track production \
-            --skip_upload_images true \
-            --skip_upload_screenshots true \
-          rm service_account.json
+          if ($LASTEXITCODE -ne 0) { throw 'Unable to install Fastlane' }
+          $serviceAccount = Join-Path $env:RUNNER_TEMP 'look4sat-play-service-account.json'
+          [IO.File]::WriteAllText(
+            $serviceAccount,
+            $env:PLAY_SERVICE_ACCOUNT_JSON,
+            [Text.UTF8Encoding]::new($false)
+          )
+          $supplyArgs = @(
+            'supply',
+            '--aab', $env:RELEASE_AAB,
+            '--json_key', $serviceAccount,
+            '--package_name', 'cn.ba7opf.look4sat',
+            '--track', 'production',
+            '--skip_upload_images', 'true',
+            '--skip_upload_screenshots', 'true'
+          )
+          & fastlane @supplyArgs
+          if ($LASTEXITCODE -ne 0) { throw 'Google Play deployment failed' }
 
-      - name: Create Release
+      - name: Create GitHub release
+        shell: pwsh
         run: |
-          gh release create $TAG_NAME --title=$TAG_NAME --generate-notes
-          gh release upload $TAG_NAME app/build/outputs/apk/release/look4sat.apk
+          gh release view $env:TAG_NAME *> $null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload $env:TAG_NAME $env:RELEASE_APK --clobber
+          } else {
+            gh release create $env:TAG_NAME $env:RELEASE_APK `
+              --title $env:TAG_NAME --generate-notes --verify-tag
+          }
+          if ($LASTEXITCODE -ne 0) { throw 'GitHub release publication failed' }
+
+      - name: Remove temporary credentials
+        if: always()
+        shell: pwsh
+        run: |
+          @(
+            (Join-Path $env:RUNNER_TEMP 'look4sat-release.jks'),
+            (Join-Path $env:RUNNER_TEMP 'look4sat-release-cert.der'),
+            (Join-Path $env:RUNNER_TEMP 'look4sat-play-service-account.json')
+          ) | Where-Object { Test-Path -LiteralPath $_ } |
+            ForEach-Object { Remove-Item -LiteralPath $_ -Force }

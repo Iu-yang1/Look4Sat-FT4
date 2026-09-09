@@ -18,9 +18,11 @@
 package com.rtbishop.look4sat.core.domain
 
 import com.rtbishop.look4sat.core.domain.utility.DataParser
+import java.io.ByteArrayInputStream
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.runTest
+import org.junit.Assert.assertEquals
 import org.junit.Test
 
 @ExperimentalCoroutinesApi
@@ -150,6 +152,34 @@ class DataParserTest {
     }
 
     @Test
+    fun `TLE B star preserves a positive exponent`() = runTest(testDispatcher) {
+        val tleStream = """
+            POSITIVE EXPONENT
+            1 25544U 98067A   21320.51955234  .00001288  00000+0  12345+2 0  9990
+            2 25544  51.6447 309.4881 0004694 203.6966 299.8876 15.48582035312205
+        """.trimIndent().byteInputStream()
+
+        val sat = dataParser.parseTLEStream(tleStream).single()
+
+        assert(kotlin.math.abs(sat.bstar - 12.345) < 1e-12)
+    }
+
+    @Test
+    fun `all parser entry points close their input stream`() = runTest(testDispatcher) {
+        val tle = CloseTrackingInputStream(validTLEStream.readBytes())
+        val csv = CloseTrackingInputStream(validCSVStream.readBytes())
+        val json = CloseTrackingInputStream(validJSONStream.readBytes())
+
+        dataParser.parseTLEStream(tle)
+        dataParser.parseCSVStream(csv)
+        dataParser.parseJSONStream(json)
+
+        assert(tle.closed)
+        assert(csv.closed)
+        assert(json.closed)
+    }
+
+    @Test
     fun `Given invalid TLE stream returns empty list`() = runTest(testDispatcher) {
         assert(dataParser.parseTLEStream(invalidTLEStream).isEmpty())
     }
@@ -203,7 +233,7 @@ class DataParserTest {
 
     @Test
     fun `Given valid data streams parsed results match`() = runTest(testDispatcher) {
-        assert(dataParser.parseCSVStream(validCSVStream) == dataParser.parseTLEStream(validTLEStream))
+        assertEquals(dataParser.parseCSVStream(validCSVStream), dataParser.parseTLEStream(validTLEStream))
     }
 
     @Test
@@ -238,5 +268,15 @@ class DataParserTest {
     fun `getDayOfYear returns correct day for November 16th`() {
         // Matches the CSV test data epoch: 2021-11-16 → day 320
         assert(dataParser.getDayOfYear(2021, 11, 16) == 320)
+    }
+}
+
+private class CloseTrackingInputStream(bytes: ByteArray) : ByteArrayInputStream(bytes) {
+    var closed = false
+        private set
+
+    override fun close() {
+        closed = true
+        super.close()
     }
 }

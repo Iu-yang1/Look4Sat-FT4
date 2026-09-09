@@ -16,6 +16,7 @@ import com.rtbishop.look4sat.core.domain.ft4.Ft4DecodeResult
 import com.rtbishop.look4sat.core.domain.ft4.Ft4EngineState
 import com.rtbishop.look4sat.core.domain.ft4.Ft4TransmitState
 import com.rtbishop.look4sat.core.domain.model.Ft4Settings
+import com.rtbishop.look4sat.core.domain.model.RadioControlSettings
 import com.rtbishop.look4sat.core.domain.repository.RadioTrackingState
 import com.rtbishop.look4sat.core.domain.predict.OrbitalPass
 import com.rtbishop.look4sat.core.domain.predict.OrbitalPos
@@ -31,6 +32,7 @@ data class Ft4State(
     val audioHub: AudioHubState,
     val transmitState: Ft4TransmitState,
     val automation: Ft4AutomationSnapshot = Ft4AutomationSnapshot(),
+    val radioTransport: String = RadioControlSettings.TRANSPORT_BLUETOOTH,
     val stationGrid: String = "",
     val targetCall: String = "",
     val selectedAudioFrequencyHz: Float = 1_500f,

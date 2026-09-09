@@ -18,15 +18,23 @@ import com.rtbishop.look4sat.core.domain.ft4.Ft4AutomationController
 import com.rtbishop.look4sat.core.domain.ft4.Ft4AutomationPhase
 import com.rtbishop.look4sat.core.domain.ft4.Ft4DecoderOptions
 import com.rtbishop.look4sat.core.domain.ft4.Ft4TransmissionRequest
+import com.rtbishop.look4sat.core.domain.ft4.Ft4TransmissionProgress
+import com.rtbishop.look4sat.core.domain.ft4.Ft4TransmissionResult
 import com.rtbishop.look4sat.core.domain.ft4.Ft4DecodeResult
+import com.rtbishop.look4sat.core.domain.logbook.QsoEventDirection
+import com.rtbishop.look4sat.core.domain.logbook.QsoEventResult
+import com.rtbishop.look4sat.core.domain.logbook.QsoMessageEvent
 import com.rtbishop.look4sat.core.domain.logbook.QsoRecord
 import com.rtbishop.look4sat.core.domain.logbook.QsoStatus
 import com.rtbishop.look4sat.core.domain.repository.IMainContainer
+import com.rtbishop.look4sat.core.domain.repository.TrackingPhase
 import com.rtbishop.look4sat.core.domain.time.DisciplinedFt4SlotScheduler
 import java.util.Locale
+import java.util.UUID
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
@@ -35,6 +43,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 
 class Ft4ViewModel(
     private val container: IMainContainer,
@@ -49,9 +58,12 @@ class Ft4ViewModel(
     private val automationController = Ft4AutomationController()
     private var automationJob: Job? = null
     private var manualTransmitJob: Job? = null
+    @Volatile private var automationStopping = false
     private var generation = 0L
     private var screenActive = false
     private var activeQsoId: Long? = null
+    private var activeQsoGeneration: Long? = null
+    private var activeQsoSessionId: String? = null
     private val loggedDecodeKeys = LinkedHashSet<String>()
     private val qsoMutex = Mutex()
 
@@ -65,6 +77,7 @@ class Ft4ViewModel(
             radio = radioService.state.value,
             audioHub = container.audioHub.state.value,
             transmitState = transmitter.state.value,
+            radioTransport = container.settingsRepo.radioControlSettings.value.catTransport,
             stationGrid = container.settingsRepo.stationPosition.value.qthLocator
         )
     )
@@ -104,7 +117,11 @@ class Ft4ViewModel(
             }
             is Ft4Action.SetTargetCall -> {
                 if (automationController.snapshot.phase.isRunning()) stopAutomation()
-                if (!action.callsign.equals(mutableState.value.targetCall, ignoreCase = true)) activeQsoId = null
+                if (!action.callsign.equals(mutableState.value.targetCall, ignoreCase = true)) {
+                    activeQsoId = null
+                    activeQsoGeneration = null
+                    activeQsoSessionId = null
+                }
                 mutableState.update { it.copy(targetCall = action.callsign.uppercase(Locale.US)) }
             }
             is Ft4Action.SelectDecode -> {
@@ -121,7 +138,7 @@ class Ft4ViewModel(
                         txSlotParity = 1 - decodedParity
                     )
                 }
-                viewModelScope.launch { updateQsoFromDecode(action.result, automatic = false) }
+                viewModelScope.launch { updateQsoFromDecode(action.result, automatic = false, sessionGeneration = null) }
             }
             is Ft4Action.SetTxSlotParity -> mutableState.update {
                 it.copy(txSlotParity = action.parity.coerceIn(0, 1))
@@ -165,6 +182,11 @@ class Ft4ViewModel(
         viewModelScope.launch {
             container.settingsRepo.stationPosition.collect { position ->
                 mutableState.update { it.copy(stationGrid = position.qthLocator) }
+            }
+        }
+        viewModelScope.launch {
+            container.settingsRepo.radioControlSettings.collect { settings ->
+                mutableState.update { it.copy(radioTransport = settings.catTransport) }
             }
         }
         viewModelScope.launch {
@@ -224,8 +246,15 @@ class Ft4ViewModel(
                 val slot = scheduler.boundaryAt(clock.nowMillis()).index
                 results.forEach { result ->
                     val before = automationController.snapshot
-                    val after = automationController.onDecode(session.generation, result, slot)
-                    if (after != before) updateQsoFromDecode(result, automatic = true)
+                    val after = automationController.onDecode(
+                        session.generation,
+                        result,
+                        slot,
+                        clock.nowMillis()
+                    )
+                    if (after != before) {
+                        updateQsoFromDecode(result, automatic = true, sessionGeneration = session.generation)
+                    }
                 }
                 val updated = automationController.snapshot
                 mutableState.update {
@@ -244,7 +273,7 @@ class Ft4ViewModel(
                 if (automation.phase.isRunning()) {
                     val mode = radio.txMode.orEmpty()
                     val band = bandKey(radio.nominalTxFrequencyHz)
-                    if (!radio.isActive || !radio.txConnected || radio.currentPass == null ||
+                    if (radio.trackingPhase != TrackingPhase.READY || !radio.txConnected || radio.currentPass == null ||
                         radio.selectedTransponder == null
                     ) {
                         stopAutomationNow("Satellite or radio context is unavailable")
@@ -335,7 +364,7 @@ class Ft4ViewModel(
     }
 
     private fun startManualTransmit() {
-        if (manualTransmitJob?.isActive == true || automationJob?.isActive == true) return
+        if (manualTransmitJob?.isActive == true || automationJob?.isActive == true || automationStopping) return
         val state = mutableState.value
         val message = runCatching { buildInitialMessage(state) }
             .getOrElse { return setError(it.message.orEmpty()) }
@@ -358,7 +387,7 @@ class Ft4ViewModel(
     }
 
     private fun armAutomation() {
-        if (automationJob?.isActive == true) return
+        if (automationJob?.isActive == true || automationStopping) return
         val state = mutableState.value
         val radio = state.radio
         when {
@@ -367,7 +396,8 @@ class Ft4ViewModel(
             !state.capability.transmitAvailable -> return setError(state.capability.unavailableReason)
             !state.hasMicrophonePermission -> return setError("Microphone permission is required")
             !clock.automaticFt4TransmitAllowed() -> return setError(clock.automaticFt4TransmitBlockReason())
-            !radio.isActive || !radio.txConnected -> return setError("Satellite tracking and TX radio are required")
+            radio.trackingPhase != TrackingPhase.READY || !radio.txConnected ->
+                return setError("Satellite tracking and TX radio must be ready")
             radio.currentPass == null || radio.selectedTransponder == null -> return setError("Select a pass and transponder first")
             state.settings.operatorCallsign.isBlank() -> return setError("Operator callsign is required")
             state.grid4.isBlank() -> return setError("Station Maidenhead grid is required")
@@ -375,6 +405,9 @@ class Ft4ViewModel(
         }
         val next = scheduler.nextBoundaryAfter(clock.nowMillis())
         val sessionGeneration = ++generation
+        activeQsoId = null
+        activeQsoGeneration = sessionGeneration
+        activeQsoSessionId = newSessionId(sessionGeneration)
         val automation = runCatching {
             automationController.arm(
                 generation = sessionGeneration,
@@ -403,7 +436,7 @@ class Ft4ViewModel(
                 val radio = state.radio
                 val pass = radio.currentPass
                 if (!state.settings.decodeEnabled || !clock.automaticFt4TransmitAllowed() ||
-                    !radio.isActive || !radio.txConnected || pass == null ||
+                    radio.trackingPhase != TrackingPhase.READY || !radio.txConnected || pass == null ||
                     radio.selectedTransponder == null
                 ) {
                     stopAutomationNow(clock.automaticFt4TransmitBlockReason().ifBlank { "FT4 automatic TX gate closed" })
@@ -415,20 +448,32 @@ class Ft4ViewModel(
                     val intent = automationController.claimTransmit(sessionGeneration, next.index)
                     if (intent != null) {
                         mutableState.update { it.copy(automation = automationController.snapshot) }
+                        var staleIntent = false
                         val succeeded = try {
-                            runTransmission(intent.message, next.startUtcMillis, sessionGeneration, automatic = true)
+                            runTransmission(
+                                intent.message,
+                                next.startUtcMillis,
+                                sessionGeneration,
+                                automatic = true,
+                                intent = intent
+                            )
                             true
                         } catch (cancelled: CancellationException) {
                             throw cancelled
                         } catch (error: Throwable) {
+                            staleIntent = !automationController.isIntentCurrent(intent)
                             setError(error.message.orEmpty())
                             false
                         }
                         automationController.transmissionFinished(sessionGeneration, intent, succeeded)
-                        val completed = automationController.snapshot.phase == Ft4AutomationPhase.COMPLETE
+                        val phase = automationController.snapshot.phase
                         mutableState.update { it.copy(automation = automationController.snapshot) }
-                        if (completed) finishActiveQso(QsoStatus.COMPLETE)
-                        if (!succeeded) break
+                        if (phase == Ft4AutomationPhase.COMPLETE) {
+                            finishActiveQso(QsoStatus.COMPLETE, sessionGeneration)
+                        } else if (phase == Ft4AutomationPhase.ABORTED) {
+                            finishActiveQso(QsoStatus.ABORTED, sessionGeneration)
+                        }
+                        if (!succeeded && !staleIntent) break
                     }
                 }
                 delay(AUTOMATION_POLL_MILLIS)
@@ -439,6 +484,7 @@ class Ft4ViewModel(
             automationController.abort(sessionGeneration, error.message ?: error.javaClass.simpleName)
             mutableState.update { it.copy(automation = automationController.snapshot, error = error.message.orEmpty()) }
             transmitter.emergencyStop()
+            finishActiveQso(QsoStatus.ABORTED, sessionGeneration)
         }
     }
 
@@ -446,7 +492,8 @@ class Ft4ViewModel(
         message: String,
         slotStartUtcMillis: Long,
         sessionGeneration: Long,
-        automatic: Boolean
+        automatic: Boolean,
+        intent: Ft4AutomaticTxIntent? = null
     ) {
         val state = mutableState.value
         val radio = state.radio
@@ -454,88 +501,202 @@ class Ft4ViewModel(
         check(state.capability.transmitAvailable) { state.capability.unavailableReason }
         val pass = checkNotNull(radio.currentPass) { "No satellite pass is selected" }
         val transponder = checkNotNull(radio.selectedTransponder) { "No transponder is selected" }
+        val targetCall = if (automatic) automationController.snapshot.targetCall else state.targetCall
         val validation = ft4Service.validateMessage(message)
         check(validation.valid) { validation.error }
-        appendTransmittedMessage(validation.normalizedMessage, automatic)
-        transmitter.transmit(
-            Ft4TransmissionRequest(
-                message = validation.normalizedMessage,
-                audioFrequencyHz = state.selectedAudioFrequencyHz,
-                slotStartUtcMillis = slotStartUtcMillis,
-                sessionGeneration = sessionGeneration,
-                satelliteCatalogNumber = pass.catNum,
-                transponderUuid = transponder.uuid,
-                automatic = automatic
+        val sessionId = ensureQsoSessionId(automatic, sessionGeneration)
+        val progress = mutableListOf<Ft4TransmissionProgress>()
+        try {
+            transmitter.transmit(
+                Ft4TransmissionRequest(
+                    message = validation.normalizedMessage,
+                    audioFrequencyHz = state.selectedAudioFrequencyHz,
+                    slotStartUtcMillis = slotStartUtcMillis,
+                    sessionGeneration = sessionGeneration,
+                    sessionId = sessionId,
+                    satelliteCatalogNumber = pass.catNum,
+                    transponderUuid = transponder.uuid,
+                    automatic = automatic,
+                    isStillCurrent = {
+                        intent == null || automationController.isIntentCurrent(intent)
+                    },
+                    onProgress = progress::add
+                )
             )
-        )
+        } finally {
+            withContext(NonCancellable) {
+                appendTransmissionEvents(
+                    message = validation.normalizedMessage,
+                    automatic = automatic,
+                    sessionGeneration = sessionGeneration,
+                    sessionId = sessionId,
+                    targetCall = targetCall,
+                    transmissionStartUtcMillis = slotStartUtcMillis,
+                    progress = progress
+                )
+            }
+        }
     }
 
     private fun stopAutomation() {
+        if (automationStopping) return
         val sessionGeneration = automationController.snapshot.generation
-        automationJob?.cancel()
+        val activeJob = automationJob
+        automationStopping = true
+        activeJob?.cancel()
         automationJob = null
         automationController.stop(sessionGeneration)
         mutableState.update { it.copy(automation = automationController.snapshot) }
-        viewModelScope.launch { transmitter.stop() }
+        viewModelScope.launch {
+            try {
+                activeJob?.join()
+                transmitter.stop()
+                finishActiveQso(QsoStatus.ABORTED, sessionGeneration)
+            } finally {
+                automationStopping = false
+            }
+        }
     }
 
     private suspend fun stopAutomationNow(reason: String) {
         val current = automationController.snapshot
         if (current.phase.isRunning()) {
-            automationController.abort(current.generation, reason)
-            mutableState.update { it.copy(automation = automationController.snapshot) }
-            transmitter.emergencyStop()
-            finishActiveQso(QsoStatus.ABORTED)
+            automationStopping = true
+            try {
+                automationController.abort(current.generation, reason)
+                mutableState.update { it.copy(automation = automationController.snapshot) }
+                transmitter.emergencyStop()
+                finishActiveQso(QsoStatus.ABORTED, current.generation)
+            } finally {
+                automationStopping = false
+            }
         }
     }
 
-    private suspend fun updateQsoFromDecode(result: Ft4DecodeResult, automatic: Boolean) = qsoMutex.withLock {
+    private suspend fun updateQsoFromDecode(
+        result: Ft4DecodeResult,
+        automatic: Boolean,
+        sessionGeneration: Long?
+    ) = qsoMutex.withLock {
         if (!loggedDecodeKeys.add(result.stableId)) return@withLock
         trimLoggedDecodeKeys()
         val state = mutableState.value
         val theirCall = result.sourceCall.trim().uppercase(Locale.US)
         if (theirCall.isBlank()) return@withLock
+        if (automatic && activeQsoGeneration != sessionGeneration) {
+            activeQsoId = null
+            activeQsoGeneration = sessionGeneration
+            activeQsoSessionId = newSessionId(sessionGeneration)
+        }
         val existing = activeQsoId?.let { container.qsoRepository.find(it) }
             ?.takeIf { it.theirCallsign == theirCall }
+        if (activeQsoId != null && existing == null) {
+            activeQsoId = null
+            activeQsoSessionId = null
+        }
+        val sessionId = activeQsoSessionId ?: newSessionId(sessionGeneration).also { activeQsoSessionId = it }
         val detail = result.gridOrReport.trim().uppercase(Locale.US)
-        val base = existing ?: newQsoRecord(state, theirCall, automatic, result.slotUtcMillis)
+        val completed = detail == "73"
+        val base = existing ?: newQsoRecord(state, theirCall, automatic, result.slotUtcMillis, sessionId)
+        val event = QsoMessageEvent(
+            direction = QsoEventDirection.RX,
+            utcMillis = result.slotUtcMillis,
+            result = QsoEventResult.RECEIVED,
+            sessionId = sessionId,
+            message = result.text
+        )
         val updated = base.copy(
             theirGrid = if (GRID_PATTERN.matches(detail)) detail else base.theirGrid,
             receivedReport = if (REPORT_PATTERN.matches(detail.removePrefix("R"))) detail.removePrefix("R") else base.receivedReport,
             automatic = base.automatic || automatic,
             rawMessages = (base.rawMessages + result.text).distinct(),
-            status = if (detail == "73" && automatic) QsoStatus.COMPLETE else base.status,
-            endUtcMillis = if (detail == "73" && automatic) result.slotUtcMillis else base.endUtcMillis
+            status = if (completed) QsoStatus.COMPLETE else base.status,
+            endUtcMillis = if (completed) result.slotUtcMillis else base.endUtcMillis,
+            sessionId = sessionId,
+            messageEvents = base.messageEvents + event
         )
         activeQsoId = container.qsoRepository.save(updated)
+        if (updated.status == QsoStatus.COMPLETE) {
+            activeQsoId = null
+            activeQsoGeneration = null
+            activeQsoSessionId = null
+        }
     }
 
-    private suspend fun appendTransmittedMessage(message: String, automatic: Boolean) = qsoMutex.withLock {
+    private suspend fun appendTransmissionEvents(
+        message: String,
+        automatic: Boolean,
+        sessionGeneration: Long,
+        sessionId: String,
+        targetCall: String,
+        transmissionStartUtcMillis: Long,
+        progress: List<Ft4TransmissionProgress>
+    ) = qsoMutex.withLock {
+        if (progress.isEmpty()) return@withLock
         val state = mutableState.value
-        val target = state.targetCall.trim().uppercase(Locale.US)
+        val target = targetCall.trim().uppercase(Locale.US)
         if (target.isBlank()) return@withLock
+        if (automatic && activeQsoGeneration != sessionGeneration) return@withLock
         val base = activeQsoId?.let { container.qsoRepository.find(it) }
-            ?.takeIf { it.theirCallsign == target }
-            ?: newQsoRecord(state, target, automatic, state.clock.utcMillis)
+            ?.takeIf { it.theirCallsign == target && (it.sessionId.isBlank() || it.sessionId == sessionId) }
+            ?: newQsoRecord(state, target, automatic, transmissionStartUtcMillis, sessionId)
+        val completed = progress.any { it.result == Ft4TransmissionResult.COMPLETED }
         val detail = message.trim().split(Regex("\\s+")).lastOrNull().orEmpty().uppercase(Locale.US)
-        val sentReport = detail.removePrefix("R").takeIf { REPORT_PATTERN.matches(it) } ?: base.sentReport
+        val sentReport = if (completed) {
+            detail.removePrefix("R").takeIf { REPORT_PATTERN.matches(it) } ?: base.sentReport
+        } else {
+            base.sentReport
+        }
+        val events = progress.map { event ->
+            QsoMessageEvent(
+                direction = QsoEventDirection.TX,
+                utcMillis = event.utcMillis,
+                result = event.result.toQsoEventResult(),
+                sessionId = sessionId,
+                message = message,
+                detail = event.detail
+            )
+        }
         activeQsoId = container.qsoRepository.save(
             base.copy(
                 sentReport = sentReport,
                 automatic = base.automatic || automatic,
-                rawMessages = (base.rawMessages + message).distinct()
+                rawMessages = if (completed) (base.rawMessages + message).distinct() else base.rawMessages,
+                sessionId = sessionId,
+                messageEvents = base.messageEvents + events
             )
         )
     }
 
-    private suspend fun finishActiveQso(status: QsoStatus) = qsoMutex.withLock {
-        val id = activeQsoId ?: return@withLock
-        val record = container.qsoRepository.find(id) ?: return@withLock
-        container.qsoRepository.save(record.copy(status = status, endUtcMillis = clock.nowMillis()))
+    private suspend fun ensureQsoSessionId(automatic: Boolean, sessionGeneration: Long): String =
+        qsoMutex.withLock {
+            if (automatic && activeQsoGeneration != sessionGeneration) {
+                activeQsoId = null
+                activeQsoGeneration = sessionGeneration
+                activeQsoSessionId = null
+            }
+            activeQsoSessionId ?: newSessionId(sessionGeneration).also { activeQsoSessionId = it }
+        }
+
+    private suspend fun finishActiveQso(status: QsoStatus, expectedGeneration: Long? = null) = qsoMutex.withLock {
+        if (expectedGeneration != null && activeQsoGeneration != expectedGeneration) return@withLock
+        val id = activeQsoId
+        val record = id?.let { container.qsoRepository.find(it) }
+        if (record != null) {
+            container.qsoRepository.save(record.copy(status = status, endUtcMillis = clock.nowMillis()))
+        }
         activeQsoId = null
+        activeQsoGeneration = null
+        activeQsoSessionId = null
     }
 
-    private fun newQsoRecord(state: Ft4State, target: String, automatic: Boolean, start: Long): QsoRecord {
+    private fun newQsoRecord(
+        state: Ft4State,
+        target: String,
+        automatic: Boolean,
+        start: Long,
+        sessionId: String
+    ): QsoRecord {
         val radio = state.radio
         val pass = state.trackingPass
         val transponder = radio.selectedTransponder
@@ -554,9 +715,13 @@ class Ft4ViewModel(
                 .filter(String::isNotBlank).joinToString("/"),
             passAosUtcMillis = pass?.aosTime,
             ft4AudioFrequencyHz = state.selectedAudioFrequencyHz.toInt(),
-            automatic = automatic
+            automatic = automatic,
+            sessionId = sessionId
         )
     }
+
+    private fun newSessionId(sessionGeneration: Long?): String =
+        "ft4-${sessionGeneration ?: 0L}-${UUID.randomUUID()}"
 
     private fun trimLoggedDecodeKeys() {
         while (loggedDecodeKeys.size > 256) loggedDecodeKeys.remove(loggedDecodeKeys.first())
@@ -565,7 +730,7 @@ class Ft4ViewModel(
     private fun toggleTracking() {
         val state = mutableState.value
         val radio = state.radio
-        if (radio.isActive) {
+        if (radio.isActive || radio.trackingPhase == TrackingPhase.INITIALIZING) {
             radioService.stopTracking()
         } else {
             val pass = state.trackingPass ?: return setError("Select a pass in Radar first")
@@ -595,11 +760,13 @@ class Ft4ViewModel(
 
     private fun closeOperations() {
         screenActive = false
+        val sessionGeneration = activeQsoGeneration
         automationJob?.cancel()
         manualTransmitJob?.cancel()
         sensorsRepo.disableSensor()
         cleanupScope.launch {
             transmitter.emergencyStop()
+            finishActiveQso(QsoStatus.ABORTED, sessionGeneration)
             ft4Service.stopReceiving()
         }
     }
@@ -609,7 +776,9 @@ class Ft4ViewModel(
     }
 
     companion object {
-        private const val CLAIM_AHEAD_MILLIS = 1_500L
+        // Early decode starts 1.5 s before the boundary; accept results until T-0.9 s,
+        // then claim at T-0.85 s so waveform/CAT preparation has an explicit budget.
+        private const val CLAIM_AHEAD_MILLIS = 850L
         private const val AUTOMATION_POLL_MILLIS = 100L
 
         fun factory(container: IMainContainer) = viewModelFactory {
@@ -635,6 +804,13 @@ private fun Ft4State.decoderOptions() = Ft4DecoderOptions(
 )
 
 private fun bandKey(frequencyHz: Long?): String = frequencyHz?.let { (it / 1_000_000L).toString() }.orEmpty()
+
+private fun Ft4TransmissionResult.toQsoEventResult(): QsoEventResult = when (this) {
+    Ft4TransmissionResult.PREPARING -> QsoEventResult.PREPARING
+    Ft4TransmissionResult.STARTED -> QsoEventResult.STARTED
+    Ft4TransmissionResult.COMPLETED -> QsoEventResult.COMPLETED
+    Ft4TransmissionResult.FAILED -> QsoEventResult.FAILED
+}
 
 private fun adifBand(frequencyHz: Long?): String = when (frequencyHz ?: return "") {
     in 50_000_000L..54_000_000L -> "6m"

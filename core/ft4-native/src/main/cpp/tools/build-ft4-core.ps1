@@ -1,7 +1,7 @@
-﻿param(
+param(
     [Parameter(Mandatory = $true)]
     [string]$OutputDir,
-    [ValidateSet('arm64-v8a', 'armeabi-v7a')]
+    [ValidateSet('arm64-v8a', 'armeabi-v7a', 'x86_64')]
     [string]$Abi = 'arm64-v8a',
     [string]$CMakePath = '',
     [string]$NinjaPath = '',
@@ -18,7 +18,7 @@ Set-StrictMode -Version Latest
 
 function Assert-ExistingPath([string]$Path, [string]$Label) {
     if ([string]::IsNullOrWhiteSpace($Path) -or -not (Test-Path $Path)) {
-        throw "缺少 $Label：$Path"
+        throw "Missing $Label`: $Path"
     }
 }
 
@@ -38,6 +38,7 @@ $roots = @(Get-Ft8cnCandidateRoots -RepoRoot $repoRoot)
 $configuration = @{
     'arm64-v8a' = @{ Triple = 'aarch64-linux-android24' }
     'armeabi-v7a' = @{ Triple = 'armv7a-linux-androideabi24' }
+    'x86_64' = @{ Triple = 'x86_64-linux-android24' }
 }[$Abi]
 $targetTriple = $configuration.Triple
 
@@ -71,13 +72,13 @@ Assert-ExistingPath $CMakePath 'CMake'
 Assert-ExistingPath $NinjaPath 'Ninja'
 Assert-ExistingPath $NdkRoot 'Android NDK'
 Assert-ExistingPath $FlangPath 'Flang'
-Assert-ExistingPath $BoostHeaders 'Boost 头文件'
-Assert-ExistingPath $LlvmSourceRoot 'LLVM 源码'
+Assert-ExistingPath $BoostHeaders 'Boost headers'
+Assert-ExistingPath $LlvmSourceRoot 'LLVM source'
 Assert-ExistingPath $intrinsicModuleDir 'Flang intrinsic modules'
 Assert-ExistingPath $clang 'Android clang'
 Assert-ExistingPath $clangxx 'Android clang++'
 Assert-ExistingPath $llvmAr 'Android llvm-ar'
-Assert-ExistingPath $manifest 'FT4 源码清单'
+Assert-ExistingPath $manifest 'FT4 source manifest'
 
 $fortranSources = New-Object System.Collections.Generic.List[string]
 $cSources = New-Object System.Collections.Generic.List[string]
@@ -86,14 +87,14 @@ foreach ($line in Get-Content $manifest -Encoding UTF8) {
     $trimmed = $line.Trim()
     if (-not $trimmed -or $trimmed.StartsWith('#')) { continue }
     $fields = $trimmed -split '\|', 2
-    if ($fields.Count -ne 2) { throw "无效源码清单行：$line" }
+    if ($fields.Count -ne 2) { throw "Invalid source manifest entry: $line" }
     $source = Join-Path $cppRoot $fields[1].Replace('/', [System.IO.Path]::DirectorySeparatorChar)
-    Assert-ExistingPath $source '清单源码'
+    Assert-ExistingPath $source 'manifest source'
     switch ($fields[0]) {
         'fortran' { $fortranSources.Add($source) }
         'c' { $cSources.Add($source) }
         'cxx' { $cxxSources.Add($source) }
-        default { throw "未知源码类型：$($fields[0])" }
+        default { throw "Unknown source type: $($fields[0])" }
     }
 }
 
@@ -124,13 +125,13 @@ end subroutine look4sat_flang_arm32_probe
 & $runtimeScript -OutputDir $OutputDir -CMakePath $CMakePath -NinjaPath $NinjaPath `
     -NdkRoot $NdkRoot -FlangPath $FlangPath -LlvmSourceRoot $LlvmSourceRoot `
     -BuildProfile $BuildProfile -Optimization O2 -Abi $Abi -TargetTriple $targetTriple
-if (-not $?) { throw "Flang runtime 构建失败：ABI=$Abi" }
+if (-not $?) { throw "Flang runtime build failed: ABI=$Abi" }
 
 $runtimeArchive = Join-Path $OutputDir 'libflang_rt.runtime.a'
 Assert-ExistingPath $runtimeArchive 'Flang runtime archive'
 $profileFlags = if ($BuildProfile -eq 'Debug') {
-    # Flang 22 的 ARM32 低优化类型描述仍使用 64 位静态地址，链接前就会失败；
-    # 该 ABI 的官方 Fortran 核心在 Debug APK 中也使用已验证的 Release 编译参数。
+    # Flang 22 emits 64-bit static addresses for ARM32 type descriptors at low
+    # optimization, so the official Fortran core uses the verified release flags.
     if ($Abi -eq 'armeabi-v7a') { @('-O2', '-DNDEBUG') } else { @('-O0', '-g') }
 } else {
     @('-O2', '-DNDEBUG')
@@ -155,7 +156,7 @@ $coreArchive = Join-Path $OutputDir 'liblook4sat_ft4_core.a'
 $fingerprintFile = Join-Path $OutputDir 'ft4-core.fingerprint'
 if ((Test-Path $coreArchive) -and (Test-Path $fingerprintFile) -and
         ((Get-Content $fingerprintFile -Raw).Trim() -eq $fingerprint)) {
-    Write-Host "FT4 官方核心已是最新：$coreArchive"
+    Write-Host "FT4 official core is current: $coreArchive"
     exit 0
 }
 
@@ -195,11 +196,11 @@ while ($pending.Count -gt 0) {
             $progress++
         } else {
             $next.Add($source)
-            Add-Content -LiteralPath $compileLog -Value "等待 $source`n$($result.Output)" -Encoding UTF8
+            Add-Content -LiteralPath $compileLog -Value "Waiting for $source`n$($result.Output)" -Encoding UTF8
         }
     }
     if ($progress -eq 0) {
-        throw "FT4 Fortran 核心无法继续编译：ABI=$Abi，日志=$compileLog"
+        throw "FT4 Fortran core cannot make compilation progress: ABI=$Abi, log=$compileLog"
     }
     $pending = $next
 }
@@ -210,7 +211,7 @@ foreach ($source in $cxxSources) {
     foreach ($include in $nativeIncludes) { $arguments += @('-I', $include) }
     $arguments += @('-c', $source, '-o', $object)
     $result = Invoke-Ft8cnNativeCapture -Path $clangxx -Arguments $arguments
-    if ($result.ExitCode -ne 0) { throw "C++ 编译失败：$source`n$($result.Output)" }
+    if ($result.ExitCode -ne 0) { throw "C++ compilation failed: $source`n$($result.Output)" }
     $objects.Add($object)
 }
 foreach ($source in $cSources) {
@@ -219,14 +220,14 @@ foreach ($source in $cSources) {
     foreach ($include in $nativeIncludes) { $arguments += @('-I', $include) }
     $arguments += @('-c', $source, '-o', $object)
     $result = Invoke-Ft8cnNativeCapture -Path $clang -Arguments $arguments
-    if ($result.ExitCode -ne 0) { throw "C 编译失败：$source`n$($result.Output)" }
+    if ($result.ExitCode -ne 0) { throw "C compilation failed: $source`n$($result.Output)" }
     $objects.Add($object)
 }
 
 $candidateArchive = Join-Path $workDir 'liblook4sat_ft4_core.candidate.a'
 if (Test-Path $candidateArchive) { Remove-Item -LiteralPath $candidateArchive -Force }
 $archive = Invoke-Ft8cnNativeCapture -Path $llvmAr -Arguments (@('rcs', $candidateArchive) + @($objects))
-if ($archive.ExitCode -ne 0) { throw "FT4 archive 创建失败：`n$($archive.Output)" }
+if ($archive.ExitCode -ne 0) { throw "FT4 archive creation failed:`n$($archive.Output)" }
 
 $probeSource = Join-Path $workDir 'link-probe.c'
 $probeObject = Join-Path $workDir 'link-probe.o'
@@ -244,14 +245,14 @@ $probeCompile = Invoke-Ft8cnNativeCapture -Path $clang -Arguments @(
     '-target', $targetTriple, '-fPIC', '-std=c11', '-I', $cppRoot,
     '-c', $probeSource, '-o', $probeObject
 )
-if ($probeCompile.ExitCode -ne 0) { throw "链接探针编译失败：`n$($probeCompile.Output)" }
+if ($probeCompile.ExitCode -ne 0) { throw "Link probe compilation failed:`n$($probeCompile.Output)" }
 $link = Invoke-Ft8cnNativeCapture -Path $clangxx -Arguments @(
     '-target', $targetTriple, '-shared', '-fPIC', '-Wl,--no-undefined', '-o', $probeLibrary,
     $probeObject, '-Wl,--whole-archive', $candidateArchive, '-Wl,--no-whole-archive',
     $runtimeArchive, '-lm', '-lc', '-ldl'
 )
-if ($link.ExitCode -ne 0) { throw "FT4 官方核心链接验证失败：ABI=$Abi`n$($link.Output)" }
+if ($link.ExitCode -ne 0) { throw "FT4 official core link verification failed: ABI=$Abi`n$($link.Output)" }
 
 Move-Item -LiteralPath $candidateArchive -Destination $coreArchive -Force
 Set-Content -LiteralPath $fingerprintFile -Value $fingerprint -Encoding ASCII
-Write-Host "FT4 官方核心构建完成：ABI=$Abi archive=$coreArchive"
+Write-Host "FT4 official core build completed: ABI=$Abi archive=$coreArchive"

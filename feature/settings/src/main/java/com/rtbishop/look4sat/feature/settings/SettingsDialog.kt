@@ -23,8 +23,12 @@ import android.bluetooth.BluetoothManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.hardware.usb.UsbConstants
+import android.hardware.usb.UsbDevice
 import android.hardware.usb.UsbManager
 import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
@@ -857,6 +861,7 @@ fun RadioControlDialog(
     val enabled    = rememberSaveable { mutableStateOf(initialSettings.enabled) }
     val radioModel = rememberSaveable { mutableStateOf(initialSettings.radioModel) }
     val splitMode  = rememberSaveable { mutableStateOf(initialSettings.splitMode) }
+    val duplexMode = rememberSaveable { mutableStateOf(initialSettings.duplexMode) }
     val catTransport = rememberSaveable { mutableStateOf(initialSettings.catTransport) }
     val txAddress  = rememberSaveable { mutableStateOf(initialSettings.txRadioAddress) }
     val rxAddress  = rememberSaveable { mutableStateOf(initialSettings.rxRadioAddress) }
@@ -864,29 +869,73 @@ fun RadioControlDialog(
     val rxName     = rememberSaveable { mutableStateOf(initialSettings.rxRadioName) }
     val baudRate   = rememberSaveable { mutableIntStateOf(initialSettings.baudRate) }
     val selectingFor = rememberSaveable { mutableStateOf("") } // "tx", "rx", or ""
+    val bluetoothDevicesRevision = remember { mutableIntStateOf(0) }
+    val usbSerialDeviceFormat = stringResource(R.string.rc_usb_cdc_device)
+    val bluetoothPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) {
+        bluetoothDevicesRevision.intValue++
+    }
 
-    val isIcom = radioModel.value in setOf(
-        RadioControlSettings.MODEL_ICOM_IC705,
-        RadioControlSettings.MODEL_ICOM_IC9700
-    )
+    val selectDevice: (String) -> Unit = { target ->
+        selectingFor.value = target
+        if (
+            catTransport.value == RadioControlSettings.TRANSPORT_BLUETOOTH &&
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+            ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.BLUETOOTH_CONNECT
+            ) != PackageManager.PERMISSION_GRANTED
+        ) {
+            bluetoothPermissionLauncher.launch(Manifest.permission.BLUETOOTH_CONNECT)
+        }
+    }
+
+    val isIcom = radioModel.value in RadioControlSettings.ICOM_RADIOS
+    val supportsSatelliteMode = radioModel.value in RadioControlSettings.SATELLITE_MODE_RADIOS
     val isSingleRadio = isIcom && splitMode.value
 
-    // Reset split mode when switching away from IC-705
+    // Reset single-radio mode when switching away from Icom.
     if (!isIcom && splitMode.value) splitMode.value = false
 
-    val baudRates = if (isIcom) RadioControlSettings.BAUD_RATES_ICOM
-                   else         RadioControlSettings.BAUD_RATES_YAESU
+    val baudRates = when {
+        radioModel.value == RadioControlSettings.MODEL_ICOM_IC910 ->
+            RadioControlSettings.BAUD_RATES_IC910
+        isIcom -> RadioControlSettings.BAUD_RATES_ICOM
+        else -> RadioControlSettings.BAUD_RATES_YAESU
+    }
 
     // If current baud rate is not in the new list, default to the first available
     if (baudRate.intValue !in baudRates) baudRate.intValue = baudRates.first()
 
-    val pairedDevices: List<Pair<String, String>> = remember(catTransport.value) {
+    val pairedDevices: List<Pair<String, String>> = remember(
+        catTransport.value,
+        usbSerialDeviceFormat,
+        bluetoothDevicesRevision.intValue
+    ) {
         buildList {
             try {
                 if (catTransport.value == RadioControlSettings.TRANSPORT_USB) {
                     val manager = context.getSystemService(UsbManager::class.java)
                     manager.deviceList.values.forEach { device ->
-                        add((device.productName ?: "USB ${device.vendorId}:${device.productId}") to device.deviceId.toString())
+                        device.usbSerialPorts().forEach { port ->
+                            val product = runCatching { device.productName }.getOrNull() ?: "USB"
+                            val identity = "%04X:%04X".format(device.vendorId, device.productId)
+                            val name = usbSerialDeviceFormat.format(
+                                product,
+                                port.driverName,
+                                port.dataInterfaceId,
+                                identity
+                            )
+                            val selector = listOf(
+                                device.deviceId,
+                                port.controlInterfaceId,
+                                port.dataInterfaceId,
+                                device.vendorId,
+                                device.productId
+                            ).joinToString(":")
+                            add(name to selector)
+                        }
                     }
                     return@buildList
                 }
@@ -919,7 +968,12 @@ fun RadioControlDialog(
                 rxRadioName    = if (isSingleRadio) "" else rxName.value,
                 baudRate       = baudRate.intValue,
                 splitMode      = splitMode.value,
-                catTransport   = catTransport.value
+                catTransport   = catTransport.value,
+                duplexMode     = if (supportsSatelliteMode) {
+                    duplexMode.value
+                } else {
+                    RadioControlSettings.DUPLEX_MODE_SPLIT
+                }
             )
         )
         onDismiss()
@@ -957,6 +1011,18 @@ fun RadioControlDialog(
                         enabled = enabled.value
                     )
                 }
+            }
+            when (catTransport.value) {
+                RadioControlSettings.TRANSPORT_USB -> Text(
+                    stringResource(R.string.rc_usb_cdc_hint),
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                RadioControlSettings.TRANSPORT_TCP -> Text(
+                    stringResource(R.string.rc_tcp_raw_hint),
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
             if (catTransport.value == RadioControlSettings.TRANSPORT_TCP) {
                 OutlinedTextField(
@@ -996,7 +1062,7 @@ fun RadioControlDialog(
             }
             Spacer(modifier = Modifier.height(6.dp))
 
-            // IC-705 split-mode toggle (only shown for IC-705)
+            // Single-radio duplex control for Icom split or dedicated satellite mode.
             if (isIcom) {
                 Row(
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -1020,7 +1086,36 @@ fun RadioControlDialog(
                 Spacer(modifier = Modifier.height(6.dp))
             }
 
-            // TX Radio (always shown; in split mode this is the single IC-705)
+            if (isSingleRadio && supportsSatelliteMode) {
+                Row(
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(stringResource(R.string.rc_satellite_mode), fontWeight = FontWeight.Medium)
+                        Text(
+                            text = stringResource(R.string.rc_satellite_mode_hint),
+                            fontSize = 12.sp,
+                            color = androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Switch(
+                        checked = duplexMode.value == RadioControlSettings.DUPLEX_MODE_SATELLITE,
+                        onCheckedChange = { enabled ->
+                            duplexMode.value = if (enabled) {
+                                RadioControlSettings.DUPLEX_MODE_SATELLITE
+                            } else {
+                                RadioControlSettings.DUPLEX_MODE_SPLIT
+                            }
+                        },
+                        enabled = enabled.value
+                    )
+                }
+                Spacer(modifier = Modifier.height(6.dp))
+            }
+
+            // TX radio (the sole CAT connection in single-radio duplex mode).
             val txLabel = stringResource(if (isSingleRadio) R.string.rc_single_radio else R.string.rc_tx_radio)
             Text(txLabel, fontWeight = FontWeight.Medium)
             if (txAddress.value.isNotBlank()) {
@@ -1028,7 +1123,7 @@ fun RadioControlDialog(
             }
             if (catTransport.value != RadioControlSettings.TRANSPORT_TCP) {
                 CardButton(
-                    onClick  = { selectingFor.value = "tx" },
+                    onClick  = { selectDevice("tx") },
                     text     = stringResource(if (isSingleRadio) R.string.rc_select_device else R.string.rc_select_tx_device),
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -1043,7 +1138,7 @@ fun RadioControlDialog(
                 }
                 if (catTransport.value != RadioControlSettings.TRANSPORT_TCP) {
                     CardButton(
-                        onClick  = { selectingFor.value = "rx" },
+                        onClick  = { selectDevice("rx") },
                         text     = stringResource(R.string.rc_select_rx_device),
                         modifier = Modifier.fillMaxWidth()
                     )
@@ -1073,14 +1168,20 @@ fun RadioControlDialog(
                                     if (catTransport.value == RadioControlSettings.TRANSPORT_USB) {
                                         val usbManager = context.getSystemService(UsbManager::class.java)
                                         val device = usbManager.deviceList.values.firstOrNull {
-                                            it.deviceId.toString() == address
+                                            it.deviceId.toString() == address.substringBefore(':')
                                         }
                                         if (device != null && !usbManager.hasPermission(device)) {
+                                            val mutableFlag = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                                                PendingIntent.FLAG_MUTABLE
+                                            } else {
+                                                0
+                                            }
                                             val permissionIntent = PendingIntent.getBroadcast(
                                                 context,
                                                 device.deviceId,
-                                                Intent("${context.packageName}.USB_CAT_PERMISSION").setPackage(context.packageName),
-                                                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+                                                Intent("${context.packageName}.USB_CAT_PERMISSION")
+                                                    .setPackage(context.packageName),
+                                                mutableFlag or PendingIntent.FLAG_UPDATE_CURRENT
                                             )
                                             usbManager.requestPermission(device, permissionIntent)
                                         }
@@ -1124,4 +1225,55 @@ fun RadioControlDialog(
             Spacer(modifier = Modifier.height(6.dp))
         }
     }
+}
+
+private data class UsbSerialUiPort(
+    val driverName: String,
+    val controlInterfaceId: Int,
+    val dataInterfaceId: Int
+)
+
+private fun UsbDevice.usbSerialPorts(): List<UsbSerialUiPort> {
+    val interfaces = (0 until interfaceCount).map(::getInterface)
+    val controls = interfaces.filter {
+        it.interfaceClass == UsbConstants.USB_CLASS_COMM && it.interfaceSubclass == 0x02
+    }
+    val dataInterfaces = interfaces.filter { intf ->
+        intf.interfaceClass == UsbConstants.USB_CLASS_CDC_DATA &&
+            (0 until intf.endpointCount).map(intf::getEndpoint).any {
+                it.type == UsbConstants.USB_ENDPOINT_XFER_BULK && it.direction == UsbConstants.USB_DIR_IN
+            } &&
+            (0 until intf.endpointCount).map(intf::getEndpoint).any {
+                it.type == UsbConstants.USB_ENDPOINT_XFER_BULK && it.direction == UsbConstants.USB_DIR_OUT
+            }
+    }
+    val cdcPorts = controls.mapNotNull { control ->
+        dataInterfaces.firstOrNull { it.id == control.id + 1 }?.let {
+            UsbSerialUiPort("CDC-ACM", control.id, it.id)
+        }
+    }.ifEmpty {
+        if (controls.size == 1 && dataInterfaces.size == 1) {
+            listOf(UsbSerialUiPort("CDC-ACM", controls.single().id, dataInterfaces.single().id))
+        } else {
+            emptyList()
+        }
+    }
+    if (cdcPorts.isNotEmpty()) return cdcPorts
+
+    val driverName = when (vendorId) {
+        0x10C4 -> "CP210x"
+        0x0403 -> "FTDI"
+        0x1A86, 0x4348 -> "CH34x"
+        else -> return emptyList()
+    }
+    val serialInterfaces = interfaces.filter { intf ->
+        val endpoints = (0 until intf.endpointCount).map(intf::getEndpoint)
+        endpoints.any {
+            it.type == UsbConstants.USB_ENDPOINT_XFER_BULK && it.direction == UsbConstants.USB_DIR_IN
+        } && endpoints.any {
+            it.type == UsbConstants.USB_ENDPOINT_XFER_BULK && it.direction == UsbConstants.USB_DIR_OUT
+        }
+    }
+    val ports = if (driverName == "CH34x") serialInterfaces.takeLast(1) else serialInterfaces
+    return ports.map { intf -> UsbSerialUiPort(driverName, intf.id, intf.id) }
 }

@@ -8,13 +8,15 @@ import com.rtbishop.look4sat.core.domain.model.LatestRelease
 import com.rtbishop.look4sat.core.domain.repository.IUpdateRepository
 import com.rtbishop.look4sat.core.domain.source.IRemoteSource
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
-import org.json.JSONObject
 import java.io.File
 import java.net.URI
 import java.security.MessageDigest
 import java.util.Locale
 import java.util.zip.ZipFile
+import kotlin.coroutines.coroutineContext
 
 class UpdateRepository(
     private val remoteSource: IRemoteSource,
@@ -23,31 +25,81 @@ class UpdateRepository(
     private val context = context.applicationContext
 
     override suspend fun getLatestRelease(): LatestRelease? = withContext(Dispatchers.IO) {
-        val result = remoteSource.getNetworkStream(LATEST_RELEASE_URL)
-        val stream = result.stream ?: return@withContext null
-        try {
-            val json = stream.bufferedReader().use { it.readText() }
-            parseRelease(json, Build.SUPPORTED_ABIS.toList())
-        } catch (e: Exception) {
-            println("UpdateRepository parse failure: $e")
-            null
+        var metadata: LatestRelease? = null
+        for (prefix in listOf("") + UPDATE_MIRRORS) {
+            coroutineContext.ensureActive()
+            val source = "$prefix$RELEASE_REPOSITORY/releases/latest"
+            val html = readPage(source) ?: continue
+            val release = parseReleasePage(html, prefix, Build.SUPPORTED_ABIS.toList()) ?: continue
+            metadata = metadata ?: release
+            if (release.apkUrl != null) return@withContext release
+            // GitHub lazy-loads the actual asset list in an include-fragment.
+            val assets = readPage("$prefix$RELEASE_REPOSITORY/releases/expanded_assets/${release.versionTag}") ?: continue
+            val withAssets = parseReleasePage(html + "\n" + assets, prefix, Build.SUPPORTED_ABIS.toList())
+            if (withAssets?.apkUrl != null) return@withContext withAssets
         }
+        metadata
+    }
+
+    private suspend fun readPage(url: String): String? = try {
+        remoteSource.getNetworkStream(url).stream?.bufferedReader()?.use { reader ->
+            val text = StringBuilder()
+            val buffer = CharArray(8192)
+            var read = reader.read(buffer)
+            while (read >= 0) {
+                coroutineContext.ensureActive()
+                text.append(buffer, 0, read)
+                if (text.length > 4_000_000) return@use null
+                read = reader.read(buffer)
+            }
+            text.toString()
+        }
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (_: Exception) {
+        null
     }
 
     override suspend fun downloadApk(url: String, dest: File): Boolean = withContext(Dispatchers.IO) {
         if (!isTrustedDownloadUrl(url)) return@withContext false
-        val result = remoteSource.getNetworkStream(url)
-        val stream = result.stream ?: return@withContext false
         val partial = File(dest.parentFile, "${dest.name}.part")
         try {
-            partial.delete()
-            partial.outputStream().use { out -> stream.use { it.copyTo(out) } }
-            if (!validateApk(partial)) return@withContext false
-            if (dest.exists() && !dest.delete()) return@withContext false
-            partial.renameTo(dest) || runCatching {
-                partial.copyTo(dest, overwrite = true)
+            val canonical = canonicalDownloadUrl(url) ?: return@withContext false
+            val candidates = (listOf(url, canonical) + UPDATE_MIRRORS.map { it + canonical }).distinct()
+            for (candidate in candidates) {
+                coroutineContext.ensureActive()
+                val stream = remoteSource.getNetworkStream(candidate).stream ?: continue
+                val downloaded = try {
+                    stream.use { input ->
+                        partial.outputStream().use { out ->
+                            val buffer = ByteArray(64 * 1024)
+                            var total = 0L
+                            var count = input.read(buffer)
+                            while (count >= 0) {
+                                coroutineContext.ensureActive()
+                                total += count
+                                if (total > MAX_APK_BYTES) throw java.io.IOException("APK exceeds size limit")
+                                out.write(buffer, 0, count)
+                                count = input.read(buffer)
+                            }
+                        }
+                    }
+                    validateApk(partial)
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    false
+                }
+                if (!downloaded) continue
+                if (dest.exists() && !dest.delete()) return@withContext false
+                if (partial.renameTo(dest)) return@withContext true
+                partial.copyTo(dest, overwrite = false)
                 partial.delete()
-            }.isSuccess
+                return@withContext true
+            }
+            false
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (e: Exception) {
             println("UpdateRepository download failure: $e")
             false
@@ -131,37 +183,9 @@ class UpdateRepository(
     }.getOrDefault(false)
 
     private companion object {
-        const val LATEST_RELEASE_URL = "https://api.github.com/repos/Iu-yang1/Look4Sat-FT4/releases/latest"
         const val MIN_APK_BYTES = 100_000L
         const val MAX_APK_BYTES = 250_000_000L
     }
-}
-
-internal fun parseRelease(json: String, supportedAbis: List<String>): LatestRelease? {
-    val obj = JSONObject(json)
-    val tag = obj.optString("tag_name")
-    if (tag.isBlank()) return null
-    val assets = buildList {
-        val values = obj.optJSONArray("assets") ?: return@buildList
-        for (index in 0 until values.length()) {
-            val asset = values.optJSONObject(index) ?: continue
-            add(
-                ReleaseAsset(
-                    name = asset.optString("name", ""),
-                    url = asset.optString("browser_download_url", ""),
-                    contentType = asset.optString("content_type", ""),
-                    state = asset.optString("state", ""),
-                    size = asset.optLong("size", 0L)
-                )
-            )
-        }
-    }
-    return LatestRelease(
-        versionTag = tag,
-        title = obj.optString("name", ""),
-        body = obj.optString("body", ""),
-        apkUrl = selectReleaseAsset(assets, tag, supportedAbis)?.url
-    )
 }
 
 internal data class ReleaseAsset(
@@ -202,25 +226,39 @@ private fun releaseAssetScore(
     if (listOf("debug", "unsigned", "unaligned").any(normalized::contains)) return null
     if (state.isNotBlank() && state != "uploaded") return null
     if (contentType.isNotBlank() && contentType !in APK_CONTENT_TYPES) return null
-    if (size !in 100_000L..250_000_000L) return null
+    // Release HTML has no reliable byte size; the downloaded APK is checked before publication.
+    if (size != -1L && size !in 100_000L..250_000_000L) return null
 
-    val namedAbis = KNOWN_ABIS.filter(normalized::contains)
+    val namedAbis = KNOWN_ABIS.filter { abi ->
+        Regex("(?<![a-z0-9])${Regex.escape(abi)}(?![a-z0-9_])").containsMatchIn(normalized)
+    }
     if (namedAbis.isNotEmpty() && namedAbis.none(supportedAbis::contains)) return null
     var score = 100
     if ("universal" in normalized) score += 20
     supportedAbis.forEachIndexed { index, abi ->
-        if (abi.lowercase(Locale.US) in normalized) score += 50 - index
+        if (abi in namedAbis) score += 50 - index
     }
     if (tag.lowercase(Locale.US).removePrefix("v") in normalized) score += 10
     if ("release" in normalized) score += 5
     return score
 }
 
-private fun isTrustedDownloadUrl(url: String): Boolean = runCatching {
-    val uri = URI(url)
-    uri.scheme == "https" && uri.host.equals("github.com", ignoreCase = true) &&
-        uri.path.startsWith("/Iu-yang1/Look4Sat-FT4/releases/download/", ignoreCase = true)
-}.getOrDefault(false)
+internal fun isTrustedDownloadUrl(url: String): Boolean = canonicalDownloadUrl(url) != null
+
+internal fun canonicalDownloadUrl(url: String): String? = runCatching {
+    val prefix = UPDATE_MIRRORS.firstOrNull { url.startsWith(it) }.orEmpty()
+    val canonical = url.removePrefix(prefix)
+    val uri = URI(canonical)
+    val pathPrefix = "/Iu-yang1/Look4Sat-FT4/releases/download/"
+    val segments = uri.path.orEmpty().takeIf { it.startsWith(pathPrefix, true) }?.substring(pathPrefix.length)?.split('/')
+    canonical.takeIf {
+        uri.scheme == "https" && uri.host.equals("github.com", ignoreCase = true) &&
+            uri.userInfo == null && uri.port in listOf(-1, 443) && uri.query == null && uri.fragment == null &&
+            uri.normalize().path == uri.path &&
+            segments?.size == 2 && segments.none { it.isBlank() || it == "." || it == ".." } &&
+            segments.last().endsWith(".apk", true)
+    }
+}.getOrNull()
 
 private val APK_CONTENT_TYPES = setOf("application/vnd.android.package-archive", "application/octet-stream")
 private val KNOWN_ABIS = listOf("arm64-v8a", "armeabi-v7a", "x86_64", "x86")

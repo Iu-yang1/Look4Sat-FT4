@@ -19,4 +19,5 @@ interface IQsoRepository {
     suspend fun delete(id: Long)
     suspend fun exportAdi(ids: Set<Long>? = null, includeIncomplete: Boolean = false): String
     suspend fun importAdi(content: String): AdifImportResult
+    suspend fun mergeConfirmed(records: List<QsoRecord>): AdifImportResult
 }

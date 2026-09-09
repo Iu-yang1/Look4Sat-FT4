@@ -34,6 +34,10 @@ import java.util.Locale
  */
 object DopplerFrequencyCalculator {
 
+    fun parseOffsetHz(valueKHz: String): Long = valueKHz.toDoubleOrNull()
+        ?.takeIf { it.isFinite() && kotlin.math.abs(it) <= 10_000.0 }
+        ?.let { (it * 1_000.0).toLong() } ?: 0L
+
     /**
      * Given a downlink frequency (what the user hears), compute the
      * uplink frequency the user should transmit.

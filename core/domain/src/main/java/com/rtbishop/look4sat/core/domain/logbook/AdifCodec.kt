@@ -43,11 +43,17 @@ object AdifCodec {
             record.rxFrequencyHz?.let { append(field("FREQ_RX", hzToMhz(it))) }
             appendOptional("BAND", record.band)
             appendOptional("BAND_RX", record.rxBand)
-            if (record.satelliteName.isNotBlank()) {
-                append(field("PROP_MODE", "SAT"))
-                append(field("SAT_NAME", record.satelliteName))
-                appendOptional("SAT_MODE", record.satelliteMode)
-            }
+            appendOptional("PROP_MODE", record.propagationMode.ifBlank { if (record.satelliteName.isNotBlank()) "SAT" else "" })
+            appendOptional("SAT_NAME", record.satelliteName)
+            appendOptional("SAT_MODE", record.satelliteMode)
+            if (record.lotwConfirmed) append(field("LOTW_QSL_RCVD", "Y"))
+            appendOptional("LOTW_QSLRDATE", record.lotwQslDate)
+            appendOptional("VUCC_GRIDS", record.vuccGrids.joinToString(","))
+            record.dxcc?.let { append(field("DXCC", it.toString())) }
+            appendOptional("COUNTRY", record.country)
+            record.cqZone?.let { append(field("CQZ", it.toString())) }
+            appendOptional("STATE", record.region)
+            appendOptional("COMMENT", record.comment)
             appendOptional("APP_LOOK4SAT_TRANSPONDER", record.transponderName)
             record.passAosUtcMillis?.let { append(field("APP_LOOK4SAT_PASS_AOS", it.toString())) }
             record.ft4AudioFrequencyHz?.let { append(field("APP_LOOK4SAT_FT4_AUDIO_HZ", it.toString())) }
@@ -98,7 +104,17 @@ object AdifCodec {
                 ?: QsoStatus.COMPLETE,
             rawMessages = values["APP_LOOK4SAT_MESSAGES"]?.split(" | ")?.filter(String::isNotBlank).orEmpty(),
             sessionId = values["APP_LOOK4SAT_SESSION"].orEmpty(),
-            messageEvents = QsoEventCodec.decode(values["APP_LOOK4SAT_EVENTS"])
+            messageEvents = QsoEventCodec.decode(values["APP_LOOK4SAT_EVENTS"]),
+            propagationMode = values["PROP_MODE"].orEmpty().trim().uppercase(Locale.US),
+            lotwConfirmed = values["LOTW_QSL_RCVD"].equals("Y", true),
+            lotwQslDate = values["LOTW_QSLRDATE"].orEmpty(),
+            vuccGrids = values["VUCC_GRIDS"].orEmpty().split(',').map { it.trim().uppercase(Locale.US) }
+                .filter { it.matches(Regex("[A-R]{2}[0-9]{2}([A-X]{2}([0-9]{2})?)?")) }.distinct(),
+            dxcc = values["DXCC"]?.toIntOrNull(),
+            country = values["COUNTRY"].orEmpty(),
+            cqZone = values["CQZ"]?.toIntOrNull()?.takeIf { it in 1..40 },
+            region = values["STATE"].orEmpty().substringBefore(" // ").trim().uppercase(Locale.US),
+            comment = values["COMMENT"].orEmpty()
         )
     }
 

@@ -459,4 +459,22 @@
     <string name="ft4_gate_pass">尚未选择过境</string>
     <string name="ft4_gate_transponder">尚未选择转发器</string>
     <string name="ft4_gate_callsign">尚未设置本机呼号</string>
+    <string name="map_grid_mode">网格模式</string>
+    <string name="map_satellite_mode">卫星模式</string>
+    <string name="grid_qso_calls_count">%1$d 个呼号 · %2$d 次通联</string>
+    <string name="grid_qso_first">首通</string>
+    <string name="grid_qso_no_sat">卫星未知</string>
+    <string name="nav_logbook">日志本</string>
+    <string name="quicklog_select_satellite">选择卫星 ▾</string>
+    <string name="quicklog_no_passes">暂无可选过境</string>
+    <string name="quicklog_callsign">对方呼号</string>
+    <string name="quicklog_sent">发</string>
+    <string name="quicklog_received">收</string>
+    <string name="quicklog_save">保存</string>
+    <string name="quicklog_invalid_callsign">请输入有效呼号。</string>
+    <string name="quicklog_invalid_report">话音使用 RS（59），CW 使用 RST（599）。</string>
+    <string name="quicklog_save_failed">保存失败，输入已保留，请重试。</string>
+    <string name="quicklog_saved">已保存 %1$s</string>
+    <string name="map_grid_empty">在日志本同步 LoTW，可显示已确认网格与奖项进度。</string>
+    <string name="map_boundaries_loading">正在加载边界…</string>
 </resources>

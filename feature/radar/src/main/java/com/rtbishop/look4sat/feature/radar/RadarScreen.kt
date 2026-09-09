@@ -69,6 +69,7 @@ import com.rtbishop.look4sat.core.domain.utility.toDegrees
 import com.rtbishop.look4sat.core.presentation.EmptyListCard
 import com.rtbishop.look4sat.core.presentation.IconCard
 import com.rtbishop.look4sat.core.presentation.NextPassRow
+import com.rtbishop.look4sat.core.presentation.QuickLogBar
 import com.rtbishop.look4sat.core.presentation.R
 import com.rtbishop.look4sat.core.presentation.RadarViewCompose
 import com.rtbishop.look4sat.core.presentation.TimerRow
@@ -88,7 +89,7 @@ private enum class RadarPage(val title: String) {
 }
 
 @Composable
-fun RadarDestination(navigateUp: () -> Unit, navigateToMap: () -> Unit) {
+fun RadarDestination(navigateUp: () -> Unit, navigateToMap: () -> Unit, navigateToLogbook: () -> Unit = {}) {
     val context = LocalContext.current
     val container = (context.applicationContext as IContainerProvider).getMainContainer()
     val viewModel: RadarViewModel = viewModel(factory = RadarViewModel.factory(container))
@@ -152,6 +153,7 @@ fun RadarDestination(navigateUp: () -> Unit, navigateToMap: () -> Unit) {
         mutualData,
         container.audioHub,
         connectRadios,
+        quickLog = { QuickLogBar(container, navigateToLogbook, uiState.currentPass) },
         requestMicPermission = {
         permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
     })
@@ -166,7 +168,8 @@ private fun RadarScreen(
     mutualData: MutualPassData,
     audioHub: IAudioHub,
     connectRadios: () -> Unit,
-    requestMicPermission: () -> Unit
+    requestMicPermission: () -> Unit,
+    quickLog: @Composable () -> Unit
 ) {
     val upcomingPass = uiState.currentPass ?: getDefaultPass()
     // Station-B overlay: full track line (only where B's elevation > 0) + live position dot
@@ -219,11 +222,12 @@ private fun RadarScreen(
             RadarCard(uiState, trackB, trackBPosition, Modifier.weight(1f))
             PagerCard(uiState, onAction, audioHub, connectRadios, requestMicPermission, Modifier.weight(1f))
         } else {
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Row(modifier = Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 RadarCard(uiState, trackB, trackBPosition, Modifier.weight(1f))
                 PagerCard(uiState, onAction, audioHub, connectRadios, requestMicPermission, Modifier.weight(1f))
             }
         }
+        quickLog()
     }
 }
 

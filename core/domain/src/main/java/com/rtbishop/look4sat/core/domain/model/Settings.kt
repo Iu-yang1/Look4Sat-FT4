@@ -64,7 +64,8 @@ data class OtherSettings(
     val shouldSeeWhatsNew: Boolean,
     val sstvMode: String = "Auto",
     val lowElevation: Double = 15.0,
-    val highElevation: Double = 45.0
+    val highElevation: Double = 45.0,
+    val stateOfMapGrid: Boolean = false
 )
 
 data class Ft4Settings(

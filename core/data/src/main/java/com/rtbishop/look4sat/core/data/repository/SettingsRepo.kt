@@ -379,6 +379,7 @@ class SettingsRepo(
                 putBoolean(keyStateOfSensors, new.stateOfSensors)
                 putBoolean(keyStateOfSweep, new.stateOfSweep)
                 putBoolean(keyStateOfUtc, new.stateOfUtc)
+                putBoolean("stateOfMapGrid", new.stateOfMapGrid)
                 putBoolean(keyStateOfLightTheme, new.stateOfLightTheme)
                 putBoolean(keyStateOfNightMode, new.stateOfNightMode)
                 putBoolean(keyShouldSeeWarning, new.shouldSeeWarning)
@@ -396,6 +397,7 @@ class SettingsRepo(
         stateOfSensors = preferences.getBoolean(keyStateOfSensors, true),
         stateOfSweep = preferences.getBoolean(keyStateOfSweep, true),
         stateOfUtc = preferences.getBoolean(keyStateOfUtc, false),
+        stateOfMapGrid = preferences.getBoolean("stateOfMapGrid", false),
         stateOfLightTheme = preferences.getBoolean(keyStateOfLightTheme, false),
         stateOfNightMode = preferences.getBoolean(keyStateOfNightMode, false),
         shouldSeeWarning = preferences.getBoolean(keyShouldSeeWarning, true),

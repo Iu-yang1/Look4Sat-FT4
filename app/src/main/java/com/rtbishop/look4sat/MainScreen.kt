@@ -141,7 +141,7 @@ fun NavRoot(deeplink: String? = null) {
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    RadarDestination(navigateUp = navigateBack, navigateToMap = navigateToMap)
+                    RadarDestination(navigateUp = navigateBack, navigateToMap = navigateToMap, navigateToLogbook = navigateToLogbook)
                 }
             }
             entry<Screen.Ft4> {
@@ -157,7 +157,7 @@ fun NavRoot(deeplink: String? = null) {
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    LogbookScreenDestination(navigateUp = navigateBack)
+                    LogbookScreenDestination(navigateUp = navigateBack, navigateToMap = navigateToMap)
                 }
             }
         }
@@ -185,7 +185,7 @@ fun MainScreen(
         }
     }
     val fadeTransition = fadeIn(animationSpec = tween(350)) togetherWith fadeOut(animationSpec = tween(350))
-    val navItems = listOf(Screen.Satellites, Screen.Passes, Screen.AMSAT, Screen.Mutual, Screen.Ft4, Screen.Settings)
+    val navItems = listOf(Screen.Satellites, Screen.Passes, Screen.Logbook, Screen.Mutual, Screen.Ft4, Screen.Settings)
 
     val context = LocalContext.current
     val container = (context.applicationContext as IContainerProvider).getMainContainer()
@@ -213,6 +213,7 @@ fun MainScreen(
                         is Screen.AMSAT -> screen is Screen.AMSAT
                         is Screen.Mutual -> screen is Screen.Mutual
                         is Screen.Ft4 -> screen is Screen.Ft4
+                        is Screen.Logbook -> screen is Screen.Logbook
                         is Screen.Settings -> screen is Screen.Settings
                         else -> false
                     }
@@ -269,7 +270,8 @@ fun MainScreen(
                                     container.satelliteRepo.selectPass(catNum, aosTime)
                                     navigateToRadar()
                                 },
-                                navigateToMap = navigateToMap
+                                navigateToMap = navigateToMap,
+                                navigateToLogbook = { backStack.add(Screen.Logbook) }
                             )
                         }
                         entry<Screen.Map> {
@@ -286,6 +288,9 @@ fun MainScreen(
                             )
                         }
                         entry<Screen.AMSAT> { SatStatusDestination() }
+                        entry<Screen.Logbook> {
+                            LogbookScreenDestination(navigateUp = navigateBack, navigateToMap = navigateToMap)
+                        }
                         entry<Screen.Settings> {
                             SettingsDestination()
                         }

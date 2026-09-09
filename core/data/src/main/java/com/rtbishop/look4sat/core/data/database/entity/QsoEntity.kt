@@ -44,5 +44,14 @@ data class QsoEntity(
     val rawMessages: String,
     @ColumnInfo(defaultValue = "''") val dedupeKey: String,
     @ColumnInfo(defaultValue = "''") val sessionId: String,
-    @ColumnInfo(defaultValue = "'[]'") val messageEvents: String
+    @ColumnInfo(defaultValue = "'[]'") val messageEvents: String,
+    @ColumnInfo(defaultValue = "''") val propagationMode: String = "",
+    @ColumnInfo(defaultValue = "0") val lotwConfirmed: Boolean = false,
+    @ColumnInfo(defaultValue = "''") val lotwQslDate: String = "",
+    @ColumnInfo(defaultValue = "''") val vuccGrids: String = "",
+    val dxcc: Int? = null,
+    @ColumnInfo(defaultValue = "''") val country: String = "",
+    val cqZone: Int? = null,
+    @ColumnInfo(defaultValue = "''") val region: String = "",
+    @ColumnInfo(defaultValue = "''") val comment: String = ""
 )

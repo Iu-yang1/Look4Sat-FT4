@@ -48,4 +48,40 @@ class UpdateRepositoryTest {
         state = "uploaded",
         size = 20_000_000L
     )
+
+    @Test
+    fun parsesRealAssetsFromExpandedReleaseFragmentThroughMirror() {
+        val html = """
+            <meta content='https://github.com/Iu-yang1/Look4Sat-FT4/releases/tag/v4.4.8-ba7opf.9.17' property='og:url'>
+            <title>Release 9.17 · Iu-yang1/Look4Sat-FT4</title>
+            <div class="markdown-body"><p>Grid map</p><p>LoTW &amp; logbook</p></div>
+            <a href="/Iu-yang1/Look4Sat-FT4/releases/download/v4.4.8-ba7opf.9.17/Look4Sat-FT4-arm64-v8a.apk">APK</a>
+            <a href="/Iu-yang1/Look4Sat-FT4/releases/download/v4.4.8-ba7opf.9.17/Look4Sat-FT4-unsigned.apk">Unsigned</a>
+        """.trimIndent()
+        val release = parseReleasePage(html, UPDATE_MIRRORS.first(), listOf("arm64-v8a"))!!
+        assertEquals("v4.4.8-ba7opf.9.17", release.versionTag)
+        assertEquals("Grid map\nLoTW & logbook", release.body)
+        assertEquals("https://ghfast.top/https://github.com/Iu-yang1/Look4Sat-FT4/releases/download/v4.4.8-ba7opf.9.17/Look4Sat-FT4-arm64-v8a.apk", release.apkUrl)
+    }
+
+    @Test
+    fun doesNotGuessApkNameWhenNoAssetWasPublished() {
+        val html = """<meta property="og:url" content="https://github.com/Iu-yang1/Look4Sat-FT4/releases/tag/v4.4.8">"""
+        assertEquals(null, parseReleasePage(html, "", listOf("arm64-v8a"))?.apkUrl)
+    }
+
+    @Test
+    fun rejectsUntrustedMirrorAndNestedExternalDownload() {
+        val own = "https://github.com/Iu-yang1/Look4Sat-FT4/releases/download/v4.4.8/Look4Sat-FT4.apk"
+        assertEquals(false, isTrustedDownloadUrl("https://evil.example/" + own))
+        assertEquals(false, isTrustedDownloadUrl("https://ghfast.top/https://github.com/attacker/repo/releases/download/v4.4.8/app.apk"))
+        assertEquals(true, isTrustedDownloadUrl("https://ghfast.top/" + own))
+        assertEquals(false, isTrustedDownloadUrl(own + "?redirect=https://evil.example"))
+    }
+
+    @Test
+    fun x86DoesNotAcceptAnX8664OnlyAsset() {
+        val base = "https://github.com/Iu-yang1/Look4Sat-FT4/releases/download/v4.4.9/"
+        assertEquals(null, selectReleaseAsset(listOf(asset("Look4Sat-FT4-x86_64.apk", base)), "v4.4.9", listOf("x86")))
+    }
 }

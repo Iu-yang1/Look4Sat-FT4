@@ -581,10 +581,7 @@ private fun DopplerFrequencyCalculator(
     var passbandPosition by rememberSaveable(transponder.uuid) { mutableStateOf(0.5f) }
     var stepSizeKHz by remember { mutableIntStateOf(1) }
 
-    val offsetHz = offsetKHz.toDoubleOrNull()
-        ?.takeIf { it.isFinite() && kotlin.math.abs(it) <= MAX_CALCULATOR_OFFSET_KHZ }
-        ?.let { (it * 1_000.0).toLong() }
-        ?: 0L
+    val offsetHz = DopplerFrequencyCalculator.parseOffsetHz(offsetKHz)
 
     val nominalTxLow = transponder.uplinkLow ?: return
     val nominalTxHigh = transponder.uplinkHigh ?: return

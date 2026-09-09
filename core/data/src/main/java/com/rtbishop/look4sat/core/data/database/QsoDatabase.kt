@@ -15,7 +15,7 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.rtbishop.look4sat.core.data.database.entity.QsoEntity
 
-@Database(entities = [QsoEntity::class], version = 2, exportSchema = false)
+@Database(entities = [QsoEntity::class], version = 3, exportSchema = false)
 abstract class QsoDatabase : RoomDatabase() {
     abstract fun qsoDao(): QsoDao
 }
@@ -34,5 +34,17 @@ val QSO_MIGRATION_1_2 = object : Migration(1, 2) {
                 "UPPER(TRIM(mode)) || '|' || UPPER(TRIM(submode)) || '|' || UPPER(TRIM(satelliteName))"
         )
         db.execSQL("CREATE INDEX IF NOT EXISTS index_qso_records_dedupeKey ON qso_records(dedupeKey)")
+    }
+}
+
+val QSO_MIGRATION_2_3 = object : Migration(2, 3) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        listOf("propagationMode", "lotwQslDate", "vuccGrids", "country", "region", "comment").forEach { column ->
+            db.execSQL("ALTER TABLE qso_records ADD COLUMN $column TEXT NOT NULL DEFAULT ''")
+        }
+        db.execSQL("ALTER TABLE qso_records ADD COLUMN lotwConfirmed INTEGER NOT NULL DEFAULT 0")
+        db.execSQL("ALTER TABLE qso_records ADD COLUMN dxcc INTEGER")
+        db.execSQL("ALTER TABLE qso_records ADD COLUMN cqZone INTEGER")
+        db.execSQL("UPDATE qso_records SET propagationMode = 'SAT' WHERE TRIM(satelliteName) != ''")
     }
 }

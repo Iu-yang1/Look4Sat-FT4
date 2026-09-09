@@ -70,7 +70,7 @@
     <string name="map_next">ඊළග</string>
     <string name="map_azimuth">දිගංශය: %.1f°</string>
     <string name="map_elevation">උත්තෝලනය: %.1f°</string>
-    <string name="map_altitude">උන්නතාශය: %.0f km</string>,
+    <string name="map_altitude">උන්නතාශය: %.0f km</string>
     <string name="map_distance">පරතරය: %.0f km</string>
     <string name="map_latitude">අක්‍ෂාංශ: %.1f°</string>
     <string name="map_longitude">දේශාංශ: %.1f°</string>

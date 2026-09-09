@@ -54,7 +54,16 @@ data class QsoRecord(
     val status: QsoStatus = QsoStatus.DRAFT,
     val rawMessages: List<String> = emptyList(),
     val sessionId: String = "",
-    val messageEvents: List<QsoMessageEvent> = emptyList()
+    val messageEvents: List<QsoMessageEvent> = emptyList(),
+    val propagationMode: String = if (satelliteName.isNotBlank()) "SAT" else "",
+    val lotwConfirmed: Boolean = false,
+    val lotwQslDate: String = "",
+    val vuccGrids: List<String> = emptyList(),
+    val dxcc: Int? = null,
+    val country: String = "",
+    val cqZone: Int? = null,
+    val region: String = "",
+    val comment: String = ""
 )
 
-data class AdifImportResult(val imported: Int, val skipped: Int)
+data class AdifImportResult(val imported: Int, val skipped: Int, val updated: Int = 0)

@@ -498,4 +498,22 @@
     <string name="ft4_gate_pass">no pass is selected</string>
     <string name="ft4_gate_transponder">no transponder is selected</string>
     <string name="ft4_gate_callsign">operator callsign is not configured</string>
+    <string name="map_grid_mode">Grid mode</string>
+    <string name="map_satellite_mode">Satellite mode</string>
+    <string name="grid_qso_calls_count">%1$d callsigns · %2$d QSOs</string>
+    <string name="grid_qso_first">First</string>
+    <string name="grid_qso_no_sat">satellite unknown</string>
+    <string name="nav_logbook">Logbook</string>
+    <string name="quicklog_select_satellite">Select satellite ▾</string>
+    <string name="quicklog_no_passes">No passes available</string>
+    <string name="quicklog_callsign">Callsign</string>
+    <string name="quicklog_sent">Sent</string>
+    <string name="quicklog_received">Rcvd</string>
+    <string name="quicklog_save">Save</string>
+    <string name="quicklog_invalid_callsign">Enter a valid callsign.</string>
+    <string name="quicklog_invalid_report">Use RS (59) for voice or RST (599) for CW.</string>
+    <string name="quicklog_save_failed">Could not save. Your input has been kept; retry.</string>
+    <string name="quicklog_saved">%1$s saved</string>
+    <string name="map_grid_empty">Sync LoTW in Logbook to see confirmed grids and award progress.</string>
+    <string name="map_boundaries_loading">Loading boundaries…</string>
 </resources>

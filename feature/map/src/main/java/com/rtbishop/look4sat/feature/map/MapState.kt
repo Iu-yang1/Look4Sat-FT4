@@ -26,6 +26,10 @@ data class MapState(
     val mapData: MapData? = null,
     val isLightUi: Boolean = false,
     val isUtc: Boolean = false,
+    val isGridMode: Boolean = false,
+    val workedGrids: Set<String> = emptySet(),
+    val awardProgress: List<com.rtbishop.look4sat.core.domain.model.AwardProgress> = emptyList(),
+    val workedGridQsos: Map<String, List<com.rtbishop.look4sat.core.domain.model.GridQso>> = emptyMap(),
     val stationPosition: GeoPos? = null,
     val orbitalPass: OrbitalPass,
     val track: List<List<GeoPos>>? = null,
@@ -42,6 +46,7 @@ sealed interface MapAction {
     data object SelectNext : MapAction
     data class SelectItem(val item: OrbitalObject) : MapAction
     data class SelectDefaultItem(val catnum: Int) : MapAction
+    data class ToggleGridMode(val value: Boolean) : MapAction
 }
 
 data class MapData(

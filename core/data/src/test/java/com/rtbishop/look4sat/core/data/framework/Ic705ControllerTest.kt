@@ -18,6 +18,41 @@ import org.junit.Test
 
 class Ic705ControllerTest {
     @Test
+    fun usbLsbCommandsAndReadbacksUseCorrectDuplexTargetsOnAllIcoms() = runTest {
+        for ((variant, address) in listOf(
+            IcomCivVariant.IC705 to 0xA4, IcomCivVariant.IC9700 to 0xA2, IcomCivVariant.IC910 to 0x60
+        )) {
+            val transport = ScriptedCivTransport(civAddress = address)
+            val radio = Ic705Controller(null, "USB", address.toByte(), transport, variant)
+            assertTrue(radio.connect())
+            assertTrue(radio.setSplitMode(true))
+            transport.payloads.clear()
+            assertTrue(radio.setSplitModes("USB", "LSB"))
+            if (variant == IcomCivVariant.IC705) {
+                assertEquals(listOf("07:00", "26:00:01", "26:01:00", "26:00", "26:01"), transport.payloads)
+            } else {
+                assertEquals(listOf("07:D0", "06:01", "04", "07:D1", "06:00", "04", "07:D0"), transport.payloads)
+            }
+            assertTrue(radio.setSplitModes("LSB", "USB"))
+            radio.disconnect()
+        }
+    }
+
+    @Test
+    fun wrongSidebandReadbackRejectsSetupAndRestoresMain() = runTest {
+        for ((variant, address) in listOf(
+            IcomCivVariant.IC705 to 0xA4, IcomCivVariant.IC9700 to 0xA2, IcomCivVariant.IC910 to 0x60
+        )) {
+            val transport = ScriptedCivTransport(civAddress = address, modeReadbackOverride = 0x05)
+            val radio = Ic705Controller(null, "USB", address.toByte(), transport, variant)
+            assertTrue(radio.connect())
+            assertFalse(radio.setSplitModes("USB", "LSB"))
+            if (variant != IcomCivVariant.IC705) assertEquals("07:D0", transport.payloads.last())
+            radio.disconnect()
+        }
+    }
+
+    @Test
     fun readFrequencyAndModeCombinesSeparateCivReplies() = runTest {
         val transport = ScriptedCivTransport()
         val controller = Ic705Controller(
@@ -304,7 +339,8 @@ private class ScriptedCivTransport(
     private val civAddress: Int = 0xA4,
     private val acknowledgeSetFrequency: Boolean = true,
     private val satelliteReadbackOverride: Boolean? = null,
-    private val acknowledgeTxSelection: Boolean = true
+    private val acknowledgeTxSelection: Boolean = true,
+    private val modeReadbackOverride: Int? = null
 ) : RadioTransport {
     private val replies = ArrayDeque<ByteArray>()
     val commandBytes = mutableListOf<Int>()
@@ -343,7 +379,7 @@ private class ScriptedCivTransport(
                 if (acknowledged) replies += ack()
             }
             0x03 -> replies += response(0x03, 0x00, 0x00, 0x59, 0x45, 0x01)
-            0x04 -> replies += response(0x04, if (mainSelected) mainMode else subMode, 0x02)
+            0x04 -> replies += response(0x04, modeReadbackOverride ?: if (mainSelected) mainMode else subMode, 0x02)
             0x05 -> if (acknowledgeSetFrequency) replies += ack()
             0x0F -> replies += ack()
             0x16 -> when {
@@ -379,9 +415,11 @@ private class ScriptedCivTransport(
             }
             0x26 -> {
                 if (payload.size >= 3) {
+                    if (payload[1].toInt() == 0) mainMode = payload[2].toInt() and 0xFF
+                    else subMode = payload[2].toInt() and 0xFF
                     replies += ack()
                 } else {
-                    val mode = if (payload[1].toInt() == 0) 0x01 else 0x05
+                    val mode = modeReadbackOverride ?: if (payload[1].toInt() == 0) mainMode else subMode
                     val otherSelector = if (payload[1].toInt() == 0) 0x01 else 0x00
                     replies += response(0x26, otherSelector, mode, 0x01)
                     replies += response(0x26, payload[1].toInt(), mode, 0x01)

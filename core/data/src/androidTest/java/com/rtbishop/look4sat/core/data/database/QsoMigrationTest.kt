@@ -22,7 +22,7 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class QsoMigrationTest {
     @Test
-    fun migrationOneToTwoPreservesRecordsAndAddsLogMetadata() {
+    fun migrationOneThroughThreePreservesRecordsAndAddsLogMetadata() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         context.deleteDatabase(TEST_DATABASE)
         val helper = FrameworkSQLiteOpenHelperFactory().create(
@@ -58,6 +58,23 @@ class QsoMigrationTest {
                     while (cursor.moveToNext()) add(cursor.getString(cursor.getColumnIndexOrThrow("name")))
                 }
                 assertTrue("index_qso_records_dedupeKey" in names)
+            }
+            QSO_MIGRATION_2_3.migrate(database)
+            database.query(
+                "SELECT theirCallsign, mode, submode, propagationMode, lotwConfirmed, " +
+                    "vuccGrids, dxcc, cqZone, comment, rawMessages FROM qso_records"
+            ).use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals("K1ABC", cursor.getString(0))
+                assertEquals("MFSK", cursor.getString(1))
+                assertEquals("FT4", cursor.getString(2))
+                assertEquals("SAT", cursor.getString(3))
+                assertEquals(0, cursor.getInt(4))
+                assertEquals("", cursor.getString(5))
+                assertTrue(cursor.isNull(6))
+                assertTrue(cursor.isNull(7))
+                assertEquals("", cursor.getString(8))
+                assertEquals("K1ABC BA7OPF -08", cursor.getString(9))
             }
         } finally {
             helper.close()

@@ -13,6 +13,7 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Transaction
 import com.rtbishop.look4sat.core.data.database.entity.QsoEntity
 import kotlinx.coroutines.flow.Flow
 
@@ -35,6 +36,11 @@ interface QsoDao {
 
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun importRecords(records: List<QsoEntity>): List<Long>
+
+    @Transaction
+    suspend fun saveBatch(records: List<QsoEntity>) {
+        records.forEach { save(it) }
+    }
 
     @Query("DELETE FROM qso_records WHERE id = :id")
     suspend fun delete(id: Long)

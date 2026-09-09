@@ -71,6 +71,36 @@ class QsoRepositoryTest {
         satelliteName = "AO-123",
         status = status
     )
+
+    @Test
+    fun repeatLoTWSyncUpdatesExistingQsoWithoutLosingManualDetails() = runTest {
+        val dao = FakeQsoDao()
+        val repository = QsoRepository(dao, UnconfinedTestDispatcher(testScheduler))
+        val local = record(QsoStatus.COMPLETE).copy(startUtcMillis = 1_750_000_000_000L, rawMessages = listOf("original"), comment = "Portable")
+        val id = repository.save(local)
+        val confirmed = local.copy(id = 0, txFrequencyHz = null, rawMessages = emptyList(), comment = "", theirGrid = "FN31", lotwConfirmed = true)
+        val first = repository.mergeConfirmed(listOf(confirmed))
+        val second = repository.mergeConfirmed(listOf(confirmed))
+        assertEquals(0, first.imported)
+        assertEquals(1, first.updated)
+        assertEquals(1, second.skipped)
+        val saved = repository.find(id)!!
+        assertEquals("Portable", saved.comment)
+        assertEquals(listOf("original"), saved.rawMessages)
+        assertEquals(local.txFrequencyHz, saved.txFrequencyHz)
+        assertEquals(true, saved.lotwConfirmed)
+        assertEquals(1, dao.getAll().size)
+    }
+
+    @Test
+    fun changingContactIdentityClearsItsOldConfirmation() = runTest {
+        val repository = QsoRepository(FakeQsoDao(), UnconfinedTestDispatcher(testScheduler))
+        val id = repository.save(record(QsoStatus.COMPLETE).copy(lotwConfirmed = true, dxcc = 291))
+        val existing = repository.find(id)!!
+        repository.save(existing.copy(theirCallsign = "JA1ABC"))
+        assertEquals(false, repository.find(id)!!.lotwConfirmed)
+        assertEquals(null, repository.find(id)!!.dxcc)
+    }
 }
 
 private class FakeQsoDao : QsoDao {

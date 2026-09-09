@@ -17,6 +17,9 @@ import com.rtbishop.look4sat.core.domain.logbook.IQsoRepository
 import com.rtbishop.look4sat.core.domain.logbook.QsoEventCodec
 import com.rtbishop.look4sat.core.domain.logbook.QsoRecord
 import com.rtbishop.look4sat.core.domain.logbook.QsoStatus
+import com.rtbishop.look4sat.core.domain.logbook.sameConfirmedContact
+import com.rtbishop.look4sat.core.domain.logbook.withConfirmation
+import com.rtbishop.look4sat.core.domain.logbook.confirmationLookupKey
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -35,9 +38,20 @@ class QsoRepository(
 
     override suspend fun find(id: Long): QsoRecord? = withContext(dispatcher) { dao.find(id)?.toDomain() }
 
-    override suspend fun save(record: QsoRecord): Long = withContext(dispatcher) { dao.save(record.toEntity()) }
+    override suspend fun save(record: QsoRecord): Long = withContext(dispatcher) {
+        importMutex.withLock {
+            val previous = if (record.id != 0L) dao.find(record.id)?.toDomain() else null
+            val saved = if (previous?.lotwConfirmed == true && sameConfirmedContact(record, previous)) {
+                record.withConfirmation(previous)
+            } else if (previous?.lotwConfirmed == true) record.copy(
+                lotwConfirmed = false, lotwQslDate = "", vuccGrids = emptyList(),
+                dxcc = null, country = "", cqZone = null, region = ""
+            ) else record
+            dao.save(saved.toEntity())
+        }
+    }
 
-    override suspend fun delete(id: Long) = withContext(dispatcher) { dao.delete(id) }
+    override suspend fun delete(id: Long) = withContext(dispatcher) { importMutex.withLock { dao.delete(id) } }
 
     override suspend fun exportAdi(ids: Set<Long>?, includeIncomplete: Boolean): String = withContext(dispatcher) {
         val records = dao.getAll()
@@ -51,12 +65,48 @@ class QsoRepository(
 
     override suspend fun importAdi(content: String): AdifImportResult = withContext(dispatcher) {
         importMutex.withLock {
-            val decoded = AdifCodec.decode(content)
-            val knownKeys = dao.getDedupeKeys().toMutableSet()
-            val uniqueRecords = decoded.filter { knownKeys.add(stableQsoKey(it)) }
-            val inserted = dao.importRecords(uniqueRecords.map { it.copy(id = 0L).toEntity() }).count { it != -1L }
-            AdifImportResult(imported = inserted, skipped = decoded.size - inserted)
+            mergeRecords(AdifCodec.decode(content))
         }
+    }
+
+    override suspend fun mergeConfirmed(records: List<QsoRecord>): AdifImportResult = withContext(dispatcher) {
+        importMutex.withLock { mergeRecords(records.filter { it.lotwConfirmed }) }
+    }
+
+    private suspend fun mergeRecords(records: List<QsoRecord>): AdifImportResult {
+        val working = dao.getAll().map(QsoEntity::toDomain).toMutableList()
+        val lookup = working.indices.groupBy { working[it].confirmationLookupKey() }
+            .mapValues { it.value.toMutableList() }.toMutableMap()
+        val knownKeys = working.mapTo(mutableSetOf(), ::stableQsoKey)
+        val changes = linkedMapOf<Int, QsoRecord>()
+        var imported = 0
+        var updated = 0
+        var skipped = 0
+        records.forEach { remote ->
+            if (!remote.lotwConfirmed && stableQsoKey(remote) in knownKeys) { skipped++; return@forEach }
+            val candidates = if (remote.lotwConfirmed) lookup[remote.confirmationLookupKey()].orEmpty()
+                .filter { sameConfirmedContact(working[it], remote) } else emptyList()
+            val exact = candidates.filter { working[it].startUtcMillis == remote.startUtcMillis }
+            val match = exact.singleOrNull() ?: candidates.singleOrNull()
+            if (match == null) {
+                val added = remote.copy(id = 0L)
+                changes[working.size] = added
+                lookup.getOrPut(added.confirmationLookupKey()) { mutableListOf() }.add(working.size)
+                knownKeys += stableQsoKey(added)
+                working += added
+                imported++
+            } else {
+                val previous = working[match]
+                val merged = previous.withConfirmation(remote)
+                if (merged == previous) skipped++ else {
+                    working[match] = merged
+                    changes[match] = merged
+                    updated++
+                }
+            }
+        }
+        dao.saveBatch(changes.values.map(QsoRecord::toEntity))
+        return AdifImportResult(imported, skipped, updated)
     }
 }
 
@@ -85,7 +135,16 @@ private fun QsoEntity.toDomain() = QsoRecord(
     status = runCatching { QsoStatus.valueOf(status) }.getOrDefault(QsoStatus.DRAFT),
     rawMessages = rawMessages.lineSequence().filter(String::isNotBlank).toList(),
     sessionId = sessionId,
-    messageEvents = QsoEventCodec.decode(messageEvents)
+    messageEvents = QsoEventCodec.decode(messageEvents),
+    propagationMode = propagationMode,
+    lotwConfirmed = lotwConfirmed,
+    lotwQslDate = lotwQslDate,
+    vuccGrids = vuccGrids.split(',').filter(String::isNotBlank),
+    dxcc = dxcc,
+    country = country,
+    cqZone = cqZone,
+    region = region,
+    comment = comment
 )
 
 private fun QsoRecord.toEntity() = QsoEntity(
@@ -114,7 +173,16 @@ private fun QsoRecord.toEntity() = QsoEntity(
     rawMessages = rawMessages.joinToString("\n"),
     dedupeKey = stableQsoKey(this),
     sessionId = sessionId,
-    messageEvents = QsoEventCodec.encode(messageEvents)
+    messageEvents = QsoEventCodec.encode(messageEvents),
+    propagationMode = propagationMode.ifBlank { if (satelliteName.isNotBlank()) "SAT" else "" },
+    lotwConfirmed = lotwConfirmed,
+    lotwQslDate = lotwQslDate,
+    vuccGrids = vuccGrids.joinToString(","),
+    dxcc = dxcc,
+    country = country,
+    cqZone = cqZone,
+    region = region,
+    comment = comment
 )
 
 internal fun stableQsoKey(record: QsoRecord): String = listOf(

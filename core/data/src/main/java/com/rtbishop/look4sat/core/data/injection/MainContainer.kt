@@ -28,6 +28,8 @@ import com.rtbishop.look4sat.core.data.database.MIGRATION_1_2
 import com.rtbishop.look4sat.core.data.database.QsoDatabase
 import com.rtbishop.look4sat.core.data.database.QSO_MIGRATION_1_2
 import com.rtbishop.look4sat.core.data.database.QSO_MIGRATION_2_3
+import com.rtbishop.look4sat.core.data.database.QSO_MIGRATION_3_4
+import com.rtbishop.look4sat.core.data.lotw.LoTWUploadRepository
 import com.rtbishop.look4sat.core.data.framework.BluetoothReporter
 import com.rtbishop.look4sat.core.data.framework.AndroidRadioTransportFactory
 import com.rtbishop.look4sat.core.data.framework.NetworkReporter
@@ -95,12 +97,13 @@ class MainContainer(private val context: Context) : IMainContainer {
     override val databaseRepo = provideDatabaseRepo()
     override val qsoRepository: IQsoRepository by lazy {
         val database = Room.databaseBuilder(context, QsoDatabase::class.java, "Look4SatQsoDB")
-            .addMigrations(QSO_MIGRATION_1_2, QSO_MIGRATION_2_3)
+            .addMigrations(QSO_MIGRATION_1_2, QSO_MIGRATION_2_3, QSO_MIGRATION_3_4)
             .build()
         QsoRepository(database.qsoDao(), Dispatchers.IO)
     }
     override val amSatRepo by lazy { AmSatRepository(remoteSource, appScope) }
     override val lotwRepository by lazy { LoTWRepository() }
+    override val lotwUploadRepository by lazy { LoTWUploadRepository(context) }
     override val updateRepo by lazy { UpdateRepository(remoteSource, context) }
     override val audioHub: IAudioHub by lazy {
         SharedAudioHub(

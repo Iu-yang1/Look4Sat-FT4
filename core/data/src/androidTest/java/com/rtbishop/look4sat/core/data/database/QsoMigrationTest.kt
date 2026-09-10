@@ -60,6 +60,11 @@ class QsoMigrationTest {
                 assertTrue("index_qso_records_dedupeKey" in names)
             }
             QSO_MIGRATION_2_3.migrate(database)
+            QSO_MIGRATION_3_4.migrate(database)
+            database.query("SELECT lotwReceived FROM qso_records").use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals(0, cursor.getInt(0))
+            }
             database.query(
                 "SELECT theirCallsign, mode, submode, propagationMode, lotwConfirmed, " +
                     "vuccGrids, dxcc, cqZone, comment, rawMessages FROM qso_records"

@@ -47,7 +47,12 @@ class QsoRepository(
                 lotwConfirmed = false, lotwQslDate = "", vuccGrids = emptyList(),
                 dxcc = null, country = "", cqZone = null, region = ""
             ) else record
-            dao.save(saved.toEntity())
+            val received = if (previous != null && (
+                stableQsoKey(record) != stableQsoKey(previous) || record.myGrid != previous.myGrid ||
+                    record.rxFrequencyHz != previous.rxFrequencyHz || record.band != previous.band ||
+                    record.rxBand != previous.rxBand || record.propagationMode != previous.propagationMode
+                )) false else saved.lotwReceived
+            dao.save(saved.copy(lotwReceived = received).toEntity())
         }
     }
 
@@ -73,7 +78,11 @@ class QsoRepository(
         importMutex.withLock { mergeRecords(records.filter { it.lotwConfirmed }) }
     }
 
-    private suspend fun mergeRecords(records: List<QsoRecord>): AdifImportResult {
+    override suspend fun mergeLoTW(records: List<QsoRecord>): AdifImportResult = withContext(dispatcher) {
+        importMutex.withLock { mergeRecords(records, fromLoTW = true) }
+    }
+
+    private suspend fun mergeRecords(records: List<QsoRecord>, fromLoTW: Boolean = false): AdifImportResult {
         val working = dao.getAll().map(QsoEntity::toDomain).toMutableList()
         val lookup = working.indices.groupBy { working[it].confirmationLookupKey() }
             .mapValues { it.value.toMutableList() }.toMutableMap()
@@ -83,12 +92,13 @@ class QsoRepository(
         var updated = 0
         var skipped = 0
         records.forEach { remote ->
-            if (!remote.lotwConfirmed && stableQsoKey(remote) in knownKeys) { skipped++; return@forEach }
-            val candidates = if (remote.lotwConfirmed) lookup[remote.confirmationLookupKey()].orEmpty()
+            if (!fromLoTW && !remote.lotwConfirmed && stableQsoKey(remote) in knownKeys) { skipped++; return@forEach }
+            val candidates = if (fromLoTW || remote.lotwConfirmed) lookup[remote.confirmationLookupKey()].orEmpty()
                 .filter { sameConfirmedContact(working[it], remote) } else emptyList()
             val exact = candidates.filter { working[it].startUtcMillis == remote.startUtcMillis }
             val match = exact.singleOrNull() ?: candidates.singleOrNull()
             if (match == null) {
+                if (stableQsoKey(remote) in knownKeys) { skipped++; return@forEach }
                 val added = remote.copy(id = 0L)
                 changes[working.size] = added
                 lookup.getOrPut(added.confirmationLookupKey()) { mutableListOf() }.add(working.size)
@@ -138,6 +148,7 @@ private fun QsoEntity.toDomain() = QsoRecord(
     messageEvents = QsoEventCodec.decode(messageEvents),
     propagationMode = propagationMode,
     lotwConfirmed = lotwConfirmed,
+    lotwReceived = lotwReceived,
     lotwQslDate = lotwQslDate,
     vuccGrids = vuccGrids.split(',').filter(String::isNotBlank),
     dxcc = dxcc,
@@ -176,6 +187,7 @@ private fun QsoRecord.toEntity() = QsoEntity(
     messageEvents = QsoEventCodec.encode(messageEvents),
     propagationMode = propagationMode.ifBlank { if (satelliteName.isNotBlank()) "SAT" else "" },
     lotwConfirmed = lotwConfirmed,
+    lotwReceived = lotwReceived,
     lotwQslDate = lotwQslDate,
     vuccGrids = vuccGrids.joinToString(","),
     dxcc = dxcc,

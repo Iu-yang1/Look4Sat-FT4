@@ -47,6 +47,7 @@ object AdifCodec {
             appendOptional("SAT_NAME", record.satelliteName)
             appendOptional("SAT_MODE", record.satelliteMode)
             if (record.lotwConfirmed) append(field("LOTW_QSL_RCVD", "Y"))
+            if (record.lotwReceived) append(field("LOTW_QSL_SENT", "Y"))
             appendOptional("LOTW_QSLRDATE", record.lotwQslDate)
             appendOptional("VUCC_GRIDS", record.vuccGrids.joinToString(","))
             record.dxcc?.let { append(field("DXCC", it.toString())) }
@@ -70,7 +71,9 @@ object AdifCodec {
         }
     }
 
-    fun decode(content: String): List<QsoRecord> = splitRecords(content).mapNotNull { values ->
+    fun decode(content: String): List<QsoRecord> = decodeRecords(splitRecords(content))
+
+    fun decodeRecords(records: List<Map<String, String>>): List<QsoRecord> = records.mapNotNull { values ->
         val call = values["CALL"].orEmpty().trim().uppercase(Locale.US)
         val date = values["QSO_DATE"].orEmpty()
         val time = values["TIME_ON"].orEmpty()
@@ -107,6 +110,7 @@ object AdifCodec {
             messageEvents = QsoEventCodec.decode(values["APP_LOOK4SAT_EVENTS"]),
             propagationMode = values["PROP_MODE"].orEmpty().trim().uppercase(Locale.US),
             lotwConfirmed = values["LOTW_QSL_RCVD"].equals("Y", true),
+            lotwReceived = values["LOTW_QSL_SENT"].equals("Y", true),
             lotwQslDate = values["LOTW_QSLRDATE"].orEmpty(),
             vuccGrids = values["VUCC_GRIDS"].orEmpty().split(',').map { it.trim().uppercase(Locale.US) }
                 .filter { it.matches(Regex("[A-R]{2}[0-9]{2}([A-X]{2}([0-9]{2})?)?")) }.distinct(),

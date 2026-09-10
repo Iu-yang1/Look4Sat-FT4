@@ -24,6 +24,33 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class QsoRepositoryTest {
+    @Test fun unconfirmedDownloadMergesWithoutConfirmingOrDuplicatingLocalDetails() = runTest {
+        val repository = QsoRepository(FakeQsoDao(), UnconfinedTestDispatcher(testScheduler))
+        val local = record(QsoStatus.COMPLETE).copy(startUtcMillis = 1_750_000_000_000, rawMessages = listOf("original"), comment = "Portable")
+        val id = repository.save(local)
+        val remote = local.copy(id = 0, txFrequencyHz = null, rawMessages = emptyList(), comment = "", lotwReceived = true)
+        val merged = repository.mergeLoTW(listOf(remote))
+        assertEquals(0, merged.imported)
+        assertEquals(1, merged.updated)
+        assertEquals(1, repository.mergeLoTW(listOf(remote)).skipped)
+        val saved = repository.find(id)!!
+        assertEquals(false, saved.lotwConfirmed)
+        assertEquals(true, saved.lotwReceived)
+        assertEquals(listOf("original"), saved.rawMessages)
+        assertEquals(local.txFrequencyHz, saved.txFrequencyHz)
+        repository.save(saved.copy(txFrequencyHz = 145_991_000))
+        assertEquals(false, repository.find(id)!!.lotwReceived)
+    }
+
+    @Test fun unconfirmedRefreshNeverDowngradesExistingConfirmation() = runTest {
+        val repository = QsoRepository(FakeQsoDao(), UnconfinedTestDispatcher(testScheduler))
+        val local = record(QsoStatus.COMPLETE).copy(lotwConfirmed = true, lotwQslDate = "20260909")
+        val id = repository.save(local)
+        repository.mergeLoTW(listOf(local.copy(lotwConfirmed = false, lotwReceived = true, lotwQslDate = "")))
+        assertEquals(true, repository.find(id)!!.lotwConfirmed)
+        assertEquals("20260909", repository.find(id)!!.lotwQslDate)
+    }
+
     @Test
     fun repeatedImportSkipsTheSameQso() = runTest {
         val dao = FakeQsoDao()

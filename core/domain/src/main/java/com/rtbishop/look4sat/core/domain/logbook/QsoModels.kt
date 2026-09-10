@@ -57,6 +57,7 @@ data class QsoRecord(
     val messageEvents: List<QsoMessageEvent> = emptyList(),
     val propagationMode: String = if (satelliteName.isNotBlank()) "SAT" else "",
     val lotwConfirmed: Boolean = false,
+    val lotwReceived: Boolean = false,
     val lotwQslDate: String = "",
     val vuccGrids: List<String> = emptyList(),
     val dxcc: Int? = null,

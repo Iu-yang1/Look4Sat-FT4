@@ -22,6 +22,14 @@ import com.rtbishop.look4sat.core.domain.logbook.frequencyBand
 import com.rtbishop.look4sat.core.domain.repository.IMainContainer
 import com.rtbishop.look4sat.core.domain.repository.ILoTWRepository
 import com.rtbishop.look4sat.core.domain.repository.LoTWResult
+import com.rtbishop.look4sat.core.domain.repository.LoTWDownloadRequest
+import com.rtbishop.look4sat.core.domain.repository.ILoTWUploadRepository
+import com.rtbishop.look4sat.core.domain.repository.LoTWCertificate
+import com.rtbishop.look4sat.core.domain.repository.LoTWStation
+import com.rtbishop.look4sat.core.domain.repository.LoTWUploadPreview
+import com.rtbishop.look4sat.core.domain.repository.LoTWUploadResult
+import com.rtbishop.look4sat.core.domain.repository.LoTWOperationException
+import com.rtbishop.look4sat.core.domain.repository.LoTWProblem
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import java.util.Locale
@@ -126,11 +134,20 @@ data class LogbookState(
     val lotwSyncing: Boolean = false,
     val lotwError: LoTWResult? = null,
     val lotwResult: AdifImportResult? = null,
+    val lotwDownloaded: Int = 0,
+    val lotwMatched: Int = 0,
+    val lotwUploadTab: Boolean = false,
+    val lotwCertificate: LoTWCertificate? = null,
+    val lotwPreview: LoTWUploadPreview? = null,
+    val lotwUploadResult: LoTWUploadResult? = null,
+    val lotwProblem: LoTWOperationException? = null,
+    val lotwDefaultGrid: String = "",
+    val lotwStation: LoTWStation? = null,
     val showStation: Boolean = false,
     val stationCallsign: String = ""
 ) {
     val filteredRecords: List<QsoRecord> get() = records.filter { record ->
-        (query.isBlank() || listOf(record.theirCallsign, record.satelliteName, record.theirGrid, record.comment)
+        (query.isBlank() || listOf(record.theirCallsign, record.myCallsign, record.satelliteName, record.theirGrid, record.myGrid, record.comment)
             .any { it.contains(query.trim(), true) }) &&
             (modeFilter.isBlank() || record.displayMode == modeFilter) &&
             when (confirmationFilter) {
@@ -160,7 +177,14 @@ sealed interface LogbookAction {
     data object ShowLoTW : LogbookAction
     data object DismissLoTW : LogbookAction
     data class LoTWCallsign(val value: String) : LogbookAction
-    data class SyncLoTW(val password: String) : LogbookAction
+    data class SyncLoTW(val password: String, val confirmedOnly: Boolean = false, val satellitesOnly: Boolean = false,
+        val since: String = "1900-01-01", val stationCallsign: String = "") : LogbookAction
+    data class LoTWTab(val upload: Boolean) : LogbookAction
+    data class ImportLoTWCertificate(val data: ByteArray, val password: CharArray) : LogbookAction
+    data object RemoveLoTWCertificate : LogbookAction
+    data class PrepareLoTWUpload(val station: LoTWStation, val password: CharArray, val resubmit: Boolean) : LogbookAction
+    data object DismissLoTWPreview : LogbookAction
+    data object ConfirmLoTWUpload : LogbookAction
     data object CancelLoTW : LogbookAction
     data class Error(val message: String) : LogbookAction
     data object ShowStation : LogbookAction
@@ -175,6 +199,7 @@ class LogbookViewModel(
     private val defaultCallsign: () -> String,
     private val defaultGrid: () -> String,
     private val lotwRepository: ILoTWRepository,
+    private val lotwUploadRepository: ILoTWUploadRepository,
     private val updateDefaultCallsign: (String) -> Unit
 ) : ViewModel() {
     private val mutableState = MutableStateFlow(LogbookState())
@@ -205,14 +230,52 @@ class LogbookViewModel(
             is LogbookAction.ModeFilter -> mutableState.update { it.copy(modeFilter = action.value) }
             is LogbookAction.ConfirmationFilter -> mutableState.update { it.copy(confirmationFilter = action.value) }
             LogbookAction.ToggleGrouping -> mutableState.update { it.copy(groupByCallsign = !it.groupByCallsign) }
-            LogbookAction.ShowLoTW -> mutableState.update {
-                it.copy(showLoTW = true, lotwError = null, lotwCallsign = it.lotwCallsign.ifBlank { defaultCallsign() })
+            LogbookAction.ShowLoTW -> {
+                mutableState.update {
+                    it.copy(showLoTW = true, lotwError = null, lotwProblem = null, lotwDefaultGrid = defaultGrid(),
+                        lotwCallsign = it.lotwCallsign.ifBlank { defaultCallsign() })
+                }
+                viewModelScope.launch {
+                    try {
+                        val certificate = lotwUploadRepository.certificate()
+                        val station = lotwUploadRepository.station()
+                        mutableState.update { it.copy(lotwCertificate = certificate, lotwStation = station) }
+                    }
+                    catch (cancelled: CancellationException) { throw cancelled }
+                    catch (_: Exception) { mutableState.update { it.copy(lotwProblem = LoTWOperationException(LoTWProblem.STORAGE)) } }
+                }
             }
             LogbookAction.DismissLoTW -> if (!mutableState.value.lotwSyncing) {
+                lotwUploadRepository.discardPreview()
                 mutableState.update { it.copy(showLoTW = false) }
             }
             is LogbookAction.LoTWCallsign -> mutableState.update { it.copy(lotwCallsign = action.value) }
-            is LogbookAction.SyncLoTW -> syncLoTW(action.password)
+            is LogbookAction.SyncLoTW -> syncLoTW(action)
+            is LogbookAction.LoTWTab -> if (!mutableState.value.lotwSyncing) mutableState.update { it.copy(lotwUploadTab = action.upload) }
+            is LogbookAction.ImportLoTWCertificate -> lotwOperation {
+                val certificate = lotwUploadRepository.importCertificate(action.data, action.password)
+                mutableState.update { it.copy(lotwCertificate = certificate) }
+            }
+            LogbookAction.RemoveLoTWCertificate -> lotwOperation {
+                lotwUploadRepository.removeCertificate()
+                mutableState.update { it.copy(lotwCertificate = null, lotwPreview = null) }
+            }
+            is LogbookAction.PrepareLoTWUpload -> lotwOperation {
+                val preview = lotwUploadRepository.prepare(mutableState.value.filteredRecords, action.station, action.password, action.resubmit)
+                mutableState.update { it.copy(lotwPreview = preview, lotwStation = action.station) }
+            }
+            LogbookAction.DismissLoTWPreview -> if (!mutableState.value.lotwSyncing) {
+                lotwUploadRepository.discardPreview()
+                mutableState.update { it.copy(lotwPreview = null) }
+            }
+            LogbookAction.ConfirmLoTWUpload -> {
+                val preview = mutableState.value.lotwPreview
+                if (preview != null) lotwOperation {
+                    mutableState.update { it.copy(lotwPreview = null, lotwUploadResult = LoTWUploadResult.Unknown) }
+                    val result = lotwUploadRepository.upload(preview.id)
+                    mutableState.update { it.copy(lotwUploadResult = result) }
+                }
+            }
             LogbookAction.CancelLoTW -> syncJob?.cancel()
             is LogbookAction.Error -> mutableState.update { it.copy(error = action.message) }
             LogbookAction.ShowStation -> mutableState.update { it.copy(showStation = true, stationCallsign = defaultCallsign(), error = "") }
@@ -233,16 +296,17 @@ class LogbookViewModel(
         includeIncomplete = includeIncomplete
     )
 
-    private fun syncLoTW(password: String) {
+    private fun syncLoTW(action: LogbookAction.SyncLoTW) {
         if (syncJob?.isActive == true) return
         val callsign = mutableState.value.lotwCallsign
         mutableState.update { it.copy(lotwSyncing = true, lotwError = null, lotwResult = null) }
         syncJob = viewModelScope.launch {
             try {
-                when (val result = lotwRepository.fetchConfirmedQsos(callsign, password)) {
+                when (val result = lotwRepository.download(LoTWDownloadRequest(callsign, action.password,
+                    action.confirmedOnly, action.satellitesOnly, action.since, action.stationCallsign))) {
                     is LoTWResult.Success -> {
-                        val imported = repository.mergeConfirmed(result.records)
-                        mutableState.update { it.copy(lotwResult = imported, showLoTW = false) }
+                        val imported = repository.mergeLoTW(result.records)
+                        mutableState.update { it.copy(lotwResult = imported, lotwDownloaded = result.downloaded, lotwMatched = result.records.size) }
                     }
                     else -> mutableState.update { it.copy(lotwError = result) }
                 }
@@ -254,6 +318,23 @@ class LogbookViewModel(
                 mutableState.update { it.copy(lotwSyncing = false) }
             }
         }
+    }
+
+    private fun lotwOperation(block: suspend () -> Unit) {
+        if (syncJob?.isActive == true) return
+        mutableState.update { it.copy(lotwSyncing = true, lotwProblem = null, lotwUploadResult = null) }
+        syncJob = viewModelScope.launch {
+            try { block() }
+            catch (cancelled: CancellationException) { throw cancelled }
+            catch (error: LoTWOperationException) { mutableState.update { it.copy(lotwProblem = error) } }
+            catch (_: Exception) { mutableState.update { it.copy(lotwProblem = LoTWOperationException(LoTWProblem.STORAGE)) } }
+            finally { mutableState.update { it.copy(lotwSyncing = false) } }
+        }
+    }
+
+    override fun onCleared() {
+        lotwUploadRepository.discardPreview()
+        super.onCleared()
     }
 
     private fun saveEditor() = viewModelScope.launch {
@@ -312,6 +393,7 @@ class LogbookViewModel(
                     defaultCallsign = { container.settingsRepo.ft4Settings.value.operatorCallsign },
                     defaultGrid = { container.settingsRepo.stationPosition.value.qthLocator },
                     lotwRepository = container.lotwRepository,
+                    lotwUploadRepository = container.lotwUploadRepository,
                     updateDefaultCallsign = { call -> container.settingsRepo.updateFt4Settings { it.copy(operatorCallsign = call) } }
                 )
             }

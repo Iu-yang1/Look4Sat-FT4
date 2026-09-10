@@ -38,6 +38,7 @@ interface IMainContainer {
     val databaseRepo: IDatabaseRepo
     val qsoRepository: IQsoRepository
     val lotwRepository: ILoTWRepository
+    val lotwUploadRepository: ILoTWUploadRepository
     val amSatRepo: IAmSatRepository
     val audioHub: IAudioHub
     val ft4Service: IFt4Service

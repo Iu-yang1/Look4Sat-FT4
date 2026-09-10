@@ -15,9 +15,16 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.rtbishop.look4sat.core.data.database.entity.QsoEntity
 
-@Database(entities = [QsoEntity::class], version = 3, exportSchema = false)
+@Database(entities = [QsoEntity::class], version = 4, exportSchema = false)
 abstract class QsoDatabase : RoomDatabase() {
     abstract fun qsoDao(): QsoDao
+}
+
+val QSO_MIGRATION_3_4 = object : Migration(3, 4) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE qso_records ADD COLUMN lotwReceived INTEGER NOT NULL DEFAULT 0")
+        db.execSQL("UPDATE qso_records SET lotwReceived = 1 WHERE lotwConfirmed = 1")
+    }
 }
 
 val QSO_MIGRATION_1_2 = object : Migration(1, 2) {

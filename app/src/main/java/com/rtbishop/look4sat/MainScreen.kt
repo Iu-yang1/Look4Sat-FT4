@@ -270,8 +270,7 @@ fun MainScreen(
                                     container.satelliteRepo.selectPass(catNum, aosTime)
                                     navigateToRadar()
                                 },
-                                navigateToMap = navigateToMap,
-                                navigateToLogbook = { backStack.add(Screen.Logbook) }
+                                navigateToMap = navigateToMap
                             )
                         }
                         entry<Screen.Map> {

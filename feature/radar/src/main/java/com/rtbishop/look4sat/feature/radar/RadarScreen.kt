@@ -35,6 +35,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
@@ -199,6 +200,7 @@ private fun RadarScreen(
     Column(
         modifier = Modifier
             .layoutPadding()
+            .navigationBarsPadding()
             .keepScreenOn(),
         verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {

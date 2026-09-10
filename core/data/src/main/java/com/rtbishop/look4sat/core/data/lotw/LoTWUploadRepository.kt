@@ -6,8 +6,10 @@ import com.rtbishop.look4sat.core.domain.logbook.QsoRecord
 import com.rtbishop.look4sat.core.domain.logbook.QsoStatus
 import com.rtbishop.look4sat.core.domain.repository.ILoTWUploadRepository
 import com.rtbishop.look4sat.core.domain.repository.LoTWCertificate
+import com.rtbishop.look4sat.core.domain.repository.LoTWOperationException
 import com.rtbishop.look4sat.core.domain.repository.LoTWProblem
 import com.rtbishop.look4sat.core.domain.repository.LoTWStation
+import com.rtbishop.look4sat.core.domain.repository.LoTWUploadAudit
 import com.rtbishop.look4sat.core.domain.repository.LoTWUploadPreview
 import com.rtbishop.look4sat.core.domain.repository.LoTWUploadResult
 import kotlinx.coroutines.Dispatchers
@@ -28,6 +30,9 @@ import java.io.ByteArrayOutputStream
 import java.io.DataInputStream
 import java.io.DataOutputStream
 import java.io.IOException
+import java.nio.ByteBuffer
+import java.nio.CharBuffer
+import java.util.Locale
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 import kotlin.coroutines.coroutineContext
@@ -45,32 +50,77 @@ class LoTWUploadRepository internal constructor(
     private val mutex = Mutex()
     @Volatile private var pending: Pending? = null
     private data class Pending(val preview: LoTWUploadPreview, val data: ByteArray, val hashes: List<String>, val created: Long)
+    private data class SigningContext(val key: LoTWKeyMaterial, val signer: LoTWSigner, val location: Map<String, String>)
 
     override suspend fun certificate(): LoTWCertificate? = withContext(Dispatchers.IO) {
         mutex.withLock {
             val bytes = storage.read("certificate") ?: return@withLock null
-            try { readBundle(bytes).let { (info, p12) -> p12.fill(0); info } } finally { bytes.fill(0) }
+            try {
+                readBundle(bytes).let { bundle ->
+                    bundle.p12.fill(0)
+                    bundle.password?.fill(0)
+                    bundle.info.copy(passwordSaved = bundle.password != null)
+                }
+            } finally { bytes.fill(0) }
         }
     }
 
     override suspend fun importCertificate(data: ByteArray, password: CharArray): LoTWCertificate = withContext(Dispatchers.IO) {
         mutex.withLock {
+            val passwordBytes = encodePassword(password)
             try {
+                if (passwordBytes.size > MAX_CERTIFICATE_PASSWORD_BYTES) fail(LoTWProblem.CERTIFICATE_PASSWORD)
                 val key = LoTWKeyMaterial.read(data, password, now())
-                val bytes = encodeBundle(key.info, data)
+                val bytes = encodeBundle(key.info, data, passwordBytes)
                 try { storage.write("certificate", bytes) } finally { bytes.fill(0) }
                 discardPreview()
-                key.info
-            } finally { password.fill('\u0000'); data.fill(0) }
+                key.info.copy(passwordSaved = true)
+            } finally {
+                passwordBytes.fill(0)
+                password.fill('\u0000')
+                data.fill(0)
+            }
+        }
+    }
+
+    override suspend fun saveCertificatePassword(password: CharArray): LoTWCertificate = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            val stored = storage.read("certificate") ?: fail(LoTWProblem.CERTIFICATE_MISSING)
+            val bundle = try { readBundle(stored) } finally { stored.fill(0) }
+            val passwordBytes = encodePassword(password)
+            try {
+                if (passwordBytes.size > MAX_CERTIFICATE_PASSWORD_BYTES) fail(LoTWProblem.CERTIFICATE_PASSWORD)
+                val key = LoTWKeyMaterial.read(bundle.p12, password, now())
+                val bytes = encodeBundle(key.info, bundle.p12, passwordBytes)
+                try { storage.write("certificate", bytes) } finally { bytes.fill(0) }
+                discardPreview()
+                key.info.copy(passwordSaved = true)
+            } finally {
+                bundle.p12.fill(0)
+                bundle.password?.fill(0)
+                passwordBytes.fill(0)
+                password.fill('\u0000')
+            }
         }
     }
 
     override suspend fun station(): LoTWStation? = withContext(Dispatchers.IO) {
+        mutex.withLock { readStation() }
+    }
+
+    override suspend fun saveStation(station: LoTWStation): LoTWStation = withContext(Dispatchers.IO) {
         mutex.withLock {
-            storage.read("station")?.inputStream()?.let { stream -> DataInputStream(stream).use { input ->
-                require(input.readInt() == 1)
-                LoTWStation(input.readUTF(), input.readUTF(), input.readUTF(), input.readUTF(), input.readUTF(), input.readUTF())
-            } }
+            val stored = storage.read("certificate") ?: fail(LoTWProblem.CERTIFICATE_MISSING)
+            val bundle = try { readBundle(stored) } finally { stored.fill(0) }
+            val normalized = station.normalized()
+            try { config().stationFields(normalized, bundle.info.dxcc) }
+            finally {
+                bundle.p12.fill(0)
+                bundle.password?.fill(0)
+            }
+            writeStation(normalized)
+            discardPreview()
+            normalized
         }
     }
 
@@ -78,50 +128,75 @@ class LoTWUploadRepository internal constructor(
         mutex.withLock { discardPreview(); storage.delete("certificate") }
     }
 
-    override suspend fun prepare(
-        records: List<QsoRecord>, station: LoTWStation, password: CharArray, resubmit: Boolean
-    ): LoTWUploadPreview = withContext(Dispatchers.IO) {
+    override suspend fun audit(records: List<QsoRecord>): LoTWUploadAudit = withContext(Dispatchers.IO) {
         mutex.withLock {
-            discardPreview()
-            try {
-                if (records.size > 10_000) fail(LoTWProblem.TOO_MANY_CONTACTS)
-                val stored = storage.read("certificate") ?: fail(LoTWProblem.CERTIFICATE_MISSING)
-                val bundle = try { readBundle(stored) } finally { stored.fill(0) }
-                val key = try { LoTWKeyMaterial.read(bundle.second, password, now()) } finally { bundle.second.fill(0) }
-                val config = config()
-                val signer = LoTWSigner(config)
-                val location = config.stationFields(station, key.info.dxcc)
-                val profileBytes = ByteArrayOutputStream().also { stream -> DataOutputStream(stream).use { output ->
-                    output.writeInt(1)
-                    listOf(station.grid, station.cqZone, station.ituZone, station.region, station.county, station.iota).forEach(output::writeUTF)
-                } }.toByteArray()
-                storage.write("station", profileBytes)
-                val ledger = ledger()
-                var skipped = 0
-                var unknown = 0
-                val unique = hashSetOf<String>()
-                val contacts = records.sortedBy { it.startUtcMillis }.mapNotNull { record ->
-                    coroutineContext.ensureActive()
-                    if (record.status != QsoStatus.COMPLETE || (record.lotwReceived && !resubmit)) { skipped++; return@mapNotNull null }
-                    val contact = signer.contact(record, key, location, now())
-                    val previous = ledger[contact.fingerprint]
-                    when {
-                        (previous == "accepted" && !resubmit) || !unique.add(contact.fingerprint) -> { skipped++; null }
-                        previous == "unknown" && !resubmit -> { skipped++; unknown++; null }
-                        else -> contact
+            val signing = signingContext()
+            val ledger = ledger()
+            val unique = hashSetOf<String>()
+            var pendingCount = 0
+            var uploaded = 0
+            var unknown = 0
+            var unavailable = 0
+            records.sortedBy { it.startUtcMillis }.forEach { record ->
+                coroutineContext.ensureActive()
+                when {
+                    record.status != QsoStatus.COMPLETE -> unavailable++
+                    record.lotwReceived -> uploaded++
+                    else -> {
+                        val contact = try {
+                            signing.signer.contact(record, signing.key, signing.location, now())
+                        } catch (_: LoTWOperationException) {
+                            unavailable++
+                            null
+                        }
+                        if (contact != null) when {
+                            !unique.add(contact.fingerprint) -> unavailable++
+                            ledger[contact.fingerprint] == "accepted" -> uploaded++
+                            ledger[contact.fingerprint] == "unknown" -> unknown++
+                            else -> pendingCount++
+                        }
                     }
                 }
-                val preview = LoTWUploadPreview(
-                    UUID.randomUUID().toString(), key.info.callsign, key.info.dxcc, location.getValue("GRIDSQUARE"),
-                    contacts.size, skipped,
-                    contacts.firstOrNull()?.record?.let { utc(it.startUtcMillis, "yyyy-MM-dd HH:mm:ss") }.orEmpty(),
-                    contacts.lastOrNull()?.record?.let { utc(it.startUtcMillis, "yyyy-MM-dd HH:mm:ss") }.orEmpty(),
-                    contacts.map { "${utc(it.record.startUtcMillis, "MM-dd HH:mm")} ${it.record.theirCallsign} ${it.fields["MODE"]} ${it.fields["SAT_NAME"].orEmpty()}" },
-                    unknown
-                )
-                if (contacts.isNotEmpty()) pending = Pending(preview, signer.sign(contacts, key, location), contacts.map { it.fingerprint }, now())
-                preview
-            } finally { password.fill('\u0000') }
+            }
+            LoTWUploadAudit(records.size, pendingCount, uploaded, unknown, unavailable)
+        }
+    }
+
+    override suspend fun prepare(records: List<QsoRecord>, resubmit: Boolean): LoTWUploadPreview = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            discardPreview()
+            if (records.size > 10_000) fail(LoTWProblem.TOO_MANY_CONTACTS)
+            val signing = signingContext()
+            val ledger = ledger()
+            var skipped = 0
+            var unknown = 0
+            val unique = hashSetOf<String>()
+            val contacts = records.sortedBy { it.startUtcMillis }.mapNotNull { record ->
+                coroutineContext.ensureActive()
+                if (record.status != QsoStatus.COMPLETE || (record.lotwReceived && !resubmit)) { skipped++; return@mapNotNull null }
+                val contact = signing.signer.contact(record, signing.key, signing.location, now())
+                val previous = ledger[contact.fingerprint]
+                when {
+                    (previous == "accepted" && !resubmit) || !unique.add(contact.fingerprint) -> { skipped++; null }
+                    previous == "unknown" && !resubmit -> { skipped++; unknown++; null }
+                    else -> contact
+                }
+            }
+            val preview = LoTWUploadPreview(
+                UUID.randomUUID().toString(), signing.key.info.callsign, signing.key.info.dxcc, signing.location.getValue("GRIDSQUARE"),
+                contacts.size, skipped,
+                contacts.firstOrNull()?.record?.let { utc(it.startUtcMillis, "yyyy-MM-dd HH:mm:ss") }.orEmpty(),
+                contacts.lastOrNull()?.record?.let { utc(it.startUtcMillis, "yyyy-MM-dd HH:mm:ss") }.orEmpty(),
+                contacts.map { "${utc(it.record.startUtcMillis, "MM-dd HH:mm")} ${it.record.theirCallsign} ${it.fields["MODE"]} ${it.fields["SAT_NAME"].orEmpty()}" },
+                unknown
+            )
+            if (contacts.isNotEmpty()) pending = Pending(
+                preview,
+                signing.signer.sign(contacts, signing.key, signing.location),
+                contacts.map { it.fingerprint },
+                now()
+            )
+            preview
         }
     }
 
@@ -147,6 +222,42 @@ class LoTWUploadRepository internal constructor(
     }
 
     override fun discardPreview() { pending?.data?.fill(0); pending = null }
+
+    private fun signingContext(): SigningContext {
+        val stored = storage.read("certificate") ?: fail(LoTWProblem.CERTIFICATE_MISSING)
+        val bundle = try { readBundle(stored) } finally { stored.fill(0) }
+        val passwordBytes = bundle.password ?: run {
+            bundle.p12.fill(0)
+            fail(LoTWProblem.CERTIFICATE_PASSWORD)
+        }
+        val password = decodePassword(passwordBytes)
+        return try {
+            val key = LoTWKeyMaterial.read(bundle.p12, password, now())
+            val tqslConfig = config()
+            val signer = LoTWSigner(tqslConfig)
+            val station = readStation() ?: fail(LoTWProblem.STATION_GRID)
+            SigningContext(key, signer, tqslConfig.stationFields(station, key.info.dxcc))
+        } finally {
+            bundle.p12.fill(0)
+            passwordBytes.fill(0)
+            password.fill('\u0000')
+        }
+    }
+
+    private fun readStation(): LoTWStation? = storage.read("station")?.inputStream()?.let { stream ->
+        DataInputStream(stream).use { input ->
+            require(input.readInt() == 1)
+            LoTWStation(input.readUTF(), input.readUTF(), input.readUTF(), input.readUTF(), input.readUTF(), input.readUTF())
+        }
+    }
+
+    private fun writeStation(station: LoTWStation) {
+        val bytes = ByteArrayOutputStream().also { stream -> DataOutputStream(stream).use { output ->
+            output.writeInt(1)
+            listOf(station.grid, station.cqZone, station.ituZone, station.region, station.county, station.iota).forEach(output::writeUTF)
+        } }.toByteArray()
+        try { storage.write("station", bytes) } finally { bytes.fill(0) }
+    }
 
     private suspend fun post(data: ByteArray, count: Int): LoTWUploadResult = suspendCancellableCoroutine { continuation ->
         val body = MultipartBody.Builder().setType(MultipartBody.FORM)
@@ -202,18 +313,46 @@ internal fun parseLoTWUploadResponse(body: String, count: Int): LoTWUploadResult
     }
 }
 
-private fun encodeBundle(info: LoTWCertificate, p12: ByteArray): ByteArray = ByteArrayOutputStream().also { stream ->
+private data class StoredCertificate(val info: LoTWCertificate, val p12: ByteArray, val password: ByteArray?)
+
+private fun encodeBundle(info: LoTWCertificate, p12: ByteArray, password: ByteArray): ByteArray = ByteArrayOutputStream().also { stream ->
     DataOutputStream(stream).use { output ->
-        output.writeInt(1)
+        output.writeInt(2)
         output.writeUTF(info.callsign); output.writeInt(info.dxcc); output.writeUTF(info.serial)
         output.writeUTF(info.expires); output.writeUTF(info.firstQsoDate); output.writeUTF(info.lastQsoDate)
+        output.writeInt(password.size); output.write(password)
         output.writeInt(p12.size); output.write(p12)
     }
 }.toByteArray()
 
-private fun readBundle(bytes: ByteArray): Pair<LoTWCertificate, ByteArray> = DataInputStream(bytes.inputStream()).use { input ->
-    require(input.readInt() == 1)
+private fun readBundle(bytes: ByteArray): StoredCertificate = DataInputStream(bytes.inputStream()).use { input ->
+    val version = input.readInt().also { require(it in 1..2) }
     val info = LoTWCertificate(input.readUTF(), input.readInt(), input.readUTF(), input.readUTF(), input.readUTF(), input.readUTF())
-    val size = input.readInt().also { require(it in 1..MAX_CERTIFICATE_BYTES) }
-    info to ByteArray(size).also { input.readFully(it) }
+    val password = if (version >= 2) {
+        val size = input.readInt().also { require(it in 0..MAX_CERTIFICATE_PASSWORD_BYTES) }
+        ByteArray(size).also { input.readFully(it) }
+    } else null
+    val p12Size = input.readInt().also { require(it in 1..MAX_CERTIFICATE_BYTES) }
+    StoredCertificate(info, ByteArray(p12Size).also { input.readFully(it) }, password)
 }
+
+private fun encodePassword(password: CharArray): ByteArray {
+    val buffer = Charsets.UTF_8.encode(CharBuffer.wrap(password))
+    return ByteArray(buffer.remaining()).also(buffer::get)
+}
+
+private fun decodePassword(password: ByteArray): CharArray {
+    val buffer = Charsets.UTF_8.decode(ByteBuffer.wrap(password))
+    return CharArray(buffer.remaining()).also(buffer::get)
+}
+
+private fun LoTWStation.normalized() = LoTWStation(
+    grid.trim().uppercase(Locale.US),
+    cqZone.trim(),
+    ituZone.trim(),
+    region.trim().uppercase(Locale.US),
+    county.trim().uppercase(Locale.US),
+    iota.trim().uppercase(Locale.US)
+)
+
+private const val MAX_CERTIFICATE_PASSWORD_BYTES = 16 * 1024

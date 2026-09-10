@@ -19,27 +19,28 @@ import com.rtbishop.look4sat.core.domain.logbook.QsoRecord
 import com.rtbishop.look4sat.core.domain.logbook.QsoStatus
 import com.rtbishop.look4sat.core.domain.logbook.displayMode
 import com.rtbishop.look4sat.core.domain.logbook.frequencyBand
-import com.rtbishop.look4sat.core.domain.repository.IMainContainer
 import com.rtbishop.look4sat.core.domain.repository.ILoTWRepository
-import com.rtbishop.look4sat.core.domain.repository.LoTWResult
-import com.rtbishop.look4sat.core.domain.repository.LoTWDownloadRequest
 import com.rtbishop.look4sat.core.domain.repository.ILoTWUploadRepository
+import com.rtbishop.look4sat.core.domain.repository.IMainContainer
 import com.rtbishop.look4sat.core.domain.repository.LoTWCertificate
-import com.rtbishop.look4sat.core.domain.repository.LoTWStation
-import com.rtbishop.look4sat.core.domain.repository.LoTWUploadPreview
-import com.rtbishop.look4sat.core.domain.repository.LoTWUploadResult
+import com.rtbishop.look4sat.core.domain.repository.LoTWDownloadRequest
 import com.rtbishop.look4sat.core.domain.repository.LoTWOperationException
 import com.rtbishop.look4sat.core.domain.repository.LoTWProblem
+import com.rtbishop.look4sat.core.domain.repository.LoTWResult
+import com.rtbishop.look4sat.core.domain.repository.LoTWStation
+import com.rtbishop.look4sat.core.domain.repository.LoTWUploadAudit
+import com.rtbishop.look4sat.core.domain.repository.LoTWUploadPreview
+import com.rtbishop.look4sat.core.domain.repository.LoTWUploadResult
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
-import java.util.Locale
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.TimeZone
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import java.util.TimeZone
 
 data class LogbookEditor(
     val id: Long = 0L,
@@ -143,6 +144,9 @@ data class LogbookState(
     val lotwProblem: LoTWOperationException? = null,
     val lotwDefaultGrid: String = "",
     val lotwStation: LoTWStation? = null,
+    val lotwAudit: LoTWUploadAudit? = null,
+    val lotwAuditing: Boolean = false,
+    val lotwProfileSaved: Boolean = false,
     val showStation: Boolean = false,
     val stationCallsign: String = ""
 ) {
@@ -180,9 +184,14 @@ sealed interface LogbookAction {
     data class SyncLoTW(val password: String, val confirmedOnly: Boolean = false, val satellitesOnly: Boolean = false,
         val since: String = "1900-01-01", val stationCallsign: String = "") : LogbookAction
     data class LoTWTab(val upload: Boolean) : LogbookAction
-    data class ImportLoTWCertificate(val data: ByteArray, val password: CharArray) : LogbookAction
+    data class SaveLoTWProfile(
+        val certificate: ByteArray?,
+        val password: CharArray?,
+        val station: LoTWStation
+    ) : LogbookAction
     data object RemoveLoTWCertificate : LogbookAction
-    data class PrepareLoTWUpload(val station: LoTWStation, val password: CharArray, val resubmit: Boolean) : LogbookAction
+    data object RefreshLoTWUpload : LogbookAction
+    data class PrepareLoTWUpload(val resubmit: Boolean) : LogbookAction
     data object DismissLoTWPreview : LogbookAction
     data object ConfirmLoTWUpload : LogbookAction
     data object CancelLoTW : LogbookAction
@@ -205,10 +214,15 @@ class LogbookViewModel(
     private val mutableState = MutableStateFlow(LogbookState())
     val state: StateFlow<LogbookState> = mutableState
     private var syncJob: Job? = null
+    private var auditJob: Job? = null
+    private var auditGeneration = 0
 
     init {
         viewModelScope.launch {
-            repository.records.collect { records -> mutableState.update { it.copy(records = records) } }
+            repository.records.collect { records ->
+                mutableState.update { it.copy(records = records) }
+                if (mutableState.value.showLoTW && mutableState.value.lotwUploadTab) refreshLoTWAudit()
+            }
         }
     }
 
@@ -233,13 +247,14 @@ class LogbookViewModel(
             LogbookAction.ShowLoTW -> {
                 mutableState.update {
                     it.copy(showLoTW = true, lotwError = null, lotwProblem = null, lotwDefaultGrid = defaultGrid(),
-                        lotwCallsign = it.lotwCallsign.ifBlank { defaultCallsign() })
+                        lotwCallsign = it.lotwCallsign.ifBlank { defaultCallsign() }, lotwProfileSaved = false)
                 }
                 viewModelScope.launch {
                     try {
                         val certificate = lotwUploadRepository.certificate()
                         val station = lotwUploadRepository.station()
                         mutableState.update { it.copy(lotwCertificate = certificate, lotwStation = station) }
+                        if (mutableState.value.lotwUploadTab) refreshLoTWAudit()
                     }
                     catch (cancelled: CancellationException) { throw cancelled }
                     catch (_: Exception) { mutableState.update { it.copy(lotwProblem = LoTWOperationException(LoTWProblem.STORAGE)) } }
@@ -247,22 +262,42 @@ class LogbookViewModel(
             }
             LogbookAction.DismissLoTW -> if (!mutableState.value.lotwSyncing) {
                 lotwUploadRepository.discardPreview()
-                mutableState.update { it.copy(showLoTW = false) }
+                auditJob?.cancel()
+                mutableState.update { it.copy(showLoTW = false, lotwAudit = null, lotwAuditing = false) }
             }
             is LogbookAction.LoTWCallsign -> mutableState.update { it.copy(lotwCallsign = action.value) }
             is LogbookAction.SyncLoTW -> syncLoTW(action)
-            is LogbookAction.LoTWTab -> if (!mutableState.value.lotwSyncing) mutableState.update { it.copy(lotwUploadTab = action.upload) }
-            is LogbookAction.ImportLoTWCertificate -> lotwOperation {
-                val certificate = lotwUploadRepository.importCertificate(action.data, action.password)
+            is LogbookAction.LoTWTab -> if (!mutableState.value.lotwSyncing) {
+                mutableState.update { it.copy(lotwUploadTab = action.upload) }
+                if (action.upload) refreshLoTWAudit() else {
+                    auditJob?.cancel()
+                    mutableState.update { it.copy(lotwAuditing = false) }
+                }
+            }
+            is LogbookAction.SaveLoTWProfile -> lotwOperation {
+                val certificate = when {
+                    action.certificate != null -> lotwUploadRepository.importCertificate(
+                        action.certificate,
+                        action.password ?: throw LoTWOperationException(LoTWProblem.CERTIFICATE_PASSWORD)
+                    )
+                    action.password != null -> lotwUploadRepository.saveCertificatePassword(action.password)
+                    else -> mutableState.value.lotwCertificate
+                        ?: throw LoTWOperationException(LoTWProblem.CERTIFICATE_MISSING)
+                }
                 mutableState.update { it.copy(lotwCertificate = certificate) }
+                val station = lotwUploadRepository.saveStation(action.station)
+                mutableState.update { it.copy(lotwStation = station, lotwProfileSaved = true) }
+                refreshLoTWAudit()
             }
             LogbookAction.RemoveLoTWCertificate -> lotwOperation {
                 lotwUploadRepository.removeCertificate()
-                mutableState.update { it.copy(lotwCertificate = null, lotwPreview = null) }
+                auditJob?.cancel()
+                mutableState.update { it.copy(lotwCertificate = null, lotwPreview = null, lotwAudit = null, lotwAuditing = false) }
             }
+            LogbookAction.RefreshLoTWUpload -> refreshLoTWAudit()
             is LogbookAction.PrepareLoTWUpload -> lotwOperation {
-                val preview = lotwUploadRepository.prepare(mutableState.value.filteredRecords, action.station, action.password, action.resubmit)
-                mutableState.update { it.copy(lotwPreview = preview, lotwStation = action.station) }
+                val preview = lotwUploadRepository.prepare(mutableState.value.filteredRecords, action.resubmit)
+                mutableState.update { it.copy(lotwPreview = preview) }
             }
             LogbookAction.DismissLoTWPreview -> if (!mutableState.value.lotwSyncing) {
                 lotwUploadRepository.discardPreview()
@@ -274,6 +309,7 @@ class LogbookViewModel(
                     mutableState.update { it.copy(lotwPreview = null, lotwUploadResult = LoTWUploadResult.Unknown) }
                     val result = lotwUploadRepository.upload(preview.id)
                     mutableState.update { it.copy(lotwUploadResult = result) }
+                    refreshLoTWAudit()
                 }
             }
             LogbookAction.CancelLoTW -> syncJob?.cancel()
@@ -322,13 +358,41 @@ class LogbookViewModel(
 
     private fun lotwOperation(block: suspend () -> Unit) {
         if (syncJob?.isActive == true) return
-        mutableState.update { it.copy(lotwSyncing = true, lotwProblem = null, lotwUploadResult = null) }
+        mutableState.update { it.copy(lotwSyncing = true, lotwProblem = null, lotwUploadResult = null, lotwProfileSaved = false) }
         syncJob = viewModelScope.launch {
             try { block() }
             catch (cancelled: CancellationException) { throw cancelled }
             catch (error: LoTWOperationException) { mutableState.update { it.copy(lotwProblem = error) } }
             catch (_: Exception) { mutableState.update { it.copy(lotwProblem = LoTWOperationException(LoTWProblem.STORAGE)) } }
             finally { mutableState.update { it.copy(lotwSyncing = false) } }
+        }
+    }
+
+    private fun refreshLoTWAudit() {
+        auditJob?.cancel()
+        val generation = ++auditGeneration
+        val current = mutableState.value
+        if (!current.showLoTW || !current.lotwUploadTab || current.lotwCertificate?.passwordSaved != true || current.lotwStation == null) {
+            mutableState.update { it.copy(lotwAudit = null, lotwAuditing = false) }
+            return
+        }
+        val records = current.filteredRecords
+        mutableState.update { it.copy(lotwAudit = null, lotwAuditing = true) }
+        auditJob = viewModelScope.launch {
+            try {
+                val audit = lotwUploadRepository.audit(records)
+                mutableState.update { it.copy(lotwAudit = audit, lotwProblem = null) }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: LoTWOperationException) {
+                mutableState.update { it.copy(lotwAudit = null, lotwProblem = error) }
+            } catch (_: Exception) {
+                mutableState.update {
+                    it.copy(lotwAudit = null, lotwProblem = LoTWOperationException(LoTWProblem.STORAGE))
+                }
+            } finally {
+                if (generation == auditGeneration) mutableState.update { it.copy(lotwAuditing = false) }
+            }
         }
     }
 

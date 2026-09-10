@@ -6,12 +6,15 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -28,8 +31,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.rtbishop.look4sat.core.domain.repository.LoTWProblem
 import com.rtbishop.look4sat.core.domain.repository.LoTWStation
@@ -88,36 +91,139 @@ internal fun LoTWUploadDialog(state: LogbookState, onAction: (LogbookAction) -> 
         }
     }
     val busy = state.lotwSyncing || reading
+    val certificate = state.lotwCertificate
+    val profileReady = certificate?.passwordSaved == true && state.lotwStation != null
+    val editedStation = LoTWStation(grid, cq, itu, region, county, iota)
+    val profileDirty = certificateBytes != null || password.isNotEmpty() || state.lotwStation != editedStation
+    val uploadReady = profileReady && !profileDirty
+    val audit = state.lotwAudit
+    val pendingCount = audit?.pending ?: 0
     AlertDialog(
         onDismissRequest = { if (!busy) onAction(LogbookAction.DismissLoTW) },
         title = { LoTWTabs(true, !busy, onAction) },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(stringResource(R.string.lotw_certificate_hint), style = MaterialTheme.typography.bodySmall)
-                state.lotwCertificate?.let { cert ->
-                    Text(stringResource(R.string.lotw_certificate_info, cert.callsign, cert.dxcc, cert.expires, cert.firstQsoDate, cert.lastQsoDate.ifBlank { "—" }))
+                ElevatedCard(Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(stringResource(R.string.lotw_certificate_section), style = MaterialTheme.typography.titleMedium)
+                        Text(stringResource(R.string.lotw_certificate_hint), style = MaterialTheme.typography.bodySmall)
+                        certificate?.let { cert ->
+                            Text(stringResource(
+                                R.string.lotw_certificate_info,
+                                cert.callsign,
+                                cert.dxcc,
+                                cert.expires,
+                                cert.firstQsoDate,
+                                cert.lastQsoDate.ifBlank { "—" }
+                            ))
+                        }
+                        TextButton(onClick = { launcher.launch(arrayOf("*/*")) }, enabled = !busy) {
+                            Text(stringResource(if (certificateBytes == null) R.string.lotw_choose_certificate else R.string.lotw_certificate_selected))
+                        }
+                        OutlinedTextField(
+                            password,
+                            { password = it },
+                            label = {
+                                Text(stringResource(
+                                    if (certificate?.passwordSaved == true && certificateBytes == null) {
+                                        R.string.lotw_certificate_password_saved
+                                    } else {
+                                        R.string.lotw_certificate_password
+                                    }
+                                ))
+                            },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrectEnabled = false),
+                            visualTransformation = PasswordVisualTransformation(),
+                            singleLine = true,
+                            enabled = !busy,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Text(stringResource(R.string.lotw_station_hint), style = MaterialTheme.typography.bodySmall)
+                        LoTWField(grid, { grid = it }, R.string.lotw_station_grid, !busy)
+                        LoTWField(cq, { cq = it }, R.string.lotw_cq_zone, !busy)
+                        LoTWField(itu, { itu = it }, R.string.lotw_itu_zone, !busy)
+                        LoTWField(region, { region = it }, R.string.lotw_region, !busy)
+                        LoTWField(county, { county = it }, R.string.lotw_county, !busy)
+                        LoTWField(iota, { iota = it }, R.string.lotw_iota, !busy)
+                        Button(
+                            onClick = {
+                                val selected = certificateBytes
+                                val passwordChars = when {
+                                    selected != null -> password.toCharArray()
+                                    certificate?.passwordSaved != true || password.isNotEmpty() -> password.toCharArray()
+                                    else -> null
+                                }
+                                onAction(LogbookAction.SaveLoTWProfile(
+                                    selected,
+                                    passwordChars,
+                                    editedStation
+                                ))
+                                certificateBytes = null
+                                password = ""
+                            },
+                            enabled = !busy && grid.isNotBlank() && (certificateBytes != null || certificate != null),
+                            modifier = Modifier.fillMaxWidth()
+                        ) { Text(stringResource(R.string.lotw_save_certificate_profile)) }
+                        if (state.lotwProfileSaved) {
+                            Text(
+                                stringResource(R.string.lotw_certificate_profile_saved),
+                                color = MaterialTheme.colorScheme.primary,
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
+                        if (certificate != null) {
+                            TextButton(onClick = { removeConfirmation = true }, enabled = !busy) {
+                                Text(stringResource(R.string.lotw_remove_certificate))
+                            }
+                        }
+                    }
                 }
-                TextButton(onClick = { launcher.launch(arrayOf("*/*")) }, enabled = !busy) {
-                    Text(stringResource(if (certificateBytes == null) R.string.lotw_choose_certificate else R.string.lotw_certificate_selected))
-                }
-                OutlinedTextField(password, { password = it }, label = { Text(stringResource(R.string.lotw_certificate_password)) },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrectEnabled = false),
-                    visualTransformation = PasswordVisualTransformation(), singleLine = true, enabled = !busy, modifier = Modifier.fillMaxWidth())
-                if (certificateBytes != null) TextButton(onClick = {
-                    certificateBytes?.let { onAction(LogbookAction.ImportLoTWCertificate(it, password.toCharArray())) }
-                    certificateBytes = null; password = ""
-                }, enabled = !busy) { Text(stringResource(R.string.lotw_import_certificate)) }
-                if (state.lotwCertificate != null) {
-                    TextButton(onClick = { removeConfirmation = true }, enabled = !busy) { Text(stringResource(R.string.lotw_remove_certificate)) }
-                    Text(stringResource(R.string.lotw_station_hint), style = MaterialTheme.typography.bodySmall)
-                    LoTWField(grid, { grid = it }, R.string.lotw_station_grid, !busy)
-                    LoTWField(cq, { cq = it }, R.string.lotw_cq_zone, !busy)
-                    LoTWField(itu, { itu = it }, R.string.lotw_itu_zone, !busy)
-                    LoTWField(region, { region = it }, R.string.lotw_region, !busy)
-                    LoTWField(county, { county = it }, R.string.lotw_county, !busy)
-                    LoTWField(iota, { iota = it }, R.string.lotw_iota, !busy)
-                    Text(stringResource(R.string.lotw_upload_scope, state.filteredRecords.size), style = MaterialTheme.typography.bodySmall)
-                    LoTWCheck(resubmit, { resubmit = it }, R.string.lotw_retry_unknown, !busy)
+                ElevatedCard(Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(stringResource(R.string.lotw_log_upload_section), style = MaterialTheme.typography.titleMedium)
+                        Text(stringResource(R.string.lotw_audit_hint), style = MaterialTheme.typography.bodySmall)
+                        if (!uploadReady) {
+                            Text(
+                                stringResource(if (profileReady) R.string.lotw_unsaved_profile else R.string.lotw_setup_required),
+                                color = MaterialTheme.colorScheme.error
+                            )
+                        } else {
+                            if (state.lotwAuditing) LinearProgressIndicator(Modifier.fillMaxWidth())
+                            audit?.let { result ->
+                                Text(
+                                    stringResource(R.string.lotw_pending_count, result.pending),
+                                    style = MaterialTheme.typography.titleLarge,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                                Text(stringResource(
+                                    R.string.lotw_audit_summary,
+                                    result.total,
+                                    result.uploaded,
+                                    result.unknown,
+                                    result.unavailable
+                                ), style = MaterialTheme.typography.bodySmall)
+                            }
+                            Text(
+                                stringResource(R.string.lotw_upload_scope, state.filteredRecords.size),
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                            TextButton(
+                                onClick = { onAction(LogbookAction.RefreshLoTWUpload) },
+                                enabled = !busy && !state.lotwAuditing
+                            ) { Text(stringResource(R.string.lotw_recheck)) }
+                            LoTWCheck(resubmit, { resubmit = it }, R.string.lotw_retry_unknown, !busy)
+                            Button(
+                                onClick = { onAction(LogbookAction.PrepareLoTWUpload(resubmit)) },
+                                enabled = !busy && !state.lotwAuditing && (pendingCount > 0 || resubmit),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(stringResource(
+                                    if (resubmit) R.string.lotw_retry_upload_button else R.string.lotw_upload_button,
+                                    if (resubmit) state.filteredRecords.size else pendingCount
+                                ))
+                            }
+                        }
+                    }
                 }
                 if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
                 if (fileError) Text(stringResource(R.string.lotw_certificate_file_error), color = MaterialTheme.colorScheme.error)
@@ -136,14 +242,7 @@ internal fun LoTWUploadDialog(state: LogbookState, onAction: (LogbookAction) -> 
                 }
             }
         },
-        confirmButton = {
-            TextButton(onClick = {
-                onAction(LogbookAction.PrepareLoTWUpload(LoTWStation(grid, cq, itu, region, county, iota), password.toCharArray(), resubmit))
-                password = ""
-            }, enabled = !busy && state.lotwCertificate != null && certificateBytes == null) {
-                Text(stringResource(R.string.lotw_prepare))
-            }
-        },
+        confirmButton = {},
         dismissButton = {
             TextButton(onClick = {
                 if (state.lotwSyncing) onAction(LogbookAction.CancelLoTW) else if (!reading) onAction(LogbookAction.DismissLoTW)

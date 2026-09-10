@@ -35,13 +35,15 @@ class LoTWDeviceTest {
             assertEquals(info, repository().certificate())
             val encrypted = File(isolated.noBackupFilesDir, "lotw/certificate").readBytes()
             assertFalse(encrypted.toString(Charsets.ISO_8859_1).contains("N0TEST"))
+            assertFalse(encrypted.toString(Charsets.ISO_8859_1).contains("test-only"))
             val record = QsoRecord(
                 id = 1, startUtcMillis = 1_789_000_000_000, theirCallsign = "K1ABC", myCallsign = "N0TEST", myGrid = "OL62AB",
                 mode = "MFSK", submode = "FT4", txFrequencyHz = 145_900_000, rxFrequencyHz = 435_800_000,
                 band = "2M", rxBand = "70CM", satelliteName = "AO-123", status = QsoStatus.COMPLETE
             )
             val profile = LoTWStation("OL62AB", "24", "44", "GD")
-            val preview = repository().prepare(listOf(record), profile, "test-only".toCharArray(), false)
+            repository().saveStation(profile)
+            val preview = repository().prepare(listOf(record), false)
             assertEquals(1, preview.count)
             assertEquals(profile, repository().station())
         } finally {

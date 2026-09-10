@@ -17,7 +17,7 @@ internal interface LoTWStorage {
     fun delete(name: String)
 }
 
-/** Even passwordless P12 backups are encrypted at rest and excluded from Android/cloud backup. */
+/** P12 backups and their saved passwords are encrypted at rest and excluded from Android/cloud backup. */
 internal class AndroidLoTWStorage(context: Context) : LoTWStorage {
     private val directory = File(context.noBackupFilesDir, "lotw")
     private val store by lazy { KeyStore.getInstance("AndroidKeyStore").apply { load(null) } }

@@ -20,6 +20,7 @@ package com.rtbishop.look4sat.feature.radar
 import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Build
+import androidx.annotation.StringRes
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.LinearEasing
@@ -70,7 +71,6 @@ import com.rtbishop.look4sat.core.domain.utility.toDegrees
 import com.rtbishop.look4sat.core.presentation.EmptyListCard
 import com.rtbishop.look4sat.core.presentation.IconCard
 import com.rtbishop.look4sat.core.presentation.NextPassRow
-import com.rtbishop.look4sat.core.presentation.QuickLogBar
 import com.rtbishop.look4sat.core.presentation.R
 import com.rtbishop.look4sat.core.presentation.RadarViewCompose
 import com.rtbishop.look4sat.core.presentation.TimerRow
@@ -79,14 +79,16 @@ import com.rtbishop.look4sat.core.presentation.formatFrequency
 import com.rtbishop.look4sat.core.presentation.getDefaultPass
 import com.rtbishop.look4sat.core.presentation.isVerticalLayout
 import com.rtbishop.look4sat.core.presentation.layoutPadding
+import com.rtbishop.look4sat.feature.radar.logs.LogsPage
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
 import kotlin.math.PI
 
-private enum class RadarPage(val title: String) {
-    Transceivers("Transceivers"),
-    Calculator("Calculator"),
-    Sstv("SSTV")
+private enum class RadarPage(@StringRes val titleRes: Int) {
+    Transceivers(R.string.radar_tab_transceivers),
+    Calculator(R.string.radar_tab_calculator),
+    Sstv(R.string.radar_tab_sstv),
+    Logs(R.string.radar_tab_logs)
 }
 
 @Composable
@@ -154,7 +156,15 @@ fun RadarDestination(navigateUp: () -> Unit, navigateToMap: () -> Unit, navigate
         mutualData,
         container.audioHub,
         connectRadios,
-        quickLog = { QuickLogBar(container, navigateToLogbook, uiState.currentPass) },
+        logsPage = {
+            LogsPage(
+                container = container,
+                onLogbook = navigateToLogbook,
+                pass = uiState.currentPass,
+                transponders = uiState.transceivers.transmitters,
+                selectedTransponderUuid = uiState.transceivers.selectedUuid
+            )
+        },
         requestMicPermission = {
         permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
     })
@@ -170,7 +180,7 @@ private fun RadarScreen(
     audioHub: IAudioHub,
     connectRadios: () -> Unit,
     requestMicPermission: () -> Unit,
-    quickLog: @Composable () -> Unit
+    logsPage: @Composable () -> Unit
 ) {
     val upcomingPass = uiState.currentPass ?: getDefaultPass()
     // Station-B overlay: full track line (only where B's elevation > 0) + live position dot
@@ -222,14 +232,29 @@ private fun RadarScreen(
         }
         if (isVertical) {
             RadarCard(uiState, trackB, trackBPosition, Modifier.weight(1f))
-            PagerCard(uiState, onAction, audioHub, connectRadios, requestMicPermission, Modifier.weight(1f))
+            PagerCard(
+                uiState,
+                onAction,
+                audioHub,
+                connectRadios,
+                requestMicPermission,
+                logsPage,
+                Modifier.weight(1f)
+            )
         } else {
             Row(modifier = Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 RadarCard(uiState, trackB, trackBPosition, Modifier.weight(1f))
-                PagerCard(uiState, onAction, audioHub, connectRadios, requestMicPermission, Modifier.weight(1f))
+                PagerCard(
+                    uiState,
+                    onAction,
+                    audioHub,
+                    connectRadios,
+                    requestMicPermission,
+                    logsPage,
+                    Modifier.weight(1f)
+                )
             }
         }
-        quickLog()
     }
 }
 
@@ -240,6 +265,7 @@ private fun PagerCard(
     audioHub: IAudioHub,
     connectRadios: () -> Unit,
     requestMicPermission: () -> Unit,
+    logsPage: @Composable () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val hasCalculatorPage = remember(uiState.transceivers.transmitters) {
@@ -250,6 +276,7 @@ private fun PagerCard(
             add(RadarPage.Transceivers)
             if (hasCalculatorPage) add(RadarPage.Calculator)
             add(RadarPage.Sstv)
+            add(RadarPage.Logs)
         }
     }
     val pagerState = rememberPagerState(pageCount = { pages.size })
@@ -268,7 +295,13 @@ private fun PagerCard(
                     Tab(
                         selected = selectedTabIndex == index,
                         onClick = { coroutineScope.launch { pagerState.animateScrollToPage(index) } },
-                        text = { Text(text = page.title, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                        text = {
+                            Text(
+                                text = stringResource(page.titleRes),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
                     )
                 }
             }
@@ -300,6 +333,7 @@ private fun PagerCard(
                         onAction = onAction,
                         requestMicPermission = requestMicPermission
                     )
+                    RadarPage.Logs -> logsPage()
                 }
             }
         }

@@ -337,8 +337,8 @@ fun MainScreen(
                             color = MaterialTheme.colorScheme.onPrimaryContainer,
                             modifier = Modifier.weight(1f)
                         )
-                        val txOk = if (trackingState.txConnected) "TX" else ""
-                        val rxOk = if (trackingState.rxConnected) "RX" else ""
+                        val txOk = if (trackingState.txConnected) stringResource(R.string.ft4_tx_label) else ""
+                        val rxOk = if (trackingState.rxConnected) stringResource(R.string.ft4_rx_label) else ""
                         Text(
                             text = listOf(txOk, rxOk).filter { it.isNotBlank() }.joinToString("/"),
                             fontSize = 12.sp,

@@ -14,6 +14,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.rtbishop.look4sat.core.domain.ft4.Ft4AutomaticTxIntent
+import com.rtbishop.look4sat.core.domain.ft4.Ft4AutomationAbortReason
 import com.rtbishop.look4sat.core.domain.ft4.Ft4AutomationController
 import com.rtbishop.look4sat.core.domain.ft4.Ft4AutomationPhase
 import com.rtbishop.look4sat.core.domain.ft4.Ft4DecoderOptions
@@ -152,16 +153,16 @@ class Ft4ViewModel(
             Ft4Action.StopAutomation -> stopAutomation()
             Ft4Action.ConnectRadios -> viewModelScope.launch { radioService.connectRadios() }
             Ft4Action.DisconnectRadios -> viewModelScope.launch {
-                stopAutomationNow("Radio disconnected")
+                stopAutomationNow(Ft4AutomationAbortReason.RADIO_DISCONNECTED)
                 radioService.disconnectRadios()
             }
             Ft4Action.ToggleTracking -> toggleTracking()
             Ft4Action.EmergencyStop -> viewModelScope.launch {
-                stopAutomationNow("Emergency stop")
+                stopAutomationNow(Ft4AutomationAbortReason.EMERGENCY_STOP)
                 manualTransmitJob?.cancel()
                 transmitter.emergencyStop()
             }
-            Ft4Action.ClearError -> mutableState.update { it.copy(error = "") }
+            Ft4Action.ClearError -> mutableState.update { it.copy(error = null) }
             Ft4Action.Leave -> closeOperations()
         }
     }
@@ -171,7 +172,7 @@ class Ft4ViewModel(
             container.settingsRepo.ft4Settings.collect { settings ->
                 mutableState.update { it.copy(settings = settings) }
                 if (!settings.decodeEnabled) {
-                    stopAutomationNow("FT4 disabled")
+                    stopAutomationNow(Ft4AutomationAbortReason.FEATURE_DISABLED)
                     ft4Service.stopReceiving()
                     transmitter.emergencyStop()
                 } else if (screenActive) {
@@ -276,9 +277,9 @@ class Ft4ViewModel(
                     if (radio.trackingPhase != TrackingPhase.READY || !radio.txConnected || radio.currentPass == null ||
                         radio.selectedTransponder == null
                     ) {
-                        stopAutomationNow("Satellite or radio context is unavailable")
+                        stopAutomationNow(Ft4AutomationAbortReason.CONTEXT_UNAVAILABLE)
                     } else if (mode != automation.mode || band != automation.band) {
-                        stopAutomationNow("FT4 operating context changed")
+                        stopAutomationNow(Ft4AutomationAbortReason.CONTEXT_CHANGED)
                     }
                 }
             }
@@ -340,9 +341,9 @@ class Ft4ViewModel(
             return
         }
         when {
-            !state.settings.decodeEnabled -> setError("FT4 decoding is disabled in Settings")
-            !state.capability.receiveAvailable -> setError(state.capability.unavailableReason)
-            !state.hasMicrophonePermission -> setError("Microphone permission is required")
+            !state.settings.decodeEnabled -> setError(Ft4UiError.DECODE_DISABLED)
+            !state.capability.receiveAvailable -> setError(Ft4UiError.UNAVAILABLE)
+            !state.hasMicrophonePermission -> setError(Ft4UiError.MICROPHONE_PERMISSION)
             else -> ft4Service.startReceiving(
                 state.decoderOptions(),
                 state.settings.operatorCallsign
@@ -366,13 +367,14 @@ class Ft4ViewModel(
     private fun startManualTransmit() {
         if (manualTransmitJob?.isActive == true || automationJob?.isActive == true || automationStopping) return
         val state = mutableState.value
-        val message = runCatching { buildInitialMessage(state) }
-            .getOrElse { return setError(it.message.orEmpty()) }
+        if (state.settings.operatorCallsign.isBlank()) return setError(Ft4UiError.CALLSIGN_REQUIRED)
+        if (state.grid4.isBlank()) return setError(Ft4UiError.GRID_REQUIRED)
+        val message = buildInitialMessage(state)
         val nextSlot = nextSlot(state.txSlotParity)
         mutableState.update {
             it.copy(
                 manualTimeWarning = !clock.automaticFt4TransmitAllowed(),
-                error = ""
+                error = null
             )
         }
         manualTransmitJob = viewModelScope.launch {
@@ -381,7 +383,7 @@ class Ft4ViewModel(
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Throwable) {
-                setError(error.message.orEmpty())
+                setError(error.toUiError())
             }
         }
     }
@@ -391,17 +393,18 @@ class Ft4ViewModel(
         val state = mutableState.value
         val radio = state.radio
         when {
-            !state.settings.decodeEnabled -> return setError("FT4 decoding is disabled in Settings")
-            !state.capability.receiveAvailable -> return setError(state.capability.unavailableReason)
-            !state.capability.transmitAvailable -> return setError(state.capability.unavailableReason)
-            !state.hasMicrophonePermission -> return setError("Microphone permission is required")
-            !clock.automaticFt4TransmitAllowed() -> return setError(clock.automaticFt4TransmitBlockReason())
+            !state.settings.decodeEnabled -> return setError(Ft4UiError.DECODE_DISABLED)
+            !state.capability.receiveAvailable -> return setError(Ft4UiError.UNAVAILABLE)
+            !state.capability.transmitAvailable -> return setError(Ft4UiError.UNAVAILABLE)
+            !state.hasMicrophonePermission -> return setError(Ft4UiError.MICROPHONE_PERMISSION)
+            !clock.automaticFt4TransmitAllowed() -> return setError(Ft4UiError.TIME_SYNCHRONIZATION)
             radio.trackingPhase != TrackingPhase.READY || !radio.txConnected ->
-                return setError("Satellite tracking and TX radio must be ready")
-            radio.currentPass == null || radio.selectedTransponder == null -> return setError("Select a pass and transponder first")
-            state.settings.operatorCallsign.isBlank() -> return setError("Operator callsign is required")
-            state.grid4.isBlank() -> return setError("Station Maidenhead grid is required")
-            radio.txMode.isNullOrBlank() -> return setError("TX radio mode is unavailable")
+                return setError(Ft4UiError.RADIO_NOT_READY)
+            radio.currentPass == null || radio.selectedTransponder == null ->
+                return setError(Ft4UiError.PASS_TRANSPONDER_REQUIRED)
+            state.settings.operatorCallsign.isBlank() -> return setError(Ft4UiError.CALLSIGN_REQUIRED)
+            state.grid4.isBlank() -> return setError(Ft4UiError.GRID_REQUIRED)
+            radio.txMode.isNullOrBlank() -> return setError(Ft4UiError.TX_MODE_UNAVAILABLE)
         }
         val next = scheduler.nextBoundaryAfter(clock.nowMillis())
         val sessionGeneration = ++generation
@@ -418,14 +421,14 @@ class Ft4ViewModel(
                 grid = state.grid4,
                 nextSlotIndex = next.index
             )
-        }.getOrElse { return setError(it.message.orEmpty()) }
+        }.getOrElse { return setError(Ft4UiError.OPERATION_FAILED) }
         if (!state.isReceiving) {
             ft4Service.startReceiving(
                 state.decoderOptions(),
                 state.settings.operatorCallsign
             )
         }
-        mutableState.update { it.copy(automation = automation, txSlotParity = automation.txSlotParity ?: 0, error = "") }
+        mutableState.update { it.copy(automation = automation, txSlotParity = automation.txSlotParity ?: 0, error = null) }
         automationJob = viewModelScope.launch { automaticLoop(sessionGeneration) }
     }
 
@@ -439,7 +442,12 @@ class Ft4ViewModel(
                     radio.trackingPhase != TrackingPhase.READY || !radio.txConnected || pass == null ||
                     radio.selectedTransponder == null
                 ) {
-                    stopAutomationNow(clock.automaticFt4TransmitBlockReason().ifBlank { "FT4 automatic TX gate closed" })
+                    val reason = if (!state.settings.decodeEnabled || !clock.automaticFt4TransmitAllowed()) {
+                        Ft4AutomationAbortReason.TIME_GATE_CLOSED
+                    } else {
+                        Ft4AutomationAbortReason.CONTEXT_UNAVAILABLE
+                    }
+                    stopAutomationNow(reason)
                     break
                 }
                 val next = scheduler.nextBoundaryAfter(clock.nowMillis())
@@ -462,7 +470,7 @@ class Ft4ViewModel(
                             throw cancelled
                         } catch (error: Throwable) {
                             staleIntent = !automationController.isIntentCurrent(intent)
-                            setError(error.message.orEmpty())
+                            setError(error.toUiError())
                             false
                         }
                         automationController.transmissionFinished(sessionGeneration, intent, succeeded)
@@ -480,9 +488,11 @@ class Ft4ViewModel(
             }
         } catch (cancelled: CancellationException) {
             throw cancelled
-        } catch (error: Throwable) {
-            automationController.abort(sessionGeneration, error.message ?: error.javaClass.simpleName)
-            mutableState.update { it.copy(automation = automationController.snapshot, error = error.message.orEmpty()) }
+        } catch (_: Throwable) {
+            automationController.abort(sessionGeneration, Ft4AutomationAbortReason.OPERATION_FAILED)
+            mutableState.update {
+                it.copy(automation = automationController.snapshot, error = Ft4UiError.OPERATION_FAILED)
+            }
             transmitter.emergencyStop()
             finishActiveQso(QsoStatus.ABORTED, sessionGeneration)
         }
@@ -497,13 +507,13 @@ class Ft4ViewModel(
     ) {
         val state = mutableState.value
         val radio = state.radio
-        check(state.settings.decodeEnabled) { "FT4 is disabled" }
-        check(state.capability.transmitAvailable) { state.capability.unavailableReason }
-        val pass = checkNotNull(radio.currentPass) { "No satellite pass is selected" }
-        val transponder = checkNotNull(radio.selectedTransponder) { "No transponder is selected" }
+        if (!state.settings.decodeEnabled) throw Ft4UiException(Ft4UiError.DECODE_DISABLED)
+        if (!state.capability.transmitAvailable) throw Ft4UiException(Ft4UiError.UNAVAILABLE)
+        val pass = radio.currentPass ?: throw Ft4UiException(Ft4UiError.SELECT_PASS)
+        val transponder = radio.selectedTransponder ?: throw Ft4UiException(Ft4UiError.SELECT_TRANSPONDER)
         val targetCall = if (automatic) automationController.snapshot.targetCall else state.targetCall
         val validation = ft4Service.validateMessage(message)
-        check(validation.valid) { validation.error }
+        if (!validation.valid) throw Ft4UiException(Ft4UiError.INVALID_MESSAGE)
         val sessionId = ensureQsoSessionId(automatic, sessionGeneration)
         val progress = mutableListOf<Ft4TransmissionProgress>()
         try {
@@ -558,7 +568,7 @@ class Ft4ViewModel(
         }
     }
 
-    private suspend fun stopAutomationNow(reason: String) {
+    private suspend fun stopAutomationNow(reason: Ft4AutomationAbortReason) {
         val current = automationController.snapshot
         if (current.phase.isRunning()) {
             automationStopping = true
@@ -733,8 +743,8 @@ class Ft4ViewModel(
         if (radio.isActive || radio.trackingPhase == TrackingPhase.INITIALIZING) {
             radioService.stopTracking()
         } else {
-            val pass = state.trackingPass ?: return setError("Select a pass in Radar first")
-            val transponder = radio.selectedTransponder ?: return setError("Select a transponder in Radar first")
+            val pass = state.trackingPass ?: return setError(Ft4UiError.SELECT_PASS)
+            val transponder = radio.selectedTransponder ?: return setError(Ft4UiError.SELECT_TRANSPONDER)
             radioService.startTracking(pass, transponder, radio.txBaseFrequencyHz)
         }
     }
@@ -747,15 +757,13 @@ class Ft4ViewModel(
 
     private fun buildInitialMessage(state: Ft4State): String {
         val myCall = state.settings.operatorCallsign.trim().uppercase(Locale.US)
-        check(myCall.isNotBlank()) { "Operator callsign is required" }
         val grid = state.grid4
-        check(grid.isNotBlank()) { "Station Maidenhead grid is required" }
         val target = state.targetCall.trim().uppercase(Locale.US)
         return if (target.isBlank()) "CQ $myCall $grid" else "$target $myCall $grid"
     }
 
-    private fun setError(message: String) {
-        mutableState.update { it.copy(error = message.ifBlank { "FT4 operation failed" }) }
+    private fun setError(error: Ft4UiError) {
+        mutableState.update { it.copy(error = error) }
     }
 
     private fun closeOperations() {
@@ -796,6 +804,11 @@ private fun Ft4AutomationPhase.isRunning(): Boolean = this !in setOf(
 private const val FT4_SLOT_MILLIS = 7_500L
 private val GRID_PATTERN = Regex("[A-R]{2}\\d{2}(?:[A-X]{2})?", RegexOption.IGNORE_CASE)
 private val REPORT_PATTERN = Regex("[+-]\\d{2}")
+
+private class Ft4UiException(val uiError: Ft4UiError) : IllegalStateException()
+
+private fun Throwable.toUiError(): Ft4UiError =
+    (this as? Ft4UiException)?.uiError ?: Ft4UiError.OPERATION_FAILED
 
 private fun Ft4State.decoderOptions() = Ft4DecoderOptions(
     decodePassCount = settings.decodeDepth,

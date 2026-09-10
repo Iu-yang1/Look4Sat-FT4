@@ -69,7 +69,9 @@ fun QuickLogBar(container: IMainContainer, onLogbook: () -> Unit, pass: OrbitalP
                     }
                 }
                 Box {
-                    TextButton(enabled = !state.saving, onClick = { modeMenu = true }) { Text("${state.mode} ▾") }
+                    TextButton(enabled = !state.saving, onClick = { modeMenu = true }) {
+                        Text(stringResource(R.string.quicklog_mode_dropdown, state.mode))
+                    }
                     DropdownMenu(expanded = modeMenu, onDismissRequest = { modeMenu = false }) {
                         listOf("CW", "SSB", "FM").forEach { mode ->
                             DropdownMenuItem(text = { Text(mode) }, onClick = { model.mode(mode); modeMenu = false })

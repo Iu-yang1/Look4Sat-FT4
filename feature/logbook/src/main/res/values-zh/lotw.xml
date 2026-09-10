@@ -67,4 +67,5 @@
     <string name="lotw_contact_error">日志呼号无效或通联尚未完成。</string>
     <string name="lotw_location_mismatch">日志保存的本台网格与本次台站位置不符，请筛选同一位置的记录或修正位置。</string>
     <string name="lotw_too_many">单批最多 10,000 条，请先用日志筛选缩小范围。</string>
+    <string name="lotw_preview_utc">UTC：%1$s — %2$s</string>
 </resources>

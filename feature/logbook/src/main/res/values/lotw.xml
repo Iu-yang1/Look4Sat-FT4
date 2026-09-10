@@ -67,4 +67,6 @@
     <string name="lotw_contact_error">A contact has an invalid callsign or is incomplete.</string>
     <string name="lotw_location_mismatch">A contact’s recorded operating grid differs from this station location. Filter a matching batch or correct the location.</string>
     <string name="lotw_too_many">Limit each upload batch to 10,000 contacts using logbook filters.</string>
+    <string name="lotw_preview_utc">UTC: %1$s — %2$s</string>
+    <string name="lotw_http_status" translatable="false">HTTP %1$d</string>
 </resources>

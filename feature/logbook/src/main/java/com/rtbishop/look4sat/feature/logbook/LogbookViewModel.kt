@@ -68,24 +68,30 @@ data class LogbookEditor(
 ) {
     fun toRecord(): QsoRecord {
         val call = theirCallsign.trim().uppercase(Locale.US)
-        require(call.isNotBlank()) { "Callsign is required" }
-        require(call.matches(Regex("[A-Z0-9]+(/[A-Z0-9]+)*")) && call.any(Char::isLetter) && call.any(Char::isDigit)) {
-            "Invalid callsign"
+        if (call.isBlank()) throw LogbookValidationException(LogbookError.CALLSIGN_REQUIRED)
+        if (!call.matches(Regex("[A-Z0-9]+(/[A-Z0-9]+)*")) ||
+            call.none(Char::isLetter) || call.none(Char::isDigit)
+        ) {
+            throw LogbookValidationException(LogbookError.CALLSIGN_INVALID)
         }
-        require(mode.isNotBlank()) { "Mode is required" }
+        if (mode.isBlank()) throw LogbookValidationException(LogbookError.MODE_REQUIRED)
         fun frequency(value: String): Long? {
             if (value.isBlank()) return null
-            return value.toLongOrNull()?.takeIf { it > 0 } ?: error("Invalid frequency (Hz)")
+            return value.toLongOrNull()?.takeIf { it > 0 }
+                ?: throw LogbookValidationException(LogbookError.FREQUENCY_INVALID)
         }
         val tx = frequency(txFrequencyHz)
         val rx = frequency(rxFrequencyHz)
-        require(utcText.matches(Regex("[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}"))) { "Invalid UTC date/time" }
+        if (!utcText.matches(Regex("[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}"))) {
+            throw LogbookValidationException(LogbookError.UTC_INVALID)
+        }
         val formatter = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).apply {
             timeZone = TimeZone.getTimeZone("UTC")
             isLenient = false
         }
         val started = if (utcText == formatter.format(Date(startUtcMillis))) startUtcMillis
-        else formatter.parse(utcText)?.time ?: error("Invalid UTC date/time")
+        else runCatching { formatter.parse(utcText)?.time }.getOrNull()
+            ?: throw LogbookValidationException(LogbookError.UTC_INVALID)
         return (source ?: QsoRecord(startUtcMillis = startUtcMillis, theirCallsign = call, myCallsign = "")).copy(
             id = id,
             startUtcMillis = started,
@@ -119,12 +125,26 @@ data class LogbookEditor(
 
 enum class LogbookFilter { ALL, CONFIRMED, UNCONFIRMED, DRAFTS }
 
+enum class LogbookError {
+    CALLSIGN_REQUIRED,
+    CALLSIGN_INVALID,
+    MODE_REQUIRED,
+    FREQUENCY_INVALID,
+    UTC_INVALID,
+    IMPORT_READ,
+    EXPORT_WRITE,
+    EXPORT_PREPARE,
+    SAVE,
+    DELETE,
+    IMPORT
+}
+
 data class LogbookState(
     val records: List<QsoRecord> = emptyList(),
     val editor: LogbookEditor? = null,
     val deleteCandidate: QsoRecord? = null,
     val importResult: AdifImportResult? = null,
-    val error: String = "",
+    val error: LogbookError? = null,
     val query: String = "",
     val modeFilter: String = "",
     val confirmationFilter: LogbookFilter = LogbookFilter.ALL,
@@ -195,7 +215,7 @@ sealed interface LogbookAction {
     data object DismissLoTWPreview : LogbookAction
     data object ConfirmLoTWUpload : LogbookAction
     data object CancelLoTW : LogbookAction
-    data class Error(val message: String) : LogbookAction
+    data class Error(val error: LogbookError) : LogbookAction
     data object ShowStation : LogbookAction
     data object DismissStation : LogbookAction
     data class StationCallsign(val value: String) : LogbookAction
@@ -229,17 +249,28 @@ class LogbookViewModel(
     fun onAction(action: LogbookAction) {
         when (action) {
             LogbookAction.Add -> mutableState.update {
-                it.copy(editor = LogbookEditor(startUtcMillis = nowMillis(), myCallsign = defaultCallsign(), myGrid = defaultGrid()), error = "")
+                it.copy(
+                    editor = LogbookEditor(
+                        startUtcMillis = nowMillis(),
+                        myCallsign = defaultCallsign(),
+                        myGrid = defaultGrid()
+                    ),
+                    error = null
+                )
             }
-            is LogbookAction.Edit -> mutableState.update { it.copy(editor = action.record.toEditor(), error = "") }
+            is LogbookAction.Edit -> mutableState.update { it.copy(editor = action.record.toEditor(), error = null) }
             is LogbookAction.Update -> mutableState.update { it.copy(editor = action.editor) }
             LogbookAction.Save -> saveEditor()
-            LogbookAction.DismissEditor -> if (!mutableState.value.isBusy) mutableState.update { it.copy(editor = null, error = "") }
+            LogbookAction.DismissEditor -> if (!mutableState.value.isBusy) {
+                mutableState.update { it.copy(editor = null, error = null) }
+            }
             is LogbookAction.RequestDelete -> mutableState.update { it.copy(deleteCandidate = action.record) }
             LogbookAction.ConfirmDelete -> deleteCandidate()
             LogbookAction.DismissDelete -> mutableState.update { it.copy(deleteCandidate = null) }
             is LogbookAction.Import -> importAdi(action.content)
-            LogbookAction.ClearNotice -> mutableState.update { it.copy(importResult = null, lotwResult = null, error = "") }
+            LogbookAction.ClearNotice -> mutableState.update {
+                it.copy(importResult = null, lotwResult = null, error = null)
+            }
             is LogbookAction.Search -> mutableState.update { it.copy(query = action.value) }
             is LogbookAction.ModeFilter -> mutableState.update { it.copy(modeFilter = action.value) }
             is LogbookAction.ConfirmationFilter -> mutableState.update { it.copy(confirmationFilter = action.value) }
@@ -313,16 +344,25 @@ class LogbookViewModel(
                 }
             }
             LogbookAction.CancelLoTW -> syncJob?.cancel()
-            is LogbookAction.Error -> mutableState.update { it.copy(error = action.message) }
-            LogbookAction.ShowStation -> mutableState.update { it.copy(showStation = true, stationCallsign = defaultCallsign(), error = "") }
+            is LogbookAction.Error -> mutableState.update { it.copy(error = action.error) }
+            LogbookAction.ShowStation -> mutableState.update {
+                it.copy(showStation = true, stationCallsign = defaultCallsign(), error = null)
+            }
             LogbookAction.DismissStation -> mutableState.update { it.copy(showStation = false) }
             is LogbookAction.StationCallsign -> mutableState.update { it.copy(stationCallsign = action.value) }
             LogbookAction.SaveStation -> {
                 val call = mutableState.value.stationCallsign.trim().uppercase(Locale.US)
                 if (com.rtbishop.look4sat.core.domain.logbook.quickLogValidation(call, "59", "59", "FM") == null) {
                     updateDefaultCallsign(call)
-                    mutableState.update { it.copy(showStation = false, error = "") }
-                } else mutableState.update { it.copy(error = "Invalid callsign") }
+                    mutableState.update { it.copy(showStation = false, error = null) }
+                } else {
+                    mutableState.update {
+                        it.copy(
+                            error = if (call.isBlank()) LogbookError.CALLSIGN_REQUIRED
+                            else LogbookError.CALLSIGN_INVALID
+                        )
+                    }
+                }
             }
         }
     }
@@ -407,11 +447,13 @@ class LogbookViewModel(
         mutableState.update { it.copy(isBusy = true) }
         try {
             repository.save(editor.toRecord())
-            mutableState.update { it.copy(editor = null, error = "") }
+            mutableState.update { it.copy(editor = null, error = null) }
         } catch (cancelled: CancellationException) {
             throw cancelled
-        } catch (error: Exception) {
-            mutableState.update { it.copy(error = error.message.orEmpty()) }
+        } catch (error: LogbookValidationException) {
+            mutableState.update { it.copy(error = error.error) }
+        } catch (_: Exception) {
+            mutableState.update { it.copy(error = LogbookError.SAVE) }
         } finally {
             mutableState.update { it.copy(isBusy = false) }
         }
@@ -423,11 +465,11 @@ class LogbookViewModel(
         mutableState.update { it.copy(isBusy = true) }
         try {
             repository.delete(record.id)
-            mutableState.update { it.copy(deleteCandidate = null, error = "") }
+            mutableState.update { it.copy(deleteCandidate = null, error = null) }
         } catch (cancelled: CancellationException) {
             throw cancelled
-        } catch (error: Exception) {
-            mutableState.update { it.copy(error = error.message.orEmpty()) }
+        } catch (_: Exception) {
+            mutableState.update { it.copy(error = LogbookError.DELETE) }
         } finally {
             mutableState.update { it.copy(isBusy = false) }
         }
@@ -438,11 +480,11 @@ class LogbookViewModel(
         mutableState.update { it.copy(isBusy = true) }
         try {
             val result = repository.importAdi(content)
-            mutableState.update { it.copy(importResult = result, error = "") }
+            mutableState.update { it.copy(importResult = result, error = null) }
         } catch (cancelled: CancellationException) {
             throw cancelled
-        } catch (error: Exception) {
-            mutableState.update { it.copy(error = error.message.orEmpty()) }
+        } catch (_: Exception) {
+            mutableState.update { it.copy(error = LogbookError.IMPORT) }
         } finally {
             mutableState.update { it.copy(isBusy = false) }
         }
@@ -464,6 +506,8 @@ class LogbookViewModel(
         }
     }
 }
+
+private class LogbookValidationException(val error: LogbookError) : IllegalArgumentException()
 
 private fun QsoRecord.toEditor() = LogbookEditor(
     id = id,

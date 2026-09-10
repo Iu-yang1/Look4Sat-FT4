@@ -144,7 +144,12 @@ internal fun LoTWDialog(state: LogbookState, onAction: (LogbookAction) -> Unit) 
                         }),
                         color = MaterialTheme.colorScheme.error
                     )
-                    if (error is LoTWResult.ServerError) Text("HTTP ${error.status}", color = MaterialTheme.colorScheme.error)
+                    if (error is LoTWResult.ServerError) {
+                        Text(
+                            stringResource(R.string.lotw_http_status, error.status),
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
                 }
             }
         },
@@ -194,7 +199,9 @@ internal fun LogbookStationDialog(state: LogbookState, onAction: (LogbookAction)
                     keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Characters),
                     modifier = Modifier.fillMaxWidth()
                 )
-                if (state.error.isNotBlank()) Text(state.error, color = MaterialTheme.colorScheme.error)
+                state.error?.let { error ->
+                    Text(logbookErrorText(error), color = MaterialTheme.colorScheme.error)
+                }
             }
         },
         confirmButton = { TextButton(onClick = { onAction(LogbookAction.SaveStation) }) { Text(stringResource(R.string.logbook_save)) } },

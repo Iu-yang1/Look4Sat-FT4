@@ -18,6 +18,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -74,7 +75,7 @@ fun GridTargetChip(
             modifier = Modifier.size(22.dp)
         )
         Text(
-            text = grid?.let { formatGridDisplay(it) } ?: "----",
+            text = grid?.let { formatGridDisplay(it) } ?: stringResource(R.string.grid_target_placeholder),
             fontSize = 15.sp,
             fontWeight = FontWeight.Bold,
             fontFamily = FontFamily.Monospace,
@@ -82,13 +83,15 @@ fun GridTargetChip(
             letterSpacing = 1.sp
         )
         Text(
-            text = distanceKm?.let { "${"%,.0f".format(it)} km" } ?: "-- km",
+            text = distanceKm?.let { stringResource(R.string.grid_target_distance, it) }
+                ?: stringResource(R.string.grid_target_distance_placeholder),
             fontSize = 14.sp,
             color = MaterialTheme.colorScheme.onSurface,
             modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
         )
         Text(
-            text = bearingDeg?.let { "${"%.0f".format(it)}°" } ?: "--°",
+            text = bearingDeg?.let { stringResource(R.string.grid_target_bearing, it) }
+                ?: stringResource(R.string.grid_target_bearing_placeholder),
             fontSize = 12.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )

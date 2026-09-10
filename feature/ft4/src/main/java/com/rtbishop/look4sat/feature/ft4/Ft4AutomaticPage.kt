@@ -29,6 +29,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.rtbishop.look4sat.core.domain.ft4.Ft4AutomationAbortReason
 import com.rtbishop.look4sat.core.domain.ft4.Ft4AutomationPhase
 import com.rtbishop.look4sat.core.domain.repository.TrackingPhase
 import com.rtbishop.look4sat.core.domain.time.ClockSource
@@ -114,9 +115,9 @@ internal fun Ft4AutomationSection(
                 color = if (gateAllowed) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
                 fontSize = 12.sp
             )
-            if (automation.abortReason.isNotBlank()) {
+            automation.abortReason?.let { reason ->
                 Text(
-                    automation.abortReason,
+                    automationAbortReasonText(reason),
                     color = MaterialTheme.colorScheme.error,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
@@ -191,6 +192,20 @@ private fun phaseLabel(phase: Ft4AutomationPhase): String = stringResource(
         Ft4AutomationPhase.SIGNOFF -> R.string.ft4_phase_signoff
         Ft4AutomationPhase.COMPLETE -> R.string.ft4_phase_complete
         Ft4AutomationPhase.ABORTED -> R.string.ft4_phase_aborted
+    }
+)
+
+@Composable
+private fun automationAbortReasonText(reason: Ft4AutomationAbortReason): String = stringResource(
+    when (reason) {
+        Ft4AutomationAbortReason.TRANSMIT_FAILED -> R.string.ft4_abort_transmit_failed
+        Ft4AutomationAbortReason.CONTEXT_CHANGED -> R.string.ft4_abort_context_changed
+        Ft4AutomationAbortReason.RADIO_DISCONNECTED -> R.string.ft4_abort_radio_disconnected
+        Ft4AutomationAbortReason.EMERGENCY_STOP -> R.string.ft4_abort_emergency_stop
+        Ft4AutomationAbortReason.FEATURE_DISABLED -> R.string.ft4_abort_disabled
+        Ft4AutomationAbortReason.CONTEXT_UNAVAILABLE -> R.string.ft4_abort_context_unavailable
+        Ft4AutomationAbortReason.TIME_GATE_CLOSED -> R.string.ft4_abort_time_gate_closed
+        Ft4AutomationAbortReason.OPERATION_FAILED -> R.string.ft4_abort_operation_failed
     }
 )
 

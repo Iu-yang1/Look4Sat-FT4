@@ -404,14 +404,21 @@ private fun WorkedGridCallRow(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Text(
-                text = if (expanded) " ▴" else " ▾",
+                text = stringResource(
+                    if (expanded) R.string.grid_qso_collapse_marker
+                    else R.string.grid_qso_expand_marker
+                ),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.primary
             )
         }
         // First-QSO summary line, always visible.
         Text(
-            text = stringResource(R.string.grid_qso_first) + " · " + qsoSummary(first, isUtc),
+            text = stringResource(
+                R.string.grid_qso_pair,
+                stringResource(R.string.grid_qso_first),
+                qsoSummary(first, isUtc)
+            ),
             style = MaterialTheme.typography.bodySmall,
             modifier = Modifier.padding(top = 3.dp)
         )
@@ -421,7 +428,11 @@ private fun WorkedGridCallRow(
         if (expanded && callQsos.size > 1) {
             callQsos.drop(1).forEach { qso ->
                 Text(
-                    text = formatDate(qso.epochMs, isUtc) + " · " + qsoSummary(qso, isUtc),
+                    text = stringResource(
+                        R.string.grid_qso_pair,
+                        formatDate(qso.epochMs, isUtc),
+                        qsoSummary(qso, isUtc)
+                    ),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 3.dp)
@@ -431,23 +442,29 @@ private fun WorkedGridCallRow(
     }
 }
 
+@Composable
 private fun qsoSummary(qso: com.rtbishop.look4sat.core.domain.model.GridQso, isUtc: Boolean): String {
-    val sat = qso.satName.ifBlank { "?" }
-    val mode = qso.mode.ifBlank { "?" }
+    val unknown = stringResource(R.string.grid_qso_unknown)
+    val sat = qso.satName.ifBlank { unknown }
+    val mode = qso.mode.ifBlank { unknown }
     val band = qso.bandLabel
     val time = formatTime(qso.epochMs, isUtc)
-    return listOf(sat, mode, band, time).filter { it.isNotBlank() }.joinToString(" · ")
+    return listOf(sat, mode, band, time)
+        .filter(String::isNotBlank)
+        .joinToString(stringResource(R.string.grid_qso_separator))
 }
 
+@Composable
 private fun formatDate(epochMs: Long, isUtc: Boolean): String {
-    if (epochMs <= 0L) return "--"
+    if (epochMs <= 0L) return stringResource(R.string.grid_qso_date_unknown)
     val zone = if (isUtc) java.time.ZoneOffset.UTC else java.time.ZoneId.systemDefault()
     return java.time.Instant.ofEpochMilli(epochMs).atZone(zone)
         .format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd"))
 }
 
+@Composable
 private fun formatTime(epochMs: Long, isUtc: Boolean): String {
-    if (epochMs <= 0L) return "--:--"
+    if (epochMs <= 0L) return stringResource(R.string.grid_qso_time_unknown)
     val zone = if (isUtc) java.time.ZoneOffset.UTC else java.time.ZoneId.systemDefault()
     return java.time.Instant.ofEpochMilli(epochMs).atZone(zone)
         .format(java.time.format.DateTimeFormatter.ofPattern(if (isUtc) "HH:mm'Z'" else "HH:mm"))
@@ -565,7 +582,12 @@ private fun AwardChipsRow(
                 onClick = { onSelect(p.type) },
                 label = {
                     Text(
-                        text = "${p.type.name} ${p.count}/${p.target}",
+                        text = stringResource(
+                            R.string.map_award_progress,
+                            p.type.name,
+                            p.count,
+                            p.target
+                        ),
                         fontSize = 12.sp
                     )
                 },

@@ -81,10 +81,14 @@ internal fun LoTWUploadDialog(state: LogbookState, onAction: (LogbookAction) -> 
                             out.write(buffer, 0, count)
                         }
                         out.toByteArray()
-                    } ?: error("Cannot read certificate")
+                    }
                 }
-                certificateBytes?.fill(0)
-                certificateBytes = bytes
+                if (bytes == null) {
+                    fileError = true
+                } else {
+                    certificateBytes?.fill(0)
+                    certificateBytes = bytes
+                }
             } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
             catch (_: Exception) { fileError = true }
             finally { reading = false }
@@ -98,6 +102,7 @@ internal fun LoTWUploadDialog(state: LogbookState, onAction: (LogbookAction) -> 
     val uploadReady = profileReady && !profileDirty
     val audit = state.lotwAudit
     val pendingCount = audit?.pending ?: 0
+    val unavailable = stringResource(R.string.logbook_value_unavailable)
     AlertDialog(
         onDismissRequest = { if (!busy) onAction(LogbookAction.DismissLoTW) },
         title = { LoTWTabs(true, !busy, onAction) },
@@ -114,7 +119,7 @@ internal fun LoTWUploadDialog(state: LogbookState, onAction: (LogbookAction) -> 
                                 cert.dxcc,
                                 cert.expires,
                                 cert.firstQsoDate,
-                                cert.lastQsoDate.ifBlank { "—" }
+                                cert.lastQsoDate.ifBlank { unavailable }
                             ))
                         }
                         TextButton(onClick = { launcher.launch(arrayOf("*/*")) }, enabled = !busy) {
@@ -258,7 +263,7 @@ internal fun LoTWUploadDialog(state: LogbookState, onAction: (LogbookAction) -> 
                     Text(stringResource(R.string.lotw_preview_summary, preview.callsign, preview.dxcc, preview.grid, preview.count, preview.skipped))
                     if (preview.unknownSkipped > 0) Text(stringResource(R.string.lotw_unknown_skipped, preview.unknownSkipped))
                     if (preview.count == 0) Text(stringResource(R.string.lotw_nothing_to_upload)) else {
-                        Text("UTC: ${preview.firstUtc} — ${preview.lastUtc}")
+                        Text(stringResource(R.string.lotw_preview_utc, preview.firstUtc, preview.lastUtc))
                         Text(stringResource(R.string.lotw_preview_warning), style = MaterialTheme.typography.bodySmall)
                         LazyColumn(Modifier.heightIn(max = 200.dp)) { items(preview.contacts) { Text(it, style = MaterialTheme.typography.bodySmall) } }
                     }

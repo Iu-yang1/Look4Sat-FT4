@@ -297,7 +297,7 @@ private fun Ft4Shell(
                     }
                     IconCard(action = navigateToLogbook, resId = R.drawable.ic_logbook)
                 }
-                if (state.error.isNotBlank()) {
+                state.error?.let { error ->
                     ElevatedCard(
                         colors = CardDefaults.elevatedCardColors(
                             containerColor = MaterialTheme.colorScheme.errorContainer
@@ -305,7 +305,7 @@ private fun Ft4Shell(
                         modifier = Modifier.fillMaxWidth().clickable { onAction(Ft4Action.ClearError) }
                     ) {
                         Text(
-                            stringResource(R.string.ft4_error, state.error),
+                            ft4ErrorText(error),
                             color = MaterialTheme.colorScheme.onErrorContainer,
                             modifier = Modifier.padding(8.dp),
                             maxLines = 2,
@@ -487,7 +487,12 @@ private fun SatelliteRadioStatus(
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                     RadioControlStatus(radio)
                     radio.lastCommandError?.let {
-                        Text(it, color = MaterialTheme.colorScheme.error, fontSize = 11.sp, maxLines = 1)
+                        Text(
+                            stringResource(R.string.ft4_error_radio_command),
+                            color = MaterialTheme.colorScheme.error,
+                            fontSize = 11.sp,
+                            maxLines = 1
+                        )
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         CardButton(
@@ -641,7 +646,7 @@ private fun Ft4FrequencyRow(
 ) {
     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
         Text(
-            text = "$label:",
+            text = stringResource(R.string.ft4_label_value, label),
             fontSize = 13.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.width(30.dp)
@@ -732,7 +737,7 @@ private fun RadioControlStatus(radio: RadioTrackingState) {
 private fun RadioConnectionRow(label: String, mode: String, connected: Boolean) {
     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
         Text(
-            text = "$label:",
+            text = stringResource(R.string.ft4_label_value, label),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             fontSize = 13.sp,
             modifier = Modifier.width(30.dp)
@@ -747,6 +752,25 @@ private fun RadioConnectionRow(label: String, mode: String, connected: Boolean) 
         ConnectionDot(connected)
     }
 }
+
+@Composable
+private fun ft4ErrorText(error: Ft4UiError): String = stringResource(
+    when (error) {
+        Ft4UiError.DECODE_DISABLED -> R.string.ft4_status_disabled
+        Ft4UiError.UNAVAILABLE -> R.string.ft4_error_unavailable
+        Ft4UiError.MICROPHONE_PERMISSION -> R.string.ft4_microphone_required
+        Ft4UiError.TIME_SYNCHRONIZATION -> R.string.ft4_error_time_sync
+        Ft4UiError.RADIO_NOT_READY -> R.string.ft4_error_radio_not_ready
+        Ft4UiError.PASS_TRANSPONDER_REQUIRED -> R.string.ft4_error_pass_transponder_required
+        Ft4UiError.CALLSIGN_REQUIRED -> R.string.ft4_error_callsign_required
+        Ft4UiError.GRID_REQUIRED -> R.string.ft4_error_grid_required
+        Ft4UiError.TX_MODE_UNAVAILABLE -> R.string.ft4_error_tx_mode_unavailable
+        Ft4UiError.SELECT_PASS -> R.string.ft4_error_select_pass
+        Ft4UiError.SELECT_TRANSPONDER -> R.string.ft4_error_select_transponder
+        Ft4UiError.INVALID_MESSAGE -> R.string.ft4_error_invalid_message
+        Ft4UiError.OPERATION_FAILED -> R.string.ft4_error_operation_failed
+    }
+)
 
 @Composable
 private fun ConnectionDot(connected: Boolean, modifier: Modifier = Modifier) {

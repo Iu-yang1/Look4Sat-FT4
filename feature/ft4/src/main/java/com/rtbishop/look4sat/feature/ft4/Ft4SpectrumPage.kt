@@ -42,6 +42,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -143,12 +144,9 @@ internal fun Ft4SpectrumPage(
 @Composable
 private fun spectrumBlockingMessage(state: Ft4State, hasNoFrame: Boolean): String? = when {
     !state.settings.decodeEnabled -> stringResource(R.string.ft4_status_disabled)
-    !state.capability.receiveAvailable -> stringResource(
-        R.string.ft4_status_unavailable,
-        state.capability.unavailableReason
-    )
+    !state.capability.receiveAvailable -> stringResource(R.string.ft4_status_unavailable)
     !state.hasMicrophonePermission -> stringResource(R.string.ft4_microphone_required)
-    state.audioHub is AudioHubState.Failed -> stringResource(R.string.ft4_error, state.audioHub.reason)
+    state.audioHub is AudioHubState.Failed -> stringResource(R.string.ft4_error_audio_input)
     hasNoFrame -> stringResource(R.string.ft4_waiting_audio)
     else -> null
 }
@@ -163,6 +161,8 @@ private fun SpectrumWaterfall(
     val description = stringResource(R.string.ft4_receive_content_description)
     val frequencyDescription = stringResource(R.string.ft4_frequency_content_description)
     val combinedDescription = stringResource(R.string.ft4_spectrum_description, description, frequencyDescription)
+    val context = LocalContext.current
+    val selectedFrequencyLabel = stringResource(R.string.ft4_frequency_hz, selectedFrequencyHz.roundToInt())
     val path = remember { Path() }
     val rulerPaint = remember {
         android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
@@ -204,7 +204,7 @@ private fun SpectrumWaterfall(
             val tickTop = if (major) 1.dp.toPx() else rulerHeight * 0.55f
             drawLine(cyan, Offset(x, tickTop), Offset(x, rulerHeight), strokeWidth = if (major) 2f else 1f)
             if (major) {
-                val label = if (frequency == 0) "0Hz" else "${frequency}Hz"
+                val label = context.getString(R.string.ft4_frequency_hz, frequency)
                 drawIntoCanvas { canvas ->
                     canvas.nativeCanvas.drawText(label, x, 11.sp.toPx(), rulerPaint)
                 }
@@ -247,7 +247,7 @@ private fun SpectrumWaterfall(
         rulerPaint.textSize = 11.sp.toPx()
         drawIntoCanvas { canvas ->
             canvas.nativeCanvas.drawText(
-                "${selectedFrequencyHz.roundToInt()} Hz",
+                selectedFrequencyLabel,
                 selectedX.coerceIn(34.dp.toPx(), size.width - 34.dp.toPx()),
                 size.height - 5.dp.toPx(),
                 rulerPaint
@@ -330,7 +330,7 @@ private fun audioOwnerText(state: AudioHubState): String = when (state) {
             )
         )
     }
-    is AudioHubState.Failed -> stringResource(R.string.ft4_error, state.reason)
+    is AudioHubState.Failed -> stringResource(R.string.ft4_error_audio_input)
 }
 
 private fun AudioHubState.isUnavailable(): Boolean =

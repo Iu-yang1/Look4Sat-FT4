@@ -23,6 +23,17 @@ enum class Ft4AutomationPhase {
     ABORTED
 }
 
+enum class Ft4AutomationAbortReason {
+    TRANSMIT_FAILED,
+    CONTEXT_CHANGED,
+    RADIO_DISCONNECTED,
+    EMERGENCY_STOP,
+    FEATURE_DISABLED,
+    CONTEXT_UNAVAILABLE,
+    TIME_GATE_CLOSED,
+    OPERATION_FAILED
+}
+
 data class Ft4AutomationSnapshot(
     val phase: Ft4AutomationPhase = Ft4AutomationPhase.IDLE,
     val generation: Long = 0L,
@@ -39,7 +50,7 @@ data class Ft4AutomationSnapshot(
     val messageRevision: Long = 0L,
     val nextEligibleTxSlot: Long = Long.MIN_VALUE,
     val consecutiveCqCount: Int = 0,
-    val abortReason: String = ""
+    val abortReason: Ft4AutomationAbortReason? = null
 )
 
 data class Ft4AutomaticTxIntent(
@@ -75,7 +86,7 @@ class Ft4AutomationController(
         val normalizedMyCall = normalizeCall(myCall)
         val normalizedTarget = normalizeCall(targetCall)
         val normalizedGrid = normalizeGrid(grid)
-        require(normalizedMyCall.isNotBlank()) { "Operator callsign is required" }
+        require(normalizedMyCall.isNotBlank())
         seenMessages.clear()
         claimedSlots.clear()
         cqBackoffUntilSlot = Long.MIN_VALUE
@@ -209,7 +220,7 @@ class Ft4AutomationController(
                 mutableSnapshot = mutableSnapshot.copy(currentMessage = "")
                 return
             }
-            abort(generation, "FT4 transmit failed")
+            abort(generation, Ft4AutomationAbortReason.TRANSMIT_FAILED)
             return
         }
         if (intent.message.endsWith(" 73")) {
@@ -222,7 +233,7 @@ class Ft4AutomationController(
         if (mode != mutableSnapshot.mode || band != mutableSnapshot.band ||
             normalizeCall(targetCall) != mutableSnapshot.targetCall
         ) {
-            abort(generation, "FT4 operating context changed")
+            abort(generation, Ft4AutomationAbortReason.CONTEXT_CHANGED)
         }
     }
 
@@ -232,13 +243,13 @@ class Ft4AutomationController(
                 phase = Ft4AutomationPhase.IDLE,
                 currentMessage = "",
                 nextMessage = "",
-                abortReason = ""
+                abortReason = null
             )
         }
         return mutableSnapshot
     }
 
-    fun abort(generation: Long, reason: String): Ft4AutomationSnapshot {
+    fun abort(generation: Long, reason: Ft4AutomationAbortReason): Ft4AutomationSnapshot {
         if (acceptGeneration(generation)) {
             mutableSnapshot = mutableSnapshot.copy(
                 phase = Ft4AutomationPhase.ABORTED,

@@ -26,7 +26,7 @@ class LogbookEditorTest {
         assertEquals("", saved.submode)
     }
 
-    @Test(expected = java.text.ParseException::class)
+    @Test(expected = IllegalArgumentException::class)
     fun rejectsInvalidUtcDate() {
         LogbookEditor(startUtcMillis = 0L, theirCallsign = "K1ABC", utcText = "2026-02-30 12:00:00").toRecord()
     }

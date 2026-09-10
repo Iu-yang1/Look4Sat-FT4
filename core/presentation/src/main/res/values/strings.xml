@@ -358,9 +358,21 @@
     <string name="ft4_page_decode">Decode / Call</string>
     <string name="ft4_page_automatic">Automatic</string>
     <string name="ft4_status_ready">Official core ready · %1$s</string>
-    <string name="ft4_status_unavailable">FT4 unavailable · %1$s</string>
+    <string name="ft4_status_unavailable">FT4 is unavailable on this device</string>
     <string name="ft4_status_disabled">FT4 decoding is disabled in Settings</string>
-    <string name="ft4_error">FT4: %1$s</string>
+    <string name="ft4_error_unavailable">FT4 receive or transmit is unavailable on this device</string>
+    <string name="ft4_error_time_sync">Automatic FT4 transmission requires healthy NTP or GNSS time</string>
+    <string name="ft4_error_radio_not_ready">Satellite tracking and the TX radio must be ready</string>
+    <string name="ft4_error_pass_transponder_required">Select a pass and transponder first</string>
+    <string name="ft4_error_callsign_required">Configure the operator callsign first</string>
+    <string name="ft4_error_grid_required">Configure the station Maidenhead grid first</string>
+    <string name="ft4_error_tx_mode_unavailable">The TX radio mode is unavailable</string>
+    <string name="ft4_error_select_pass">Select a pass on the Radar screen first</string>
+    <string name="ft4_error_select_transponder">Select a transponder on the Radar screen first</string>
+    <string name="ft4_error_invalid_message">The FT4 message cannot be encoded</string>
+    <string name="ft4_error_operation_failed">The FT4 operation failed</string>
+    <string name="ft4_error_audio_input">The audio input is unavailable</string>
+    <string name="ft4_error_radio_command">The latest radio command failed</string>
     <string name="ft4_dismiss">Dismiss</string>
     <string name="ft4_expand_status">Expand satellite and radio status</string>
     <string name="ft4_collapse_status">Collapse satellite and radio status</string>
@@ -498,11 +510,35 @@
     <string name="ft4_gate_pass">no pass is selected</string>
     <string name="ft4_gate_transponder">no transponder is selected</string>
     <string name="ft4_gate_callsign">operator callsign is not configured</string>
+    <string name="ft4_abort_transmit_failed">FT4 transmission failed</string>
+    <string name="ft4_abort_context_changed">The FT4 operating context changed</string>
+    <string name="ft4_abort_radio_disconnected">The radio was disconnected</string>
+    <string name="ft4_abort_emergency_stop">Emergency stop requested</string>
+    <string name="ft4_abort_disabled">FT4 was disabled</string>
+    <string name="ft4_abort_context_unavailable">The satellite or radio context became unavailable</string>
+    <string name="ft4_abort_time_gate_closed">The automatic FT4 time gate closed</string>
+    <string name="ft4_abort_operation_failed">The automatic FT4 operation failed</string>
+    <string name="ft4_label_value">%1$s:</string>
+    <string name="ft4_frequency_hz" translatable="false">%1$d Hz</string>
+    <string name="grid_target_placeholder" translatable="false">----</string>
+    <string name="grid_target_distance" translatable="false">%1$,.0f km</string>
+    <string name="grid_target_distance_placeholder" translatable="false">-- km</string>
+    <string name="grid_target_bearing" translatable="false">%1$.0f°</string>
+    <string name="grid_target_bearing_placeholder" translatable="false">--°</string>
     <string name="map_grid_mode">Grid mode</string>
     <string name="map_satellite_mode">Satellite mode</string>
     <string name="grid_qso_calls_count">%1$d callsigns · %2$d QSOs</string>
     <string name="grid_qso_first">First</string>
     <string name="grid_qso_no_sat">satellite unknown</string>
+    <string name="grid_qso_pair">%1$s · %2$s</string>
+    <string name="quicklog_mode_dropdown" translatable="false">%1$s ▾</string>
+    <string name="grid_qso_expand_marker" translatable="false">\u0020▾</string>
+    <string name="grid_qso_collapse_marker" translatable="false">\u0020▴</string>
+    <string name="grid_qso_unknown" translatable="false">?</string>
+    <string name="grid_qso_date_unknown" translatable="false">--</string>
+    <string name="grid_qso_time_unknown" translatable="false">--:--</string>
+    <string name="grid_qso_separator" translatable="false">\u0020·\u0020</string>
+    <string name="map_award_progress" translatable="false">%1$s %2$d/%3$d</string>
     <string name="nav_logbook">Logbook</string>
     <string name="quicklog_select_satellite">Select satellite ▾</string>
     <string name="quicklog_no_passes">No passes available</string>

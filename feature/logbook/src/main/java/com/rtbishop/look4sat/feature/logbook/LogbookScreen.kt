@@ -85,13 +85,16 @@ fun LogbookScreenDestination(navigateUp: () -> Unit, navigateToMap: () -> Unit =
             try {
                 val content = withContext(Dispatchers.IO) {
                     context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
-                        ?: error("Cannot read ADI file")
                 }
-                viewModel.onAction(LogbookAction.Import(content))
+                if (content == null) {
+                    viewModel.onAction(LogbookAction.Error(LogbookError.IMPORT_READ))
+                } else {
+                    viewModel.onAction(LogbookAction.Import(content))
+                }
             } catch (cancelled: kotlinx.coroutines.CancellationException) {
                 throw cancelled
-            } catch (error: Exception) {
-                viewModel.onAction(LogbookAction.Error(error.message.orEmpty()))
+            } catch (_: Exception) {
+                viewModel.onAction(LogbookAction.Error(LogbookError.IMPORT_READ))
             }
         }
     }
@@ -99,15 +102,21 @@ fun LogbookScreenDestination(navigateUp: () -> Unit, navigateToMap: () -> Unit =
         uri ?: return@rememberLauncherForActivityResult
         scope.launch {
             try {
-                withContext(Dispatchers.IO) {
-                    val stream = context.contentResolver.openOutputStream(uri, "wt") ?: error("Cannot write ADI file")
+                val written = withContext(Dispatchers.IO) {
+                    val stream = context.contentResolver.openOutputStream(uri, "wt")
+                        ?: return@withContext false
                     stream.bufferedWriter().use { it.write(exportContent) }
+                    true
                 }
-                exportComplete = true
+                if (written) {
+                    exportComplete = true
+                } else {
+                    viewModel.onAction(LogbookAction.Error(LogbookError.EXPORT_WRITE))
+                }
             } catch (cancelled: kotlinx.coroutines.CancellationException) {
                 throw cancelled
-            } catch (error: Exception) {
-                viewModel.onAction(LogbookAction.Error(error.message.orEmpty()))
+            } catch (_: Exception) {
+                viewModel.onAction(LogbookAction.Error(LogbookError.EXPORT_WRITE))
             }
         }
     }
@@ -119,8 +128,8 @@ fun LogbookScreenDestination(navigateUp: () -> Unit, navigateToMap: () -> Unit =
                 exportLauncher.launch("look4sat-${fileDate()}.adi")
             } catch (cancelled: kotlinx.coroutines.CancellationException) {
                 throw cancelled
-            } catch (error: Exception) {
-                viewModel.onAction(LogbookAction.Error(error.message.orEmpty()))
+            } catch (_: Exception) {
+                viewModel.onAction(LogbookAction.Error(LogbookError.EXPORT_PREPARE))
             }
         }
     }
@@ -215,7 +224,8 @@ private fun LogbookScreen(
                 )
                 CardButton(
                     onClick = { onAction(LogbookAction.ShowLoTW) },
-                    text = "LoTW", modifier = Modifier.weight(1f)
+                    text = stringResource(R.string.logbook_lotw_button),
+                    modifier = Modifier.weight(1f)
                 )
                 IconButton(onClick = onMap) {
                     Icon(painterResource(CoreR.drawable.ic_map), stringResource(R.string.logbook_grid_map))
@@ -223,7 +233,7 @@ private fun LogbookScreen(
             }
             LogbookFilters(state, onAction)
             val notice = when {
-                state.error.isNotBlank() -> stringResource(R.string.logbook_error, state.error)
+                state.error != null -> logbookErrorText(state.error)
                 state.importResult != null -> stringResource(
                     R.string.logbook_import_result,
                     state.importResult.imported,
@@ -259,7 +269,7 @@ private fun LogbookScreen(
                         groups.forEach { (call, contacts) ->
                             item(key = "call_$call") {
                                 Text(
-                                    "$call · ${contacts.size}",
+                                    stringResource(R.string.logbook_group_header, call, contacts.size),
                                     style = MaterialTheme.typography.titleSmall,
                                     color = MaterialTheme.colorScheme.primary,
                                     modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
@@ -287,6 +297,15 @@ private fun LogbookScreen(
 @Composable
 private fun QsoCard(record: QsoRecord, onEdit: () -> Unit, onDelete: () -> Unit) {
     val notSet = stringResource(R.string.logbook_not_set)
+    val unavailable = stringResource(R.string.logbook_value_unavailable)
+    val txFrequencyHz = record.txFrequencyHz
+    val rxFrequencyHz = record.rxFrequencyHz
+    val txFrequency = if (txFrequencyHz == null) notSet else {
+        stringResource(R.string.logbook_mhz_value, txFrequencyHz / 1_000_000.0)
+    }
+    val rxFrequency = if (rxFrequencyHz == null) notSet else {
+        stringResource(R.string.logbook_mhz_value, rxFrequencyHz / 1_000_000.0)
+    }
     ElevatedCard(modifier = Modifier.fillMaxWidth().clickable(onClick = onEdit)) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(10.dp),
@@ -298,7 +317,11 @@ private fun QsoCard(record: QsoRecord, onEdit: () -> Unit, onDelete: () -> Unit)
                     Text(record.theirCallsign, fontWeight = FontWeight.Bold, fontSize = 18.sp,
                         modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Text(
-                        if (record.lotwConfirmed) "✓ LoTW" else statusLabel(record.status),
+                        if (record.lotwConfirmed) {
+                            stringResource(R.string.logbook_lotw_confirmed_short)
+                        } else {
+                            statusLabel(record.status)
+                        },
                         color = MaterialTheme.colorScheme.primary, fontSize = 12.sp
                     )
                     Text(record.displayMode, style = MaterialTheme.typography.labelMedium)
@@ -306,22 +329,27 @@ private fun QsoCard(record: QsoRecord, onEdit: () -> Unit, onDelete: () -> Unit)
                 Text(
                     stringResource(
                         R.string.logbook_qso_summary,
-                        formatUtc(record.startUtcMillis),
+                        stringResource(R.string.logbook_utc_value, formatUtc(record.startUtcMillis)),
                         record.satelliteName.ifBlank { notSet }
                     ),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
                 Text(
-                    "${record.sentReport.ifBlank { "—" }} / ${record.receivedReport.ifBlank { "—" }} · ${record.theirGrid.ifBlank { "—" }}",
+                    stringResource(
+                        R.string.logbook_reports_grid,
+                        record.sentReport.ifBlank { unavailable },
+                        record.receivedReport.ifBlank { unavailable },
+                        record.theirGrid.ifBlank { unavailable }
+                    ),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Text(
                     stringResource(
                         R.string.logbook_frequency_summary,
-                        record.txFrequencyHz?.let(::formatMhz) ?: notSet,
-                        record.rxFrequencyHz?.let(::formatMhz) ?: notSet,
+                        txFrequency,
+                        rxFrequency,
                         record.submode.ifBlank { record.mode }.ifBlank { notSet }
                     ),
                     fontSize = 12.sp,
@@ -340,7 +368,12 @@ private fun QsoCard(record: QsoRecord, onEdit: () -> Unit, onDelete: () -> Unit)
 }
 
 @Composable
-private fun LogbookEditorDialog(editor: LogbookEditor, onAction: (LogbookAction) -> Unit, busy: Boolean, error: String) {
+private fun LogbookEditorDialog(
+    editor: LogbookEditor,
+    onAction: (LogbookAction) -> Unit,
+    busy: Boolean,
+    error: LogbookError?
+) {
     var showDetails by remember(editor.id) { mutableStateOf(false) }
     fun update(transform: (LogbookEditor) -> LogbookEditor) = onAction(LogbookAction.Update(transform(editor)))
     AlertDialog(
@@ -351,7 +384,7 @@ private fun LogbookEditorDialog(editor: LogbookEditor, onAction: (LogbookAction)
                 modifier = Modifier.heightIn(max = 520.dp).verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                if (error.isNotBlank()) Text(error, color = MaterialTheme.colorScheme.error)
+                error?.let { Text(logbookErrorText(it), color = MaterialTheme.colorScheme.error) }
                 EditorField(editor.utcText, R.string.logbook_utc_time) { value -> update { it.copy(utcText = value) } }
                 EditorField(editor.theirCallsign, R.string.logbook_callsign) { value -> update { it.copy(theirCallsign = value) } }
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -370,7 +403,12 @@ private fun LogbookEditorDialog(editor: LogbookEditor, onAction: (LogbookAction)
                 EditorField(editor.satelliteName, R.string.logbook_satellite) { value -> update { it.copy(satelliteName = value) } }
                 EditorField(editor.comment, R.string.logbook_comment) { value -> update { it.copy(comment = value) } }
                 TextButton(onClick = { showDetails = !showDetails }) {
-                    Text(stringResource(R.string.logbook_advanced) + if (showDetails) " ▴" else " ▾")
+                    Text(
+                        stringResource(R.string.logbook_advanced) + stringResource(
+                            if (showDetails) R.string.logbook_collapse_marker
+                            else R.string.logbook_expand_marker
+                        )
+                    )
                 }
                 if (showDetails) {
                     EditorField(editor.myCallsign, R.string.logbook_my_callsign) { value -> update { it.copy(myCallsign = value) } }
@@ -441,12 +479,27 @@ private fun statusLabel(status: QsoStatus): String = stringResource(
     }
 )
 
-private fun formatUtc(value: Long): String = SimpleDateFormat("yyyy-MM-dd HH:mm:ss 'UTC'", Locale.US).apply {
+@Composable
+internal fun logbookErrorText(error: LogbookError): String = stringResource(
+    when (error) {
+        LogbookError.CALLSIGN_REQUIRED -> R.string.logbook_error_callsign_required
+        LogbookError.CALLSIGN_INVALID -> R.string.logbook_error_callsign_invalid
+        LogbookError.MODE_REQUIRED -> R.string.logbook_error_mode_required
+        LogbookError.FREQUENCY_INVALID -> R.string.logbook_error_frequency_invalid
+        LogbookError.UTC_INVALID -> R.string.logbook_error_utc_invalid
+        LogbookError.IMPORT_READ -> R.string.logbook_error_import_read
+        LogbookError.EXPORT_WRITE -> R.string.logbook_error_export_write
+        LogbookError.EXPORT_PREPARE -> R.string.logbook_error_export_prepare
+        LogbookError.SAVE -> R.string.logbook_error_save
+        LogbookError.DELETE -> R.string.logbook_error_delete
+        LogbookError.IMPORT -> R.string.logbook_error_import
+    }
+)
+
+private fun formatUtc(value: Long): String = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).apply {
     timeZone = TimeZone.getTimeZone("UTC")
 }.format(Date(value))
 
 private fun fileDate(): String = SimpleDateFormat("yyyyMMdd", Locale.US).apply {
     timeZone = TimeZone.getTimeZone("UTC")
 }.format(Date())
-
-private fun formatMhz(value: Long): String = String.format(Locale.US, "%.6f MHz", value / 1_000_000.0)

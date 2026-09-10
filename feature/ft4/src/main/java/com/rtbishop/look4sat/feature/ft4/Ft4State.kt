@@ -22,6 +22,22 @@ import com.rtbishop.look4sat.core.domain.predict.OrbitalPass
 import com.rtbishop.look4sat.core.domain.predict.OrbitalPos
 import com.rtbishop.look4sat.core.domain.time.ClockSnapshot
 
+enum class Ft4UiError {
+    DECODE_DISABLED,
+    UNAVAILABLE,
+    MICROPHONE_PERMISSION,
+    TIME_SYNCHRONIZATION,
+    RADIO_NOT_READY,
+    PASS_TRANSPONDER_REQUIRED,
+    CALLSIGN_REQUIRED,
+    GRID_REQUIRED,
+    TX_MODE_UNAVAILABLE,
+    SELECT_PASS,
+    SELECT_TRANSPONDER,
+    INVALID_MESSAGE,
+    OPERATION_FAILED
+}
+
 data class Ft4State(
     val settings: Ft4Settings,
     val capability: Ft4Capability,
@@ -38,7 +54,7 @@ data class Ft4State(
     val selectedAudioFrequencyHz: Float = 1_500f,
     val txSlotParity: Int = 0,
     val hasMicrophonePermission: Boolean = false,
-    val error: String = "",
+    val error: Ft4UiError? = null,
     val manualTimeWarning: Boolean = false,
     val selectedPass: OrbitalPass? = null,
     val orbitalPosition: OrbitalPos? = null,

@@ -92,7 +92,7 @@ private enum class RadarPage(@StringRes val titleRes: Int) {
 }
 
 @Composable
-fun RadarDestination(navigateUp: () -> Unit, navigateToMap: () -> Unit, navigateToLogbook: () -> Unit = {}) {
+fun RadarDestination(navigateUp: () -> Unit, navigateToMap: () -> Unit) {
     val context = LocalContext.current
     val container = (context.applicationContext as IContainerProvider).getMainContainer()
     val viewModel: RadarViewModel = viewModel(factory = RadarViewModel.factory(container))
@@ -159,7 +159,6 @@ fun RadarDestination(navigateUp: () -> Unit, navigateToMap: () -> Unit, navigate
         logsPage = {
             LogsPage(
                 container = container,
-                onLogbook = navigateToLogbook,
                 pass = uiState.currentPass,
                 transponders = uiState.transceivers.transmitters,
                 selectedTransponderUuid = uiState.transceivers.selectedUuid

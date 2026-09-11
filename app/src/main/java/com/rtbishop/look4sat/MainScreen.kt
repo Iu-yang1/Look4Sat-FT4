@@ -141,7 +141,7 @@ fun NavRoot(deeplink: String? = null) {
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    RadarDestination(navigateUp = navigateBack, navigateToMap = navigateToMap, navigateToLogbook = navigateToLogbook)
+                    RadarDestination(navigateUp = navigateBack, navigateToMap = navigateToMap)
                 }
             }
             entry<Screen.Ft4> {

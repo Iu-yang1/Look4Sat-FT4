@@ -5,7 +5,7 @@ import com.rtbishop.look4sat.core.domain.predict.OrbitalPass
 import com.rtbishop.look4sat.core.domain.repository.RadioTrackingState
 import java.util.Locale
 
-enum class QuickLogError { CALLSIGN, GRID, REPORT, FREQUENCY, UTC, SATELLITE, STORAGE }
+enum class QuickLogError { CALLSIGN, GRID, REPORT, SATELLITE, STORAGE }
 
 data class QuickQsoDetails(
     val startUtcMillis: Long? = null,

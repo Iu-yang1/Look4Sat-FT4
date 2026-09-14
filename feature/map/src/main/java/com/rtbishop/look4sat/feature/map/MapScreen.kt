@@ -62,6 +62,7 @@ import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color as ComposeColor
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -181,8 +182,30 @@ private fun MapScreen(uiState: MapState, onAction: (MapAction) -> Unit, mapView:
     var selectedAward by remember { mutableStateOf<AwardType?>(AwardType.VUCC) }
     // Six-award progress derived from the confirmed QSO store; recomputed when
     // the store changes (LoTW/Wavelog sync).
-    val awardProgress: List<AwardProgress> = remember(uiState.workedGridQsos) {
-        AwardCalculator.calculate(uiState.workedGridQsos)
+    // Per operated-grid VUCC breakdown: myGrid -> set of worked grids worked from it.
+    val vuccByMyGrid: Map<String, Set<String>> = remember(uiState.workedGridQsos) {
+        val m = mutableMapOf<String, MutableSet<String>>()
+        for ((grid, qsos) in uiState.workedGridQsos) {
+            for (q in qsos) {
+                val mg = q.myGrid ?: continue
+                m.getOrPut(mg) { mutableSetOf() }.add(grid)
+            }
+        }
+        m
+    }
+    // Selected operated grid for VUCC counting; defaults to the grid with the
+    // most worked grids. Null when the store carries no per-QSO myGrid data
+    // (requires a LoTW resync) — then VUCC falls back to the global count.
+    var selectedMyGrid by remember(vuccByMyGrid) {
+        mutableStateOf(vuccByMyGrid.maxByOrNull { it.value.size }?.key)
+    }
+    val awardProgress: List<AwardProgress> = remember(uiState.workedGridQsos, vuccByMyGrid, selectedMyGrid) {
+        val vuccGrids = selectedMyGrid?.let { vuccByMyGrid[it].orEmpty() }
+        val base = AwardCalculator.calculate(uiState.workedGridQsos)
+        if (vuccGrids == null) base
+        else base.map { p ->
+            if (p.type == AwardType.VUCC) p.copy(workedKeys = vuccGrids, count = vuccGrids.size) else p
+        }
     }
     // Attach the tap listener whenever grid mode / worked grids change.
     val workedGrids = uiState.workedGrids
@@ -298,6 +321,18 @@ private fun MapScreen(uiState: MapState, onAction: (MapAction) -> Unit, mapView:
                         if (isVertical) MapDataCard(mapData) else MapDataCards(mapData)
                     }
                 }
+                // Top-left: operated-grid selector for VUCC counting (grid mode only).
+                val myGrid = selectedMyGrid
+                if (uiState.isGridMode && selectedAward == AwardType.VUCC && myGrid != null) {
+                    VuccGridSelector(
+                        options = vuccByMyGrid,
+                        selected = myGrid,
+                        onSelect = { selectedMyGrid = it },
+                        modifier = Modifier
+                            .align(Alignment.TopStart)
+                            .padding(8.dp)
+                    )
+                }
                 GridModeToggle(
                     isGridMode = uiState.isGridMode,
                     onToggle = { onAction(MapAction.ToggleGridMode(it)) },
@@ -400,18 +435,33 @@ private fun WorkedGridCallRow(
                 style = MaterialTheme.typography.titleMedium,
                 fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
                 color = MaterialTheme.colorScheme.tertiary,
+                maxLines = 1,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f)
             )
             Text(
-                text = formatDate(first.epochMs, isUtc),
+                text = pluralStringResource(R.plurals.grid_qso_count, callQsos.size, callQsos.size),
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                modifier = Modifier.weight(1f)
             )
-            Text(
-                text = if (expanded) " ▴" else " ▾",
-                fontSize = 18.sp,
-                color = MaterialTheme.colorScheme.primary
-            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.End,
+                modifier = Modifier.weight(1f)
+            ) {
+                Text(
+                    text = formatDate(first.epochMs, isUtc),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    text = if (expanded) " ▴" else " ▾",
+                    fontSize = 18.sp,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
         }
         // First-QSO summary line, always visible.
         Text(
@@ -575,6 +625,73 @@ private fun AwardChipsRow(
                 },
                 colors = FilterChipDefaults.filterChipColors()
             )
+        }
+    }
+}
+
+/**
+ * Compact pill toggle for switching between satellite view and grid mode,
+ * floated over the map's top-right corner. The label reflects the active
+ * mode ("Grid mode" when ON, "Satellite mode" when OFF). Semi-transparent
+ * background keeps the map readable underneath.
+ */
+@Composable
+private fun VuccGridSelector(
+    options: Map<String, Set<String>>,
+    selected: String,
+    onSelect: (String) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var expanded by remember { mutableStateOf(false) }
+    // Most-worked grid first; selection is made on tap.
+    val sorted = remember(options) { options.entries.sortedByDescending { it.value.size } }
+    Surface(
+        color = ComposeColor.Black.copy(alpha = 0.45f),
+        shape = RoundedCornerShape(8.dp),
+        modifier = modifier
+    ) {
+        Column {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .clickable { expanded = !expanded }
+                    .padding(start = 10.dp, end = 6.dp, top = 4.dp, bottom = 4.dp)
+            ) {
+                Text(
+                    text = "$selected (${options[selected]?.size ?: 0})",
+                    color = ComposeColor.White,
+                    fontSize = 12.sp,
+                    fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+                )
+                Text(
+                    text = if (expanded) " ▴" else " ▾",
+                    fontSize = 18.sp,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(start = 4.dp)
+                )
+            }
+            if (expanded) {
+                androidx.compose.material3.HorizontalDivider(color = ComposeColor.White.copy(alpha = 0.2f))
+                sorted.forEach { (grid, grids) ->
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                onSelect(grid)
+                                expanded = false
+                            }
+                            .padding(horizontal = 10.dp, vertical = 3.dp)
+                    ) {
+                        Text(
+                            text = "$grid (${grids.size})",
+                            color = if (grid == selected) MaterialTheme.colorScheme.primary else ComposeColor.White,
+                            fontSize = 12.sp,
+                            fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+                        )
+                    }
+                }
+            }
         }
     }
 }

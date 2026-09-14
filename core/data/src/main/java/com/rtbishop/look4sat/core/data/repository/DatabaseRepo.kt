@@ -58,7 +58,7 @@ class DatabaseRepo(
         var importedCount = 0
         remoteSource.getFileStream(uri)?.let { stream ->
             val transceivers = dataParser.parseJSONStream(unwrapIfZipped(uri, stream))
-            localSource.insertRadios(transceivers)
+            localSource.insertRadios(transceivers, isCustom = true)
             importedCount = transceivers.size
         }
         setUpdateSuccessful(System.currentTimeMillis())
@@ -105,9 +105,16 @@ class DatabaseRepo(
             val normUrl = normalizeUrl(rawUrl)
             result.stream?.let { dataParser.parseJSONStream(unwrapIfZipped(normUrl, it)) }.orEmpty()
         }.filter { it.uuid.isNotBlank() }.distinctBy { it.uuid }
-        // insert parsed data into the database
-        localSource.insertEntries(importedEntries)
-        localSource.insertRadios(importedRadios)
+        // insert parsed data into the database.
+        // Transceivers are a full snapshot: sources publish active entries only, so a retired
+        // transceiver simply disappears from the feed and has to be dropped locally as well.
+        // Manually imported ones (isCustom) are kept: no source can refresh them, so nothing
+        // would bring them back if they were replaced here.
+        if (importedRadios.isNotEmpty()) {
+            localSource.deleteManagedRadios()
+            localSource.insertRadios(importedRadios)
+        }
+        if (importedEntries.isNotEmpty()) localSource.insertEntries(importedEntries)
         setUpdateSuccessful(System.currentTimeMillis())
     }
 

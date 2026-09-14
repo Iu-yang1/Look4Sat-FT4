@@ -32,5 +32,7 @@ data class SatRadio(
     @SerialName("uplink_high") val uplinkHigh: Long?,
     @SerialName("uplink_mode") val uplinkMode: String?,
     @SerialName("invert") val isInverted: Boolean,
-    @SerialName("norad_cat_id") val catnum: Int?
+    @SerialName("norad_cat_id") val catnum: Int?,
+    /** Set for manually imported transceivers, which remote updates must not replace. */
+    val isCustom: Boolean = false
 )

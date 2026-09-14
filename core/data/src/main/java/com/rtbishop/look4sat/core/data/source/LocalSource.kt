@@ -51,12 +51,12 @@ class LocalSource(private val look4SatDao: Look4SatDao) : ILocalSource {
 
     private fun FrameworkEntry.toDomain() = OrbitalData(
         this.name, this.epoch, this.meanmo, this.eccn, this.incl,
-        this.raan, this.argper, this.meanan, this.catnum, this.bstar
+        this.raan, this.argper, this.meanan, this.catnum, this.bstar, this.ndot
     )
 
     private fun OrbitalData.toEntity() = FrameworkEntry(
         this.name, this.epoch, this.meanmo, this.eccn, this.incl,
-        this.raan, this.argper, this.meanan, this.catnum, this.bstar
+        this.raan, this.argper, this.meanan, this.catnum, this.bstar, this.ndot
     )
 
     private fun List<OrbitalData>.toEntity() = this.map { item -> item.toEntity() }
@@ -73,20 +73,22 @@ class LocalSource(private val look4SatDao: Look4SatDao) : ILocalSource {
         return look4SatDao.getRadiosWithId(id).toDomainRadios()
     }
 
-    override suspend fun insertRadios(radios: List<SatRadio>) {
-        look4SatDao.insertRadios(radios.toFrameworkRadios())
+    override suspend fun insertRadios(radios: List<SatRadio>, isCustom: Boolean) {
+        look4SatDao.insertRadios(radios.map { it.copy(isCustom = isCustom) }.toFrameworkRadios())
     }
+
+    override suspend fun deleteManagedRadios() = look4SatDao.deleteManagedRadios()
 
     override suspend fun deleteRadios() = look4SatDao.deleteRadios()
 
     private fun DomainRadio.toFramework() = FrameworkRadio(
         this.uuid, this.info, this.isAlive, this.downlinkLow, this.downlinkHigh, this.downlinkMode,
-        this.uplinkLow, this.uplinkHigh, this.uplinkMode, this.isInverted, this.catnum
+        this.uplinkLow, this.uplinkHigh, this.uplinkMode, this.isInverted, this.catnum, this.isCustom
     )
 
     private fun FrameworkRadio.toDomain() = DomainRadio(
         this.uuid, this.info, this.isAlive, this.downlinkLow, this.downlinkHigh, this.downlinkMode,
-        this.uplinkLow, this.uplinkHigh, this.uplinkMode, this.isInverted, this.catnum
+        this.uplinkLow, this.uplinkHigh, this.uplinkMode, this.isInverted, this.catnum, this.isCustom
     )
 
     private fun List<DomainRadio>.toFrameworkRadios() = this.map { radio -> radio.toFramework() }

@@ -185,8 +185,12 @@ private class FakeLocalSource : ILocalSource {
 
     override suspend fun getRadiosWithId(id: Int): List<SatRadio> = emptyList()
 
-    override suspend fun insertRadios(radios: List<SatRadio>) {
-        insertedRadios += radios
+    override suspend fun insertRadios(radios: List<SatRadio>, isCustom: Boolean) {
+        insertedRadios += radios.map { it.copy(isCustom = isCustom) }
+    }
+
+    override suspend fun deleteManagedRadios() {
+        insertedRadios.removeAll { !it.isCustom }
     }
 
     override suspend fun deleteRadios() {

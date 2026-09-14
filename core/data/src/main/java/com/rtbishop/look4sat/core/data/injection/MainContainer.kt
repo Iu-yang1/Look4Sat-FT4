@@ -24,6 +24,7 @@ import android.hardware.display.DisplayManager
 import android.location.LocationManager
 import androidx.room.Room
 import com.rtbishop.look4sat.core.data.database.Look4SatDb
+import com.rtbishop.look4sat.core.data.database.MIGRATION_1_2
 import com.rtbishop.look4sat.core.data.framework.BluetoothReporter
 import com.rtbishop.look4sat.core.data.framework.Ft817Controller
 import com.rtbishop.look4sat.core.data.framework.Ic705Controller
@@ -167,7 +168,10 @@ class MainContainer(private val context: Context) : IMainContainer {
 
     private fun provideLocalSource(): ILocalSource {
         val builder = Room.databaseBuilder(context, Look4SatDb::class.java, "Look4SatDBv400")
-        val database = builder.fallbackToDestructiveMigration(false).build()
+        val database = builder
+            .addMigrations(MIGRATION_1_2)
+            .fallbackToDestructiveMigration(false)
+            .build()
         return LocalSource(database.look4SatDao())
     }
 

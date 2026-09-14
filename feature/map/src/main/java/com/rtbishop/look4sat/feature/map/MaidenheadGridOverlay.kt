@@ -428,7 +428,15 @@ class MaidenheadGridOverlay : Overlay() {
 
     /** Y pixel for a latitude, or null when outside the viewport. */
     private fun projectionToY(projection: Projection, lat: Double): Float? {
-        val geo = org.osmdroid.util.GeoPoint(lat, 0.0)
+        // Web Mercator is undefined beyond ±85.0511° (osmdroid clamps the world
+        // to TileSystemWebMercator limits). Projecting the polar field rows
+        // (lat=±90: Maidenhead row R = 80..90°N, row A = -90..-80°S) yields
+        // ±9.2e18 pixel coordinates that the canvas cannot rasterize, so the
+        // polar grid lines silently vanish. Clamp to the Mercator limit: the
+        // polar rows then project onto the screen edge and their lines are
+        // drawn (the off-limit sliver beyond 85.05° is invisible anyway).
+        val clamped = lat.coerceIn(-MAX_MERCATOR_LAT, MAX_MERCATOR_LAT)
+        val geo = org.osmdroid.util.GeoPoint(clamped, 0.0)
         val p = projection.toPixels(geo, null)
         return p.y.toFloat()
     }
@@ -484,6 +492,9 @@ class MaidenheadGridOverlay : Overlay() {
         const val FIELD_LON = 20.0
         const val SUB_SQUARE_LAT = 1.0
         const val SUB_SQUARE_LON = 2.0
+        // Web Mercator latitude limit (osmdroid TileSystemWebMercator): projecting
+        // beyond it produces ±9.2e18 pixel coordinates the canvas cannot draw.
+        const val MAX_MERCATOR_LAT = 85.05112877980658
         // Zoom at which the 2°x1° sub-square grid lines/fills appear.
         // 5.0 → 6.0: at zoom 5 a full field spans too little screen width and
         // the sub-square grid is too dense to read; 6 roughly doubles the

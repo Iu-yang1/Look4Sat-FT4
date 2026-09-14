@@ -48,6 +48,7 @@ sealed interface MapAction {
     data class SelectItem(val item: OrbitalObject) : MapAction
     data class SelectDefaultItem(val catnum: Int) : MapAction
     data class ToggleGridMode(val value: Boolean) : MapAction
+    data class SetVisible(val isVisible: Boolean) : MapAction
 }
 
 data class MapData(

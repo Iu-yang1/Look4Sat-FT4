@@ -207,8 +207,13 @@ private fun MapScreen(uiState: MapState, onAction: (MapAction) -> Unit, mapView:
             if (p.type == AwardType.VUCC) p.copy(workedKeys = vuccGrids, count = vuccGrids.size) else p
         }
     }
-    // Attach the tap listener whenever grid mode / worked grids change.
-    val workedGrids = uiState.workedGrids
+    // Worked grids drawn on the map: filtered by the selected operated grid
+    // (null = all operated grids). Drives both the green fills and the tap
+    // listener below, so switching the selector changes which cells are green.
+    val workedGrids = remember(uiState.workedGrids, vuccByMyGrid, selectedMyGrid) {
+        if (selectedMyGrid == null) uiState.workedGrids
+        else vuccByMyGrid[selectedMyGrid] ?: emptySet()
+    }
     val isGridMode = uiState.isGridMode
     DisposableEffect(isGridMode, workedGrids) {
         val receiver = object : org.osmdroid.events.MapEventsReceiver {
@@ -297,7 +302,7 @@ private fun MapScreen(uiState: MapState, onAction: (MapAction) -> Unit, mapView:
                         // stationPosition would swallow the centering forever.
                         val shouldCenter = uiState.isGridMode && !prevGridMode
                         setGridMode(
-                            uiState.isGridMode, uiState.workedGrids, uiState.roamedGrids, view,
+                            uiState.isGridMode, workedGrids, uiState.roamedGrids, view,
                             uiState.stationPosition,
                             centerOnStation = shouldCenter
                         )
@@ -322,11 +327,12 @@ private fun MapScreen(uiState: MapState, onAction: (MapAction) -> Unit, mapView:
                     }
                 }
                 // Top-left: operated-grid selector for VUCC counting (grid mode only).
-                val myGrid = selectedMyGrid
-                if (uiState.isGridMode && selectedAward == AwardType.VUCC && myGrid != null) {
+                // Shown whenever per-grid QSO data exists; "All" (null) is available.
+                if (uiState.isGridMode && selectedAward == AwardType.VUCC && vuccByMyGrid.isNotEmpty()) {
                     VuccGridSelector(
                         options = vuccByMyGrid,
-                        selected = myGrid,
+                        allCount = uiState.workedGrids.size,
+                        selected = selectedMyGrid,
                         onSelect = { selectedMyGrid = it },
                         modifier = Modifier
                             .align(Alignment.TopStart)
@@ -638,12 +644,13 @@ private fun AwardChipsRow(
 @Composable
 private fun VuccGridSelector(
     options: Map<String, Set<String>>,
-    selected: String,
-    onSelect: (String) -> Unit,
+    allCount: Int,
+    selected: String?,
+    onSelect: (String?) -> Unit,
     modifier: Modifier = Modifier
 ) {
     var expanded by remember { mutableStateOf(false) }
-    // Most-worked grid first; selection is made on tap.
+    // Most-worked grid first; selection is made on tap. "All" sits last.
     val sorted = remember(options) { options.entries.sortedByDescending { it.value.size } }
     Surface(
         color = ComposeColor.Black.copy(alpha = 0.45f),
@@ -658,7 +665,8 @@ private fun VuccGridSelector(
                     .padding(start = 10.dp, end = 6.dp, top = 4.dp, bottom = 4.dp)
             ) {
                 Text(
-                    text = "$selected (${options[selected]?.size ?: 0})",
+                    text = if (selected == null) "All ($allCount)"
+                    else "$selected (${options[selected]?.size ?: 0})",
                     color = ComposeColor.White,
                     fontSize = 12.sp,
                     fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
@@ -690,6 +698,24 @@ private fun VuccGridSelector(
                             fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
                         )
                     }
+                }
+                // "All" always listed last: shows every worked grid combined.
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable {
+                            onSelect(null)
+                            expanded = false
+                        }
+                        .padding(horizontal = 10.dp, vertical = 3.dp)
+                ) {
+                    Text(
+                        text = "All ($allCount)",
+                        color = if (selected == null) MaterialTheme.colorScheme.primary else ComposeColor.White,
+                        fontSize = 12.sp,
+                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+                    )
                 }
             }
         }

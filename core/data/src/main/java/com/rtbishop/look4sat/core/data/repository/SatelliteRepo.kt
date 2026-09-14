@@ -175,7 +175,16 @@ class SatelliteRepo(
         aosEndMinute: Int,
         invertAosTimeWindow: Boolean
     ): Boolean {
-        val offsetMillis = TimeZone.getDefault().getOffset(aosTime).toLong()
+        // Follow the UTC display toggle: with UTC enabled the window is interpreted
+        // in UTC, otherwise in the device's local timezone. Otherwise the pass list
+        // shows UTC times while the filter silently uses local time — the two
+        // disagree by the timezone offset (e.g. 8h for China).
+        val tz = if (settingsRepo.otherSettings.value.stateOfUtc) {
+            TimeZone.getTimeZone("UTC")
+        } else {
+            TimeZone.getDefault()
+        }
+        val offsetMillis = tz.getOffset(aosTime).toLong()
         val localMillis = Math.floorMod(aosTime + offsetMillis, 24L * 60L * 60L * 1000L)
         val aosMinute = (localMillis / 60_000L).toInt()
         val inRange = if (aosStartMinute <= aosEndMinute) {

@@ -175,9 +175,12 @@ class PassesViewModel(
         val sdfDate = dateFormat(tz)
         val sdfTime = SimpleDateFormat("HH:mm", Locale.getDefault()).also { it.timeZone = tz }
         val result = LinkedHashMap<String, Pair<String, String>>()
-        // DeepSpace group always shows today's sun times
+        // DeepSpace group always shows today's sun times.
+        // The natural-day anchor is the DEVICE timezone, not the display timezone:
+        // UTC midnight is 08:00 local for UTC+8 stations, when the sun is already
+        // up — that would trip the white-night guard and render "--:--".
         if (passes.any { it.isDeepSpace }) {
-            val riseSet = findTodaySunRiseSet(stationPos, startOfDayMillis(System.currentTimeMillis(), tz))
+            val riseSet = findTodaySunRiseSet(stationPos, startOfDayMillis(System.currentTimeMillis(), TimeZone.getDefault()))
             val rise = if (riseSet.riseTimeMillis > 0) sdfTime.format(Date(riseSet.riseTimeMillis)) else "--:--"
             val set = if (riseSet.setTimeMillis > 0) sdfTime.format(Date(riseSet.setTimeMillis)) else "--:--"
             result["DeepSpace (period >225min)"] = rise to set
@@ -186,7 +189,7 @@ class PassesViewModel(
             if (pass.isDeepSpace) continue
             val label = sdfDate.format(Date(pass.aosTime))
             if (label in result) continue
-            val riseSet = findTodaySunRiseSet(stationPos, startOfDayMillis(pass.aosTime, tz))
+            val riseSet = findTodaySunRiseSet(stationPos, startOfDayMillis(pass.aosTime, TimeZone.getDefault()))
             val rise = if (riseSet.riseTimeMillis > 0) sdfTime.format(Date(riseSet.riseTimeMillis)) else "--:--"
             val set = if (riseSet.setTimeMillis > 0) sdfTime.format(Date(riseSet.setTimeMillis)) else "--:--"
             result[label] = rise to set

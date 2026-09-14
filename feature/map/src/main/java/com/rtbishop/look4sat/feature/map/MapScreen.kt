@@ -62,7 +62,6 @@ import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color as ComposeColor
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -446,7 +445,10 @@ private fun WorkedGridCallRow(
                 modifier = Modifier.weight(1f)
             )
             Text(
-                text = pluralStringResource(R.plurals.grid_qso_count, callQsos.size, callQsos.size),
+                // Plurals resources don't work for zh (only 'other' matches), so
+                // pick the singular/plural string explicitly.
+                text = if (callQsos.size == 1) stringResource(R.string.grid_qso_count_one, 1)
+                else stringResource(R.string.grid_qso_count_many, callQsos.size),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = androidx.compose.ui.text.style.TextAlign.Center,

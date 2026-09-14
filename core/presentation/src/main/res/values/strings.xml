@@ -147,10 +147,8 @@
     <string name="map_visibility">Visibility: %s</string>
     <!-- Worked-grid QSO dialog -->
     <string name="grid_qso_calls_count">%d callsigns · %d QSOs</string>
-    <plurals name="grid_qso_count">
-        <item quantity="one">%d QSO</item>
-        <item quantity="other">%d QSOs</item>
-    </plurals>
+    <string name="grid_qso_count_one">%d QSO</string>
+    <string name="grid_qso_count_many">%d QSOs</string>
     <string name="grid_qso_first">First</string>
     <string name="grid_qso_no_sat">satellite unknown</string>
     <string name="map_visible">Visible</string>

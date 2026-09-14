@@ -48,7 +48,9 @@ data class GridQso(
     val dxcc: Int? = null,
     val country: String? = null,
     val cqz: Int? = null,
-    val state: String? = null
+    val state: String? = null,
+    /** 4-char grid the station itself operated from (ADIF MY_GRIDSQUARE). */
+    val myGrid: String? = null
 ) {
     /** Short uplink/downlink band label ("U/V", "V/A"), or "" when unknown. */
     val bandLabel: String

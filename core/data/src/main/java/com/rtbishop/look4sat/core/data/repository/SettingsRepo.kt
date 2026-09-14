@@ -204,7 +204,9 @@ class SettingsRepo(
                         dxcc = o.optInt("dx", 0).takeIf { it > 0 },
                         country = o.optString("cty").ifBlank { null },
                         cqz = o.optInt("cq", 0).takeIf { it > 0 },
-                        state = o.optString("st").ifBlank { null }
+                        state = o.optString("st").ifBlank { null },
+                        // Own-grid field: absent in pre-myGrid data -> null.
+                        myGrid = o.optString("mg").ifBlank { null }
                     )
                 }
                 if (list.isNotEmpty()) result[grid] = list
@@ -232,6 +234,7 @@ class SettingsRepo(
                         .put("cty", q.country ?: "")
                         .put("cq", q.cqz ?: 0)
                         .put("st", q.state ?: "")
+                        .put("mg", q.myGrid ?: "")
                 )
             }
             root.put(grid, array)

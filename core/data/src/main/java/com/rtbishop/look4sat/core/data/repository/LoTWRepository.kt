@@ -169,6 +169,7 @@ class LoTWRepository : ILoTWRepository {
         var country: String? = null
         var cqz: Int? = null
         var state: String? = null
+        var myGrid: String? = null
         val gridsInRecord = mutableListOf<String>()
 
         fun emitRecord() {
@@ -177,7 +178,8 @@ class LoTWRepository : ILoTWRepository {
             val qso = com.rtbishop.look4sat.core.domain.model.GridQso(
                 call = call, epochMs = epochMs, satName = satName,
                 mode = mode, bandUp = bandUp, bandDown = bandDown,
-                dxcc = dxcc, country = country, cqz = cqz, state = state
+                dxcc = dxcc, country = country, cqz = cqz, state = state,
+                myGrid = myGrid
             )
             for (grid in gridsInRecord) {
                 result.getOrPut(grid) { mutableListOf() }.add(qso)
@@ -188,6 +190,7 @@ class LoTWRepository : ILoTWRepository {
             propMode = null; call = ""; qsoDate = ""; timeOn = ""
             satName = ""; mode = ""; bandUp = ""; bandDown = ""
             dxcc = null; country = null; cqz = null; state = null
+            myGrid = null
             gridsInRecord.clear()
         }
 
@@ -222,6 +225,13 @@ class LoTWRepository : ILoTWRepository {
                     cqz = adifValue(line).toIntOrNull()
                 line.startsWith("<STATE:") ->
                     state = adifValue(line).trim().ifBlank { null }?.let { normalizeState(it) }
+                line.startsWith("<MY_GRIDSQUARE:") -> {
+                    // Own-station grid (must not be confused with GRIDSQUARE —
+                    // the opposite station's grid). Recorded per QSO so awards
+                    // can be counted per operated grid.
+                    val value = adifValue(line)
+                    if (value.length >= 4) myGrid = value.take(4).uppercase()
+                }
                 line.startsWith("<GRIDSQUARE:") || line.startsWith("<VUCC_GRIDS:") -> {
                     // VUCC_GRIDS holds a comma-separated list of grids
                     // ("EN52en,EN53fa"), up to four for contacts spanning

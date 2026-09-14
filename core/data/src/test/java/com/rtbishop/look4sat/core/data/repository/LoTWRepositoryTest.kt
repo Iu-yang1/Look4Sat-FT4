@@ -3,6 +3,7 @@ package com.rtbishop.look4sat.core.data.repository
 import com.rtbishop.look4sat.core.domain.repository.LoTWResult
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class LoTWRepositoryTest {
@@ -148,6 +149,24 @@ class LoTWRepositoryTest {
     @Test
     fun parseQsosRejectsBodyWithoutEoh() {
         assertNull(repo.parseConfirmedGridQsos("<HTML>Username/password incorrect</HTML>"))
+    }
+
+    @Test
+    fun parseQsosCapturesOwnGridPerQso() {
+        // MY_GRIDSQUARE arrives BEFORE PROP_MODE (ADIF fields are emitted
+        // alphabetically); the per-record buffer must still attach it to the QSO.
+        val qso1 = "<CALL:5>A50QO\n<QSO_DATE:8>20260820\n<MY_GRIDSQUARE:4>OL62\n" +
+            "<PROP_MODE:3>SAT\n<SAT_NAME:5>FO-29\n<MODE:2>CW\n" +
+            "<BAND:3>70CM\n<BAND_RX:3>2M\n<GRIDSQUARE:4>NL47\n<EOR>\n"
+        val qso2 = "<CALL:6>BG7ZFK\n<QSO_DATE:8>20260819\n<MY_GRIDSQUARE:4>OL72\n" +
+            "<PROP_MODE:3>SAT\n<SAT_NAME:5>SO-50\n<MODE:3>FM\n" +
+            "<BAND:3>70CM\n<BAND_RX:3>2M\n<GRIDSQUARE:4>OK48\n<EOR>\n"
+        val result = repo.parseConfirmedGridQsos(report(qso1, qso2))!!
+        assertEquals("OL62", result["NL47"]!!.first().myGrid)
+        assertEquals("OL72", result["OK48"]!!.first().myGrid)
+        // Ground QSO (no PROP_MODE=SAT) must not leak its MY_GRIDSQUARE.
+        val ground = "<CALL:6>BA7OPF\n<QSO_DATE:8>20260821\n<MY_GRIDSQUARE:4>OL62\n<GRIDSQUARE:4>NL47\n<EOR>\n"
+        assertTrue(repo.parseConfirmedGridQsos(report(qso1, ground))!!.values.all { it.all { q -> q.myGrid == "OL62" } })
     }
 
     // endregion

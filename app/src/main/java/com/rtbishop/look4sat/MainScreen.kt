@@ -104,33 +104,47 @@ fun NavRoot(deeplink: String? = null) {
     // Reverse: outgoing slides out to the right, incoming drifts in from the left
     val popTransition = slideInHorizontally(tween(300)) { -it / 3 } togetherWith
         slideOutHorizontally(tween(300)) { it }
-    NavDisplay(
-        modifier = Modifier.fillMaxSize(),
-        backStack = rootBackStack,
-        onBack = navigateBack,
-        transitionSpec = { pushTransition },
-        popTransitionSpec = { popTransition },
-        predictivePopTransitionSpec = { popTransition },
-        entryDecorators = listOf(
-            rememberSaveableStateHolderNavEntryDecorator(),
-            rememberViewModelStoreNavEntryDecorator()
-        ),
-        entryProvider = entryProvider {
-            entry<Screen.Passes> {
-                MainScreen(
-                    navigateToRadar = navigateToRadar
-                )
-            }
-            entry<RadarDestination> {
-                Surface(
-                    modifier = Modifier.fillMaxSize(),
-                    color = MaterialTheme.colorScheme.background
-                ) {
-                    RadarDestination(navigateUp = navigateBack)
+    // Elevation color thresholds must be provided at the root level so that BOTH
+    // the tab content (MainScreen) and the root-level RadarDestination see the
+    // user's custom thresholds. RadarDestination is a sibling entry of MainScreen
+    // in this NavDisplay, so a provider inside MainScreen never reaches it.
+    val context = LocalContext.current
+    val container = (context.applicationContext as IContainerProvider).getMainContainer()
+    val otherSettings by container.settingsRepo.otherSettings.collectAsStateWithLifecycle()
+    CompositionLocalProvider(
+        LocalElevationThresholds provides ElevationThresholds(
+            low = otherSettings.lowElevation,
+            high = otherSettings.highElevation
+        )
+    ) {
+        NavDisplay(
+            modifier = Modifier.fillMaxSize(),
+            backStack = rootBackStack,
+            onBack = navigateBack,
+            transitionSpec = { pushTransition },
+            popTransitionSpec = { popTransition },
+            predictivePopTransitionSpec = { popTransition },
+            entryDecorators = listOf(
+                rememberSaveableStateHolderNavEntryDecorator(),
+                rememberViewModelStoreNavEntryDecorator()
+            ),
+            entryProvider = entryProvider {
+                entry<Screen.Passes> {
+                    MainScreen(
+                        navigateToRadar = navigateToRadar
+                    )
+                }
+                entry<RadarDestination> {
+                    Surface(
+                        modifier = Modifier.fillMaxSize(),
+                        color = MaterialTheme.colorScheme.background
+                    ) {
+                        RadarDestination(navigateUp = navigateBack)
+                    }
                 }
             }
-        }
-    )
+        )
+    }
 }
 
 @Composable

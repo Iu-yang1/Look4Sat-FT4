@@ -1376,38 +1376,6 @@ fun RadioControlDialog(
                     }
                 }
             }
-            if (catTransport.value == RadioControlSettings.TRANSPORT_TCP) {
-                OutlinedTextField(
-                    value = txAddress.value,
-                    onValueChange = {
-                        txAddress.value = it
-                        txAddressError.value = false
-                    },
-                    label = { Text(stringResource(R.string.rc_tx_tcp_address)) },
-                    singleLine = true,
-                    isError = txAddressError.value,
-                    supportingText = if (txAddressError.value) {
-                        { Text(stringResource(R.string.rc_tcp_address_error)) }
-                    } else null,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                if (!isSingleRadio) {
-                    OutlinedTextField(
-                        value = rxAddress.value,
-                        onValueChange = {
-                            rxAddress.value = it
-                            rxAddressError.value = false
-                        },
-                        label = { Text(stringResource(R.string.rc_rx_tcp_address)) },
-                        singleLine = true,
-                        isError = rxAddressError.value,
-                        supportingText = if (rxAddressError.value) {
-                            { Text(stringResource(R.string.rc_tcp_address_error)) }
-                        } else null,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
-            }
             Spacer(modifier = Modifier.height(6.dp))
 
             // Radio model — FlowRow so chips wrap on small screens
@@ -1520,13 +1488,26 @@ fun RadioControlDialog(
             // TX radio (the sole CAT connection in single-radio duplex mode).
             val txLabel = stringResource(if (isSingleRadio) R.string.rc_single_radio else R.string.rc_tx_radio)
             Text(txLabel, fontWeight = FontWeight.Medium)
-            if (
-                catTransport.value != RadioControlSettings.TRANSPORT_TCP &&
-                txAddress.value.isNotBlank()
-            ) {
-                Text("${txName.value} — ${txAddress.value}", fontSize = 13.sp)
-            }
-            if (catTransport.value != RadioControlSettings.TRANSPORT_TCP) {
+            if (catTransport.value == RadioControlSettings.TRANSPORT_TCP) {
+                OutlinedTextField(
+                    value = txAddress.value,
+                    onValueChange = {
+                        txAddress.value = it
+                        txAddressError.value = false
+                    },
+                    label = { Text(stringResource(R.string.rc_tx_tcp_address)) },
+                    singleLine = true,
+                    isError = txAddressError.value,
+                    supportingText = if (txAddressError.value) {
+                        { Text(stringResource(R.string.rc_tcp_address_error)) }
+                    } else null,
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = enabled.value
+                )
+            } else {
+                if (txAddress.value.isNotBlank()) {
+                    Text("${txName.value} — ${txAddress.value}", fontSize = 13.sp)
+                }
                 CardButton(
                     onClick  = { selectDevice("tx") },
                     text     = stringResource(if (isSingleRadio) R.string.rc_select_device else R.string.rc_select_tx_device),
@@ -1547,13 +1528,26 @@ fun RadioControlDialog(
             // RX Radio (hidden in split mode — the same radio handles both)
             if (!isSingleRadio) {
                 Text(stringResource(R.string.rc_rx_radio), fontWeight = FontWeight.Medium)
-                if (
-                    catTransport.value != RadioControlSettings.TRANSPORT_TCP &&
-                    rxAddress.value.isNotBlank()
-                ) {
-                    Text("${rxName.value} — ${rxAddress.value}", fontSize = 13.sp)
-                }
-                if (catTransport.value != RadioControlSettings.TRANSPORT_TCP) {
+                if (catTransport.value == RadioControlSettings.TRANSPORT_TCP) {
+                    OutlinedTextField(
+                        value = rxAddress.value,
+                        onValueChange = {
+                            rxAddress.value = it
+                            rxAddressError.value = false
+                        },
+                        label = { Text(stringResource(R.string.rc_rx_tcp_address)) },
+                        singleLine = true,
+                        isError = rxAddressError.value,
+                        supportingText = if (rxAddressError.value) {
+                            { Text(stringResource(R.string.rc_tcp_address_error)) }
+                        } else null,
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = enabled.value
+                    )
+                } else {
+                    if (rxAddress.value.isNotBlank()) {
+                        Text("${rxName.value} — ${rxAddress.value}", fontSize = 13.sp)
+                    }
                     CardButton(
                         onClick  = { selectDevice("rx") },
                         text     = stringResource(R.string.rc_select_rx_device),

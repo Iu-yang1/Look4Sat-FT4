@@ -20,6 +20,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextOverflow
@@ -56,8 +57,8 @@ fun LogsPage(
         Column(
             modifier = Modifier
                 .widthIn(max = 560.dp)
-                .fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(6.dp)
+                .fillMaxSize(),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
             val notice = state.error?.let { error ->
                 stringResource(
@@ -72,11 +73,12 @@ fun LogsPage(
             } ?: state.savedCallsign.takeIf(String::isNotBlank)?.let {
                 stringResource(R.string.quicklog_saved, it)
             }
-            Box(
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(36.dp),
-                contentAlignment = Alignment.CenterStart
+                    .weight(1f)
+                    .clipToBounds(),
+                verticalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterVertically)
             ) {
                 if (notice != null) {
                     Text(
@@ -84,70 +86,70 @@ fun LogsPage(
                         style = MaterialTheme.typography.labelSmall,
                         color = if (state.error != null) MaterialTheme.colorScheme.error
                         else MaterialTheme.colorScheme.primary,
-                        maxLines = 2,
+                        maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
                 }
-            }
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = stringResource(R.string.quicklog_mode),
-                    style = MaterialTheme.typography.labelLarge
-                )
-                quickLogModes.forEach { mode ->
-                    FilterChip(
-                        selected = state.mode == mode,
-                        onClick = { model.mode(mode) },
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = stringResource(R.string.quicklog_mode),
+                        style = MaterialTheme.typography.labelLarge
+                    )
+                    quickLogModes.forEach { mode ->
+                        FilterChip(
+                            selected = state.mode == mode,
+                            onClick = { model.mode(mode) },
+                            enabled = !state.saving,
+                            label = { Text(mode) },
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
+
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    LogField(
+                        value = state.callsign,
+                        onValueChange = model::callsign,
+                        label = stringResource(R.string.quicklog_callsign),
                         enabled = !state.saving,
-                        label = { Text(mode) },
+                        error = state.error == QuickLogError.CALLSIGN,
+                        capitalization = KeyboardCapitalization.Characters,
+                        modifier = Modifier.weight(1f)
+                    )
+                    LogField(
+                        value = state.theirGrid,
+                        onValueChange = model::theirGrid,
+                        label = stringResource(R.string.quicklog_grid),
+                        enabled = !state.saving,
+                        error = state.error == QuickLogError.GRID,
+                        capitalization = KeyboardCapitalization.Characters,
                         modifier = Modifier.weight(1f)
                     )
                 }
-            }
 
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                LogField(
-                    value = state.callsign,
-                    onValueChange = model::callsign,
-                    label = stringResource(R.string.quicklog_callsign),
-                    enabled = !state.saving,
-                    error = state.error == QuickLogError.CALLSIGN,
-                    capitalization = KeyboardCapitalization.Characters,
-                    modifier = Modifier.weight(1f)
-                )
-                LogField(
-                    value = state.theirGrid,
-                    onValueChange = model::theirGrid,
-                    label = stringResource(R.string.quicklog_grid),
-                    enabled = !state.saving,
-                    error = state.error == QuickLogError.GRID,
-                    capitalization = KeyboardCapitalization.Characters,
-                    modifier = Modifier.weight(1f)
-                )
-            }
-
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                LogField(
-                    value = state.sent,
-                    onValueChange = model::sent,
-                    label = stringResource(R.string.quicklog_sent),
-                    enabled = !state.saving,
-                    error = state.error == QuickLogError.REPORT,
-                    modifier = Modifier.weight(1f)
-                )
-                LogField(
-                    value = state.received,
-                    onValueChange = model::received,
-                    label = stringResource(R.string.quicklog_received),
-                    enabled = !state.saving,
-                    error = state.error == QuickLogError.REPORT,
-                    modifier = Modifier.weight(1f)
-                )
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    LogField(
+                        value = state.sent,
+                        onValueChange = model::sent,
+                        label = stringResource(R.string.quicklog_sent),
+                        enabled = !state.saving,
+                        error = state.error == QuickLogError.REPORT,
+                        modifier = Modifier.weight(1f)
+                    )
+                    LogField(
+                        value = state.received,
+                        onValueChange = model::received,
+                        label = stringResource(R.string.quicklog_received),
+                        enabled = !state.saving,
+                        error = state.error == QuickLogError.REPORT,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
             }
 
             Button(

@@ -116,17 +116,35 @@ fun RowScope.TimerRow(timeString: String, isTimeAos: Boolean) {
     ElevatedCard(modifier = Modifier.weight(1f)) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceEvenly,
-            modifier = Modifier.fillMaxSize()
+            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 8.dp)
         ) {
-            Text(text = "AOS", fontSize = 16.sp, fontWeight = FontWeight.Medium, color = aosColor)
+            Text(
+                text = "AOS",
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Medium,
+                color = aosColor,
+                maxLines = 1,
+                softWrap = false
+            )
             Text(
                 text = timeString,
-                fontSize = 32.sp,
+                fontSize = 28.sp,
                 fontWeight = FontWeight.Bold,
-                color = colorScheme.primary
+                color = colorScheme.primary,
+                maxLines = 1,
+                softWrap = false
             )
-            Text(text = "LOS", fontSize = 16.sp, fontWeight = FontWeight.Medium, color = losColor)
+            Text(
+                text = "LOS",
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Medium,
+                color = losColor,
+                maxLines = 1,
+                softWrap = false
+            )
         }
     }
 }

@@ -116,4 +116,8 @@ class FakeSettingsRepo(initialPosition: GeoPos = GeoPos(23.13, 113.26)) : ISetti
     override fun getRoamedGrids(): Set<String> = TODO()
     override fun setRoamedGrids(grids: Set<String>) = TODO()
     override fun updateLoTWSettings(settings: LoTWSettings) = TODO()
+    override fun getLastLotwSyncDate(): String = ""
+    override fun setLastLotwSyncDate(date: String) = Unit
+    override fun getLastLotwSyncCallsign(): String = ""
+    override fun setLastLotwSyncCallsign(callsign: String) = Unit
 }

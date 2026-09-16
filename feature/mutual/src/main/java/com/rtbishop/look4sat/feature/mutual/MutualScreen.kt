@@ -567,49 +567,62 @@ private fun MutualPassCard(
             .clickable(onClick = onClick)
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = pass.name,
-                    style = MaterialTheme.typography.bodyLarge,
-                    fontWeight = FontWeight.Medium,
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.weight(1f)
-                )
-                Text(
-                    text = "${timeFormat.format(Date(pass.startTime))} - ${timeFormat.format(Date(pass.endTime))}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                // Radar shortcut, visible even on the collapsed card: icon only,
-                // rightmost position so the pass info shifts left. The card's own
-                // click (expand) is not triggered by the IconButton's tap.
-                IconButton(onClick = onNavigateToRadar) {
+            // Header: pass info (name/time + elevations) on the left, and a
+            // larger radar shortcut on the right that spans both rows vertically.
+            // The pass info column narrows, so the "Opposite" elevation shifts
+            // left to make room for the taller button.
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = pass.name,
+                            style = MaterialTheme.typography.bodyLarge,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.primary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Text(
+                            text = "${timeFormat.format(Date(pass.startTime))} - ${timeFormat.format(Date(pass.endTime))}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Spacer(Modifier.height(4.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            text = stringResource(R.string.mutual_elevation_you, pass.maxElevationA.toInt()),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Text(
+                            text = stringResource(R.string.mutual_elevation_opposite, pass.maxElevationB.toInt()),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.tertiary
+                        )
+                    }
+                }
+                // Radar shortcut, visible even on the collapsed card: a taller
+                // button spanning both header rows. The card's own click
+                // (expand) is not triggered by the IconButton's tap.
+                IconButton(
+                    onClick = onNavigateToRadar,
+                    modifier = Modifier.size(48.dp)
+                ) {
                     Icon(
                         painter = painterResource(id = R.drawable.ic_radar),
                         contentDescription = stringResource(R.string.mutual_open_radar),
-                        modifier = Modifier.size(18.dp)
+                        modifier = Modifier.size(24.dp)
                     )
                 }
-            }
-            Spacer(Modifier.height(4.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Text(
-                    text = stringResource(R.string.mutual_elevation_you, pass.maxElevationA.toInt()),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.primary
-                )
-                Text(
-                    text = stringResource(R.string.mutual_elevation_opposite, pass.maxElevationB.toInt()),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.tertiary
-                )
             }
 
             AnimatedVisibility(

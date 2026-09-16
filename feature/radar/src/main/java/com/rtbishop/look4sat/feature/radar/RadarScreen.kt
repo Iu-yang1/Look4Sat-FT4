@@ -101,14 +101,17 @@ fun RadarDestination(navigateUp: () -> Unit) {
     }
     LaunchedEffect(mutualData.endTime) {
         if (mutualData.endTime <= 0L) return@LaunchedEffect
-        while (true) {
-            val remainingMs = mutualData.endTime - System.currentTimeMillis()
-            if (remainingMs <= 0L) {
-                navigateUpAndClearMutual()
-                return@LaunchedEffect
-            }
+        // Auto-return only while the mutual pass is actually in progress. An
+        // already-finished pass must NOT bounce the radar page back instantly
+        // (that made the pass-card radar shortcut look broken: tapping it while
+        // the computed pass had ended returned to Mutual immediately).
+        var remainingMs = mutualData.endTime - System.currentTimeMillis()
+        if (remainingMs <= 0L) return@LaunchedEffect
+        while (remainingMs > 0L) {
             delay(remainingMs.coerceAtMost(1000L))
+            remainingMs = mutualData.endTime - System.currentTimeMillis()
         }
+        navigateUpAndClearMutual()
     }
     // Sync actual permission state on every recomposition so it survives screen re-entry
     val hasPermission = ContextCompat.checkSelfPermission(

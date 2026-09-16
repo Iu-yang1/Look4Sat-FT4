@@ -226,7 +226,7 @@ class MaidenheadGridOverlay : Overlay() {
                         if (xRight < 0f || xLeft > canvas.width) continue
                         val label = cellLabel(lat, lon, zoom)
                         if (label in roamedGrids && label != ownGrid) {
-                            drawStripes(canvas, xLeft, yTop, xRight, yBottom)
+                            drawStripes(canvas, xLeft, yTop, xRight, yBottom, zoom)
                         }
                     }
                 }
@@ -246,7 +246,7 @@ class MaidenheadGridOverlay : Overlay() {
                         val xRight = xRightBase + turn * worldWidthPx.toFloat()
                         if (xRight < 0f || xLeft > canvas.width) continue
                         if (yBottom < 0f || yTop > canvas.height) continue
-                        drawStripes(canvas, xLeft, yTop, xRight, yBottom)
+                        drawStripes(canvas, xLeft, yTop, xRight, yBottom, zoom)
                     }
                 }
             }
@@ -396,17 +396,21 @@ class MaidenheadGridOverlay : Overlay() {
      * rectangle, from top-left to bottom-right. The paint is nearly opaque so
      * stripes stay blue even over a green worked fill underneath.
      */
-    private fun drawStripes(canvas: Canvas, xLeft: Float, yTop: Float, xRight: Float, yBottom: Float) {
+    private fun drawStripes(canvas: Canvas, xLeft: Float, yTop: Float, xRight: Float, yBottom: Float, zoom: Double) {
         if (xRight <= xLeft || yBottom <= yTop) return
         canvas.save()
         canvas.clipRect(xLeft, yTop, xRight, yBottom)
         val height = yBottom - yTop
+        // Geographic density is kept constant: spacing is the reference pixel
+        // spacing (STRIPE_SPACING_PX at the map's max zoom) scaled by 2^(zoom-max),
+        // so stripes shrink/grow with the map instead of staying fixed on screen.
+        val spacing = STRIPE_SPACING_PX * Math.pow(2.0, zoom - MAX_GRID_ZOOM).toFloat()
         // Start one stripe-width left of the cell so the top-left corner is
         // always covered; each stripe runs from (x, top) to (x+height, bottom).
         var x = xLeft - height
         while (x < xRight) {
             canvas.drawLine(x, yTop, x + height, yBottom, roamStripePaint)
-            x += STRIPE_SPACING_PX
+            x += spacing
         }
         canvas.restore()
     }
@@ -509,5 +513,12 @@ class MaidenheadGridOverlay : Overlay() {
         // 44f spacing (was 16f — too dense per user) with 14f-wide stripes;
         // sparse GridMaster-style zebra.
         const val STRIPE_SPACING_PX = 44f
+        /**
+         * Reference zoom for stripe spacing: the map's max zoom (MapScreen sets
+         * maxZoomLevel = 7.0). At this zoom stripes are STRIPE_SPACING_PX apart;
+         * at lower zooms spacing scales by 2^(zoom-max) so the geographic
+         * density matches the max-zoom look at every level.
+         */
+        const val MAX_GRID_ZOOM = 7.0
     }
 }

@@ -71,6 +71,7 @@ import com.rtbishop.look4sat.core.presentation.isVerticalLayout
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.TimeZone
 
 @Composable
 fun MutualScreen(
@@ -186,7 +187,11 @@ private fun MutualContent(
     onHoursAhead: (Int) -> Unit,
     onClearError: () -> Unit
 ) {
-    val timeFormat = remember { SimpleDateFormat("MM/dd HH:mm", Locale.getDefault()) }
+    val timeFormat = remember(state.isUtc) {
+        SimpleDateFormat("MM/dd HH:mm", Locale.getDefault()).apply {
+            if (state.isUtc) timeZone = TimeZone.getTimeZone("UTC")
+        }
+    }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -323,6 +328,7 @@ private fun MutualContent(
                 pass = pass,
                 isExpanded = state.selectedPassIndex == index,
                 timeFormat = timeFormat,
+                isUtc = state.isUtc,
                 minElevA = state.stationAMinElev,
                 minElevB = state.stationBMinElev,
                 onClick = { onSelectPass(if (state.selectedPassIndex == index) -1 else index) },
@@ -527,6 +533,7 @@ private fun MutualPassCard(
     pass: MutualPass,
     isExpanded: Boolean,
     timeFormat: SimpleDateFormat,
+    isUtc: Boolean,
     minElevA: Double,
     minElevB: Double,
     onClick: () -> Unit,
@@ -622,6 +629,7 @@ private fun MutualPassCard(
                             startTime = visibleStart,
                             endTime = visibleEnd,
                             maxElev = adjustedMaxElev,
+                            isUtc = isUtc,
                             progress = dragProgress,
                             onProgressChange = { dragProgress = it }
                         )

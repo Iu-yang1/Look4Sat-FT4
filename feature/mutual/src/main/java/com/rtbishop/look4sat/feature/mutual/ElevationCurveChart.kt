@@ -45,6 +45,7 @@ import com.rtbishop.look4sat.core.presentation.R
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.TimeZone
 import kotlin.math.roundToInt
 
 /**
@@ -58,6 +59,7 @@ fun ElevationCurveChart(
     startTime: Long,
     endTime: Long,
     maxElev: Double,
+    isUtc: Boolean = false,
     progress: Float = 0.5f,
     onProgressChange: (Float) -> Unit = {},
     modifier: Modifier = Modifier
@@ -74,7 +76,11 @@ fun ElevationCurveChart(
     val textColorArgb = textColor.toArgb()
     val onSurfaceArgb = onSurfaceColor.toArgb()
     val gridColorArgb = gridColor.toArgb()
-    val timeFormat = remember { SimpleDateFormat("HH:mm", Locale.getDefault()) }
+    val timeFormat = remember(isUtc) {
+        SimpleDateFormat("HH:mm", Locale.getDefault()).apply {
+            if (isUtc) timeZone = TimeZone.getTimeZone("UTC")
+        }
+    }
 
     Column(modifier = modifier.fillMaxWidth()) {
         Canvas(

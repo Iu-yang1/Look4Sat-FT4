@@ -204,14 +204,28 @@ private fun SettingsScreen(uiState: SettingsState, onAction: (SettingsAction) ->
         )
     }
     if (dialogs.lotw) {
+        // LoTW sync failures are typed codes from the ViewModel; render them
+        // through string resources so the dialog follows the system language.
+        val lotwErrorMessage = uiState.lotwError?.let { error ->
+            when (error) {
+                LoTWError.NotConfigured -> stringResource(R.string.lotw_sync_error_not_configured)
+                LoTWError.BadCredentials -> stringResource(R.string.lotw_sync_error_credentials)
+                LoTWError.RateLimited -> stringResource(R.string.lotw_sync_error_rate_limited)
+                LoTWError.Timeout -> stringResource(R.string.lotw_sync_error_timeout)
+                is LoTWError.Network -> stringResource(R.string.lotw_sync_error_network, error.detail)
+            }
+        }
         LoTWDialog(
             initialSettings = uiState.lotwSettings,
             workedGridsCount = uiState.workedGridsCount,
             isSyncing = uiState.lotwSyncing,
-            message = uiState.lotwMessage,
+            syncMode = uiState.lotwSyncMode,
+            progress = uiState.lotwProgress,
+            message = lotwErrorMessage,
             dismiss = { dialogs.lotw = false },
             onSave = { onAction(SettingsAction.UpdateLoTW(it)) },
-            onSync = { onAction(SettingsAction.SyncLoTWGrids(it)) }
+            onSyncFull = { onAction(SettingsAction.SyncLoTWGrids(it, LoTWSyncMode.Full)) },
+            onSyncIncremental = { onAction(SettingsAction.SyncLoTWGrids(it, LoTWSyncMode.Incremental)) }
         )
     }
 

@@ -110,5 +110,11 @@ interface ISettingsRepo {
     //region # LoTW confirmed-grids settings
     val lotwSettings: StateFlow<com.rtbishop.look4sat.core.domain.model.LoTWSettings>
     fun updateLoTWSettings(settings: com.rtbishop.look4sat.core.domain.model.LoTWSettings)
+    /** Last successful LoTW sync date ("yyyyMMdd", empty when never synced). */
+    fun getLastLotwSyncDate(): String
+    fun setLastLotwSyncDate(date: String)
+    /** Callsign of the last successful LoTW sync (empty when never synced). */
+    fun getLastLotwSyncCallsign(): String
+    fun setLastLotwSyncCallsign(callsign: String)
     //endregion
 }

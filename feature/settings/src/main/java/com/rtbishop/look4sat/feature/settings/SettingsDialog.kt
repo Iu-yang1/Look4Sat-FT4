@@ -50,6 +50,7 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.OutlinedTextField
@@ -228,23 +229,23 @@ fun LoTWDialog(
     initialSettings: com.rtbishop.look4sat.core.domain.model.LoTWSettings,
     workedGridsCount: Int,
     isSyncing: Boolean,
+    syncMode: LoTWSyncMode?,
+    progress: com.rtbishop.look4sat.core.domain.repository.LoTWProgress?,
     message: String?,
     dismiss: () -> Unit,
     onSave: (com.rtbishop.look4sat.core.domain.model.LoTWSettings) -> Unit,
-    onSync: (com.rtbishop.look4sat.core.domain.model.LoTWSettings) -> Unit
+    onSyncFull: (com.rtbishop.look4sat.core.domain.model.LoTWSettings) -> Unit,
+    onSyncIncremental: (com.rtbishop.look4sat.core.domain.model.LoTWSettings) -> Unit
 ) {
     val call = rememberSaveable { mutableStateOf(initialSettings.callsign) }
     val pass = rememberSaveable { mutableStateOf(initialSettings.password) }
     SharedDialog(
         title = stringResource(R.string.prefs_lotw_title),
+        onDismissRequest = dismiss,
         onCancel = dismiss,
-        // The confirm button IS the sync action: saving credentials and
-        // fetching confirmed grids happen in one step.
-        onAccept = {
-            onSync(com.rtbishop.look4sat.core.domain.model.LoTWSettings(call.value, pass.value))
-        },
-        acceptText = stringResource(if (isSyncing) R.string.prefs_lotw_syncing else R.string.prefs_lotw_sync),
-        acceptEnabled = !isSyncing
+        // The two sync buttons below are the primary actions: saving
+        // credentials and fetching confirmed grids happen in one step.
+        onAccept = null
     ) {
         OutlinedTextField(
             value = call.value,
@@ -268,18 +269,72 @@ fun LoTWDialog(
             style = MaterialTheme.typography.bodySmall,
             modifier = Modifier.padding(horizontal = LocalSpacing.current.large)
         )
-        Text(
-            text = stringResource(R.string.prefs_lotw_sync_duration_hint),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(horizontal = LocalSpacing.current.large)
-        )
+        if (isSyncing) {
+            // Live progress: once the report header reveals the record count,
+            // switch to "N QSOs, ~X s remaining" with a determinate bar.
+            val progressText = when {
+                progress == null ||
+                    progress.phase == com.rtbishop.look4sat.core.domain.repository.LoTWPhase.Connecting ->
+                    stringResource(R.string.lotw_sync_progress_connecting)
+                progress.qsoCount > 0 && progress.remainingSeconds > 0 ->
+                    stringResource(R.string.lotw_sync_progress_qso, progress.qsoCount, progress.remainingSeconds)
+                progress.qsoCount > 0 ->
+                    stringResource(R.string.lotw_sync_progress_count, progress.qsoCount)
+                else -> stringResource(R.string.lotw_sync_progress_downloading)
+            }
+            Text(
+                text = progressText,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = LocalSpacing.current.large)
+            )
+            if (progress != null && progress.expectedBytes > 0) {
+                LinearProgressIndicator(
+                    progress = { progress.fraction },
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = LocalSpacing.current.large)
+                )
+            } else {
+                LinearProgressIndicator(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = LocalSpacing.current.large)
+                )
+            }
+        } else {
+            // Pre-sync estimate: rate per 100 QSOs (measured ~8 s at ARRL's
+            // ~10 KB/s stream rate), plus the fixed server-side generation time.
+            Text(
+                text = stringResource(R.string.lotw_sync_rate_hint),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = LocalSpacing.current.large)
+            )
+            Text(
+                text = stringResource(R.string.prefs_lotw_sync_duration_hint),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = LocalSpacing.current.large)
+            )
+        }
         if (message != null) {
             Text(
                 text = message,
                 color = MaterialTheme.colorScheme.error,
                 style = MaterialTheme.typography.bodySmall,
                 modifier = Modifier.padding(horizontal = LocalSpacing.current.large)
+            )
+        }
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = LocalSpacing.current.large)
+        ) {
+            CardButton(
+                onClick = { onSyncFull(com.rtbishop.look4sat.core.domain.model.LoTWSettings(call.value, pass.value)) },
+                text = stringResource(R.string.lotw_sync_full),
+                isEnabled = !isSyncing
+            )
+            CardButton(
+                onClick = { onSyncIncremental(com.rtbishop.look4sat.core.domain.model.LoTWSettings(call.value, pass.value)) },
+                text = stringResource(R.string.lotw_sync_incremental),
+                isEnabled = !isSyncing
             )
         }
         Spacer(modifier = Modifier.height(0.dp))

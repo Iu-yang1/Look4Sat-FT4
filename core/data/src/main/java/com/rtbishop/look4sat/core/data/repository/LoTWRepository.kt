@@ -18,6 +18,8 @@
 package com.rtbishop.look4sat.core.data.repository
 
 import com.rtbishop.look4sat.core.domain.repository.ILoTWRepository
+import com.rtbishop.look4sat.core.domain.repository.LoTWPhase
+import com.rtbishop.look4sat.core.domain.repository.LoTWProgress
 import com.rtbishop.look4sat.core.domain.repository.LoTWResult
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -46,7 +48,7 @@ class LoTWRepository : ILoTWRepository {
 
     override suspend fun fetchConfirmedGrids(callsign: String, password: String): LoTWResult =
         withContext(Dispatchers.IO) {
-            fetchReportBody(callsign, password).fold(
+            fetchReportBody(callsign, password, since = "", onProgress = {}).fold(
                 onSuccess = { body ->
                     parseBoth(body)?.let { (grids, _, roamed) ->
                         LoTWResult.Success(grids, emptyMap(), roamed)
@@ -58,9 +60,11 @@ class LoTWRepository : ILoTWRepository {
 
     override suspend fun fetchConfirmedGridQsos(
         callsign: String,
-        password: String
+        password: String,
+        since: String,
+        onProgress: (LoTWProgress) -> Unit
     ): LoTWResult = withContext(Dispatchers.IO) {
-        fetchReportBody(callsign, password).fold(
+        fetchReportBody(callsign, password, since, onProgress).fold(
             onSuccess = { body ->
                 parseBoth(body)?.let { (grids, qsos, roamed) ->
                     LoTWResult.Success(grids, qsos, roamed)
@@ -87,33 +91,46 @@ class LoTWRepository : ILoTWRepository {
         return Triple(grids, qsos, roamed)
     }
 
-    private fun fetchReportBody(callsign: String, password: String): Result<String> {
+    private fun fetchReportBody(
+        callsign: String,
+        password: String,
+        since: String,
+        onProgress: (LoTWProgress) -> Unit
+    ): Result<String> {
         val call = callsign.trim().uppercase()
         val pwd = password.trim()
         if (call.isBlank() || pwd.isBlank()) return Result.failure(IOException("empty credentials"))
-        // qso_qslsince with an early date forces a FULL confirmed-QSL report.
-        // Without it, LoTW applies a "system supplied default" since-date and
-        // only returns confirmations newer than the account's last query —
-        // subsequent syncs would return an empty/incremental report.
-        val since = "2000-01-01"
+        // Empty since -> full report. qso_qslsince with an early date forces a
+        // FULL confirmed-QSL report; without it LoTW applies a "system supplied
+        // default" since-date and only returns confirmations newer than the
+        // account's last query — subsequent syncs would be incremental/empty.
+        val effectiveSince = since.ifBlank { "2000-01-01" }
         val query = buildString {
             append("login=").append(URLEncoder.encode(call, "UTF-8"))
             append("&password=").append(URLEncoder.encode(pwd, "UTF-8"))
             append("&qso_query=1&qso_qsl=yes&qso_qsldetail=yes&qso_mydetail=yes")
-            append("&qso_qslsince=").append(URLEncoder.encode(since, "UTF-8"))
+            append("&qso_qslsince=").append(URLEncoder.encode(effectiveSince, "UTF-8"))
         }
         return try {
             val connection = URL("$BASE_URL?$query").openConnection() as HttpURLConnection
             // ARRL can be slow to accept connections from mobile networks
             // (long TLS handshakes across the Pacific, occasional server-side
-            // queueing). 30s connect + 120s read gives the request enough
-            // headroom; the sync button stays disabled meanwhile so users
-            // see progress rather than a hung dialog.
-            connection.connectTimeout = 30_000
-            connection.readTimeout = 120_000
+            // queueing — a busy server took 36.5 s to accept a connection in
+            // testing, so 30 s connect would have killed it).
+            //
+            // NOTE: readTimeout is NOT a total-download cap. It is the longest
+            // wait for the NEXT chunk of data (a stall timeout). A full report
+            // for a huge account (tens of thousands of QSLs ≈ tens of MB at
+            // ARRL's ~10 KB/s stream rate) legitimately takes 30+ minutes;
+            // as long as chunks keep arriving it must never be cut off.
+            // 600 s tolerates long server-side pauses while it generates the
+            // report; a truly dead link (no data at all) still fails within it.
+            connection.connectTimeout = 60_000
+            connection.readTimeout = 600_000
             connection.requestMethod = "GET"
             connection.setRequestProperty("Accept-Encoding", "gzip")
             connection.instanceFollowRedirects = true
+            onProgress(LoTWProgress(LoTWPhase.Connecting))
             val code = connection.responseCode
             if (code !in 200..299) {
                 connection.disconnect()
@@ -123,9 +140,8 @@ class LoTWRepository : ILoTWRepository {
                 else Result.failure(IOException("HTTP $code"))
             }
             val stream = connection.inputStream
-            val body = ("gzip".equals(connection.contentEncoding, ignoreCase = true))
-                .let { gz -> if (gz) java.util.zip.GZIPInputStream(stream) else stream }
-                .bufferedReader().use { it.readText() }
+            val isGzip = "gzip".equals(connection.contentEncoding, ignoreCase = true)
+            val body = readBodyWithProgress(stream, isGzip, onProgress)
             connection.disconnect()
             when {
                 // Login failure: HTTP 200 + HTML login page with the error text.
@@ -143,6 +159,63 @@ class LoTWRepository : ILoTWRepository {
             println("LoTWRepository fetch failure: $e")
             Result.failure(IOException(e.message ?: e.javaClass.simpleName))
         }
+    }
+
+    /**
+     * Streams the report body into a string while reporting download progress.
+     * Once the header's record count (<APP_LoTW_NUMREC>) is seen, the total
+     * body size is estimated as NUMREC * AVG_RECORD_BYTES so the UI can show a
+     * meaningful progress bar and remaining-time estimate.
+     */
+    private fun readBodyWithProgress(
+        stream: java.io.InputStream,
+        isGzip: Boolean,
+        onProgress: (LoTWProgress) -> Unit
+    ): String {
+        val input = if (isGzip) java.util.zip.GZIPInputStream(stream) else stream
+        val reader = java.io.InputStreamReader(input, Charsets.UTF_8)
+        val sb = StringBuilder()
+        val buf = CharArray(8192)
+        var bytesRead = 0L
+        var expected = 0L
+        var qsoCount = 0L
+        var speed = 0L
+        var headerSeen = false
+        var lastSampleMs = System.currentTimeMillis()
+        var lastSampleBytes = 0L
+        var lastEmitMs = 0L
+        while (true) {
+            val n = reader.read(buf)
+            if (n <= 0) break
+            sb.append(buf, 0, n)
+            bytesRead += n
+            // The record count sits in the report header, long before the data.
+            if (!headerSeen) {
+                NUMREC_REGEX.find(sb)?.let { m ->
+                    qsoCount = m.groupValues[1].toLongOrNull() ?: 0L
+                    expected = qsoCount * AVG_RECORD_BYTES
+                    headerSeen = true
+                }
+            }
+            // Sample speed every 500ms, EMA-smoothed.
+            val now = System.currentTimeMillis()
+            if (now - lastSampleMs >= 500) {
+                val elapsedS = (now - lastSampleMs) / 1000.0
+                if (elapsedS > 0) {
+                    val inst = ((bytesRead - lastSampleBytes) / elapsedS).toLong()
+                    speed = if (speed == 0L) inst else (speed * 7 + inst * 3) / 10
+                    lastSampleMs = now
+                    lastSampleBytes = bytesRead
+                }
+            }
+            // Throttle callbacks to ~4/s so StateFlow updates stay cheap.
+            if (now - lastEmitMs >= 250) {
+                onProgress(LoTWProgress(LoTWPhase.Downloading, bytesRead, expected, speed, qsoCount))
+                lastEmitMs = now
+            }
+        }
+        onProgress(LoTWProgress(LoTWPhase.Downloading, bytesRead, expected, speed, qsoCount))
+        return sb.toString()
     }
 
     internal class CredentialsException : Exception("bad callsign/password")
@@ -362,5 +435,14 @@ class LoTWRepository : ILoTWRepository {
 
     private companion object {
         const val BASE_URL = "https://lotw.arrl.org/lotwuser/lotwreport.adi"
+
+        /** Record count in the report header: `<APP_LoTW_NUMREC:4>2367`. */
+        val NUMREC_REGEX = Regex("<APP_LoTW_NUMREC:\\d+>(\\d+)")
+        /**
+         * Measured 2026-09-16 (BH6RJD, 2367 QSLs): 1.7 MB body streamed at
+         * ~9.5 KB/s ≈ 180 s, i.e. ≈ 720 bytes per ADIF record. Used to predict
+         * the total body size from the header record count.
+         */
+        const val AVG_RECORD_BYTES = 720L
     }
 }

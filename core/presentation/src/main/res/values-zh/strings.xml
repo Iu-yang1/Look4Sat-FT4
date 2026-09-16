@@ -165,6 +165,18 @@
     <string name="prefs_lotw_syncing">同步中…</string>
     <string name="prefs_lotw_configured">已从 LoTW 同步 — 共 %1$d 个网格</string>
     <string name="prefs_lotw_not_configured">未配置 — 直接登录 ARRL LoTW 拉取已确认 QSO 的网格，无需自建服务器</string>
+    <string name="lotw_sync_error_not_configured">LoTW 呼号/密码未配置</string>
+    <string name="lotw_sync_error_credentials">LoTW 同步失败——呼号或密码错误</string>
+    <string name="lotw_sync_error_rate_limited">LoTW 同步失败——服务器限流，请等几分钟后再试</string>
+    <string name="lotw_sync_error_timeout">LoTW 同步失败——连接超时，请更换网络重试</string>
+    <string name="lotw_sync_error_network">LoTW 同步失败——网络错误（%1$s）</string>
+    <string name="lotw_sync_full">全量同步</string>
+    <string name="lotw_sync_incremental">增量合并</string>
+    <string name="lotw_sync_rate_hint">下载速度约每 100 条 QSO 需 8 秒（另有 5–40 秒服务器生成时间）</string>
+    <string name="lotw_sync_progress_connecting">正在连接 LoTW 服务器…</string>
+    <string name="lotw_sync_progress_downloading">正在下载报告…</string>
+    <string name="lotw_sync_progress_count">本次同步 %1$d 条 QSO…</string>
+    <string name="lotw_sync_progress_qso">本次同步 %1$d 条 QSO，预计还需 %2$d 秒</string>
     <string name="prefs_locator_text">使用梅登黑德网格设置站点位置</string>
 
     <string name="prefs_data_title">卫星数据更新</string>

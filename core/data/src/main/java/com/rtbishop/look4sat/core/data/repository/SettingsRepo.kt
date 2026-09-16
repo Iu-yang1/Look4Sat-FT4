@@ -289,6 +289,24 @@ class SettingsRepo(
             callsign = preferences.getString(keyLoTWCall, null).orEmpty(),
             password = preferences.getString(keyLoTWPass, null).orEmpty()
         )
+
+    // Last successful sync bookkeeping: date ("yyyyMMdd") and callsign. Used to
+    // decide incremental (same callsign) vs full (first time / callsign change)
+    // report requests and to merge increments into the stored grid data.
+    private val keyLastLotwSyncDate = "lotwLastSyncDate"
+    private val keyLastLotwSyncCallsign = "lotwLastSyncCallsign"
+
+    override fun getLastLotwSyncDate(): String =
+        preferences.getString(keyLastLotwSyncDate, null).orEmpty()
+
+    override fun setLastLotwSyncDate(date: String) =
+        preferences.edit { putString(keyLastLotwSyncDate, date) }
+
+    override fun getLastLotwSyncCallsign(): String =
+        preferences.getString(keyLastLotwSyncCallsign, null).orEmpty()
+
+    override fun setLastLotwSyncCallsign(callsign: String) =
+        preferences.edit { putString(keyLastLotwSyncCallsign, callsign.trim().uppercase()) }
     //endregion
 
     //region # Transceivers settings

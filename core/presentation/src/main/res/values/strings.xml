@@ -200,6 +200,18 @@
     <string name="prefs_lotw_syncing">Syncing…</string>
     <string name="prefs_lotw_configured">Synced from LoTW — %1$d grids total</string>
     <string name="prefs_lotw_not_configured">Not configured — pull confirmed grids directly from ARRL LoTW, no self-hosted server needed</string>
+    <string name="lotw_sync_error_not_configured">LoTW callsign/password not configured</string>
+    <string name="lotw_sync_error_credentials">LoTW sync failed — callsign or password incorrect</string>
+    <string name="lotw_sync_error_rate_limited">LoTW sync failed — rate limited by server, wait a few minutes and retry</string>
+    <string name="lotw_sync_error_timeout">LoTW sync failed — connection timed out, try another network</string>
+    <string name="lotw_sync_error_network">LoTW sync failed — network error (%1$s)</string>
+    <string name="lotw_sync_full">Full sync</string>
+    <string name="lotw_sync_incremental">Incremental merge</string>
+    <string name="lotw_sync_rate_hint">Download runs at ~8 s per 100 QSOs (plus 5–40 s server generation time)</string>
+    <string name="lotw_sync_progress_connecting">Connecting to LoTW…</string>
+    <string name="lotw_sync_progress_downloading">Downloading report…</string>
+    <string name="lotw_sync_progress_count">Syncing %1$d QSOs…</string>
+    <string name="lotw_sync_progress_qso">Syncing %1$d QSOs, ~%2$d s remaining</string>
     <string name="prefs_locator_text">Set station\'s position using locator</string>
 
     <string name="prefs_data_title">Satellite data</string>

@@ -158,7 +158,7 @@ class SettingsViewModel(
             is SettingsAction.SyncWorkedGrids -> syncWorkedGrids(action.settings)
             // LoTW confirmed grids
             is SettingsAction.UpdateLoTW -> settingsRepo.updateLoTWSettings(action.settings)
-            is SettingsAction.SyncLoTWGrids -> syncLoTWGrids(action.settings)
+            is SettingsAction.SyncLoTWGrids -> syncLoTWGrids(action.settings, action.mode)
             // Update checker
             SettingsAction.CheckForUpdate -> checkForUpdate()
             SettingsAction.DownloadUpdate -> downloadUpdate()
@@ -191,59 +191,113 @@ class SettingsViewModel(
         }
     }
 
-    private fun syncLoTWGrids(settings: com.rtbishop.look4sat.core.domain.model.LoTWSettings) {
+    private fun syncLoTWGrids(
+        settings: com.rtbishop.look4sat.core.domain.model.LoTWSettings,
+        mode: LoTWSyncMode
+    ) {
         if (!settings.isConfigured) {
-            _uiState.update { it.copy(lotwMessage = "LoTW callsign/password not configured") }
+            _uiState.update { it.copy(lotwError = LoTWError.NotConfigured) }
             return
         }
         // Persist the credentials first, then sync with the freshly-typed values.
         settingsRepo.updateLoTWSettings(settings)
-        _uiState.update { it.copy(lotwSyncing = true, lotwMessage = null) }
+        // Incremental only makes sense for the same callsign as the last sync;
+        // a first sync, an unknown/empty record or a callsign change must fall
+        // back to a full report so no stale grids from another account linger.
+        val callsign = settings.callsign.trim().uppercase()
+        val lastCallsign = settingsRepo.getLastLotwSyncCallsign()
+        val effectiveMode = if (mode == LoTWSyncMode.Incremental &&
+            lastCallsign.isNotBlank() && lastCallsign == callsign
+        ) LoTWSyncMode.Incremental else LoTWSyncMode.Full
+        val since = if (effectiveMode == LoTWSyncMode.Incremental) {
+            settingsRepo.getLastLotwSyncDate()
+        } else ""
+        _uiState.update {
+            it.copy(lotwSyncing = true, lotwSyncMode = effectiveMode, lotwProgress = null, lotwError = null)
+        }
         viewModelScope.launch {
-            when (val result = lotwRepo.fetchConfirmedGridQsos(settings.callsign, settings.password)) {
+            val result = lotwRepo.fetchConfirmedGridQsos(callsign, settings.password, since) { progress ->
+                _uiState.update { it.copy(lotwProgress = progress) }
+            }
+            when (result) {
                 is com.rtbishop.look4sat.core.domain.repository.LoTWResult.Success -> {
-                    // Wavelog entry removed: LoTW is now the only source, so the
-                    // synced set fully replaces the stored worked grids.
-                    settingsRepo.setWorkedGrids(result.grids)
-                    settingsRepo.setWorkedGridQsos(result.qsos)
-                    settingsRepo.setRoamedGrids(result.roamedGrids)
+                    // Incremental: merge new grids/QSOs into the stored set (dedup
+                    // by call + QSO time); full: the fresh report replaces it all.
+                    val existingGrids = settingsRepo.getWorkedGrids()
+                    val existingQsos = settingsRepo.getWorkedGridQsos()
+                    val existingRoamed = settingsRepo.getRoamedGrids()
+                    val mergedGrids = if (effectiveMode == LoTWSyncMode.Incremental) {
+                        existingGrids + result.grids
+                    } else result.grids
+                    val mergedQsos = if (effectiveMode == LoTWSyncMode.Incremental) {
+                        mergeGridQsos(existingQsos, result.qsos)
+                    } else result.qsos
+                    val mergedRoamed = if (effectiveMode == LoTWSyncMode.Incremental) {
+                        existingRoamed + result.roamedGrids
+                    } else result.roamedGrids
+                    settingsRepo.setWorkedGrids(mergedGrids)
+                    settingsRepo.setWorkedGridQsos(mergedQsos)
+                    settingsRepo.setRoamedGrids(mergedRoamed)
+                    // Remember when/what we synced, so the next incremental pull
+                    // asks LoTW for only the confirmations since today.
+                    val today = java.text.SimpleDateFormat("yyyyMMdd", java.util.Locale.US)
+                        .apply { timeZone = java.util.TimeZone.getTimeZone("UTC") }
+                        .format(java.util.Date())
+                    settingsRepo.setLastLotwSyncDate(today)
+                    settingsRepo.setLastLotwSyncCallsign(callsign)
                     _uiState.update { state ->
                         state.copy(
-                            lotwSyncing = false, workedGridsCount = result.grids.size,
-                            lotwMessage = null
+                            lotwSyncing = false, lotwSyncMode = null, lotwProgress = null,
+                            workedGridsCount = mergedGrids.size, lotwError = null
                         )
                     }
                 }
                 is com.rtbishop.look4sat.core.domain.repository.LoTWResult.BadCredentials ->
                     _uiState.update { state ->
                         state.copy(
-                            lotwSyncing = false,
-                            lotwMessage = "LoTW sync failed — callsign or password incorrect"
+                            lotwSyncing = false, lotwSyncMode = null, lotwProgress = null,
+                            lotwError = LoTWError.BadCredentials
                         )
                     }
                 is com.rtbishop.look4sat.core.domain.repository.LoTWResult.RateLimited ->
                     _uiState.update { state ->
                         state.copy(
-                            lotwSyncing = false,
-                            lotwMessage = "LoTW sync failed — rate limited by server, wait a few minutes and retry"
+                            lotwSyncing = false, lotwSyncMode = null, lotwProgress = null,
+                            lotwError = LoTWError.RateLimited
                         )
                     }
                 is com.rtbishop.look4sat.core.domain.repository.LoTWResult.Timeout ->
                     _uiState.update { state ->
                         state.copy(
-                            lotwSyncing = false,
-                            lotwMessage = "LoTW sync failed — connection timed out, try another network"
+                            lotwSyncing = false, lotwSyncMode = null, lotwProgress = null,
+                            lotwError = LoTWError.Timeout
                         )
                     }
                 is com.rtbishop.look4sat.core.domain.repository.LoTWResult.NetworkError ->
                     _uiState.update { state ->
                         state.copy(
-                            lotwSyncing = false,
-                            lotwMessage = "LoTW sync failed — network error (${result.detail})"
+                            lotwSyncing = false, lotwSyncMode = null, lotwProgress = null,
+                            lotwError = LoTWError.Network(result.detail)
                         )
                     }
             }
         }
+    }
+
+    /** Merge fresh QSO detail into existing per-grid lists, dedup by call + QSO time. */
+    private fun mergeGridQsos(
+        existing: Map<String, List<com.rtbishop.look4sat.core.domain.model.GridQso>>,
+        fresh: Map<String, List<com.rtbishop.look4sat.core.domain.model.GridQso>>
+    ): Map<String, List<com.rtbishop.look4sat.core.domain.model.GridQso>> {
+        val merged = existing.mapValues { (_, list) -> list.toMutableList() }.toMutableMap()
+        fresh.forEach { (grid, list) ->
+            val target = merged.getOrPut(grid) { mutableListOf() }
+            val known = target.mapTo(mutableSetOf()) { it.call to it.epochMs }
+            list.forEach { qso ->
+                if (known.add(qso.call to qso.epochMs)) target.add(qso)
+            }
+        }
+        return merged
     }
 
     // endregion

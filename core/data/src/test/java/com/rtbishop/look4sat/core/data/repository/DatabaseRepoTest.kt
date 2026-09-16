@@ -296,6 +296,10 @@ private class FakeSettingsRepo(dataSources: DataSourcesSettings = defaultDataSou
         MutableStateFlow(com.rtbishop.look4sat.core.domain.model.LoTWSettings())
 
     override fun updateLoTWSettings(settings: com.rtbishop.look4sat.core.domain.model.LoTWSettings) = Unit
+    override fun getLastLotwSyncDate(): String = ""
+    override fun setLastLotwSyncDate(date: String) = Unit
+    override fun getLastLotwSyncCallsign(): String = ""
+    override fun setLastLotwSyncCallsign(callsign: String) = Unit
 
     override fun getWorkedGridQsos(): Map<String, List<com.rtbishop.look4sat.core.domain.model.GridQso>> = emptyMap()
 

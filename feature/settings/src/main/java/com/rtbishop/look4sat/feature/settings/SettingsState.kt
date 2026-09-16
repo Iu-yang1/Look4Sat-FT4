@@ -61,9 +61,23 @@ data class SettingsState(
     val wavelogMessage: String? = null,
     val lotwSettings: com.rtbishop.look4sat.core.domain.model.LoTWSettings = com.rtbishop.look4sat.core.domain.model.LoTWSettings(),
     val lotwSyncing: Boolean = false,
-    val lotwMessage: String? = null,
+    val lotwSyncMode: LoTWSyncMode? = null,
+    val lotwProgress: com.rtbishop.look4sat.core.domain.repository.LoTWProgress? = null,
+    val lotwError: LoTWError? = null,
     val updateChecker: UpdateCheckerState = UpdateCheckerState()
 )
+
+/** What a LoTW sync button does: pull everything, or only new QSLs since the last sync. */
+enum class LoTWSyncMode { Full, Incremental }
+
+/** LoTW sync failure, kept as a translatable code until the UI renders it. */
+sealed interface LoTWError {
+    data object NotConfigured : LoTWError
+    data object BadCredentials : LoTWError
+    data object RateLimited : LoTWError
+    data object Timeout : LoTWError
+    data class Network(val detail: String) : LoTWError
+}
 
 sealed interface SettingsAction {
     // Position
@@ -99,7 +113,10 @@ sealed interface SettingsAction {
 
     // LoTW confirmed grids
     data class UpdateLoTW(val settings: com.rtbishop.look4sat.core.domain.model.LoTWSettings) : SettingsAction
-    data class SyncLoTWGrids(val settings: com.rtbishop.look4sat.core.domain.model.LoTWSettings) : SettingsAction
+    data class SyncLoTWGrids(
+        val settings: com.rtbishop.look4sat.core.domain.model.LoTWSettings,
+        val mode: LoTWSyncMode
+    ) : SettingsAction
 
     // Update checker
     data object CheckForUpdate : SettingsAction

@@ -87,6 +87,7 @@ import androidx.compose.ui.zIndex
 import com.rtbishop.look4sat.core.domain.model.Constants
 import com.rtbishop.look4sat.core.domain.model.RCSettings
 import com.rtbishop.look4sat.core.domain.model.RadioControlSettings
+import com.rtbishop.look4sat.core.domain.repository.LoTWSyncMode
 import com.rtbishop.look4sat.core.domain.source.NetworkResult
 import com.rtbishop.look4sat.core.domain.source.Sources
 import com.rtbishop.look4sat.core.presentation.CardButton

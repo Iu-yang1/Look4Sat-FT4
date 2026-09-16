@@ -67,6 +67,7 @@ import com.rtbishop.look4sat.core.domain.model.RadioControlSettings
 import com.rtbishop.look4sat.core.domain.model.WavelogSettings
 import com.rtbishop.look4sat.core.domain.predict.GeoPos
 import com.rtbishop.look4sat.core.domain.repository.IContainerProvider
+import com.rtbishop.look4sat.core.domain.repository.LoTWSyncMode
 import com.rtbishop.look4sat.core.presentation.CardButton
 import com.rtbishop.look4sat.core.presentation.IconCard
 import com.rtbishop.look4sat.core.presentation.MainTheme
@@ -536,7 +537,7 @@ private fun OtherCard(settings: OtherSettings, onAction: (SettingsAction) -> Uni
     ElevatedCard(
         modifier = Modifier
             .fillMaxWidth()
-            .height(272.dp)
+            .height(320.dp)
     ) {
         Column(modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) {
             Text(
@@ -548,6 +549,9 @@ private fun OtherCard(settings: OtherSettings, onAction: (SettingsAction) -> Uni
             }
             SwitchRow(R.string.prefs_other_switch_update, settings.stateOfAutoUpdate) {
                 onAction(SettingsAction.ToggleUpdate(it))
+            }
+            SwitchRow(R.string.prefs_other_switch_lotw_sync, settings.stateOfAutoLotwSync) {
+                onAction(SettingsAction.ToggleAutoLotwSync(it))
             }
             SwitchRow(R.string.prefs_other_switch_sweep, settings.stateOfSweep) {
                 onAction(SettingsAction.ToggleSweep(it))

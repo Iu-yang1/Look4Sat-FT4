@@ -46,3 +46,6 @@ sealed class LoTWResult {
     /** Any other network-level failure (DNS, TLS, connection reset, HTTP 5xx). */
     data class NetworkError(val detail: String) : LoTWResult()
 }
+
+/** What a LoTW sync does: pull everything, or only new QSLs since the last sync. */
+enum class LoTWSyncMode { Full, Incremental }

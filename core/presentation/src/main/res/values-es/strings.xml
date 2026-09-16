@@ -147,6 +147,7 @@
     <string name="prefs_other_title">Otros ajustes</string>
     <string name="prefs_other_switch_utc">Mostrar tiempos de pase en UTC</string>
     <string name="prefs_other_switch_update">Habilitar auto actualización de datos</string>
+    <string name="prefs_other_switch_lotw_sync">Sincronizar automáticamente las cuadrículas LoTW confirmadas</string>
     <string name="prefs_other_switch_sweep">Habilitar animaciones radar</string>
     <string name="prefs_other_switch_sensors">Usar sensores para rotar vista de radar</string>
     <string name="prefs_other_switch_night_mode">Activar filtro nocturno rojo</string>

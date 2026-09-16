@@ -189,6 +189,7 @@
     <string name="prefs_other_title">Diğer ayarlar</string>
     <string name="prefs_other_switch_utc">Geçiş saatini UTC olarak göster</string>
     <string name="prefs_other_switch_update">Otomatik veri güncellemeyi etkinleştir</string>
+    <string name="prefs_other_switch_lotw_sync">LoTW onaylı kareleri otomatik senkronize et</string>
     <string name="prefs_other_switch_sweep">Radar taramasını etkinleştir</string>
     <string name="prefs_other_switch_sensors">Radar görünümünü döndürmek için sensörleri kullan</string>
     <string name="prefs_other_switch_night_mode">Kırmızı gece filtresini etkinleştir</string>

@@ -64,7 +64,10 @@ data class OtherSettings(
     val shouldSeeWhatsNew: Boolean,
     val sstvMode: String = "Auto",
     val lowElevation: Double = 15.0,
-    val highElevation: Double = 45.0
+    val highElevation: Double = 45.0,
+    /** Independent auto-sync toggle for LoTW confirmed grids (separate from the
+     *  ephemeris auto-update; only effective after at least one manual sync). */
+    val stateOfAutoLotwSync: Boolean = true
 )
 
 data class DataSourcesSettings(

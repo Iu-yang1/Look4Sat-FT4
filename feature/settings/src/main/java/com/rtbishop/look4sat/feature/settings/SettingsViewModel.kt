@@ -27,6 +27,10 @@ import com.rtbishop.look4sat.core.domain.model.WavelogSettings
 import com.rtbishop.look4sat.core.domain.repository.IMainContainer
 import com.rtbishop.look4sat.core.domain.repository.ISettingsRepo
 import com.rtbishop.look4sat.core.domain.repository.IUpdateRepository
+import com.rtbishop.look4sat.core.domain.repository.LoTWResult
+import com.rtbishop.look4sat.core.domain.repository.LoTWSyncMode
+import com.rtbishop.look4sat.core.domain.repository.applyLoTWGridResult
+import com.rtbishop.look4sat.core.domain.repository.resolveLoTWSyncMode
 import com.rtbishop.look4sat.core.domain.repository.IWavelogRepository
 import com.rtbishop.look4sat.core.domain.usecase.IShowToast
 import com.rtbishop.look4sat.core.domain.utility.VersionComparator
@@ -35,7 +39,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import java.io.File
 
 class SettingsViewModel(
@@ -148,6 +151,7 @@ class SettingsViewModel(
             // Toggles
             is SettingsAction.ToggleUtc -> settingsRepo.updateOtherSettings { it.copy(stateOfUtc = action.value) }
             is SettingsAction.ToggleUpdate -> settingsRepo.updateOtherSettings { it.copy(stateOfAutoUpdate = action.value) }
+            is SettingsAction.ToggleAutoLotwSync -> settingsRepo.updateOtherSettings { it.copy(stateOfAutoLotwSync = action.value) }
             is SettingsAction.ToggleSweep -> settingsRepo.updateOtherSettings { it.copy(stateOfSweep = action.value) }
             is SettingsAction.ToggleSensor -> settingsRepo.updateOtherSettings { it.copy(stateOfSensors = action.value) }
             is SettingsAction.ToggleLightTheme -> settingsRepo.updateOtherSettings { it.copy(stateOfLightTheme = action.value) }
@@ -209,10 +213,7 @@ class SettingsViewModel(
         // a first sync, an unknown/empty record or a callsign change must fall
         // back to a full report so no stale grids from another account linger.
         val callsign = settings.callsign.trim().uppercase()
-        val lastCallsign = settingsRepo.getLastLotwSyncCallsign()
-        val effectiveMode = if (mode == LoTWSyncMode.Incremental &&
-            lastCallsign.isNotBlank() && lastCallsign == callsign
-        ) LoTWSyncMode.Incremental else LoTWSyncMode.Full
+        val effectiveMode = resolveLoTWSyncMode(settingsRepo.getLastLotwSyncCallsign(), callsign, mode)
         val since = if (effectiveMode == LoTWSyncMode.Incremental) {
             settingsRepo.getLastLotwSyncDate()
         } else ""
@@ -224,67 +225,40 @@ class SettingsViewModel(
                 _uiState.update { it.copy(lotwProgress = progress) }
             }
             when (result) {
-                is com.rtbishop.look4sat.core.domain.repository.LoTWResult.Success -> {
+                is LoTWResult.Success -> {
                     // Incremental: merge new grids/QSOs into the stored set (dedup
                     // by call + QSO time); full: the fresh report replaces it all.
-                    val existingGrids = settingsRepo.getWorkedGrids()
-                    val existingQsos = settingsRepo.getWorkedGridQsos()
-                    val existingRoamed = settingsRepo.getRoamedGrids()
-                    val mergedGrids = if (effectiveMode == LoTWSyncMode.Incremental) {
-                        existingGrids + result.grids
-                    } else result.grids
-                    val mergedQsos = if (effectiveMode == LoTWSyncMode.Incremental) {
-                        mergeGridQsos(existingQsos, result.qsos)
-                    } else result.qsos
-                    val mergedRoamed = if (effectiveMode == LoTWSyncMode.Incremental) {
-                        existingRoamed + result.roamedGrids
-                    } else result.roamedGrids
-                    // Remember when/what we synced, so the next incremental pull
-                    // asks LoTW for only the confirmations since today.
-                    val today = java.text.SimpleDateFormat("yyyyMMdd", java.util.Locale.US)
-                        .apply { timeZone = java.util.TimeZone.getTimeZone("UTC") }
-                        .format(java.util.Date())
-                    settingsRepo.setLastLotwSyncDate(today)
-                    settingsRepo.setLastLotwSyncCallsign(callsign)
-                    // Persist on the IO dispatcher: building the per-grid QSO JSON
-                    // and writing SharedPreferences synchronously blocks the
-                    // calling thread, and for large accounts (tens of thousands
-                    // of QSOs → multi-MB JSON) that froze the main thread after
-                    // the download finished — 'bar done but app stuck'.
-                    withContext(kotlinx.coroutines.Dispatchers.IO) {
-                        settingsRepo.setWorkedGrids(mergedGrids)
-                        settingsRepo.setWorkedGridQsos(mergedQsos)
-                        settingsRepo.setRoamedGrids(mergedRoamed)
-                    }
+                    // Shared with the automatic sync on app start (MainApplication).
+                    val mergedGridsCount = applyLoTWGridResult(settingsRepo, result, effectiveMode, callsign)
                     _uiState.update { state ->
                         state.copy(
                             lotwSyncing = false, lotwSyncMode = null, lotwProgress = null,
-                            workedGridsCount = mergedGrids.size, lotwError = null
+                            workedGridsCount = mergedGridsCount, lotwError = null
                         )
                     }
                 }
-                is com.rtbishop.look4sat.core.domain.repository.LoTWResult.BadCredentials ->
+                is LoTWResult.BadCredentials ->
                     _uiState.update { state ->
                         state.copy(
                             lotwSyncing = false, lotwSyncMode = null, lotwProgress = null,
                             lotwError = LoTWError.BadCredentials
                         )
                     }
-                is com.rtbishop.look4sat.core.domain.repository.LoTWResult.RateLimited ->
+                is LoTWResult.RateLimited ->
                     _uiState.update { state ->
                         state.copy(
                             lotwSyncing = false, lotwSyncMode = null, lotwProgress = null,
                             lotwError = LoTWError.RateLimited
                         )
                     }
-                is com.rtbishop.look4sat.core.domain.repository.LoTWResult.Timeout ->
+                is LoTWResult.Timeout ->
                     _uiState.update { state ->
                         state.copy(
                             lotwSyncing = false, lotwSyncMode = null, lotwProgress = null,
                             lotwError = LoTWError.Timeout
                         )
                     }
-                is com.rtbishop.look4sat.core.domain.repository.LoTWResult.NetworkError ->
+                is LoTWResult.NetworkError ->
                     _uiState.update { state ->
                         state.copy(
                             lotwSyncing = false, lotwSyncMode = null, lotwProgress = null,
@@ -300,22 +274,6 @@ class SettingsViewModel(
         lotwSyncJob?.cancel()
         lotwSyncJob = null
         _uiState.update { it.copy(lotwSyncing = false, lotwSyncMode = null, lotwProgress = null) }
-    }
-
-    /** Merge fresh QSO detail into existing per-grid lists, dedup by call + QSO time. */
-    private fun mergeGridQsos(
-        existing: Map<String, List<com.rtbishop.look4sat.core.domain.model.GridQso>>,
-        fresh: Map<String, List<com.rtbishop.look4sat.core.domain.model.GridQso>>
-    ): Map<String, List<com.rtbishop.look4sat.core.domain.model.GridQso>> {
-        val merged = existing.mapValues { (_, list) -> list.toMutableList() }.toMutableMap()
-        fresh.forEach { (grid, list) ->
-            val target = merged.getOrPut(grid) { mutableListOf() }
-            val known = target.mapTo(mutableSetOf()) { it.call to it.epochMs }
-            list.forEach { qso ->
-                if (known.add(qso.call to qso.epochMs)) target.add(qso)
-            }
-        }
-        return merged
     }
 
     // endregion

@@ -24,6 +24,12 @@ import android.os.Bundle
 import com.rtbishop.look4sat.core.data.injection.MainContainer
 import com.rtbishop.look4sat.core.domain.repository.IContainerProvider
 import com.rtbishop.look4sat.core.domain.repository.IMainContainer
+import com.rtbishop.look4sat.core.domain.repository.LoTWSyncMode
+import com.rtbishop.look4sat.core.domain.repository.LoTWResult
+import com.rtbishop.look4sat.core.domain.repository.applyLoTWGridResult
+import com.rtbishop.look4sat.core.domain.repository.lotwSyncToday
+import com.rtbishop.look4sat.core.domain.repository.resolveLoTWSyncMode
+import com.rtbishop.look4sat.core.domain.repository.shouldAutoSyncLoTW
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -41,6 +47,8 @@ class MainApplication : Application(), IContainerProvider {
         clearAmSatCacheOnAppBackground()
         // trigger automatic update every 48 hours
         container.appScope.launch { checkAutoUpdate() }
+        // automatic LoTW grid sync on every app start (gated, see checkLoTWAutoSync)
+        container.appScope.launch { checkLoTWAutoSync() }
         // load satellite data on every app start
         container.appScope.launch { container.satelliteRepo.initRepository() }
     }
@@ -77,6 +85,39 @@ class MainApplication : Application(), IContainerProvider {
                 println("Started periodic data update on ${sdf.format(Date())}")
                 container.databaseRepo.updateFromRemote()
             }
+        }
+    }
+
+    /**
+     * Automatic LoTW grid sync, mirroring [checkAutoUpdate]: checked on every
+     * app start, but only pulls when due — LoTW credentials configured, the
+     * LoTW auto-sync toggle on, at least one prior (manual) sync, and not
+     * already synced today (ARRL limits report pulls, ~once a day per account).
+     * Incremental when the callsign is unchanged; a callsign change falls back
+     * to a full replace so no stale grids from another account linger.
+     * Failures are silent and simply retried on the next app start — the manual
+     * sync button still surfaces the explicit cause to the user.
+     */
+    private suspend fun checkLoTWAutoSync(timeNow: Long = System.currentTimeMillis()) {
+        val settingsRepo = container.settingsRepo
+        val lotwSettings = settingsRepo.lotwSettings.value
+        if (!shouldAutoSyncLoTW(
+                isConfigured = lotwSettings.isConfigured,
+                autoLotwSyncEnabled = settingsRepo.otherSettings.value.stateOfAutoLotwSync,
+                lastSyncDate = settingsRepo.getLastLotwSyncDate(),
+                today = lotwSyncToday(timeNow)
+            )
+        ) return
+        val callsign = lotwSettings.callsign.trim().uppercase()
+        val mode = resolveLoTWSyncMode(settingsRepo.getLastLotwSyncCallsign(), callsign, requested = null)
+        val since = if (mode == LoTWSyncMode.Incremental) settingsRepo.getLastLotwSyncDate() else ""
+        println("Started periodic LoTW grid sync (${mode.name.lowercase()})")
+        val result = container.lotwRepo.fetchConfirmedGridQsos(callsign, lotwSettings.password, since)
+        if (result is LoTWResult.Success) {
+            val count = applyLoTWGridResult(settingsRepo, result, mode, callsign, timeNow)
+            println("Periodic LoTW grid sync finished: $count worked grids")
+        } else {
+            println("Periodic LoTW grid sync skipped (${result::class.simpleName})")
         }
     }
 }

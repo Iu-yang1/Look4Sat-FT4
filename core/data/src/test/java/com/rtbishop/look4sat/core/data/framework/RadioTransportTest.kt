@@ -10,6 +10,7 @@
 package com.rtbishop.look4sat.core.data.framework
 
 import com.rtbishop.look4sat.core.domain.model.RadioControlSettings
+import com.rtbishop.look4sat.core.domain.model.RadioTcpEndpoint
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -19,9 +20,9 @@ import org.junit.Test
 class RadioTransportTest {
     @Test
     fun tcpEndpointParsesDnsIpv4AndBracketedIpv6() {
-        assertEquals(TcpEndpoint("radio.local", 4_532), parseTcpEndpoint("radio.local:4532"))
-        assertEquals(TcpEndpoint("192.0.2.10", 12_345), parseTcpEndpoint("192.0.2.10:12345"))
-        assertEquals(TcpEndpoint("2001:db8::10", 4_532), parseTcpEndpoint("[2001:db8::10]:4532"))
+        assertEquals(RadioTcpEndpoint("radio.local", 4_532), parseTcpEndpoint("radio.local:4532"))
+        assertEquals(RadioTcpEndpoint("192.0.2.10", 12_345), parseTcpEndpoint("192.0.2.10:12345"))
+        assertEquals(RadioTcpEndpoint("2001:db8::10", 4_532), parseTcpEndpoint("[2001:db8::10]:4532"))
     }
 
     @Test
@@ -30,6 +31,8 @@ class RadioTransportTest {
         assertNull(parseTcpEndpoint("radio.local:0"))
         assertNull(parseTcpEndpoint("radio.local:65536"))
         assertNull(parseTcpEndpoint("[2001:db8::10]4532"))
+        assertNull(parseTcpEndpoint("7:0:1:4292:60016"))
+        assertNull(parseTcpEndpoint("2001:db8::10:4532"))
     }
 
     @Test
@@ -82,6 +85,7 @@ class RadioTransportTest {
         assertEquals(1, radioProfile(RadioControlSettings.MODEL_ICOM_IC705).serialStopBits)
         assertEquals(1, radioProfile(RadioControlSettings.MODEL_ICOM_IC9700).serialStopBits)
         assertEquals(1, ic910.serialStopBits)
+        assertEquals(0xAA.toByte(), radioProfile(RadioControlSettings.MODEL_ICOM_IC705, 0xAA).civAddress)
     }
 
     @Test

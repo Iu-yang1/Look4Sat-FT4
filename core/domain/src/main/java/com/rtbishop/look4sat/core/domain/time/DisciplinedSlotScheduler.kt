@@ -33,6 +33,20 @@ class DisciplinedFt4SlotScheduler {
         return boundaryAt(current.endUtcMillis)
     }
 
+    fun nextBoundaryAfter(
+        utcMillis: Long,
+        minimumLeadMillis: Long,
+        sequence: Int
+    ): Ft4SlotBoundary {
+        require(minimumLeadMillis >= 0L)
+        require(sequence in 0..1)
+        var next = nextBoundaryAfter(utcMillis)
+        while (next.startUtcMillis - utcMillis < minimumLeadMillis || next.sequence != sequence) {
+            next = boundaryAt(next.endUtcMillis)
+        }
+        return next
+    }
+
     fun progress(utcMillis: Long): Float {
         val boundary = boundaryAt(utcMillis)
         return ((utcMillis - boundary.startUtcMillis).toDouble() / PERIOD_MILLIS)

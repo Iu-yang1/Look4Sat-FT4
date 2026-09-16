@@ -95,16 +95,17 @@ class RadioTrackingServiceTest {
     }
 
     @Test
-    fun cancelledPttOnIsSkippedAndUrgentPttOffRunsBeforeNormalCommands() = runTest {
+    fun urgentPttOffFinishesActiveTransactionThenRunsBeforeQueuedNormalCommands() = runTest {
         val actor = RadioCommandActor(backgroundScope) { _, _ -> }
         val delegate = FakeRadioController()
         val radio = SerialRadioController(delegate, actor)
         val started = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
         val blocker = async {
             actor.execute {
                 delegate.operations += "slow:start"
                 started.complete(Unit)
-                CompletableDeferred<Unit>().await()
+                release.await()
                 delegate.operations += "slow:end"
             }
         }
@@ -115,11 +116,12 @@ class RadioTrackingServiceTest {
         runCurrent()
         pttOn.cancelAndJoin()
         val pttOff = async { radio.pttOff() }
+        release.complete(Unit)
 
+        blocker.await()
         assertTrue(pttOff.await())
         assertTrue(normal.await())
-        assertTrue(runCatching { blocker.await() }.isFailure)
-        assertFalse("slow:end" in delegate.operations)
+        assertTrue("slow:end" in delegate.operations)
         assertFalse("ptt:on" in delegate.operations)
         assertTrue(delegate.operations.indexOf("ptt:off") < delegate.operations.indexOf("mode:USB"))
     }
@@ -172,7 +174,23 @@ class RadioTrackingServiceTest {
     }
 
     @Test
-    fun leaseSetsMidpointDopplerFreezesTxAndAlwaysReleasesPtt() = runTest {
+    fun transponderCanBeSelectedBeforeRadioConnection() = runTest {
+        val tx = FakeRadioController()
+        val rx = FakeRadioController()
+        val fixture = Fixture(backgroundScope, tx, rx)
+
+        fixture.service.setTransponder(fixture.transponder)
+        runCurrent()
+
+        assertEquals(fixture.transponder.uuid, fixture.service.state.value.selectedTransponder?.uuid)
+        assertEquals(fixture.nominalTxHz, fixture.service.state.value.txBaseFrequencyHz)
+        assertTrue(tx.operations.isEmpty())
+        assertTrue(rx.operations.isEmpty())
+        fixture.close()
+    }
+
+    @Test
+    fun leaseSetsInitialDopplerContinuesTrackingAndAlwaysReleasesPtt() = runTest {
         val tx = FakeRadioController()
         val rx = FakeRadioController()
         val fixture = Fixture(backgroundScope, tx, rx)
@@ -191,7 +209,7 @@ class RadioTrackingServiceTest {
         assertEquals(PttState.ON, fixture.service.state.value.pttState)
         advanceTimeBy(1_100L)
         runCurrent()
-        assertEquals(txFrequencyCommands, tx.operations.count { it.startsWith("frequency:") })
+        assertTrue(tx.operations.count { it.startsWith("frequency:") } > txFrequencyCommands)
         assertTrue(rx.operations.count { it.startsWith("frequency:") } > rxFrequencyCommands)
 
         fixture.service.endTransmit(lease)
@@ -221,6 +239,41 @@ class RadioTrackingServiceTest {
     }
 
     @Test
+    fun ft857DefersOnlyTxWritesWhileKeyedAndAppliesLatestDopplerAfterPttOff() = runTest {
+        val tx = FakeRadioController()
+        val rx = FakeRadioController()
+        val fixture = Fixture(
+            backgroundScope,
+            tx,
+            rx,
+            radioModel = RadioControlSettings.MODEL_YAESU_FT857
+        )
+        fixture.service.connectRadios()
+        fixture.startTracking()
+        runCurrent()
+
+        val lease = fixture.service.beginTransmit(fixture.request(generation = 8L))
+        fixture.service.confirmTransmitReady(lease)
+        val txWritesWhileKeyed = tx.operations.count { it.startsWith("frequency:") }
+        val rxWritesBeforeCycle = rx.operations.count { it.startsWith("frequency:") }
+        val positionSamplesBeforeCycle = fixture.satelliteRepo.requestedTimes.size
+
+        advanceTimeBy(1_100L)
+        runCurrent()
+        assertEquals(txWritesWhileKeyed, tx.operations.count { it.startsWith("frequency:") })
+        assertTrue(rx.operations.count { it.startsWith("frequency:") } > rxWritesBeforeCycle)
+        assertTrue(fixture.satelliteRepo.requestedTimes.size > positionSamplesBeforeCycle)
+        assertEquals(PttState.ON, fixture.service.state.value.pttState)
+
+        fixture.service.endTransmit(lease)
+        advanceTimeBy(1_100L)
+        runCurrent()
+        assertTrue(tx.operations.count { it.startsWith("frequency:") } > txWritesWhileKeyed)
+        assertEquals(PttState.OFF, fixture.service.state.value.pttState)
+        fixture.close()
+    }
+
+    @Test
     fun splitTrackingAndFt4LeaseShareOneRadioWithoutFrequencyCollision() = runTest {
         val radio = FakeRadioController()
         val fixture = Fixture(
@@ -243,8 +296,8 @@ class RadioTrackingServiceTest {
 
         advanceTimeBy(1_100L)
         runCurrent()
-        assertEquals(txUpdatesAfterPrepare, radio.operations.count { it.startsWith("tx-frequency:") })
-        assertEquals(rxUpdatesBeforePtt, radio.operations.count { it.startsWith("rx-frequency:") })
+        assertTrue(radio.operations.count { it.startsWith("tx-frequency:") } > txUpdatesAfterPrepare)
+        assertTrue(radio.operations.count { it.startsWith("rx-frequency:") } > rxUpdatesBeforePtt)
 
         fixture.service.endTransmit(lease)
         assertTrue(radio.operations.indexOf("ptt:on") < radio.operations.lastIndexOf("ptt:off"))
@@ -499,7 +552,7 @@ class RadioTrackingServiceTest {
     }
 
     @Test
-    fun suspendedSplitReadCannotOverlapTransmitPreparation() = runTest {
+    fun suspendedSplitReadCannotOverlapTransmitPreparationAndTrackingResumesDuringPtt() = runTest {
         val tx = FakeRadioController()
         val fixture = Fixture(backgroundScope, tx, FakeRadioController(),
             radioModel = RadioControlSettings.MODEL_ICOM_IC705, splitMode = true)
@@ -518,12 +571,10 @@ class RadioTrackingServiceTest {
         release.complete(Unit)
         val lease = preparing.await()
         fixture.service.confirmTransmitReady(lease)
-        val frozenRx = fixture.service.state.value.rxFrequencyHz
         val operationCount = tx.operations.size
         advanceTimeBy(2_100L)
         runCurrent()
-        assertEquals(operationCount, tx.operations.size)
-        assertEquals(frozenRx, fixture.service.state.value.rxFrequencyHz)
+        assertTrue(tx.operations.size > operationCount)
         fixture.service.endTransmit(lease)
         fixture.close()
     }
@@ -584,8 +635,11 @@ class RadioTrackingServiceTest {
         advanceTimeBy(1_000L)
         runCurrent()
         started.await()
-        fixture.service.endTransmit(lease)
+        val ending = async { fixture.service.endTransmit(lease) }
+        runCurrent()
+        assertFalse(ending.isCompleted)
         release.complete(Unit)
+        ending.await()
         val commands = tx.operations.count { it.startsWith("frequency:") }
         advanceTimeBy(2_100L)
         runCurrent()

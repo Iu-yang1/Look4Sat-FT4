@@ -76,9 +76,6 @@ class RadioCommandActor(
         synchronized(commandStateLock) {
             pttGeneration.incrementAndGet()
             urgentPending++
-            val reason = CancellationException("Radio command was preempted by PTT OFF")
-            activePttOn?.cancel(reason)
-            activeInterruptible?.cancel(reason)
         }
         return enqueue(Kind.PTT_OFF, PTT_COMMAND_TIMEOUT_MILLIS, operation, urgent = true)
     }
@@ -86,7 +83,6 @@ class RadioCommandActor(
     fun invalidatePendingPttOn() {
         synchronized(commandStateLock) {
             pttGeneration.incrementAndGet()
-            activePttOn?.cancel(CancellationException("PTT ON command was invalidated"))
         }
     }
 

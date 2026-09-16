@@ -18,6 +18,7 @@ import android.media.AudioTimestamp
 import android.media.AudioTrack
 import android.os.Build
 import android.os.SystemClock
+import android.util.Log
 import com.rtbishop.look4sat.core.domain.ft4.Ft4TransmitState
 import com.rtbishop.look4sat.core.domain.ft4.Ft4PlaybackTiming
 import com.rtbishop.look4sat.core.domain.ft4.Ft4TransmissionRequest
@@ -28,6 +29,7 @@ import com.rtbishop.look4sat.core.domain.ft4.IFt4Service
 import com.rtbishop.look4sat.core.domain.ft4.IFt4TransmitCoordinator
 import com.rtbishop.look4sat.core.domain.ft4.TxLease
 import com.rtbishop.look4sat.core.domain.ft4.TxRequest
+import com.rtbishop.look4sat.core.domain.time.ClockSnapshot
 import com.rtbishop.look4sat.core.domain.time.IDisciplinedClock
 import kotlin.coroutines.coroutineContext
 import kotlinx.coroutines.CancellationException
@@ -61,6 +63,9 @@ class Ft4AudioTransmitter(
     override val state: StateFlow<Ft4TransmitState> = mutableState.asStateFlow()
     override val playbackTiming: StateFlow<Ft4PlaybackTiming> = mutablePlaybackTiming.asStateFlow()
 
+    override fun recommendedSchedulingLeadMillis(): Long =
+        coordinator.recommendedPrepareLeadMillis() + SCHEDULING_MARGIN_MILLIS
+
     override suspend fun transmit(request: Ft4TransmissionRequest) = executionMutex.withLock {
         check(activeJob == null) { "FT4 transmitter is already active" }
         activeJob = coroutineContext[Job]
@@ -70,6 +75,13 @@ class Ft4AudioTransmitter(
             require(request.audioFrequencyHz in 0f..3_000f) { "FT4 audio frequency is outside 0-3000 Hz" }
             require(request.volume in 0f..1f) { "FT4 output volume is outside 0-1" }
             checkAutomaticClock(request)
+            val timing = TransmissionTiming.from(clock.snapshot(), request.slotStartUtcMillis)
+            val prepareLeadMillis = coordinator.recommendedPrepareLeadMillis()
+            Log.i(
+                TAG,
+                "Scheduled slot=${request.slotStartUtcMillis}, lead=${prepareLeadMillis}ms, " +
+                    "anchorUtc=${timing.anchorUtcMillis}, anchorMono=${timing.anchorMonotonicNanos}"
+            )
             mutableState.value = Ft4TransmitState.Preparing(request.message, request.slotStartUtcMillis)
             notifyProgress(request, Ft4TransmissionResult.PREPARING)
             val waveform = ft4Service.generateWaveform(
@@ -82,9 +94,10 @@ class Ft4AudioTransmitter(
             output = outputFactory.create(OUTPUT_SAMPLE_RATE, request.volume)
             output.prepare(waveform)
 
-            waitUntil(request, request.slotStartUtcMillis - coordinator.recommendedPrepareLeadMillis())
+            waitUntil(request, timing.before(prepareLeadMillis))
             checkCurrentIntent(request)
             checkAutomaticClock(request)
+            checkNotMissed(timing, "before radio preparation")
             lease = coordinator.beginTransmit(
                 TxRequest(
                     sessionGeneration = request.sessionGeneration,
@@ -97,27 +110,33 @@ class Ft4AudioTransmitter(
             )
             checkCurrentIntent(request)
             checkAutomaticClock(request)
+            checkNotMissed(timing, "before PTT")
             coordinator.confirmTransmitReady(lease)
-            waitUntil(request, request.slotStartUtcMillis)
+            Log.i(TAG, "PTT confirmed with ${timing.remainingMillis(clock.snapshot())}ms remaining")
+            waitUntil(request, timing)
             checkCurrentIntent(request)
             checkAutomaticClock(request)
-            check(clock.nowMillis() <= request.slotStartUtcMillis + MAX_START_LATENESS_MILLIS) {
-                "FT4 transmit slot was missed"
-            }
+            checkNotMissed(timing, "before audio playback")
             mutableState.value = Ft4TransmitState.Transmitting(request.message, lease)
             notifyProgress(request, Ft4TransmissionResult.STARTED)
-            val playCallErrorMillis = clock.nowMillis() - request.slotStartUtcMillis
+            val playCallErrorMillis = -timing.remainingMillis(clock.snapshot())
             val playback = output.play(waveform)
             mutablePlaybackTiming.value = Ft4PlaybackTiming(
                 requestedSlotUtcMillis = request.slotStartUtcMillis,
                 startErrorMillis = playback.startDelayMillis?.plus(playCallErrorMillis),
                 underrunCount = playback.underrunCount
             )
+            Log.i(
+                TAG,
+                "Playback completed: callError=${playCallErrorMillis}ms, " +
+                    "startDelay=${playback.startDelayMillis}ms, underruns=${playback.underrunCount}"
+            )
             notifyProgress(request, Ft4TransmissionResult.COMPLETED)
         } catch (cancelled: CancellationException) {
             notifyProgress(request, Ft4TransmissionResult.FAILED, cancelled.message ?: "Cancelled")
             throw cancelled
         } catch (error: Throwable) {
+            Log.e(TAG, "Transmit failed: ${error.message}", error)
             mutableState.value = Ft4TransmitState.Failed(error.message ?: error.javaClass.simpleName)
             notifyProgress(request, Ft4TransmissionResult.FAILED, error.message ?: error.javaClass.simpleName)
             throw error
@@ -149,11 +168,11 @@ class Ft4AudioTransmitter(
         mutableState.value = Ft4TransmitState.Idle
     }
 
-    private suspend fun waitUntil(request: Ft4TransmissionRequest, utcMillis: Long) {
+    private suspend fun waitUntil(request: Ft4TransmissionRequest, timing: TransmissionTiming) {
         while (true) {
             currentCoroutineContext().ensureActive()
             checkAutomaticClock(request)
-            val remaining = utcMillis - clock.nowMillis()
+            val remaining = timing.remainingMillis(clock.snapshot())
             if (remaining <= 0L) return
             mutableState.value = Ft4TransmitState.Waiting(request.message, remaining)
             delay(remaining.coerceAtMost(WAIT_UPDATE_MILLIS))
@@ -165,6 +184,13 @@ class Ft4AudioTransmitter(
             check(clock.automaticFt4TransmitAllowed()) {
                 clock.automaticFt4TransmitBlockReason()
             }
+        }
+    }
+
+    private fun checkNotMissed(timing: TransmissionTiming, phase: String) {
+        val latenessMillis = -timing.remainingMillis(clock.snapshot())
+        check(latenessMillis <= MAX_START_LATENESS_MILLIS) {
+            "FT4 transmit slot was missed $phase by ${latenessMillis}ms"
         }
     }
 
@@ -183,11 +209,40 @@ class Ft4AudioTransmitter(
     }
 
     private companion object {
+        const val TAG = "Ft4AudioTransmitter"
         const val OUTPUT_SAMPLE_RATE = 48_000
         const val EXPECTED_WAVEFORM_SAMPLES = 241_920
         const val WAVEFORM_DURATION_MILLIS = 5_040L
         const val MAX_START_LATENESS_MILLIS = 150L
         const val WAIT_UPDATE_MILLIS = 100L
+        const val SCHEDULING_MARGIN_MILLIS = 500L
+    }
+}
+
+private data class TransmissionTiming(
+    val anchorUtcMillis: Long,
+    val anchorMonotonicNanos: Long,
+    val targetMonotonicNanos: Long
+) {
+    fun before(milliseconds: Long) = copy(
+        targetMonotonicNanos = targetMonotonicNanos - milliseconds * NANOS_PER_MILLISECOND
+    )
+
+    fun remainingMillis(snapshot: ClockSnapshot): Long =
+        (targetMonotonicNanos - snapshot.monotonicNanos) / NANOS_PER_MILLISECOND
+
+    companion object {
+        private const val NANOS_PER_MILLISECOND = 1_000_000L
+
+        fun from(
+            snapshot: ClockSnapshot,
+            targetUtcMillis: Long
+        ) = TransmissionTiming(
+            anchorUtcMillis = snapshot.utcMillis,
+            anchorMonotonicNanos = snapshot.monotonicNanos,
+            targetMonotonicNanos = snapshot.monotonicNanos +
+                (targetUtcMillis - snapshot.utcMillis) * NANOS_PER_MILLISECOND
+        )
     }
 }
 
@@ -222,52 +277,40 @@ private class AndroidFt4AudioOutput(
     private var focusRequest: AudioFocusRequest? = null
     private var focusHeld = false
     private var preparedCount = 0
-    private var usingFloat = false
 
     override suspend fun prepare(samples: FloatArray) = withContext(Dispatchers.IO) {
         check(requestAudioFocus()) { "Audio focus was denied" }
-        val floatTrack = buildTrack(AudioFormat.ENCODING_PCM_FLOAT)
+        // The entire 5.04-second waveform is ready before PTT. A static buffer
+        // avoids streaming starvation and an underrun at the end of the clip.
+        val floatTrack = buildTrack(AudioFormat.ENCODING_PCM_FLOAT, samples.size)
         if (floatTrack != null) {
             track = floatTrack
-            usingFloat = true
-            preparedCount = writeFloatChunk(floatTrack, samples, 0, PRELOAD_SAMPLES)
+            preparedCount = writeFloatChunk(floatTrack, samples, 0, samples.size)
         } else {
-            val pcm16Track = checkNotNull(buildTrack(AudioFormat.ENCODING_PCM_16BIT)) {
+            val pcm16Track = checkNotNull(buildTrack(AudioFormat.ENCODING_PCM_16BIT, samples.size)) {
                 "AudioTrack could not be initialized"
             }
             track = pcm16Track
-            usingFloat = false
-            preparedCount = writePcm16Chunk(pcm16Track, samples, 0, PRELOAD_SAMPLES)
+            preparedCount = writePcm16Chunk(pcm16Track, samples, 0, samples.size)
         }
-        check(preparedCount > 0) { "AudioTrack preload failed" }
+        check(preparedCount == samples.size) { "AudioTrack preload incomplete: $preparedCount/${samples.size}" }
     }
 
     override suspend fun play(samples: FloatArray): Ft4AudioPlaybackResult = withContext(Dispatchers.IO) {
         if (track == null) prepare(samples)
         val audioTrack = checkNotNull(track)
+        check(preparedCount == samples.size) { "AudioTrack waveform was not fully prepared" }
         val playRequestNanos = System.nanoTime()
         audioTrack.play()
-        var offset = preparedCount
-        while (offset < samples.size) {
-            currentCoroutineContext().ensureActive()
-            val written = if (usingFloat) {
-                writeFloatChunk(audioTrack, samples, offset, WRITE_CHUNK_SAMPLES)
-            } else {
-                writePcm16Chunk(audioTrack, samples, offset, WRITE_CHUNK_SAMPLES)
-            }
-            check(written > 0) { "AudioTrack write failed: $written" }
-            offset += written
-        }
         val startDelayMillis = waitForPlayback(audioTrack, samples.size, playRequestNanos)
         val underruns = audioTrack.underrunCount
         check(underruns == 0) { "AudioTrack underrun" }
         Ft4AudioPlaybackResult(startDelayMillis, underruns)
     }
 
-    private fun buildTrack(encoding: Int): AudioTrack? {
+    private fun buildTrack(encoding: Int, sampleCount: Int): AudioTrack? {
         val channelMask = AudioFormat.CHANNEL_OUT_MONO
-        val minimum = AudioTrack.getMinBufferSize(sampleRate, channelMask, encoding)
-        if (minimum <= 0) return null
+        val bytesPerSample = if (encoding == AudioFormat.ENCODING_PCM_FLOAT) 4 else 2
         val format = AudioFormat.Builder()
             .setEncoding(encoding)
             .setSampleRate(sampleRate)
@@ -277,11 +320,11 @@ private class AndroidFt4AudioOutput(
             AudioTrack.Builder()
                 .setAudioAttributes(attributes)
                 .setAudioFormat(format)
-                .setTransferMode(AudioTrack.MODE_STREAM)
-                .setBufferSizeInBytes(maxOf(minimum * 2, sampleRate / 2))
+                .setTransferMode(AudioTrack.MODE_STATIC)
+                .setBufferSizeInBytes(sampleCount * bytesPerSample)
                 .build()
         }.getOrNull()
-        if (candidate?.state != AudioTrack.STATE_INITIALIZED) {
+        if (candidate == null || candidate.state == AudioTrack.STATE_UNINITIALIZED) {
             candidate?.release()
             return null
         }
@@ -314,7 +357,10 @@ private class AndroidFt4AudioOutput(
             check(SystemClock.elapsedRealtime() < deadline) { "AudioTrack playback timed out" }
             if (startDelayMillis == null && audioTrack.getTimestamp(timestamp)) {
                 val firstFrameNanos = timestamp.nanoTime - timestamp.framePosition * 1_000_000_000L / sampleRate
-                startDelayMillis = (firstFrameNanos - playRequestNanos) / 1_000_000.0
+                // Some Android audio HALs report a timestamp just before play() while
+                // priming a static buffer. Playback cannot physically start before the call.
+                startDelayMillis = ((firstFrameNanos - playRequestNanos) / 1_000_000.0)
+                    .coerceAtLeast(0.0)
             }
             delay(PLAYBACK_POLL_MILLIS)
         }
@@ -359,12 +405,9 @@ private class AndroidFt4AudioOutput(
         focusRequest = null
         focusHeld = false
         preparedCount = 0
-        usingFloat = false
     }
 
     private companion object {
-        const val PRELOAD_SAMPLES = 4_096
-        const val WRITE_CHUNK_SAMPLES = 2_048
         const val PLAYBACK_POLL_MILLIS = 10L
         const val PLAYBACK_DRAIN_GRACE_MILLIS = 1_000L
     }

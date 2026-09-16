@@ -332,6 +332,24 @@ class Ic705ControllerTest {
         assertTrue(commands.contains("07:01"))
         assertFalse(commands.any { it.startsWith("25:") || it.startsWith("26:") })
     }
+
+    @Test
+    fun ic910RejectsModesOutsideItsDocumentedSsbCwFmSet() = runTest {
+        val transport = ScriptedCivTransport(civAddress = 0x60)
+        val controller = Ic705Controller(
+            bluetoothManager = null,
+            deviceAddress = "USB",
+            civAddress = IcomCivProtocol.ADDR_IC910,
+            transport = transport,
+            variant = IcomCivVariant.IC910
+        )
+        assertTrue(controller.connect())
+        transport.payloads.clear()
+
+        assertFalse(controller.setMode("AM"))
+        assertFalse(controller.setSplitModes(rxMode = "USB", txMode = "RTTY"))
+        assertTrue(transport.payloads.isEmpty())
+    }
 }
 
 private class ScriptedCivTransport(

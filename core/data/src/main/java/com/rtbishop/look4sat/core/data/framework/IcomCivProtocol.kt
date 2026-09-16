@@ -187,7 +187,7 @@ object IcomCivProtocol {
 
     /**
      * Set selected-VFO frequency via CMD 0x25 sub 0x00.
-     * This updates whichever VFO is currently active (RX or TX after split).
+     * Selection is controlled by CMD 0x07 and does not change when PTT is keyed.
      */
     fun buildSetWorkingFreqCommand(frequencyHz: Long): ByteArray {
         return frame(CMD_SELECTED_VFO_FREQ, SUB_SELECTED_VFO, *encodeFrequencyBcd(frequencyHz))
@@ -195,9 +195,8 @@ object IcomCivProtocol {
 
     /**
      * Set unselected-VFO frequency via CMD 0x25 sub 0x01.
-     * In split mode while PTT is pressed the IC-705 makes VFO-B active, so
-     * this command targets VFO-A (the RX VFO) — and vice-versa when in RX.
-     * Use this to update the TX VFO when PTT is on.
+     * With VFO-A selected for receive, this targets VFO-B for transmit even
+     * while PTT is keyed.
      */
     fun buildSetUnselectedVfoFreqCommand(frequencyHz: Long): ByteArray {
         return frame(CMD_SELECTED_VFO_FREQ, SUB_UNSELECTED_VFO, *encodeFrequencyBcd(frequencyHz))

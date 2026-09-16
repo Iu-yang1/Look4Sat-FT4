@@ -85,7 +85,7 @@ class Ic705Controller(
             // is in memory-channel mode. Safe to send regardless of current state.
             Log.i(tag, "Connected to $deviceAddress — entering VFO mode")
             val vfoCmd = IcomCivProtocol.buildEnterVfoModeCommand()
-            Log.d(tag, "CMD enterVfoMode → ${IcomCivProtocol.toHex(vfoCmd)}")
+            Log.d(tag, "CMD enterVfoMode → ${commandHex(vfoCmd)}")
             val ready = ioMutex.withLock { sendAndWaitAck(vfoCmd) } && readFrequencyAndMode() != null
             if (!ready) {
                 Log.e(tag, "Connected transport did not return a valid CI-V acknowledgement")
@@ -129,25 +129,29 @@ class Ic705Controller(
         Log.d(tag, "setFrequency: ${frequencyHz}Hz")
         ioMutex.withLock {
             val cmd = IcomCivProtocol.buildSetFreqCommand(frequencyHz)
-            Log.d(tag, "CMD setFreq → ${IcomCivProtocol.toHex(cmd)}")
+            Log.d(tag, "CMD setFreq → ${commandHex(cmd)}")
             sendAndWaitAck(cmd) && reenableIc705ToneLocked()
         }
     }
 
     override suspend fun setMode(mode: String): Boolean = withContext(Dispatchers.IO) {
+        if (!isModeSupported(mode)) {
+            Log.w(tag, "setMode: mode '$mode' is not supported by $variant")
+            return@withContext false
+        }
         val cmd = IcomCivProtocol.buildSetModeCommand(mode) ?: run {
             Log.w(tag, "setMode: unknown mode '$mode'")
             return@withContext false
         }
         Log.d(tag, "setMode: $mode")
-        Log.d(tag, "CMD setMode → ${IcomCivProtocol.toHex(cmd)}")
+        Log.d(tag, "CMD setMode → ${commandHex(cmd)}")
         ioMutex.withLock { sendAndWaitAck(cmd) }
     }
 
     override suspend fun setCtcssMode(enabled: Boolean): Boolean = withContext(Dispatchers.IO) {
         Log.d(tag, "setCtcssMode: $enabled")
         val cmd = IcomCivProtocol.buildCtcssModeCommand(enabled)
-        Log.d(tag, "CMD ctcssMode → ${IcomCivProtocol.toHex(cmd)}")
+        Log.d(tag, "CMD ctcssMode → ${commandHex(cmd)}")
         ioMutex.withLock {
             val acknowledged = sendAndWaitAck(cmd)
             if (acknowledged) ctcssModeEnabled = enabled
@@ -158,14 +162,14 @@ class Ic705Controller(
     override suspend fun setCtcssTone(toneHz: Double): Boolean = withContext(Dispatchers.IO) {
         Log.d(tag, "setCtcssTone: ${toneHz}Hz")
         val cmd = IcomCivProtocol.buildSetCtcssToneCommand(toneHz)
-        Log.d(tag, "CMD ctcssTone → ${IcomCivProtocol.toHex(cmd)}")
+        Log.d(tag, "CMD ctcssTone → ${commandHex(cmd)}")
         ioMutex.withLock { sendAndWaitAck(cmd) }
     }
 
     override suspend fun readFrequencyAndMode(): Pair<Long, String>? = withContext(Dispatchers.IO) {
         ioMutex.withLock {
             val frequencyCommand = IcomCivProtocol.buildReadFreqCommand()
-            Log.d(tag, "CMD readFreq → ${IcomCivProtocol.toHex(frequencyCommand)}")
+            Log.d(tag, "CMD readFreq → ${commandHex(frequencyCommand)}")
             val frequencyPayload = sendAndReadResponse(
                 frequencyCommand,
                 IcomCivProtocol.CMD_READ_FREQ
@@ -174,7 +178,7 @@ class Ic705Controller(
                 ?: return@withLock null
 
             val modeCommand = IcomCivProtocol.buildReadModeCommand()
-            Log.d(tag, "CMD readMode → ${IcomCivProtocol.toHex(modeCommand)}")
+            Log.d(tag, "CMD readMode → ${commandHex(modeCommand)}")
             val modePayload = sendAndReadResponse(
                 modeCommand,
                 IcomCivProtocol.CMD_READ_MODE
@@ -204,7 +208,7 @@ class Ic705Controller(
     /** Select VFO-A (main/RX) or VFO-B (sub/TX). */
     override suspend fun setVfo(vfoA: Boolean): Boolean = withContext(Dispatchers.IO) {
         val cmd = selectVfoCommand(vfoA)
-        Log.d(tag, "CMD selectVFO${if (vfoA) "A" else "B"} → ${IcomCivProtocol.toHex(cmd)}")
+        Log.d(tag, "CMD selectVFO${if (vfoA) "A" else "B"} → ${commandHex(cmd)}")
         ioMutex.withLock { sendAndWaitAck(cmd) }
     }
 
@@ -232,6 +236,10 @@ class Ic705Controller(
 
     /** Configure VFO-A/RX and VFO-B/TX modes without changing the active RX VFO. */
     override suspend fun setSplitModes(rxMode: String?, txMode: String?): Boolean = withContext(Dispatchers.IO) {
+        if (rxMode?.let(::isModeSupported) == false || txMode?.let(::isModeSupported) == false) {
+            Log.w(tag, "setSplitModes: mode is not supported by $variant: rx=$rxMode tx=$txMode")
+            return@withContext false
+        }
         if (usesManualVfoSelection) {
             return@withContext setManualVfoModes(rxMode, txMode)
         }
@@ -283,9 +291,8 @@ class Ic705Controller(
     }
 
     /**
-     * Set the frequency of the **currently active** VFO (CMD 0x25 sub 0x00).
-     * In split mode the radio automatically switches active VFO on PTT, so
-     * always writing to the active VFO is the correct strategy.
+     * Set the selected RX VFO frequency (CMD 0x25 sub 0x00). PTT does not
+     * change which VFO is selected, so this remains the RX target while keyed.
      */
     override suspend fun setWorkingFrequency(frequencyHz: Long): Boolean = withContext(Dispatchers.IO) {
         if (usesManualVfoSelection) {
@@ -296,7 +303,7 @@ class Ic705Controller(
         }
         Log.d(tag, "setWorkingFrequency (0x25/00): ${frequencyHz}Hz")
         val cmd = IcomCivProtocol.buildSetWorkingFreqCommand(frequencyHz)
-        Log.d(tag, "CMD setWorkingFreq → ${IcomCivProtocol.toHex(cmd)}")
+        Log.d(tag, "CMD setWorkingFreq → ${commandHex(cmd)}")
         ioMutex.withLock { sendAndWaitAck(cmd) }
     }
 
@@ -319,7 +326,7 @@ class Ic705Controller(
         }
         Log.d(tag, "setTxVfoFrequency (0x25/01): ${frequencyHz}Hz")
         val cmd = IcomCivProtocol.buildSetUnselectedVfoFreqCommand(frequencyHz)
-        Log.d(tag, "CMD setTxVfoFreq → ${IcomCivProtocol.toHex(cmd)}")
+        Log.d(tag, "CMD setTxVfoFreq → ${commandHex(cmd)}")
         ioMutex.withLock {
             if (!sendAndWaitAck(cmd)) return@withLock false
             if (variant != IcomCivVariant.IC705 || !ctcssModeEnabled) return@withLock true
@@ -351,7 +358,7 @@ class Ic705Controller(
         }
         ioMutex.withLock {
             val cmd = IcomCivProtocol.buildReadWorkingFreqCommand()
-            Log.d(tag, "CMD readWorkingFreq → ${IcomCivProtocol.toHex(cmd)}")
+            Log.d(tag, "CMD readWorkingFreq → ${commandHex(cmd)}")
             val payload = sendAndReadResponse(cmd, IcomCivProtocol.CMD_SELECTED_VFO_FREQ) {
                 it.firstOrNull() == IcomCivProtocol.SUB_SELECTED_VFO
             } ?: return@withContext null
@@ -386,7 +393,7 @@ class Ic705Controller(
         }
         ioMutex.withLock {
             val cmd = IcomCivProtocol.buildReadTxVfoFreqCommand()
-            Log.d(tag, "CMD readTxVfoFreq → ${IcomCivProtocol.toHex(cmd)}")
+            Log.d(tag, "CMD readTxVfoFreq → ${commandHex(cmd)}")
             val payload = sendAndReadResponse(cmd, IcomCivProtocol.CMD_SELECTED_VFO_FREQ) {
                 it.firstOrNull() == IcomCivProtocol.SUB_UNSELECTED_VFO
             } ?: return@withContext null
@@ -445,7 +452,7 @@ class Ic705Controller(
 
     private suspend fun setPttAndConfirm(enabled: Boolean): Boolean {
         val command = IcomCivProtocol.buildPttCommand(enabled)
-        Log.d(tag, "CMD PTT ${if (enabled) "ON" else "OFF"} → ${IcomCivProtocol.toHex(command)}")
+        Log.d(tag, "CMD PTT ${if (enabled) "ON" else "OFF"} → ${commandHex(command)}")
         if (!sendAndWaitAck(command)) return false
         val response = sendAndReadResponse(
             IcomCivProtocol.buildReadPttCommand(),
@@ -475,6 +482,12 @@ class Ic705Controller(
 
     private fun normalizedMode(mode: String): String =
         if (mode.equals("AFSK", ignoreCase = true)) "FM" else mode.uppercase(Locale.US)
+
+    private fun isModeSupported(mode: String): Boolean {
+        val normalized = normalizedMode(mode)
+        return normalized in IcomCivProtocol.MODE_TO_BYTE &&
+            (variant != IcomCivVariant.IC910 || normalized in IC910_MODES)
+    }
 
     private fun selectVfoCommand(vfoA: Boolean): ByteArray = if (!usesDedicatedSatelliteMode) {
         if (vfoA) {
@@ -517,7 +530,7 @@ class Ic705Controller(
 
     private suspend fun setOrdinarySplitLocked(enabled: Boolean): Boolean {
         val command = IcomCivProtocol.buildSplitModeCommand(enabled)
-        Log.d(tag, "CMD split ${if (enabled) "ON" else "OFF"} → ${IcomCivProtocol.toHex(command)}")
+        Log.d(tag, "CMD split ${if (enabled) "ON" else "OFF"} → ${commandHex(command)}")
         return sendAndWaitAck(command)
     }
 
@@ -537,7 +550,7 @@ class Ic705Controller(
             writeCommand = IcomCivProtocol.buildIc910SatelliteModeCommand(enabled)
             readCommand = IcomCivProtocol.buildReadIc910SatelliteModeCommand()
         }
-        Log.d(tag, "CMD satellite ${if (enabled) "ON" else "OFF"} → ${IcomCivProtocol.toHex(writeCommand)}")
+        Log.d(tag, "CMD satellite ${if (enabled) "ON" else "OFF"} → ${commandHex(writeCommand)}")
         if (!sendAndWaitAck(writeCommand)) return false
         val payload = sendAndReadResponse(readCommand, responseCommand) {
             it.firstOrNull() == responseSubcommand
@@ -565,7 +578,7 @@ class Ic705Controller(
     private suspend fun reenableIc705ToneLocked(): Boolean {
         if (variant != IcomCivVariant.IC705 || !ctcssModeEnabled) return true
         val command = IcomCivProtocol.buildCtcssModeCommand(enabled = true)
-        Log.d(tag, "CMD restore CTCSS after frequency change → ${IcomCivProtocol.toHex(command)}")
+        Log.d(tag, "CMD restore CTCSS after frequency change → ${commandHex(command)}")
         return sendAndWaitAck(command)
     }
 
@@ -603,14 +616,7 @@ class Ic705Controller(
 
     private suspend fun write(bytes: ByteArray): Boolean {
         return try {
-            val addressed = bytes.copyOf().also { command ->
-                if (command.size >= 4 && command[0] == IcomCivProtocol.PREAMBLE &&
-                    command[1] == IcomCivProtocol.PREAMBLE
-                ) {
-                    command[2] = civAddress
-                }
-            }
-            transport.write(addressed)
+            transport.write(addressCommand(bytes))
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (e: Exception) {
@@ -620,7 +626,19 @@ class Ic705Controller(
         }
     }
 
+    private fun commandHex(bytes: ByteArray): String =
+        IcomCivProtocol.toHex(addressCommand(bytes))
+
+    private fun addressCommand(bytes: ByteArray): ByteArray = bytes.copyOf().also { command ->
+        if (command.size >= 4 && command[0] == IcomCivProtocol.PREAMBLE &&
+            command[1] == IcomCivProtocol.PREAMBLE
+        ) {
+            command[2] = civAddress
+        }
+    }
+
     private companion object {
+        val IC910_MODES = setOf("LSB", "USB", "CW", "FM")
         const val PTT_OFF_TIMEOUT_MS = 1_500L
         const val DUPLEX_OFF_TIMEOUT_MS = 1_500L
         const val MAX_READ_CHUNK = 4_096

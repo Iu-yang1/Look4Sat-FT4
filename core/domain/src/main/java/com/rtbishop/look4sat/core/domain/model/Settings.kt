@@ -99,7 +99,11 @@ data class RadioControlSettings(
     val splitMode: Boolean = false,
     val catTransport: String = TRANSPORT_BLUETOOTH,
     /** Dedicated satellite MAIN/SUB when supported; ordinary VFO-A/B split otherwise. */
-    val duplexMode: String = DUPLEX_MODE_SPLIT
+    val duplexMode: String = DUPLEX_MODE_SPLIT,
+    /** Optional override for the radio's default CI-V address (0x00..0xFF). */
+    val civAddress: Int? = null,
+    /** TCP payload protocol: direct binary CAT or Hamlib rigctld text commands. */
+    val tcpProtocol: String = TCP_PROTOCOL_RAW_CAT
 ) {
     companion object {
         const val MODEL_YAESU_FT817 = "Yaesu FT-817/818"
@@ -110,6 +114,8 @@ data class RadioControlSettings(
         const val TRANSPORT_BLUETOOTH = "BLUETOOTH"
         const val TRANSPORT_USB = "USB"
         const val TRANSPORT_TCP = "TCP"
+        const val TCP_PROTOCOL_RAW_CAT = "RAW_CAT"
+        const val TCP_PROTOCOL_HAMLIB = "HAMLIB_RIGCTLD"
         const val DUPLEX_MODE_SPLIT = "SPLIT"
         const val DUPLEX_MODE_SATELLITE = "SATELLITE"
 
@@ -123,12 +129,53 @@ data class RadioControlSettings(
         val ICOM_RADIOS = setOf(MODEL_ICOM_IC705, MODEL_ICOM_IC9700, MODEL_ICOM_IC910)
         val SATELLITE_MODE_RADIOS = setOf(MODEL_ICOM_IC9700, MODEL_ICOM_IC910)
         val SUPPORTED_TRANSPORTS = listOf(TRANSPORT_BLUETOOTH, TRANSPORT_USB, TRANSPORT_TCP)
+        val SUPPORTED_TCP_PROTOCOLS = listOf(TCP_PROTOCOL_RAW_CAT, TCP_PROTOCOL_HAMLIB)
 
         /** Baud rates available for Yaesu radios. */
         val BAUD_RATES_YAESU = listOf(4800, 9600, 38400)
-        /** Baud rates available for modern Icom CI-V USB/Bluetooth interfaces. */
-        val BAUD_RATES_ICOM  = listOf(4800, 9600, 19200, 38400, 57600, 115200)
+        /** IC-705 CI-V rates documented by Hamlib (8N1). */
+        val BAUD_RATES_IC705 = listOf(4800, 9600, 19200)
+        /** IC-9700 CI-V rates documented by Hamlib (8N1). */
+        val BAUD_RATES_IC9700 = listOf(4800, 9600, 19200, 38400)
         /** Hamlib documents the IC-910 family serial interface as 300–19200 baud. */
         val BAUD_RATES_IC910 = listOf(9600, 19200, 4800, 1200, 300)
     }
+}
+
+fun supportedRadioBaudRates(model: String): List<Int> = when (model) {
+    RadioControlSettings.MODEL_ICOM_IC705 -> RadioControlSettings.BAUD_RATES_IC705
+    RadioControlSettings.MODEL_ICOM_IC9700 -> RadioControlSettings.BAUD_RATES_IC9700
+    RadioControlSettings.MODEL_ICOM_IC910 -> RadioControlSettings.BAUD_RATES_IC910
+    else -> RadioControlSettings.BAUD_RATES_YAESU
+}
+
+data class RadioTcpEndpoint(val host: String, val port: Int)
+
+/** Parses host:port, requiring brackets around IPv6 so USB selectors cannot be mistaken for hosts. */
+fun parseRadioTcpEndpoint(value: String): RadioTcpEndpoint? {
+    val input = value.trim()
+    if (input.isEmpty()) return null
+    val host: String
+    val portText: String
+    if (input.startsWith('[')) {
+        val closingBracket = input.indexOf(']')
+        if (
+            closingBracket <= 1 ||
+            closingBracket + 1 >= input.length ||
+            input[closingBracket + 1] != ':' ||
+            input.indexOf('[', startIndex = 1) >= 0 ||
+            input.indexOf(']', startIndex = closingBracket + 1) >= 0
+        ) return null
+        host = input.substring(1, closingBracket)
+        portText = input.substring(closingBracket + 2)
+    } else {
+        if (input.count { it == ':' } != 1) return null
+        val separator = input.indexOf(':')
+        if (separator <= 0 || separator == input.lastIndex) return null
+        host = input.substring(0, separator).trim()
+        portText = input.substring(separator + 1)
+    }
+    val port = portText.toIntOrNull()?.takeIf { it in 1..65_535 } ?: return null
+    if (host.isBlank() || host.any(Char::isWhitespace)) return null
+    return RadioTcpEndpoint(host, port)
 }

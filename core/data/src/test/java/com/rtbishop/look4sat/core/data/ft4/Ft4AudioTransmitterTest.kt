@@ -65,6 +65,27 @@ class Ft4AudioTransmitterTest {
     }
 
     @Test
+    fun preloadFailureNeverKeysPttAndClosesOutput() = runTest {
+        val events = mutableListOf<String>()
+        val progress = mutableListOf<Ft4TransmissionProgress>()
+        val transmitter = Ft4AudioTransmitter(
+            context = null,
+            ft4Service = FakeFt4Service(events),
+            coordinator = FakeCoordinator(events),
+            clock = FakeClock({ testScheduler.currentTime }, allowed = true),
+            outputFactory = Ft4AudioOutputFactory { _, _ -> FakeOutput(events, failPrepare = true) }
+        )
+
+        val failure = runCatching {
+            transmitter.transmit(request(1_000L, automatic = false).copy(onProgress = progress::add))
+        }.exceptionOrNull()
+
+        assertEquals("preload failed", failure?.message)
+        assertEquals(listOf("generate", "output", "prepare", "close", "emergency"), events)
+        assertEquals(Ft4TransmissionResult.FAILED, progress.last().result)
+    }
+
+    @Test
     fun playbackFailureStillEndsLease() = runTest {
         val events = mutableListOf<String>()
         val progress = mutableListOf<Ft4TransmissionProgress>()
@@ -155,6 +176,52 @@ class Ft4AudioTransmitterTest {
         assertTrue("play" !in events)
     }
 
+    @Test
+    fun clockCorrectionWhileWaitingDoesNotMoveAnchoredSlot() = runTest {
+        val events = mutableListOf<String>()
+        var utcOffsetMillis = 0L
+        var playMonotonicMillis = -1L
+        val transmitter = Ft4AudioTransmitter(
+            context = null,
+            ft4Service = FakeFt4Service(events),
+            coordinator = FakeCoordinator(events, onConfirm = { utcOffsetMillis = 600L }),
+            clock = FakeClock(
+                monotonicNow = { testScheduler.currentTime },
+                allowed = true,
+                utcOffsetMillis = { utcOffsetMillis }
+            ),
+            outputFactory = Ft4AudioOutputFactory { _, _ ->
+                FakeOutput(events, onPlay = { playMonotonicMillis = testScheduler.currentTime })
+            }
+        )
+
+        transmitter.transmit(request(slotStart = 1_000L, automatic = true))
+
+        assertEquals(1_000L, playMonotonicMillis)
+        assertTrue("play" in events)
+    }
+
+    @Test
+    fun missedSlotIsRejectedBeforeCatOrPtt() = runTest {
+        val events = mutableListOf<String>()
+        val transmitter = Ft4AudioTransmitter(
+            context = null,
+            ft4Service = FakeFt4Service(events),
+            coordinator = FakeCoordinator(events),
+            clock = FakeClock({ testScheduler.currentTime }, allowed = true),
+            outputFactory = Ft4AudioOutputFactory { _, _ -> FakeOutput(events) }
+        )
+
+        val failure = runCatching {
+            transmitter.transmit(request(slotStart = -200L, automatic = false))
+        }.exceptionOrNull()
+
+        assertTrue(failure?.message?.contains("before radio preparation") == true)
+        assertTrue("begin" !in events)
+        assertTrue("confirm" !in events)
+        assertTrue("play" !in events)
+    }
+
     private fun request(slotStart: Long, automatic: Boolean) = Ft4TransmissionRequest(
         message = "CQ N0CALL FN42",
         audioFrequencyHz = 1_500f,
@@ -169,16 +236,20 @@ class Ft4AudioTransmitterTest {
 
 private class FakeOutput(
     private val events: MutableList<String>,
-    private val fail: Boolean = false
+    private val fail: Boolean = false,
+    private val failPrepare: Boolean = false,
+    private val onPlay: () -> Unit = {}
 ) : Ft4AudioOutput {
     init { events += "output" }
 
     override suspend fun prepare(samples: FloatArray) {
         events += "prepare"
+        if (failPrepare) error("preload failed")
     }
 
     override suspend fun play(samples: FloatArray): Ft4AudioPlaybackResult {
         events += "play"
+        onPlay()
         if (fail) error("audio failed")
         return Ft4AudioPlaybackResult(4.0, 0)
     }
@@ -188,7 +259,10 @@ private class FakeOutput(
     }
 }
 
-private class FakeCoordinator(private val events: MutableList<String>) : IFt4TransmitCoordinator {
+private class FakeCoordinator(
+    private val events: MutableList<String>,
+    private val onConfirm: () -> Unit = {}
+) : IFt4TransmitCoordinator {
     var offCount = 0
 
     override suspend fun beginTransmit(request: TxRequest): TxLease {
@@ -211,6 +285,7 @@ private class FakeCoordinator(private val events: MutableList<String>) : IFt4Tra
 
     override suspend fun confirmTransmitReady(lease: TxLease) {
         events += "confirm"
+        onConfirm()
     }
 
     override suspend fun endTransmit(lease: TxLease) {
@@ -242,22 +317,24 @@ private class FakeFt4Service(private val events: MutableList<String>) : IFt4Serv
 }
 
 private class FakeClock(
-    private val now: () -> Long,
-    private val allowed: Boolean
+    private val monotonicNow: () -> Long,
+    private val allowed: Boolean,
+    private val utcOffsetMillis: () -> Long = { 0L }
 ) : IDisciplinedClock {
     override val state: StateFlow<ClockSnapshot> = MutableStateFlow(snapshot())
     override fun snapshot() = ClockSnapshot(
-        utcMillis = now(),
-        monotonicNanos = now() * 1_000_000,
-        offsetMillis = 0.0,
+        utcMillis = monotonicNow() + utcOffsetMillis(),
+        monotonicNanos = monotonicNow() * 1_000_000,
+        offsetMillis = utcOffsetMillis().toDouble(),
         driftPpm = 0.0,
         uncertaintyMillis = if (allowed) 10.0 else 5_000.0,
         source = if (allowed) ClockSource.NTP else ClockSource.SYSTEM,
         sampleAgeMillis = 0,
         healthy = allowed
     )
-    override fun nowMillis(): Long = now()
-    override fun utcMillisAt(monotonicNanos: Long): Long = monotonicNanos / 1_000_000
+    override fun nowMillis(): Long = monotonicNow() + utcOffsetMillis()
+    override fun utcMillisAt(monotonicNanos: Long): Long =
+        monotonicNanos / 1_000_000 + utcOffsetMillis()
     override fun submitSample(sample: ClockSample): Boolean = false
     override fun refresh(): ClockSnapshot = snapshot()
     override fun automaticFt4TransmitAllowed(): Boolean = allowed

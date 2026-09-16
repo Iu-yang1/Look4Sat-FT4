@@ -19,6 +19,8 @@ import android.hardware.usb.UsbDeviceConnection
 import android.hardware.usb.UsbEndpoint
 import android.hardware.usb.UsbInterface
 import android.hardware.usb.UsbManager
+import com.rtbishop.look4sat.core.domain.model.RadioTcpEndpoint
+import com.rtbishop.look4sat.core.domain.model.parseRadioTcpEndpoint
 import java.net.InetSocketAddress
 import java.net.Socket
 import java.util.UUID
@@ -907,30 +909,7 @@ private const val USB_VENDOR_CH34X_ALT = 0x4348
 private const val FTDI_PACKET_STATUS_BYTES = 2
 private const val MAX_USB_TRANSFER_BYTES = 16_384
 
-internal data class TcpEndpoint(val host: String, val port: Int)
-
-internal fun parseTcpEndpoint(value: String): TcpEndpoint? {
-    val input = value.trim()
-    if (input.isEmpty()) return null
-    val host: String
-    val portText: String
-    if (input.startsWith('[')) {
-        val closingBracket = input.indexOf(']')
-        if (closingBracket <= 1 || closingBracket + 1 >= input.length || input[closingBracket + 1] != ':') {
-            return null
-        }
-        host = input.substring(1, closingBracket)
-        portText = input.substring(closingBracket + 2)
-    } else {
-        val separator = input.lastIndexOf(':')
-        if (separator <= 0 || separator == input.lastIndex) return null
-        host = input.substring(0, separator).trim()
-        portText = input.substring(separator + 1)
-    }
-    val port = portText.toIntOrNull()?.takeIf { it in 1..65_535 } ?: return null
-    if (host.isBlank() || host.any(Char::isWhitespace)) return null
-    return TcpEndpoint(host, port)
-}
+internal fun parseTcpEndpoint(value: String): RadioTcpEndpoint? = parseRadioTcpEndpoint(value)
 
 class AndroidRadioTransportFactory(
     private val context: Context,

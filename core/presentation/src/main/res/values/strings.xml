@@ -225,11 +225,25 @@
     <string name="rc_no_paired_devices">No available CAT device was found.</string>
     <string name="rc_baud_rate">Baud Rate:</string>
     <string name="rc_cat_transport">CAT transport</string>
-    <string name="rc_tx_tcp_address">TX raw CAT host:port</string>
-    <string name="rc_rx_tcp_address">RX raw CAT host:port</string>
+    <string name="rc_tcp_protocol">TCP protocol</string>
+    <string name="rc_tcp_protocol_raw">Direct CAT</string>
+    <string name="rc_tcp_protocol_hamlib">Hamlib rigctld</string>
+    <string name="rc_tx_tcp_address">TX TCP host:port</string>
+    <string name="rc_rx_tcp_address">RX TCP host:port</string>
+    <string name="rc_tcp_address_error">Enter host:port or [IPv6]:port.</string>
     <string name="rc_tcp_raw_hint">TCP sends raw CAT bytes directly; it is not a rigctld client.</string>
+    <string name="rc_tcp_hamlib_hint">Connects to a Hamlib rigctld server (normally port 4532). Configure the radio model, serial rate, CI-V address, and serial control lines on that server.</string>
+    <string name="rc_civ_address">CI-V address</string>
+    <string name="rc_civ_address_hint">Hex (for example 0xA4) or decimal, from 0 to 255.</string>
+    <string name="rc_civ_address_error">Enter a CI-V address from 0x00 to 0xFF.</string>
     <string name="rc_usb_cdc_hint">USB supports CDC-ACM, CP210x, FTDI, and CH34x CAT serial ports. Select the radio\'s CAT port, not its audio interface.</string>
     <string name="rc_usb_cdc_device">%1$s · %2$s port #%3$d · %4$s</string>
+    <string name="rc_usb_permission_tap">Tap to grant USB access before selecting this CAT port.</string>
+    <string name="rc_usb_permission_denied">USB access was denied. Select the CAT port again to retry.</string>
+    <string name="rc_usb_device_required">Select at least one USB CAT port.</string>
+    <string name="rc_usb_device_missing">The selected USB CAT device or port is no longer available.</string>
+    <string name="rc_usb_permission_required">USB access is required. Select the CAT port again and allow access.</string>
+    <string name="rc_usb_port_incompatible">This CP2105 secondary port cannot provide the 8N2 link required by Yaesu CAT.</string>
 
     <string name="prefs_net_title">Network data output</string>
     <string name="prefs_net_rotator_switch">Enable rotation output</string>

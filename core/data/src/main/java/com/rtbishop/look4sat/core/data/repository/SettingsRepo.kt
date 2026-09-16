@@ -30,6 +30,7 @@ import com.rtbishop.look4sat.core.domain.model.OtherSettings
 import com.rtbishop.look4sat.core.domain.model.PassesSettings
 import com.rtbishop.look4sat.core.domain.model.RCSettings
 import com.rtbishop.look4sat.core.domain.model.RadioControlSettings
+import com.rtbishop.look4sat.core.domain.model.supportedRadioBaudRates
 import com.rtbishop.look4sat.core.domain.predict.GeoPos
 import com.rtbishop.look4sat.core.domain.repository.ISettingsRepo
 import com.rtbishop.look4sat.core.domain.utility.positionToQth
@@ -561,44 +562,61 @@ class SettingsRepo(
     private val keyRadioSplitMode = "radioSplitMode"
     private val keyRadioCatTransport = "radioCatTransport"
     private val keyRadioDuplexMode = "radioDuplexMode"
+    private val keyRadioCivAddress = "radioCivAddress"
+    private val keyRadioTcpProtocol = "radioTcpProtocol"
 
     private val _radioControlSettings = MutableStateFlow(getRadioControlSettings())
     override val radioControlSettings: StateFlow<RadioControlSettings> = _radioControlSettings
 
     override fun updateRadioControlSettings(settings: RadioControlSettings) {
+        val supportedBaudRates = supportedRadioBaudRates(settings.radioModel)
+        val normalized = settings.copy(
+            baudRate = settings.baudRate.takeIf { it in supportedBaudRates } ?: supportedBaudRates.first()
+        )
         preferences.edit {
-            putBoolean(keyRadioControlEnabled, settings.enabled)
-            putString(keyRadioModel, settings.radioModel)
-            putString(keyTxRadioAddress, settings.txRadioAddress)
-            putString(keyRxRadioAddress, settings.rxRadioAddress)
-            putString(keyTxRadioName, settings.txRadioName)
-            putString(keyRxRadioName, settings.rxRadioName)
-            putInt(keyRadioBaudRate, settings.baudRate)
-            putBoolean(keyRadioSplitMode, settings.splitMode)
-            putString(keyRadioCatTransport, settings.catTransport)
-            putString(keyRadioDuplexMode, settings.duplexMode)
+            putBoolean(keyRadioControlEnabled, normalized.enabled)
+            putString(keyRadioModel, normalized.radioModel)
+            putString(keyTxRadioAddress, normalized.txRadioAddress)
+            putString(keyRxRadioAddress, normalized.rxRadioAddress)
+            putString(keyTxRadioName, normalized.txRadioName)
+            putString(keyRxRadioName, normalized.rxRadioName)
+            putInt(keyRadioBaudRate, normalized.baudRate)
+            putBoolean(keyRadioSplitMode, normalized.splitMode)
+            putString(keyRadioCatTransport, normalized.catTransport)
+            putString(keyRadioDuplexMode, normalized.duplexMode)
+            putInt(keyRadioCivAddress, normalized.civAddress ?: -1)
+            putString(keyRadioTcpProtocol, normalized.tcpProtocol)
         }
-        _radioControlSettings.value = settings
+        _radioControlSettings.value = normalized
     }
 
-    private fun getRadioControlSettings(): RadioControlSettings = RadioControlSettings(
-        enabled = preferences.getBoolean(keyRadioControlEnabled, false),
-        radioModel = preferences.getString(keyRadioModel, null) ?: RadioControlSettings.MODEL_YAESU_FT817,
-        txRadioAddress = preferences.getString(keyTxRadioAddress, null) ?: "",
-        rxRadioAddress = preferences.getString(keyRxRadioAddress, null) ?: "",
-        txRadioName = preferences.getString(keyTxRadioName, null) ?: "TX Radio",
-        rxRadioName = preferences.getString(keyRxRadioName, null) ?: "RX Radio",
-        baudRate = preferences.getInt(keyRadioBaudRate, 4800),
-        splitMode = preferences.getBoolean(keyRadioSplitMode, false),
-        catTransport = preferences.getString(keyRadioCatTransport, null)
-            ?: RadioControlSettings.TRANSPORT_BLUETOOTH,
-        duplexMode = preferences.getString(keyRadioDuplexMode, null)
-            ?.takeIf {
-                it == RadioControlSettings.DUPLEX_MODE_SATELLITE ||
-                    it == RadioControlSettings.DUPLEX_MODE_SPLIT
-            }
-            ?: RadioControlSettings.DUPLEX_MODE_SPLIT
-    )
+    private fun getRadioControlSettings(): RadioControlSettings {
+        val model = preferences.getString(keyRadioModel, null) ?: RadioControlSettings.MODEL_YAESU_FT817
+        val supportedBaudRates = supportedRadioBaudRates(model)
+        return RadioControlSettings(
+            enabled = preferences.getBoolean(keyRadioControlEnabled, false),
+            radioModel = model,
+            txRadioAddress = preferences.getString(keyTxRadioAddress, null) ?: "",
+            rxRadioAddress = preferences.getString(keyRxRadioAddress, null) ?: "",
+            txRadioName = preferences.getString(keyTxRadioName, null) ?: "TX Radio",
+            rxRadioName = preferences.getString(keyRxRadioName, null) ?: "RX Radio",
+            baudRate = preferences.getInt(keyRadioBaudRate, 4800)
+                .takeIf { it in supportedBaudRates } ?: supportedBaudRates.first(),
+            splitMode = preferences.getBoolean(keyRadioSplitMode, false),
+            catTransport = preferences.getString(keyRadioCatTransport, null)
+                ?: RadioControlSettings.TRANSPORT_BLUETOOTH,
+            duplexMode = preferences.getString(keyRadioDuplexMode, null)
+                ?.takeIf {
+                    it == RadioControlSettings.DUPLEX_MODE_SATELLITE ||
+                        it == RadioControlSettings.DUPLEX_MODE_SPLIT
+                }
+                ?: RadioControlSettings.DUPLEX_MODE_SPLIT,
+            civAddress = preferences.getInt(keyRadioCivAddress, -1).takeIf { it in 0..0xFF },
+            tcpProtocol = preferences.getString(keyRadioTcpProtocol, null)
+                ?.takeIf { it in RadioControlSettings.SUPPORTED_TCP_PROTOCOLS }
+                ?: RadioControlSettings.TCP_PROTOCOL_RAW_CAT
+        )
+    }
     //endregion
 
     //region # Per-satellite calculator offset settings

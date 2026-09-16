@@ -32,32 +32,41 @@ data class RadioProfile(
     val isIcom: Boolean get() = icomVariant != null
     val supportsSatelliteMode: Boolean
         get() = icomVariant == IcomCivVariant.IC9700 || icomVariant == IcomCivVariant.IC910
+    val canSetTxFrequencyWhileTransmitting: Boolean
+        get() = yaesuVariant != YaesuCatVariant.FT857
 }
 
-fun radioProfile(model: String): RadioProfile = when (model) {
-    RadioControlSettings.MODEL_YAESU_FT857 -> RadioProfile(
-        model = model,
-        yaesuVariant = YaesuCatVariant.FT857,
-        serialStopBits = 2
-    )
-    RadioControlSettings.MODEL_ICOM_IC705 -> RadioProfile(
-        model = model,
-        icomVariant = IcomCivVariant.IC705,
-        civAddress = IcomCivProtocol.ADDR_IC705
-    )
-    RadioControlSettings.MODEL_ICOM_IC9700 -> RadioProfile(
-        model = model,
-        icomVariant = IcomCivVariant.IC9700,
-        civAddress = IcomCivProtocol.ADDR_IC9700
-    )
-    RadioControlSettings.MODEL_ICOM_IC910 -> RadioProfile(
-        model = model,
-        icomVariant = IcomCivVariant.IC910,
-        civAddress = IcomCivProtocol.ADDR_IC910
-    )
-    else -> RadioProfile(
-        model = RadioControlSettings.MODEL_YAESU_FT817,
-        yaesuVariant = YaesuCatVariant.FT817,
-        serialStopBits = 2
-    )
+fun radioProfile(model: String, civAddressOverride: Int? = null): RadioProfile {
+    val profile = when (model) {
+        RadioControlSettings.MODEL_YAESU_FT857 -> RadioProfile(
+            model = model,
+            yaesuVariant = YaesuCatVariant.FT857,
+            serialStopBits = 2
+        )
+        RadioControlSettings.MODEL_ICOM_IC705 -> RadioProfile(
+            model = model,
+            icomVariant = IcomCivVariant.IC705,
+            civAddress = IcomCivProtocol.ADDR_IC705
+        )
+        RadioControlSettings.MODEL_ICOM_IC9700 -> RadioProfile(
+            model = model,
+            icomVariant = IcomCivVariant.IC9700,
+            civAddress = IcomCivProtocol.ADDR_IC9700
+        )
+        RadioControlSettings.MODEL_ICOM_IC910 -> RadioProfile(
+            model = model,
+            icomVariant = IcomCivVariant.IC910,
+            civAddress = IcomCivProtocol.ADDR_IC910
+        )
+        else -> RadioProfile(
+            model = RadioControlSettings.MODEL_YAESU_FT817,
+            yaesuVariant = YaesuCatVariant.FT817,
+            serialStopBits = 2
+        )
+    }
+    return if (profile.isIcom && civAddressOverride in 0..0xFF) {
+        profile.copy(civAddress = civAddressOverride?.toByte())
+    } else {
+        profile
+    }
 }

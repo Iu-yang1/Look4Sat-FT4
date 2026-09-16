@@ -750,9 +750,11 @@ class Ft4ViewModel(
     }
 
     private fun nextSlot(parity: Int): com.rtbishop.look4sat.core.domain.time.Ft4SlotBoundary {
-        var next = scheduler.nextBoundaryAfter(clock.nowMillis())
-        if (next.sequence != parity) next = scheduler.boundaryAt(next.endUtcMillis)
-        return next
+        return scheduler.nextBoundaryAfter(
+            utcMillis = clock.nowMillis(),
+            minimumLeadMillis = transmitter.recommendedSchedulingLeadMillis(),
+            sequence = parity
+        )
     }
 
     private fun buildInitialMessage(state: Ft4State): String {

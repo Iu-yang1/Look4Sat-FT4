@@ -16,6 +16,19 @@ class DisciplinedSlotSchedulerTest {
     private val scheduler = DisciplinedFt4SlotScheduler()
 
     @Test
+    fun nextBoundaryWithLeadSkipsSameParitySlotThatIsTooClose() {
+        val next = scheduler.nextBoundaryAfter(
+            utcMillis = 6_675L,
+            minimumLeadMillis = 2_500L,
+            sequence = 1
+        )
+
+        assertEquals(3L, next.index)
+        assertEquals(22_500L, next.startUtcMillis)
+        assertEquals(1, next.sequence)
+    }
+
+    @Test
     fun ft4UsesSevenPointFiveSecondBoundariesAndAlternatingSequences() {
         assertEquals(0L, scheduler.boundaryAt(7_499L).index)
         assertEquals(1L, scheduler.boundaryAt(7_500L).index)

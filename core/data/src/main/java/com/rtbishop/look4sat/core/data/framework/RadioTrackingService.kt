@@ -21,6 +21,7 @@ import android.bluetooth.BluetoothManager
 import android.util.Log
 import com.rtbishop.look4sat.core.domain.model.RadioControlSettings
 import com.rtbishop.look4sat.core.domain.model.SatRadio
+import com.rtbishop.look4sat.core.domain.model.parseRadioTcpEndpoint
 import com.rtbishop.look4sat.core.domain.ft4.IFt4TransmitCoordinator
 import com.rtbishop.look4sat.core.domain.ft4.TxLease
 import com.rtbishop.look4sat.core.domain.ft4.TxRequest
@@ -107,11 +108,14 @@ class RadioTrackingService(
         val rcSettings = settingsRepo.radioControlSettings.value
         val txAddr     = rcSettings.txRadioAddress
         val rxAddr     = rcSettings.rxRadioAddress
-        val profile    = radioProfile(rcSettings.radioModel)
+        val profile    = radioProfile(rcSettings.radioModel, rcSettings.civAddress)
         val isIcom     = profile.isIcom
         val isSplit    = isIcom && rcSettings.splitMode
+        val usesHamlib = rcSettings.catTransport == RadioControlSettings.TRANSPORT_TCP &&
+            rcSettings.tcpProtocol == RadioControlSettings.TCP_PROTOCOL_HAMLIB
         val isSatelliteMode = isSplit && profile.supportsSatelliteMode &&
-            rcSettings.duplexMode == RadioControlSettings.DUPLEX_MODE_SATELLITE
+            rcSettings.duplexMode == RadioControlSettings.DUPLEX_MODE_SATELLITE &&
+            !usesHamlib
 
         Log.i(tag, "connectRadios model=${rcSettings.radioModel} split=$isSplit TX=$txAddr RX=$rxAddr")
         _state.update {
@@ -124,6 +128,23 @@ class RadioTrackingService(
                 pttState = PttState.OFF,
                 lastCommandError = null
             )
+        }
+
+        if (rcSettings.catTransport == RadioControlSettings.TRANSPORT_TCP) {
+            val invalidEndpoint = when {
+                txAddr.isNotBlank() && parseRadioTcpEndpoint(txAddr) == null -> "TX" to txAddr
+                !isSplit && rxAddr.isNotBlank() && parseRadioTcpEndpoint(rxAddr) == null -> "RX" to rxAddr
+                else -> null
+            }
+            if (invalidEndpoint != null) {
+                _state.update {
+                    it.copy(
+                        errorMessage = "Invalid ${invalidEndpoint.first} TCP endpoint " +
+                            "(${invalidEndpoint.second}). Use host:port or [IPv6]:port"
+                    )
+                }
+                return
+            }
         }
 
         if (isSplit) {
@@ -177,7 +198,9 @@ class RadioTrackingService(
 
     private fun makeController(profile: RadioProfile, address: String): IRadioController {
         val settings = settingsRepo.radioControlSettings.value
-        val dedicatedSatelliteMode = settings.splitMode && profile.supportsSatelliteMode &&
+        val usesHamlib = settings.catTransport == RadioControlSettings.TRANSPORT_TCP &&
+            settings.tcpProtocol == RadioControlSettings.TCP_PROTOCOL_HAMLIB
+        val dedicatedSatelliteMode = !usesHamlib && settings.splitMode && profile.supportsSatelliteMode &&
             settings.duplexMode == RadioControlSettings.DUPLEX_MODE_SATELLITE
         val injected = controllerFactory?.invoke(profile.isIcom, address)
         val transport = if (injected == null) {
@@ -188,7 +211,12 @@ class RadioTrackingService(
                 profile.serialStopBits
             )
         } else null
-        val controller = injected ?: if (profile.isIcom) {
+        val controller = injected ?: if (usesHamlib) {
+            HamlibRigctldController(
+                endpoint = address,
+                transport = checkNotNull(transport)
+            )
+        } else if (profile.isIcom) {
             if (transport == null) {
                 Ic705Controller(
                     bluetoothManager = checkNotNull(bluetoothManager),
@@ -400,12 +428,12 @@ class RadioTrackingService(
 
     override suspend fun endTransmit(lease: TxLease) {
         txController?.invalidatePendingPttOn()
-        if (activeTxLease == lease) sendUrgentPttOff()
+        val urgentOffConfirmed = activeTxLease == lease && sendUrgentPttOff()
         transmitMutex.withLock {
             if (activeTxLease != lease) return@withLock
             updateCommandState(busy = true)
             try {
-                forcePttOffLocked(null)
+                forcePttOffLocked(null, urgentOffConfirmed.takeIf { it })
             } finally {
                 updateCommandState(busy = false)
             }
@@ -422,24 +450,24 @@ class RadioTrackingService(
 
     override suspend fun emergencyPttOff() {
         txController?.invalidatePendingPttOn()
-        sendUrgentPttOff()
+        val urgentOffConfirmed = sendUrgentPttOff()
         transmitMutex.withLock {
             updateCommandState(busy = true)
             try {
-                forcePttOffLocked(null)
+                forcePttOffLocked(null, urgentOffConfirmed.takeIf { it })
             } finally {
                 updateCommandState(busy = false)
             }
         }
     }
 
-    private suspend fun sendUrgentPttOff() {
+    private suspend fun sendUrgentPttOff(): Boolean {
         // Reach the actor's urgent lane before waiting for a possibly suspended tracking cycle.
-        withContext(NonCancellable) {
+        return withContext(NonCancellable) {
             val controller = txController
             if (controller?.isConnected == true) {
-                withTimeoutOrNull(PTT_COMMAND_TIMEOUT_MILLIS) { controller.pttOff() }
-            }
+                withTimeoutOrNull(PTT_COMMAND_TIMEOUT_MILLIS) { controller.pttOff() } == true
+            } else activeTxLease == null
         }
     }
 
@@ -494,12 +522,12 @@ class RadioTrackingService(
         ) { "Satellite orbit position is not valid for automatic transmit" }
     }
 
-    private suspend fun forcePttOffLocked(failure: String?) {
+    private suspend fun forcePttOffLocked(failure: String?, priorAcknowledged: Boolean? = null) {
         pttWatchdogJob?.cancel()
         pttWatchdogJob = null
         val hadActiveLease = activeTxLease != null
         val controller = txController
-        val acknowledged = withContext(NonCancellable) {
+        val acknowledged = priorAcknowledged ?: withContext(NonCancellable) {
             if (controller?.isConnected == true) {
                 withTimeoutOrNull(PTT_COMMAND_TIMEOUT_MILLIS) { controller.pttOff() } == true
             } else {
@@ -702,8 +730,7 @@ class RadioTrackingService(
     }
 
     // A cycle and a settings change own the same lock as transmit preparation.
-    // In single-radio duplex, even an RX read may select a VFO: freeze all CAT I/O
-    // during a lease. A separate RX radio can continue Doppler updates.
+    // During PTT, suppress dial-change detection but keep Doppler writes running.
     private suspend fun runTrackingLoop(split: Boolean) {
         var lastSetTx: Long? = null
         var lastSetRx: Long? = null
@@ -799,12 +826,15 @@ class RadioTrackingService(
                     val desiredTx = base?.let(position::getUplinkFreq)
                     val desiredRx = nominalRx?.let(position::getDownlinkFreq)
                     if (tuning.isEmpty()) {
-                        if (!frozen && tx?.isConnected == true && desiredTx != null) {
+                        val txWriteAllowed = current.pttState != PttState.ON ||
+                            radioProfile(settingsRepo.radioControlSettings.value.radioModel)
+                                .canSetTxFrequencyWhileTransmitting
+                        if (txWriteAllowed && tx?.isConnected == true && desiredTx != null) {
                             val ok = if (split) tx.setTxVfoFrequency(desiredTx) else tx.setFrequency(desiredTx)
                             if (ok) { lastSetTx = desiredTx; observedTx = desiredTx }
                             else failTrackingCommand("TX frequency was not acknowledged")
                         }
-                        if ((!split || !frozen) && rx?.isConnected == true && desiredRx != null) {
+                        if (rx?.isConnected == true && desiredRx != null) {
                             val ok = if (split) rx.setWorkingFrequency(desiredRx) else rx.setFrequency(desiredRx)
                             if (ok) { lastSetRx = desiredRx; observedRx = desiredRx }
                             else failTrackingCommand("RX frequency was not acknowledged")
@@ -812,16 +842,15 @@ class RadioTrackingService(
                     }
                     if (cycleRevision != tuningRevision.get()) return@withLock
                     _state.update {
-                        val lease = activeTxLease
                         it.copy(
                             txConnected = tx?.isConnected == true,
                             rxConnected = rx?.isConnected == true,
                             txBaseFrequencyHz = base,
-                            txFrequencyHz = lease?.effectiveTxFrequencyHz ?: observedTx,
+                            txFrequencyHz = observedTx,
                             rxFrequencyHz = observedRx,
                             nominalTxFrequencyHz = base,
                             nominalRxFrequencyHz = nominalRx,
-                            txDopplerCorrectionHz = lease?.txDopplerCorrectionHz ?: dopplerCorrection(observedTx, base),
+                            txDopplerCorrectionHz = dopplerCorrection(observedTx, base),
                             rxDopplerCorrectionHz = dopplerCorrection(observedRx, nominalRx),
                             azimuth = Math.toDegrees(position.azimuth),
                             elevation = Math.toDegrees(position.elevation),
@@ -830,8 +859,7 @@ class RadioTrackingService(
                     }
                 }
             } catch (cancelled: CancellationException) {
-                // The actor may cancel just one CAT command to prioritize PTT OFF.
-                // Preserve the tracking job unless its owner actually cancelled it.
+                // Preserve tracking when a transport cancels only its current transaction.
                 currentCoroutineContext().ensureActive()
                 tuningRevision.incrementAndGet()
             }
@@ -859,6 +887,12 @@ class RadioTrackingService(
                 ?: txMode?.let {
                     TransponderMapper.mapUplinkModeToDownlinkMode(it, transponder.isInverted)
                 }
+            // Selecting a transponder is also local UI state. Allow it before a
+            // radio is connected; startTracking will program the selected mode.
+            if (tx?.isConnected != true && rx?.isConnected != true) {
+                updateSelectedTransponder(transponder, rxMode)
+                return@changeRadioSettings
+            }
             val split = _state.value.splitMode
             val txModeOk: Boolean
             val rxModeOk: Boolean

@@ -51,6 +51,7 @@ interface IFt4AudioTransmitter {
     val state: StateFlow<Ft4TransmitState>
     val playbackTiming: StateFlow<Ft4PlaybackTiming>
 
+    fun recommendedSchedulingLeadMillis(): Long
     suspend fun transmit(request: Ft4TransmissionRequest)
     suspend fun stop()
     suspend fun emergencyStop()

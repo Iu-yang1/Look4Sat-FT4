@@ -211,11 +211,25 @@
     <string name="rc_no_paired_devices">未找到可用 CAT 设备。</string>
     <string name="rc_baud_rate">波特率：</string>
     <string name="rc_cat_transport">CAT 传输</string>
-    <string name="rc_tx_tcp_address">TX 原始 CAT 主机:端口</string>
-    <string name="rc_rx_tcp_address">RX 原始 CAT 主机:端口</string>
+    <string name="rc_tcp_protocol">TCP 协议</string>
+    <string name="rc_tcp_protocol_raw">直接 CAT</string>
+    <string name="rc_tcp_protocol_hamlib">Hamlib rigctld</string>
+    <string name="rc_tx_tcp_address">TX TCP 主机:端口</string>
+    <string name="rc_rx_tcp_address">RX TCP 主机:端口</string>
+    <string name="rc_tcp_address_error">请输入 host:port 或 [IPv6]:port。</string>
     <string name="rc_tcp_raw_hint">TCP 直接发送原始 CAT 字节，不是 rigctld 客户端。</string>
+    <string name="rc_tcp_hamlib_hint">连接 Hamlib rigctld 服务（通常为 4532 端口）。电台型号、串口速率、CI-V 地址及串口控制线应在服务端配置。</string>
+    <string name="rc_civ_address">CI-V 地址</string>
+    <string name="rc_civ_address_hint">支持十六进制（如 0xA4）或十进制，范围 0 到 255。</string>
+    <string name="rc_civ_address_error">请输入 0x00 到 0xFF 范围内的 CI-V 地址。</string>
     <string name="rc_usb_cdc_hint">USB 支持 CDC-ACM、CP210x、FTDI 与 CH34x CAT 串口。请选择电台 CAT 端口，而不是音频接口。</string>
     <string name="rc_usb_cdc_device">%1$s · %2$s 端口 #%3$d · %4$s</string>
+    <string name="rc_usb_permission_tap">点击并授权 USB 访问后，才能选择此 CAT 端口。</string>
+    <string name="rc_usb_permission_denied">USB 访问被拒绝。请再次选择 CAT 端口以重试。</string>
+    <string name="rc_usb_device_required">请至少选择一个 USB CAT 端口。</string>
+    <string name="rc_usb_device_missing">已选 USB CAT 设备或端口已不可用。</string>
+    <string name="rc_usb_permission_required">需要 USB 访问权限。请重新选择 CAT 端口并允许访问。</string>
+    <string name="rc_usb_port_incompatible">此 CP2105 辅助端口无法提供 Yaesu CAT 所需的 8N2 串口格式。</string>
 
     <string name="prefs_other_title">其他设置</string>
     <string name="prefs_ft4_title">FT4 与时间同步</string>

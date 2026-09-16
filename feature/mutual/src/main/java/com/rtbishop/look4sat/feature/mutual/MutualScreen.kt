@@ -29,6 +29,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -40,6 +41,7 @@ import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -582,6 +584,16 @@ private fun MutualPassCard(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+                // Radar shortcut, visible even on the collapsed card: icon only,
+                // rightmost position so the pass info shifts left. The card's own
+                // click (expand) is not triggered by the IconButton's tap.
+                IconButton(onClick = onNavigateToRadar) {
+                    Icon(
+                        painter = painterResource(id = R.drawable.ic_radar),
+                        contentDescription = stringResource(R.string.mutual_open_radar),
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
             }
             Spacer(Modifier.height(4.dp))
             Row(

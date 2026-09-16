@@ -34,9 +34,11 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
@@ -112,14 +114,17 @@ fun RadarDestination(navigateUp: () -> Unit, navigateToMap: () -> Unit) {
     }
     LaunchedEffect(mutualData.endTime) {
         if (mutualData.endTime <= 0L) return@LaunchedEffect
-        while (true) {
-            val remainingMs = mutualData.endTime - System.currentTimeMillis()
-            if (remainingMs <= 0L) {
-                navigateUpAndClearMutual()
-                return@LaunchedEffect
-            }
+        // Auto-return only while the mutual pass is actually in progress. An
+        // already-finished pass must NOT bounce the radar page back instantly
+        // (that made the pass-card radar shortcut look broken: tapping it while
+        // the computed pass had ended returned to Mutual immediately).
+        var remainingMs = mutualData.endTime - System.currentTimeMillis()
+        if (remainingMs <= 0L) return@LaunchedEffect
+        while (remainingMs > 0L) {
             delay(remainingMs.coerceAtMost(1000L))
+            remainingMs = mutualData.endTime - System.currentTimeMillis()
         }
+        navigateUpAndClearMutual()
     }
     // Sync actual permission state on every recomposition so it survives screen re-entry
     val hasPermission = ContextCompat.checkSelfPermission(
@@ -182,6 +187,10 @@ private fun RadarScreen(
     logsPage: @Composable () -> Unit
 ) {
     val upcomingPass = uiState.currentPass ?: getDefaultPass()
+    // 日程功能: 把当前过境写入系统日历(原仓库的 addToCalendar, ic_calendar 按钮)
+    val addToCalendar: () -> Unit = {
+        uiState.currentPass?.let { onAction(RadarAction.AddToCalendar(it.name, it.aosTime, it.losTime)) }
+    }
     // Station-B overlay: full track line (only where B's elevation > 0) + live position dot
     // at the current moment, same display mode as the local station.
     val trackB = remember(mutualData.trackSamples) {
@@ -209,7 +218,7 @@ private fun RadarScreen(
     Column(
         modifier = Modifier
             .layoutPadding()
-            .navigationBarsPadding()
+            .padding(bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding())
             .keepScreenOn(),
         verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
@@ -219,6 +228,7 @@ private fun RadarScreen(
                 IconCard(action = navigateUp, resId = R.drawable.ic_back)
                 TimerRow(timeString = uiState.currentTime, isTimeAos = uiState.isTimeAos)
                 IconCard(action = navigateToMap, resId = R.drawable.ic_map)
+                IconCard(action = addToCalendar, resId = R.drawable.ic_calendar)
             }
             TopBar { NextPassRow(pass = upcomingPass, isUtc = uiState.isUtc) }
         } else {
@@ -227,6 +237,7 @@ private fun RadarScreen(
                 TimerRow(timeString = uiState.currentTime, isTimeAos = uiState.isTimeAos)
                 NextPassRow(pass = upcomingPass, modifier = Modifier.weight(1f), isUtc = uiState.isUtc)
                 IconCard(action = navigateToMap, resId = R.drawable.ic_map)
+                IconCard(action = addToCalendar, resId = R.drawable.ic_calendar)
             }
         }
         if (isVertical) {

@@ -29,10 +29,6 @@ import com.rtbishop.look4sat.core.domain.predict.OrbitalPos
 import com.rtbishop.look4sat.core.domain.repository.IMainContainer
 import com.rtbishop.look4sat.core.domain.repository.ISatelliteRepo
 import com.rtbishop.look4sat.core.domain.repository.ISettingsRepo
-import com.rtbishop.look4sat.core.domain.logbook.IQsoRepository
-import com.rtbishop.look4sat.core.domain.logbook.confirmedGridStore
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import com.rtbishop.look4sat.core.domain.utility.clipLat
 import com.rtbishop.look4sat.core.domain.utility.clipLon
 import com.rtbishop.look4sat.core.domain.utility.positionToQth
@@ -41,6 +37,7 @@ import com.rtbishop.look4sat.core.domain.utility.toDegrees
 import com.rtbishop.look4sat.core.domain.utility.toTimerString
 import com.rtbishop.look4sat.core.presentation.getDefaultPass
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.cancelAndJoin
@@ -49,6 +46,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -56,11 +54,10 @@ import java.util.Date
 
 class MapViewModel(
     private val satelliteRepo: ISatelliteRepo,
-    private val settingsRepo: ISettingsRepo,
-    private val qsoRepository: IQsoRepository
+    private val settingsRepo: ISettingsRepo
 ) : ViewModel() {
 
-    private val stationPos get() = settingsRepo.stationPosition.value
+    private val stationPos = settingsRepo.stationPosition.value
     private val defaultPass = getDefaultPass()
     private val _uiState = MutableStateFlow(
         MapState(
@@ -74,6 +71,9 @@ class MapViewModel(
     private var dataUpdateJob: Job? = null
     private var dataUpdateRate = 1000L
     private var selectedOrbitalObject: OrbitalObject? = null
+
+    /** Gates the prediction loop so it doesn't burn CPU while the map isn't on screen */
+    private val isScreenVisible = MutableStateFlow(true)
     val uiState: StateFlow<MapState> = _uiState
 
     init {
@@ -83,19 +83,15 @@ class MapViewModel(
             }
         }
         viewModelScope.launch {
-            qsoRepository.records.collectLatest { records ->
-                val store = withContext(Dispatchers.Default) { confirmedGridStore(records) }
+            settingsRepo.wavelogSettings.collectLatest { _ ->
                 _uiState.update {
                     it.copy(
-                        workedGrids = store.qsosByGrid.keys,
-                        workedGridQsos = store.qsosByGrid,
-                        awardProgress = store.awards
+                        workedGrids = settingsRepo.getWorkedGrids(),
+                        workedGridQsos = settingsRepo.getWorkedGridQsos(),
+                        roamedGrids = settingsRepo.getRoamedGrids()
                     )
                 }
             }
-        }
-        viewModelScope.launch {
-            settingsRepo.stationPosition.collectLatest { getStationPosition() }
         }
         val (selectedCatNum, _) = satelliteRepo.selectedPass.value
         selectDefaultSatellite(if (selectedCatNum != 0) selectedCatNum else -1)
@@ -109,6 +105,7 @@ class MapViewModel(
             is MapAction.SelectItem -> selectSatellite(action.item)
             is MapAction.SelectDefaultItem -> selectDefaultSatellite(action.catnum)
             is MapAction.ToggleGridMode -> settingsRepo.updateOtherSettings { it.copy(stateOfMapGrid = action.value) }
+            is MapAction.SetVisible -> isScreenVisible.value = action.isVisible
         }
     }
 
@@ -146,7 +143,11 @@ class MapViewModel(
         selectedOrbitalObject = orbitalObject
         viewModelScope.launch {
             dataUpdateJob?.cancelAndJoin()
-            dataUpdateJob = launch {
+            // Default dispatcher is mandatory: viewModelScope is Main.immediate, and every
+            // satelliteRepo call internally hops to Default and resumes back on the caller's
+            // dispatcher. On Main that posts one continuation per satellite per tick, which
+            // floods the looper and ANRs for users tracking thousands of objects.
+            dataUpdateJob = launch(Dispatchers.Default) {
                 val dateNow = Date()
                 getStationPosition()
                 getSatTrack(orbitalObject, stationPos, dateNow)
@@ -157,6 +158,8 @@ class MapViewModel(
                     else -> updateFreq
                 }
                 while (isActive) {
+                    // Suspends while the map is off-screen instead of predicting into the void
+                    isScreenVisible.first { it }
                     dateNow.time = System.currentTimeMillis()
                     updateMapState(orbitalObject, allSatellites, stationPos, dateNow)
                     delay(effectiveRate)
@@ -322,8 +325,7 @@ class MapViewModel(
             initializer {
                 MapViewModel(
                     satelliteRepo = container.satelliteRepo,
-                    settingsRepo = container.settingsRepo,
-                    qsoRepository = container.qsoRepository
+                    settingsRepo = container.settingsRepo
                 )
             }
         }

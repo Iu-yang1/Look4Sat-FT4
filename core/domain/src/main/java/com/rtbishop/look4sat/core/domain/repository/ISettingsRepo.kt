@@ -24,6 +24,7 @@ import com.rtbishop.look4sat.core.domain.model.OtherSettings
 import com.rtbishop.look4sat.core.domain.model.PassesSettings
 import com.rtbishop.look4sat.core.domain.model.RCSettings
 import com.rtbishop.look4sat.core.domain.model.RadioControlSettings
+import com.rtbishop.look4sat.core.domain.model.WavelogSettings
 import com.rtbishop.look4sat.core.domain.predict.GeoPos
 import kotlinx.coroutines.flow.StateFlow
 
@@ -97,5 +98,29 @@ interface ISettingsRepo {
     //region # AMSAT status report settings
     fun getAmSatCallsign(): String
     fun setAmSatCallsign(callsign: String)
+    //endregion
+
+    //region # Wavelog worked-grids settings
+    val wavelogSettings: StateFlow<WavelogSettings>
+    fun updateWavelogSettings(settings: WavelogSettings)
+    fun getWorkedGrids(): Set<String>
+    fun setWorkedGrids(grids: Set<String>)
+    /** Confirmed satellite QSOs grouped by worked 4-char gridsquare (map tap detail). */
+    fun getWorkedGridQsos(): Map<String, List<com.rtbishop.look4sat.core.domain.model.GridQso>>
+    fun setWorkedGridQsos(qsos: Map<String, List<com.rtbishop.look4sat.core.domain.model.GridQso>>)
+    /** Distinct 4-char gridsquares the account operated from (LoTW <MY_GRIDSQUARE>). */
+    fun getRoamedGrids(): Set<String>
+    fun setRoamedGrids(grids: Set<String>)
+    //endregion
+
+    //region # LoTW confirmed-grids settings
+    val lotwSettings: StateFlow<com.rtbishop.look4sat.core.domain.model.LoTWSettings>
+    fun updateLoTWSettings(settings: com.rtbishop.look4sat.core.domain.model.LoTWSettings)
+    /** Last successful LoTW sync date ("yyyyMMdd", empty when never synced). */
+    fun getLastLotwSyncDate(): String
+    fun setLastLotwSyncDate(date: String)
+    /** Callsign of the last successful LoTW sync (empty when never synced). */
+    fun getLastLotwSyncCallsign(): String
+    fun setLastLotwSyncCallsign(callsign: String)
     //endregion
 }

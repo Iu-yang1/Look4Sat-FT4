@@ -61,7 +61,7 @@ class DatabaseRepo(
         remoteSource.getFileStream(uri)?.let { stream ->
             val transceivers = dataParser.parseJSONStream(unwrapIfZipped(uri, stream))
             if (transceivers.isNotEmpty()) {
-                localSource.insertRadios(transceivers)
+                localSource.insertRadios(transceivers, isCustom = true)
                 publishDatabaseContentChanged()
                 importedCount = transceivers.size
             }
@@ -125,7 +125,10 @@ class DatabaseRepo(
             localSource.insertEntries(importedEntries)
             importedTypeIds.forEach { (type, ids) -> settingsRepo.setSatelliteTypeIds(type, ids.distinct()) }
         }
-        if (importedRadios.isNotEmpty()) localSource.insertRadios(importedRadios)
+        if (importedRadios.isNotEmpty()) {
+            localSource.deleteManagedRadios()
+            localSource.insertRadios(importedRadios)
+        }
         if (importedEntries.isNotEmpty() || importedRadios.isNotEmpty()) {
             publishDatabaseContentChanged(
                 successfulEphemerisTimestamp = System.currentTimeMillis().takeIf {

@@ -133,6 +133,8 @@
     <string name="map_prev">Prev</string>
     <string name="map_next">Next</string>
     <string name="map_copyright" translatable="false">© OpenStreetMap contributors</string>
+    <string name="map_grid_mode">Grid mode</string>
+    <string name="map_satellite_mode">Satellite mode</string>
     <string name="map_azimuth">Azimuth: %.1f°</string>
     <string name="map_elevation">Elevation: %.1f°</string>
     <string name="map_altitude">Altitude: %.0f km</string>
@@ -145,6 +147,12 @@
     <string name="map_period">Period: %.0f min</string>
     <string name="map_velocity">Velocity: %.2f km/s</string>
     <string name="map_visibility">Visibility: %s</string>
+    <!-- Worked-grid QSO dialog -->
+    <string name="grid_qso_calls_count">%1$d callsigns · %2$d QSOs</string>
+    <string name="grid_qso_count_one">%d QSO</string>
+    <string name="grid_qso_count_many">%d QSOs</string>
+    <string name="grid_qso_first">First</string>
+    <string name="grid_qso_no_sat">satellite unknown</string>
     <string name="map_visible">Visible</string>
 
     <!-- Settings screen -->
@@ -176,6 +184,36 @@
     <string name="prefs_station_lat_text">Set your ground station\'s latitude</string>
     <string name="prefs_station_lon_text">Set your ground station\'s longitude</string>
     <string name="prefs_locator_title">QTH locator settings</string>
+    <string name="prefs_wavelog_title">Wavelog worked grids</string>
+    <string name="prefs_wavelog_configure">Configure</string>
+    <string name="prefs_wavelog_configured">Synced from Wavelog — %1$d grids worked</string>
+    <string name="prefs_wavelog_not_configured">Not configured — connect your Wavelog logbook to highlight worked grids on the map</string>
+    <string name="prefs_wavelog_url">Wavelog URL</string>
+    <string name="prefs_wavelog_token">API key : logbook ID</string>
+    <string name="prefs_wavelog_hint">Worked grids synced: %1$d. Format: API key, colon, logbook ID. Just tap Sync — credentials are saved automatically.</string>
+    <string name="prefs_wavelog_sync">Sync now</string>
+    <string name="prefs_wavelog_syncing">Syncing…</string>
+    <string name="prefs_lotw_title">LoTW confirmed grids</string>
+    <string name="prefs_lotw_callsign">LoTW callsign</string>
+    <string name="prefs_lotw_password">LoTW password</string>
+    <string name="prefs_lotw_hint">Confirmed grids: %1$d · credentials stay on this device</string>
+    <string name="prefs_lotw_sync">Sync</string>
+    <string name="prefs_lotw_syncing">Syncing…</string>
+    <string name="prefs_lotw_configured">Synced from LoTW — %1$d grids total</string>
+    <string name="prefs_lotw_not_configured">Not configured — pull confirmed grids directly from ARRL LoTW, no self-hosted server needed</string>
+    <string name="lotw_sync_error_not_configured">LoTW callsign/password not configured</string>
+    <string name="lotw_sync_error_credentials">LoTW sync failed — callsign or password incorrect</string>
+    <string name="lotw_sync_error_rate_limited">LoTW sync failed — rate limited by server, wait a few minutes and retry</string>
+    <string name="lotw_sync_error_timeout">LoTW sync failed — connection timed out, try another network</string>
+    <string name="lotw_sync_error_network">LoTW sync failed — network error (%1$s)</string>
+    <string name="lotw_sync_full">Full sync</string>
+    <string name="lotw_sync_incremental">Incremental merge</string>
+    <string name="lotw_sync_rate_hint">Download runs at ~8 s per 100 QSOs (plus 5–40 s server generation time)</string>
+    <string name="lotw_sync_progress_connecting">Connecting to LoTW…</string>
+    <string name="lotw_sync_progress_downloading">Downloading report…</string>
+    <string name="lotw_sync_progress_saving">Processing downloaded data…</string>
+    <string name="lotw_sync_progress_count">Syncing %1$d QSOs…</string>
+    <string name="lotw_sync_progress_qso">Syncing %1$d QSOs, ~%2$d s remaining</string>
     <string name="prefs_locator_text">Set station\'s position using locator</string>
 
     <string name="prefs_data_title">Satellite data</string>
@@ -226,7 +264,7 @@
     <string name="rc_baud_rate">Baud Rate:</string>
     <string name="rc_cat_transport">CAT transport</string>
     <string name="rc_tcp_protocol">TCP protocol</string>
-    <string name="rc_tcp_protocol_raw">Direct CAT</string>
+    <string name="rc_tcp_protocol_raw">Raw CAT</string>
     <string name="rc_tcp_protocol_hamlib">Hamlib rigctld</string>
     <string name="rc_tx_tcp_address">TX TCP host:port</string>
     <string name="rc_rx_tcp_address">RX TCP host:port</string>
@@ -300,6 +338,7 @@
     <string name="prefs_other_switch_sweep">Enable radar sweep animation</string>
     <string name="prefs_other_switch_sensors">Use sensors to rotate radar view</string>
     <string name="prefs_other_switch_night_mode">Enable red night mode filter</string>
+    <string name="prefs_other_switch_map_grid">Show Maidenhead grid on map</string>
 
     <string name="prefs_highlight_title">Elevation highlight</string>
     <string name="prefs_highlight_low">Low &lt; %1$d°</string>
@@ -539,11 +578,6 @@
     <string name="grid_target_distance_placeholder" translatable="false">-- km</string>
     <string name="grid_target_bearing" translatable="false">%1$.0f°</string>
     <string name="grid_target_bearing_placeholder" translatable="false">--°</string>
-    <string name="map_grid_mode">Grid mode</string>
-    <string name="map_satellite_mode">Satellite mode</string>
-    <string name="grid_qso_calls_count">%1$d callsigns · %2$d QSOs</string>
-    <string name="grid_qso_first">First</string>
-    <string name="grid_qso_no_sat">satellite unknown</string>
     <string name="grid_qso_pair">%1$s · %2$s</string>
     <string name="grid_qso_expand_marker" translatable="false">\u0020▾</string>
     <string name="grid_qso_collapse_marker" translatable="false">\u0020▴</string>

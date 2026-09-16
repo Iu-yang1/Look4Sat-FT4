@@ -1,18 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="lotw_download">LoTW 下载</string>
     <string name="lotw_upload">LoTW 上传</string>
-    <string name="lotw_username">LoTW 登录用户名（区分大小写）</string>
-    <string name="lotw_download_hint">下载已接收的全部 QSO，或仅下载已确认 QSL。登录用户名不一定是本台呼号；密码仅用于本次请求。</string>
-    <string name="lotw_since">接收／确认起始日期（yyyy-MM-dd）</string>
-    <string name="lotw_own_call">本台呼号筛选（选填）</string>
-    <string name="lotw_confirmed_only">仅已确认 QSL</string>
-    <string name="lotw_satellites_only">仅卫星通联</string>
-    <string name="lotw_download_result">下载 %1$d 条，符合筛选 %2$d 条；新增 %3$d 条，更新 %4$d 条，未变 %5$d 条。</string>
-    <string name="lotw_empty_report">没有符合条件的通联。请检查日期、本台呼号与筛选条件，或尝试下载全部 QSO。已有日志未改变。</string>
-    <string name="lotw_invalid_date">请输入有效日期，格式为 yyyy-MM-dd。</string>
     <string name="lotw_certificate_section">证书与台站信息</string>
-    <string name="lotw_certificate_hint">导入 TrustedQSL 导出的呼号证书备份（.p12，须含私钥）。证书和证书密码使用 Android Keystore 加密，仅保存在本机且不进入云备份。</string>
+    <string name="lotw_certificate_hint">导入含私钥的 TrustedQSL .p12 证书；数据加密保存在本机。</string>
     <string name="lotw_certificate_info">%1$s · DXCC %2$d\n证书到期：%3$s\n允许 QSO 日期：%4$s — %5$s</string>
     <string name="lotw_choose_certificate">选择 .p12 呼号证书</string>
     <string name="lotw_certificate_selected">已选文件，点击可重新选择</string>
@@ -21,17 +11,17 @@
     <string name="lotw_save_certificate_profile">保存证书信息</string>
     <string name="lotw_certificate_profile_saved">证书密码和台站信息已保存。</string>
     <string name="lotw_remove_certificate">移除本地证书</string>
-    <string name="lotw_remove_certificate_hint">仅删除本应用加密保存的证书副本，保留原始备份文件与日志；之后可重新导入。</string>
-    <string name="lotw_station_hint">请确认这些通联发生时的实际台站位置，而非当前 GPS 位置。网格必填，其余选填 TQSL 标准代码。例如广东：GD、CQ 24、ITU 44。不同位置请分批上传。</string>
+    <string name="lotw_remove_certificate_hint">仅删除本应用的加密副本，原文件与日志不受影响。</string>
+    <string name="lotw_station_hint">网格必填，其余 TQSL 台站字段选填。</string>
     <string name="lotw_station_grid">通联时本台网格（如 OL62AB）</string>
     <string name="lotw_cq_zone">CQ 分区（1–40，选填）</string>
     <string name="lotw_itu_zone">ITU 分区（1–90，选填）</string>
     <string name="lotw_region">TQSL 省／州代码（如 GD，选填）</string>
     <string name="lotw_county">TQSL 县／市代码（选填）</string>
     <string name="lotw_iota">IOTA（如 AS-001，选填）</string>
-    <string name="lotw_upload_scope">范围：当前筛选的 %1$d 条日志。仅签名已完成、未被 LoTW 接收且未被本应用提交确认的 QSO；可先用日志搜索／筛选缩小批次。</string>
+    <string name="lotw_upload_scope">当前筛选：%1$d 条日志</string>
     <string name="lotw_log_upload_section">日志上传</string>
-    <string name="lotw_audit_hint">自动对照日志本中从 LoTW 下载的接收状态，以及本应用保存的上传回执。</string>
+    <string name="lotw_audit_hint">核对待上传日志与已保存的上传回执。</string>
     <string name="lotw_setup_required">请先保存证书密码和台站信息，再核对或上传日志。</string>
     <string name="lotw_unsaved_profile">证书或台站信息有改动，请先保存后再上传。</string>
     <string name="lotw_pending_count">尚未上传到 LoTW：%1$d 条</string>
@@ -39,13 +29,13 @@
     <string name="lotw_recheck">重新核对</string>
     <string name="lotw_upload_button">上传 %1$d 条日志到 LoTW</string>
     <string name="lotw_retry_upload_button">核对并重传（范围 %1$d 条）</string>
-    <string name="lotw_retry_unknown">我已核对 LoTW 活动记录，需修正资料或处理失败；允许重传当前筛选批次（含已接收／结果不明的记录）</string>
+    <string name="lotw_retry_unknown">重新提交当前筛选批次（含结果不明记录）</string>
     <string name="lotw_certificate_file_error">文件无法读取或超过 1 MB，请选择 .p12 呼号证书备份。</string>
     <string name="lotw_preview_title">确认提交 LoTW</string>
     <string name="lotw_preview_summary">本台 %1$s · DXCC %2$d · %3$s\n待提交 %4$d 条，跳过 %5$d 条</string>
     <string name="lotw_unknown_skipped">其中 %1$d 条上次提交结果不明，本次未包含。</string>
     <string name="lotw_nothing_to_upload">没有新的已完成通联可提交。已接收、已提交确认及重复记录会跳过。</string>
-    <string name="lotw_preview_warning">将向 ARRL LoTW 提交下方已签名的日志快照。请核对呼号、位置与记录；文件被接收不等于获得 QSL 确认。</string>
+    <string name="lotw_preview_warning">请核对呼号、位置和日志；文件被接收不等于 QSL 确认。</string>
     <string name="lotw_submit">提交 %1$d 条 QSO</string>
     <string name="lotw_upload_accepted">LoTW 已接收包含 %1$d 条 QSO 的文件并等待处理，这不等于 QSL 确认。请检查 LoTW 活动记录，处理完成后再下载 QSO。</string>
     <string name="lotw_upload_rejected">LoTW 拒绝了文件，请检查呼号证书和 LoTW 活动记录；未将通联标记为已接收。</string>

@@ -15,24 +15,14 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
-package com.rtbishop.look4sat.core.data.database.entity
+package com.rtbishop.look4sat.core.domain.repository
 
-import androidx.room.Entity
-import androidx.room.PrimaryKey
+/** Fetches worked gridsquares from a self-hosted Wavelog instance (API v2). */
+interface IWavelogRepository {
 
-@Entity(tableName = "radios")
-data class SatRadio(
-    @PrimaryKey val uuid: String,
-    val info: String,
-    val isAlive: Boolean,
-    val downlinkLow: Long?,
-    val downlinkHigh: Long?,
-    val downlinkMode: String?,
-    val uplinkLow: Long?,
-    val uplinkHigh: Long?,
-    val uplinkMode: String?,
-    val isInverted: Boolean,
-    val catnum: Int?,
-    /** Set for manually imported transceivers, which remote updates must not replace. */
-    val isCustom: Boolean = false
-)
+    /**
+     * Fetch worked grids for the configured Wavelog URL/token.
+     * Returns the grid set, or null on any failure.
+     */
+    suspend fun fetchWorkedGrids(url: String, token: String): Set<String>?
+}

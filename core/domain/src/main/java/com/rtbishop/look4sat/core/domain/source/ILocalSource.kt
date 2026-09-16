@@ -31,6 +31,9 @@ interface ILocalSource {
     suspend fun getIdsWithModes(modes: List<String>): List<Int>
     suspend fun getRadiosTotal(): Int
     suspend fun getRadiosWithId(id: Int): List<SatRadio>
-    suspend fun insertRadios(radios: List<SatRadio>)
+    suspend fun insertRadios(radios: List<SatRadio>, isCustom: Boolean = false)
+
+    /** Delete all non-custom transceivers, keeping manually imported ones. */
+    suspend fun deleteManagedRadios()
     suspend fun deleteRadios()
 }

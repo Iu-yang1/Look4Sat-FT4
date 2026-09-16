@@ -13,11 +13,14 @@ import com.rtbishop.look4sat.core.domain.ft4.TxRequest
 import com.rtbishop.look4sat.core.domain.model.DataSourcesSettings
 import com.rtbishop.look4sat.core.domain.model.DatabaseState
 import com.rtbishop.look4sat.core.domain.model.Ft4Settings
+import com.rtbishop.look4sat.core.domain.model.GridQso
+import com.rtbishop.look4sat.core.domain.model.LoTWSettings
 import com.rtbishop.look4sat.core.domain.model.OtherSettings
 import com.rtbishop.look4sat.core.domain.model.PassesSettings
 import com.rtbishop.look4sat.core.domain.model.RCSettings
 import com.rtbishop.look4sat.core.domain.model.RadioControlSettings
 import com.rtbishop.look4sat.core.domain.model.SatRadio
+import com.rtbishop.look4sat.core.domain.model.WavelogSettings
 import com.rtbishop.look4sat.core.domain.predict.GeoPos
 import com.rtbishop.look4sat.core.domain.predict.OrbitalData
 import com.rtbishop.look4sat.core.domain.predict.OrbitalObject
@@ -930,7 +933,17 @@ private class FakeSettingsRepo(
         RCSettings(false, "", "", "", false, "", "", "", 0L, false, "", "", "", false, "", "")
     )
     override val otherSettings = MutableStateFlow(
-        OtherSettings(false, false, false, false, false, false, false, false)
+        OtherSettings(
+            stateOfAutoUpdate = false,
+            stateOfSensors = false,
+            stateOfSweep = false,
+            stateOfUtc = false,
+            stateOfLightTheme = false,
+            stateOfNightMode = false,
+            stateOfMapGrid = false,
+            shouldSeeWarning = false,
+            shouldSeeWhatsNew = false
+        )
     )
     override val ft4Settings = MutableStateFlow(Ft4Settings(decodeEnabled = true))
     override val dataSourcesSettings = MutableStateFlow(DataSourcesSettings(emptyList(), emptyList()))
@@ -979,4 +992,18 @@ private class FakeSettingsRepo(
     override fun setSatelliteOffset(catnum: Int, offset: String) { offsets[catnum] = offset }
     override fun getAmSatCallsign() = ""
     override fun setAmSatCallsign(callsign: String) = Unit
+    override val wavelogSettings = MutableStateFlow(WavelogSettings())
+    override fun updateWavelogSettings(settings: WavelogSettings) = Unit
+    override fun getWorkedGrids() = emptySet<String>()
+    override fun setWorkedGrids(grids: Set<String>) = Unit
+    override fun getWorkedGridQsos() = emptyMap<String, List<GridQso>>()
+    override fun setWorkedGridQsos(qsos: Map<String, List<GridQso>>) = Unit
+    override fun getRoamedGrids() = emptySet<String>()
+    override fun setRoamedGrids(grids: Set<String>) = Unit
+    override val lotwSettings = MutableStateFlow(LoTWSettings())
+    override fun updateLoTWSettings(settings: LoTWSettings) = Unit
+    override fun getLastLotwSyncDate() = ""
+    override fun setLastLotwSyncDate(date: String) = Unit
+    override fun getLastLotwSyncCallsign() = ""
+    override fun setLastLotwSyncCallsign(callsign: String) = Unit
 }

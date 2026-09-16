@@ -240,9 +240,6 @@ private fun LogbookScreen(
                     state.importResult.skipped,
                     state.importResult.updated
                 )
-                state.lotwResult != null -> stringResource(
-                    R.string.logbook_sync_result, state.lotwResult.imported, state.lotwResult.updated, state.lotwResult.skipped
-                )
                 exportComplete -> stringResource(R.string.logbook_exported)
                 else -> null
             }

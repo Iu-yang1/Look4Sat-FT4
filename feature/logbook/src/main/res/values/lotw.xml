@@ -1,18 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="lotw_download">LoTW download</string>
     <string name="lotw_upload">LoTW upload</string>
-    <string name="lotw_username">LoTW username (case-sensitive)</string>
-    <string name="lotw_download_hint">Download accepted QSOs, or only confirmed QSLs. Your login username is not necessarily your station callsign. Password is used for this request only.</string>
-    <string name="lotw_since">Received / confirmed since (yyyy-MM-dd)</string>
-    <string name="lotw_own_call">Station callsign filter (optional)</string>
-    <string name="lotw_confirmed_only">Only confirmed QSLs</string>
-    <string name="lotw_satellites_only">Only satellite contacts</string>
-    <string name="lotw_download_result">Downloaded %1$d; matched filters %2$d; added %3$d, updated %4$d, unchanged %5$d.</string>
-    <string name="lotw_empty_report">No matching contacts. Check the date, station callsign and filters; try downloading all QSOs. Existing logs are unchanged.</string>
-    <string name="lotw_invalid_date">Enter a valid date in yyyy-MM-dd format.</string>
     <string name="lotw_certificate_section">Certificate and station information</string>
-    <string name="lotw_certificate_hint">Import a callsign certificate backup (.p12) exported from TrustedQSL, including its private key. The backup and its password are encrypted with Android Keystore, kept only on this phone and excluded from cloud backup.</string>
+    <string name="lotw_certificate_hint">Import a TrustedQSL .p12 certificate with its private key. It is encrypted and kept on this device.</string>
     <string name="lotw_certificate_info">%1$s · DXCC %2$d\nCertificate expires: %3$s\nQSO dates: %4$s — %5$s</string>
     <string name="lotw_choose_certificate">Choose .p12 certificate</string>
     <string name="lotw_certificate_selected">Certificate selected — choose another</string>
@@ -21,17 +11,17 @@
     <string name="lotw_save_certificate_profile">Save certificate information</string>
     <string name="lotw_certificate_profile_saved">Certificate password and station information saved.</string>
     <string name="lotw_remove_certificate">Remove local certificate</string>
-    <string name="lotw_remove_certificate_hint">Remove only this app’s encrypted certificate copy. The original backup and logs are kept. You can import it again.</string>
-    <string name="lotw_station_hint">Confirm the actual operating location for these contacts, not today’s GPS position. The grid is required; other fields are optional TQSL codes. Example for China: GD, CQ 24, ITU 44. Upload separate batches for different locations.</string>
+    <string name="lotw_remove_certificate_hint">Removes only this app’s encrypted copy; the original file and logs stay intact.</string>
+    <string name="lotw_station_hint">Grid is required; the other TQSL station fields are optional.</string>
     <string name="lotw_station_grid">Operating grid (e.g. OL62AB)</string>
     <string name="lotw_cq_zone">CQ zone (1–40, optional)</string>
     <string name="lotw_itu_zone">ITU zone (1–90, optional)</string>
     <string name="lotw_region">TQSL state / province code (optional)</string>
     <string name="lotw_county">TQSL county / city code (optional)</string>
     <string name="lotw_iota">IOTA (e.g. AS-001, optional)</string>
-    <string name="lotw_upload_scope">Scope: %1$d currently filtered contacts. Only complete QSOs not already received by LoTW or acknowledged by this app will be signed. Use the logbook search/filter to select a batch.</string>
+    <string name="lotw_upload_scope">Current filter: %1$d contacts</string>
     <string name="lotw_log_upload_section">Log upload</string>
-    <string name="lotw_audit_hint">Automatically compared with LoTW-received records in the logbook and this app’s durable upload receipts.</string>
+    <string name="lotw_audit_hint">Checks pending logs against saved upload receipts.</string>
     <string name="lotw_setup_required">Save a certificate password and station information before checking or uploading logs.</string>
     <string name="lotw_unsaved_profile">Save the certificate or station changes before uploading.</string>
     <string name="lotw_pending_count">Not uploaded to LoTW: %1$d</string>
@@ -39,13 +29,13 @@
     <string name="lotw_recheck">Check again</string>
     <string name="lotw_upload_button">Upload %1$d logs to LoTW</string>
     <string name="lotw_retry_upload_button">Review retry upload (%1$d in scope)</string>
-    <string name="lotw_retry_unknown">I checked LoTW activity: resubmit this filtered batch (including received/unknown records) for corrections or processing failures</string>
+    <string name="lotw_retry_unknown">Resubmit this filtered batch, including records with unknown results</string>
     <string name="lotw_certificate_file_error">Cannot read this file, or it exceeds 1 MB. Choose a .p12 callsign certificate backup.</string>
     <string name="lotw_preview_title">Confirm LoTW submission</string>
     <string name="lotw_preview_summary">Station %1$s · DXCC %2$d · %3$s\nReady: %4$d · skipped: %5$d</string>
     <string name="lotw_unknown_skipped">%1$d contacts have unknown submission results and were not included.</string>
     <string name="lotw_nothing_to_upload">No new complete contacts to submit. Already received, acknowledged or duplicate contacts are skipped.</string>
-    <string name="lotw_preview_warning">This submits the signed snapshot shown below to ARRL LoTW. Check the callsign, location and contacts before continuing. Acceptance does not mean a QSL confirmation.</string>
+    <string name="lotw_preview_warning">Check the callsign, location and contacts. Acceptance is not a QSL confirmation.</string>
     <string name="lotw_submit">Submit %1$d QSOs</string>
     <string name="lotw_upload_accepted">LoTW accepted the file containing %1$d QSOs for processing. This is not a QSL confirmation. Check LoTW activity, then download QSOs after processing.</string>
     <string name="lotw_upload_rejected">LoTW rejected the file. Check the callsign certificate and LoTW activity. No contacts were marked received.</string>

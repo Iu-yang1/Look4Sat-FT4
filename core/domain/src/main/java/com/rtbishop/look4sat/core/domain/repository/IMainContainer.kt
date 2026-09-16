@@ -37,7 +37,6 @@ interface IMainContainer {
     val satelliteRepo: ISatelliteRepo
     val databaseRepo: IDatabaseRepo
     val qsoRepository: IQsoRepository
-    val lotwRepository: ILoTWRepository
     val lotwUploadRepository: ILoTWUploadRepository
     val amSatRepo: IAmSatRepository
     val audioHub: IAudioHub
@@ -47,6 +46,8 @@ interface IMainContainer {
     val disciplinedClock: IDisciplinedClock
     val timeSynchronizationService: ITimeSynchronizationService
     val updateRepo: IUpdateRepository
+    val wavelogRepo: IWavelogRepository
+    val lotwRepo: ILoTWRepository
     val radioTrackingService: IRadioTrackingService
     val mutualPassData: StateFlow<MutualPassData>
     fun setMutualPassData(data: MutualPassData)

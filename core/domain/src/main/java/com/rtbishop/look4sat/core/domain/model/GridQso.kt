@@ -26,8 +26,8 @@ package com.rtbishop.look4sat.core.domain.model
  * @param epochMs   QSO date+time in UTC milliseconds
  * @param satName   satellite name (e.g. "FO-29")
  * @param mode      ADIF mode (FM / CW / SSB ...)
- * @param bandUp    uplink band from ADIF BAND ("70CM", "2M", "10M"...)
- * @param bandDown  downlink band from ADIF BAND_RX ("2M", "70CM"...) — may be empty when
+ * @param bandUp    uplink band as reported by LoTW (BAND_RX: "70CM", "2M", "10M"...)
+ * @param bandDown  downlink band (BAND: "2M", "70CM"...) — may be empty when
  *                  LoTW did not include it
  * @param dxcc      ARRL DXCC entity code of the opposite station (from ADIF
  *                  <DXCC>), or null when LoTW omitted it
@@ -48,7 +48,9 @@ data class GridQso(
     val dxcc: Int? = null,
     val country: String? = null,
     val cqz: Int? = null,
-    val state: String? = null
+    val state: String? = null,
+    /** 4-char grid the station itself operated from (ADIF MY_GRIDSQUARE). */
+    val myGrid: String? = null
 ) {
     /** Short uplink/downlink band label ("U/V", "V/A"), or "" when unknown. */
     val bandLabel: String

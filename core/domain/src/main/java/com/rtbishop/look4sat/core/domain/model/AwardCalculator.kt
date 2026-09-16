@@ -110,7 +110,7 @@ object AwardCalculator {
         val keys = mutableSetOf<String>()
         for (q in all) {
             if (entityOf(q) != Entity.JAPAN) continue
-            q.state?.trim()?.takeIf { it.length == 2 && it.toIntOrNull() in 1..47 }?.let { keys.add(it) }
+            q.state?.trim()?.takeIf { it.length == 2 && it.all(Char::isDigit) }?.let { keys.add(it) }
         }
         return AwardProgress(AwardType.WAJA, keys, keys.size, AwardTargets.WAJA)
     }

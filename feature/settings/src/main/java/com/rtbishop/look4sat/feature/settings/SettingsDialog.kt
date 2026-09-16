@@ -65,7 +65,9 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -169,6 +171,185 @@ fun LocatorDialog(qthLocator: String, dismiss: () -> Unit, save: (String) -> Uni
             label = { Text(text = stringResource(id = R.string.prefs_locator_text)) },
             modifier = Modifier.fillMaxWidth().padding(horizontal = LocalSpacing.current.large),
         )
+        Spacer(modifier = Modifier.height(0.dp))
+    }
+}
+
+@Composable
+fun WavelogDialog(
+    initialSettings: com.rtbishop.look4sat.core.domain.model.WavelogSettings,
+    workedGridsCount: Int,
+    isSyncing: Boolean,
+    message: String?,
+    dismiss: () -> Unit,
+    onSave: (com.rtbishop.look4sat.core.domain.model.WavelogSettings) -> Unit,
+    onSync: (com.rtbishop.look4sat.core.domain.model.WavelogSettings) -> Unit
+) {
+    val url = rememberSaveable { mutableStateOf(initialSettings.url) }
+    val token = rememberSaveable { mutableStateOf(initialSettings.token) }
+    SharedDialog(
+        title = stringResource(R.string.prefs_wavelog_title),
+        onCancel = dismiss,
+        onAccept = {
+            onSave(com.rtbishop.look4sat.core.domain.model.WavelogSettings(url.value, token.value))
+            dismiss()
+        }
+    ) {
+        OutlinedTextField(
+            value = url.value,
+            onValueChange = { url.value = it },
+            label = { Text(text = stringResource(id = R.string.prefs_wavelog_url)) },
+            placeholder = { Text(text = "http://192.168.1.10") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = LocalSpacing.current.large),
+        )
+        OutlinedTextField(
+            value = token.value,
+            onValueChange = { token.value = it },
+            label = { Text(text = stringResource(id = R.string.prefs_wavelog_token)) },
+            placeholder = { Text(text = "abcdef123456:1") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = LocalSpacing.current.large),
+        )
+        Text(
+            text = stringResource(R.string.prefs_wavelog_hint, workedGridsCount),
+            style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.padding(horizontal = LocalSpacing.current.large)
+        )
+        if (message != null) {
+            Text(
+                text = message,
+                color = MaterialTheme.colorScheme.error,
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(horizontal = LocalSpacing.current.large)
+            )
+        }
+        // Sync uses the values typed in the fields directly — saving and syncing
+        // happen in one step, no need to close and reopen the dialog.
+        Row(
+            horizontalArrangement = Arrangement.End,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = LocalSpacing.current.large)
+        ) {
+            TextButton(
+                onClick = { onSync(com.rtbishop.look4sat.core.domain.model.WavelogSettings(url.value, token.value)) },
+                enabled = !isSyncing
+            ) {
+                Text(text = if (isSyncing) stringResource(R.string.prefs_wavelog_syncing)
+                else stringResource(R.string.prefs_wavelog_sync))
+            }
+        }
+        Spacer(modifier = Modifier.height(0.dp))
+    }
+}
+
+@Composable
+fun LoTWDialog(
+    initialSettings: com.rtbishop.look4sat.core.domain.model.LoTWSettings,
+    workedGridsCount: Int,
+    isSyncing: Boolean,
+    syncMode: LoTWSyncMode?,
+    progress: com.rtbishop.look4sat.core.domain.repository.LoTWProgress?,
+    message: String?,
+    dismiss: () -> Unit,
+    /** Called on cancel/back while a sync is running: aborts the job. */
+    onCancelSync: () -> Unit,
+    onSave: (com.rtbishop.look4sat.core.domain.model.LoTWSettings) -> Unit,
+    onSyncFull: (com.rtbishop.look4sat.core.domain.model.LoTWSettings) -> Unit,
+    onSyncIncremental: (com.rtbishop.look4sat.core.domain.model.LoTWSettings) -> Unit
+) {
+    val call = rememberSaveable { mutableStateOf(initialSettings.callsign) }
+    val pass = rememberSaveable { mutableStateOf(initialSettings.password) }
+    SharedDialog(
+        title = stringResource(R.string.prefs_lotw_title),
+        // While syncing, cancel/back aborts the download instead of merely
+        // hiding the dialog — a full sync started by mistake must be stoppable.
+        onDismissRequest = { if (isSyncing) onCancelSync() else dismiss() },
+        onCancel = { if (isSyncing) onCancelSync() else dismiss() },
+        // The two sync buttons below are the primary actions: saving
+        // credentials and fetching confirmed grids happen in one step.
+        onAccept = null
+    ) {
+        OutlinedTextField(
+            value = call.value,
+            onValueChange = { call.value = it.uppercase() },
+            label = { Text(text = stringResource(id = R.string.prefs_lotw_callsign)) },
+            placeholder = { Text(text = "BA7OPF") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = LocalSpacing.current.large),
+        )
+        OutlinedTextField(
+            value = pass.value,
+            onValueChange = { pass.value = it },
+            label = { Text(text = stringResource(id = R.string.prefs_lotw_password)) },
+            placeholder = { Text(text = "********") },
+            visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = LocalSpacing.current.large),
+        )
+        Text(
+            text = stringResource(R.string.prefs_lotw_hint, workedGridsCount),
+            style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.padding(horizontal = LocalSpacing.current.large)
+        )
+        if (isSyncing) {
+            // Live progress: once the report header reveals the record count,
+            // switch to "N QSOs, ~X s remaining" with a determinate bar.
+            val progressText = when {
+                progress == null ||
+                    progress.phase == com.rtbishop.look4sat.core.domain.repository.LoTWPhase.Connecting ->
+                    stringResource(R.string.lotw_sync_progress_connecting)
+                // Download finished (or the size estimate reached its cap):
+                // parsing and saving may still run — say so instead of the bar
+                // sitting at 100% with no feedback, which reads as "stuck".
+                progress.fraction >= 1f ->
+                    stringResource(R.string.lotw_sync_progress_saving)
+                progress.qsoCount > 0 && progress.remainingSeconds > 0 ->
+                    stringResource(R.string.lotw_sync_progress_qso, progress.qsoCount, progress.remainingSeconds)
+                progress.qsoCount > 0 ->
+                    stringResource(R.string.lotw_sync_progress_count, progress.qsoCount)
+                else -> stringResource(R.string.lotw_sync_progress_downloading)
+            }
+            Text(
+                text = progressText,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = LocalSpacing.current.large)
+            )
+            if (progress != null && progress.expectedBytes > 0) {
+                LinearProgressIndicator(
+                    progress = { progress.fraction },
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = LocalSpacing.current.large)
+                )
+            } else {
+                LinearProgressIndicator(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = LocalSpacing.current.large)
+                )
+            }
+        }
+        if (message != null) {
+            Text(
+                text = message,
+                color = MaterialTheme.colorScheme.error,
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(horizontal = LocalSpacing.current.large)
+            )
+        }
+        Row(
+            horizontalArrangement = Arrangement.SpaceBetween,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = LocalSpacing.current.large)
+        ) {
+            // Full sync bottom-left, incremental merge bottom-right.
+            CardButton(
+                onClick = { onSyncFull(com.rtbishop.look4sat.core.domain.model.LoTWSettings(call.value, pass.value)) },
+                text = stringResource(R.string.lotw_sync_full),
+                enabled = !isSyncing
+            )
+            CardButton(
+                onClick = { onSyncIncremental(com.rtbishop.look4sat.core.domain.model.LoTWSettings(call.value, pass.value)) },
+                text = stringResource(R.string.lotw_sync_incremental),
+                enabled = !isSyncing
+            )
+        }
         Spacer(modifier = Modifier.height(0.dp))
     }
 }
@@ -1194,24 +1375,6 @@ fun RadioControlDialog(
                     }
                 }
             }
-            when (catTransport.value) {
-                RadioControlSettings.TRANSPORT_USB -> Text(
-                    stringResource(R.string.rc_usb_cdc_hint),
-                    fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                RadioControlSettings.TRANSPORT_TCP -> Text(
-                    stringResource(
-                        if (tcpProtocol.value == RadioControlSettings.TCP_PROTOCOL_HAMLIB) {
-                            R.string.rc_tcp_hamlib_hint
-                        } else {
-                            R.string.rc_tcp_raw_hint
-                        }
-                    ),
-                    fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
             if (catTransport.value == RadioControlSettings.TRANSPORT_TCP) {
                 OutlinedTextField(
                     value = txAddress.value,
@@ -1295,15 +1458,9 @@ fun RadioControlDialog(
                         civAddressError.value = false
                     },
                     label = { Text(stringResource(R.string.rc_civ_address)) },
-                    supportingText = {
-                        Text(
-                            if (civAddressError.value) {
-                                stringResource(R.string.rc_civ_address_error)
-                            } else {
-                                stringResource(R.string.rc_civ_address_hint)
-                            }
-                        )
-                    },
+                    supportingText = if (civAddressError.value) {
+                        { Text(stringResource(R.string.rc_civ_address_error)) }
+                    } else null,
                     isError = civAddressError.value,
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
@@ -1319,14 +1476,11 @@ fun RadioControlDialog(
                     verticalAlignment     = Alignment.CenterVertically,
                     modifier              = Modifier.fillMaxWidth()
                 ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(stringResource(R.string.rc_split_mode), fontWeight = FontWeight.Medium)
-                        Text(
-                            text     = stringResource(R.string.rc_split_mode_hint),
-                            fontSize = 12.sp,
-                            color    = androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
+                    Text(
+                        stringResource(R.string.rc_split_mode),
+                        fontWeight = FontWeight.Medium,
+                        modifier = Modifier.weight(1f)
+                    )
                     Switch(
                         checked         = splitMode.value,
                         onCheckedChange = { splitMode.value = it },
@@ -1342,14 +1496,11 @@ fun RadioControlDialog(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(stringResource(R.string.rc_satellite_mode), fontWeight = FontWeight.Medium)
-                        Text(
-                            text = stringResource(R.string.rc_satellite_mode_hint),
-                            fontSize = 12.sp,
-                            color = androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
+                    Text(
+                        stringResource(R.string.rc_satellite_mode),
+                        fontWeight = FontWeight.Medium,
+                        modifier = Modifier.weight(1f)
+                    )
                     Switch(
                         checked = duplexMode.value == RadioControlSettings.DUPLEX_MODE_SATELLITE,
                         onCheckedChange = { enabled ->

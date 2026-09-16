@@ -29,6 +29,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -46,7 +47,6 @@ import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -76,6 +76,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.rtbishop.look4sat.core.domain.model.AwardCalculator
 import com.rtbishop.look4sat.core.domain.model.AwardProgress
 import com.rtbishop.look4sat.core.domain.model.AwardType
 import com.rtbishop.look4sat.core.domain.predict.GeoPos
@@ -90,14 +91,16 @@ import com.rtbishop.look4sat.core.presentation.TopBar
 import com.rtbishop.look4sat.core.presentation.isVerticalLayout
 import com.rtbishop.look4sat.core.presentation.layoutPadding
 import org.osmdroid.tileprovider.tilesource.XYTileSource
+import org.osmdroid.events.DelayedMapListener
+import org.osmdroid.events.MapListener
+import org.osmdroid.events.ScrollEvent
+import org.osmdroid.events.ZoomEvent
 import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.CustomZoomButtonsController
 import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.FolderOverlay
 import org.osmdroid.views.overlay.Marker
 import org.osmdroid.views.overlay.Polyline
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 
 // Overlay indices
 private const val OVERLAY_GRID = 0
@@ -147,6 +150,21 @@ fun MapDestination() {
     val viewModel: MapViewModel = viewModel(factory = MapViewModel.factory(container))
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val mapView = rememberMapViewWithLifecycle()
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    DisposableEffect(lifecycle) {
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_START -> viewModel.onAction(MapAction.SetVisible(true))
+                Lifecycle.Event.ON_STOP -> viewModel.onAction(MapAction.SetVisible(false))
+                else -> {}
+            }
+        }
+        lifecycle.addObserver(observer)
+        onDispose {
+            lifecycle.removeObserver(observer)
+            viewModel.onAction(MapAction.SetVisible(false))
+        }
+    }
     MapScreen(uiState, viewModel::onAction, mapView)
 }
 
@@ -159,29 +177,48 @@ private fun MapScreen(uiState: MapState, onAction: (MapAction) -> Unit, mapView:
     // Tapped worked grid -> centered QSO dialog. Local UI state: the map is the
     // only consumer and it resets when leaving the page.
     var selectedGrid by remember { mutableStateOf<String?>(null) }
-    // Selected award filter (null = "All" = plain worked-grid view).
+    // Selected award filter. Entering grid mode defaults to VUCC (the plain
+    // worked-grid view); the reset effect below re-asserts that on every entry.
     var selectedAward by remember { mutableStateOf<AwardType?>(AwardType.VUCC) }
     // Six-award progress derived from the confirmed QSO store; recomputed when
     // the store changes (LoTW/Wavelog sync).
-    val awardProgress = uiState.awardProgress
-    var awardRegions by remember { mutableStateOf<List<AwardRegion>>(emptyList()) }
-    var boundariesLoading by remember { mutableStateOf(false) }
-    LaunchedEffect(uiState.isGridMode, selectedAward) {
-        awardRegions = emptyList()
-        val asset = selectedAward?.let(::awardAsset)
-        boundariesLoading = uiState.isGridMode && asset != null
-        if (uiState.isGridMode && asset != null) {
-            awardRegions = withContext(Dispatchers.IO) { AwardBoundaryData.load(mapView.context.applicationContext, asset) }
+    // Per operated-grid VUCC breakdown: myGrid -> set of worked grids worked from it.
+    val vuccByMyGrid: Map<String, Set<String>> = remember(uiState.workedGridQsos) {
+        val m = mutableMapOf<String, MutableSet<String>>()
+        for ((grid, qsos) in uiState.workedGridQsos) {
+            for (q in qsos) {
+                val mg = q.myGrid ?: continue
+                m.getOrPut(mg) { mutableSetOf() }.add(grid)
+            }
         }
-        boundariesLoading = false
+        m
     }
-    // Attach the tap listener whenever grid mode / worked grids change.
-    val workedGrids = uiState.workedGrids
+    // Selected operated grid for VUCC counting; defaults to the grid with the
+    // most worked grids. Null when the store carries no per-QSO myGrid data
+    // (requires a LoTW resync) — then VUCC falls back to the global count.
+    var selectedMyGrid by remember(vuccByMyGrid) {
+        mutableStateOf(vuccByMyGrid.maxByOrNull { it.value.size }?.key)
+    }
+    val awardProgress: List<AwardProgress> = remember(uiState.workedGridQsos, vuccByMyGrid, selectedMyGrid) {
+        val vuccGrids = selectedMyGrid?.let { vuccByMyGrid[it].orEmpty() }
+        val base = AwardCalculator.calculate(uiState.workedGridQsos)
+        if (vuccGrids == null) base
+        else base.map { p ->
+            if (p.type == AwardType.VUCC) p.copy(workedKeys = vuccGrids, count = vuccGrids.size) else p
+        }
+    }
+    // Worked grids drawn on the map: filtered by the selected operated grid
+    // (null = all operated grids). Drives both the green fills and the tap
+    // listener below, so switching the selector changes which cells are green.
+    val workedGrids = remember(uiState.workedGrids, vuccByMyGrid, selectedMyGrid) {
+        if (selectedMyGrid == null) uiState.workedGrids
+        else vuccByMyGrid[selectedMyGrid] ?: emptySet()
+    }
     val isGridMode = uiState.isGridMode
-    DisposableEffect(mapView, isGridMode, workedGrids, selectedAward) {
+    DisposableEffect(isGridMode, workedGrids) {
         val receiver = object : org.osmdroid.events.MapEventsReceiver {
             override fun singleTapConfirmedHelper(p: GeoPoint?): Boolean {
-                if (!isGridMode || (selectedAward != null && selectedAward != AwardType.VUCC) || p == null) return false
+                if (!isGridMode || p == null) return false
                 val zoom = mapView.zoomLevelDouble
                 // Allow tapping worked cells as soon as the 4-char grid LINES
                 // appear (GRID_ZOOM_SUB), not only when labels show (LABEL_ZOOM_SUB).
@@ -202,6 +239,11 @@ private fun MapScreen(uiState: MapState, onAction: (MapAction) -> Unit, mapView:
     LaunchedEffect(selectedGrid) {
         (mapView.overlays.getOrNull(OVERLAY_GRID) as? MaidenheadGridOverlay)?.selectedGrid = selectedGrid
         mapView.invalidate()
+    }
+    // Re-assert the VUCC default each time grid mode is entered; while already
+    // in grid mode the user's chip choice is preserved.
+    LaunchedEffect(uiState.isGridMode) {
+        if (uiState.isGridMode) selectedAward = AwardType.VUCC
     }
 
     LaunchedEffect(uiState.track) {
@@ -250,7 +292,7 @@ private fun MapScreen(uiState: MapState, onAction: (MapAction) -> Unit, mapView:
                         setAwardMode(
                             awardMode,
                             awardProgress.firstOrNull { it.type == awardMode }?.workedKeys.orEmpty(),
-                            view, awardRegions
+                            view
                         )
                         prevGridMode = uiState.isGridMode
                     } else {
@@ -260,8 +302,9 @@ private fun MapScreen(uiState: MapState, onAction: (MapAction) -> Unit, mapView:
                         // stationPosition would swallow the centering forever.
                         val shouldCenter = uiState.isGridMode && !prevGridMode
                         setGridMode(
-                            uiState.isGridMode, uiState.workedGrids, view,
-                            uiState.stationPosition, shouldCenter
+                            uiState.isGridMode, workedGrids, uiState.roamedGrids, view,
+                            uiState.stationPosition,
+                            centerOnStation = shouldCenter
                         )
                         if (!shouldCenter || uiState.stationPosition != null) {
                             prevGridMode = uiState.isGridMode
@@ -283,6 +326,19 @@ private fun MapScreen(uiState: MapState, onAction: (MapAction) -> Unit, mapView:
                         if (isVertical) MapDataCard(mapData) else MapDataCards(mapData)
                     }
                 }
+                // Top-left: operated-grid selector for VUCC counting (grid mode only).
+                // Shown whenever per-grid QSO data exists; "All" (null) is available.
+                if (uiState.isGridMode && selectedAward == AwardType.VUCC && vuccByMyGrid.isNotEmpty()) {
+                    VuccGridSelector(
+                        options = vuccByMyGrid,
+                        allCount = uiState.workedGrids.size,
+                        selected = selectedMyGrid,
+                        onSelect = { selectedMyGrid = it },
+                        modifier = Modifier
+                            .align(Alignment.TopStart)
+                            .padding(8.dp)
+                    )
+                }
                 GridModeToggle(
                     isGridMode = uiState.isGridMode,
                     onToggle = { onAction(MapAction.ToggleGridMode(it)) },
@@ -290,17 +346,6 @@ private fun MapScreen(uiState: MapState, onAction: (MapAction) -> Unit, mapView:
                         .align(Alignment.TopEnd)
                         .padding(8.dp)
                 )
-                if (boundariesLoading) {
-                    LinearProgressIndicator(modifier = Modifier.align(Alignment.TopStart).fillMaxWidth())
-                }
-                if (isGridMode && uiState.workedGridQsos.isEmpty()) {
-                    Surface(
-                        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
-                        modifier = Modifier.align(Alignment.BottomCenter).padding(8.dp)
-                    ) {
-                        Text(stringResource(R.string.map_grid_empty), style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(8.dp))
-                    }
-                }
             }
         }
     }
@@ -396,29 +441,40 @@ private fun WorkedGridCallRow(
                 style = MaterialTheme.typography.titleMedium,
                 fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
                 color = MaterialTheme.colorScheme.tertiary,
+                maxLines = 1,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f)
             )
             Text(
-                text = formatDate(first.epochMs, isUtc),
+                // Plurals resources don't work for zh (only 'other' matches), so
+                // pick the singular/plural string explicitly.
+                text = if (callQsos.size == 1) stringResource(R.string.grid_qso_count_one, 1)
+                else stringResource(R.string.grid_qso_count_many, callQsos.size),
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                modifier = Modifier.weight(1f)
             )
-            Text(
-                text = stringResource(
-                    if (expanded) R.string.grid_qso_collapse_marker
-                    else R.string.grid_qso_expand_marker
-                ),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.primary
-            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.End,
+                modifier = Modifier.weight(1f)
+            ) {
+                Text(
+                    text = formatDate(first.epochMs, isUtc),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    text = if (expanded) " ▴" else " ▾",
+                    fontSize = 18.sp,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
         }
         // First-QSO summary line, always visible.
         Text(
-            text = stringResource(
-                R.string.grid_qso_pair,
-                stringResource(R.string.grid_qso_first),
-                qsoSummary(first, isUtc)
-            ),
+            text = stringResource(R.string.grid_qso_first) + " · " + qsoSummary(first, isUtc),
             style = MaterialTheme.typography.bodySmall,
             modifier = Modifier.padding(top = 3.dp)
         )
@@ -428,11 +484,7 @@ private fun WorkedGridCallRow(
         if (expanded && callQsos.size > 1) {
             callQsos.drop(1).forEach { qso ->
                 Text(
-                    text = stringResource(
-                        R.string.grid_qso_pair,
-                        formatDate(qso.epochMs, isUtc),
-                        qsoSummary(qso, isUtc)
-                    ),
+                    text = formatDate(qso.epochMs, isUtc) + " · " + qsoSummary(qso, isUtc),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 3.dp)
@@ -442,29 +494,23 @@ private fun WorkedGridCallRow(
     }
 }
 
-@Composable
 private fun qsoSummary(qso: com.rtbishop.look4sat.core.domain.model.GridQso, isUtc: Boolean): String {
-    val unknown = stringResource(R.string.grid_qso_unknown)
-    val sat = qso.satName.ifBlank { unknown }
-    val mode = qso.mode.ifBlank { unknown }
+    val sat = qso.satName.ifBlank { "?" }
+    val mode = qso.mode.ifBlank { "?" }
     val band = qso.bandLabel
     val time = formatTime(qso.epochMs, isUtc)
-    return listOf(sat, mode, band, time)
-        .filter(String::isNotBlank)
-        .joinToString(stringResource(R.string.grid_qso_separator))
+    return listOf(sat, mode, band, time).filter { it.isNotBlank() }.joinToString(" · ")
 }
 
-@Composable
 private fun formatDate(epochMs: Long, isUtc: Boolean): String {
-    if (epochMs <= 0L) return stringResource(R.string.grid_qso_date_unknown)
+    if (epochMs <= 0L) return "--"
     val zone = if (isUtc) java.time.ZoneOffset.UTC else java.time.ZoneId.systemDefault()
     return java.time.Instant.ofEpochMilli(epochMs).atZone(zone)
         .format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd"))
 }
 
-@Composable
 private fun formatTime(epochMs: Long, isUtc: Boolean): String {
-    if (epochMs <= 0L) return stringResource(R.string.grid_qso_time_unknown)
+    if (epochMs <= 0L) return "--:--"
     val zone = if (isUtc) java.time.ZoneOffset.UTC else java.time.ZoneId.systemDefault()
     return java.time.Instant.ofEpochMilli(epochMs).atZone(zone)
         .format(java.time.format.DateTimeFormatter.ofPattern(if (isUtc) "HH:mm'Z'" else "HH:mm"))
@@ -582,17 +628,103 @@ private fun AwardChipsRow(
                 onClick = { onSelect(p.type) },
                 label = {
                     Text(
-                        text = stringResource(
-                            R.string.map_award_progress,
-                            p.type.name,
-                            p.count,
-                            p.target
-                        ),
+                        text = "${p.type.name} ${p.count}/${p.target}",
                         fontSize = 12.sp
                     )
                 },
                 colors = FilterChipDefaults.filterChipColors()
             )
+        }
+    }
+}
+
+/**
+ * Compact pill toggle for switching between satellite view and grid mode,
+ * floated over the map's top-right corner. The label reflects the active
+ * mode ("Grid mode" when ON, "Satellite mode" when OFF). Semi-transparent
+ * background keeps the map readable underneath.
+ */
+@Composable
+private fun VuccGridSelector(
+    options: Map<String, Set<String>>,
+    allCount: Int,
+    selected: String?,
+    onSelect: (String?) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var expanded by remember { mutableStateOf(false) }
+    // Most-worked grid first; selection is made on tap. "All" sits last.
+    val sorted = remember(options) { options.entries.sortedByDescending { it.value.size } }
+    Surface(
+        color = ComposeColor.Black.copy(alpha = 0.45f),
+        shape = RoundedCornerShape(8.dp),
+        modifier = modifier
+    ) {
+        // Width = widest child (header or list item), never the full screen:
+        // the expanded rows use fillMaxWidth, which would otherwise stretch
+        // this box to the whole map width.
+        Column(modifier = Modifier.width(IntrinsicSize.Max)) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { expanded = !expanded }
+                    .padding(start = 10.dp, end = 6.dp, top = 4.dp, bottom = 4.dp)
+            ) {
+                Text(
+                    text = if (selected == null) "All ($allCount)"
+                    else "$selected (${options[selected]?.size ?: 0})",
+                    color = ComposeColor.White,
+                    fontSize = 12.sp,
+                    fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+                )
+                Text(
+                    text = if (expanded) " ▴" else " ▾",
+                    fontSize = 18.sp,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(start = 4.dp)
+                )
+            }
+            if (expanded) {
+                androidx.compose.material3.HorizontalDivider(color = ComposeColor.White.copy(alpha = 0.2f))
+                sorted.forEach { (grid, grids) ->
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                onSelect(grid)
+                                expanded = false
+                            }
+                            .padding(horizontal = 10.dp, vertical = 3.dp)
+                    ) {
+                        Text(
+                            text = "$grid (${grids.size})",
+                            color = if (grid == selected) MaterialTheme.colorScheme.primary else ComposeColor.White,
+                            fontSize = 12.sp,
+                            fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+                        )
+                    }
+                }
+                // "All" always listed last: shows every worked grid combined.
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable {
+                            onSelect(null)
+                            expanded = false
+                        }
+                        .padding(horizontal = 10.dp, vertical = 3.dp)
+                ) {
+                    Text(
+                        text = "All ($allCount)",
+                        color = if (selected == null) MaterialTheme.colorScheme.primary else ComposeColor.White,
+                        fontSize = 12.sp,
+                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+                    )
+                }
+            }
         }
     }
 }
@@ -645,26 +777,24 @@ private fun GridModeToggle(
  * Satellite-related layers are hidden exactly like grid mode. VUCC keeps the
  * plain Maidenhead grid overlay (the grid view IS the VUCC view).
  */
-private fun awardAsset(award: AwardType): AwardBoundaryData.AwardAsset? = when (award) {
+private fun setAwardMode(award: AwardType, workedCodes: Set<String>, mapView: MapView) {
+    val asset = when (award) {
         AwardType.WAPC -> AwardBoundaryData.AwardAsset.WAPC
         AwardType.WAJA -> AwardBoundaryData.AwardAsset.WAJA
         AwardType.WAZ -> AwardBoundaryData.AwardAsset.WAZ
         AwardType.WAS -> AwardBoundaryData.AwardAsset.WAS
         AwardType.DXCC -> AwardBoundaryData.AwardAsset.DXCC
-        AwardType.VUCC -> null
+        AwardType.VUCC -> return
     }
-
-private fun setAwardMode(award: AwardType, workedCodes: Set<String>, mapView: MapView, regions: List<AwardRegion>) {
-    if (award == AwardType.VUCC) return
     val overlay = mapView.overlays.getOrNull(OVERLAY_GRID)
     if (overlay is AwardBoundaryOverlay) {
         overlay.isEnabled = true
-        overlay.regions = regions
+        overlay.regions = AwardBoundaryData.load(mapView.context, asset)
         overlay.workedCodes = workedCodes
     } else {
         mapView.overlays[OVERLAY_GRID] = AwardBoundaryOverlay().apply {
             isEnabled = true
-            this.regions = regions
+            regions = AwardBoundaryData.load(mapView.context, asset)
             this.workedCodes = workedCodes
         }
     }
@@ -677,20 +807,26 @@ private fun setAwardMode(award: AwardType, workedCodes: Set<String>, mapView: Ma
 private fun setGridMode(
     gridMode: Boolean,
     workedGrids: Set<String>,
+    roamedGrids: Set<String>,
     mapView: MapView,
     stationPosition: GeoPos?,
-    shouldCenter: Boolean
+    centerOnStation: Boolean = false
 ) {
     try {
         val gridOverlay = mapView.overlays[OVERLAY_GRID]
         if (gridOverlay is MaidenheadGridOverlay) {
             gridOverlay.isEnabled = gridMode
             gridOverlay.workedGrids = workedGrids
+            gridOverlay.roamedGrids = roamedGrids
+            // ownGrid must be set on EVERY update — the position is available
+            // regardless of whether this frame centers (centering happens only
+            // on entry, but passing null here would wipe the bold outline).
             gridOverlay.ownGrid = ownGridOf(stationPosition)
         } else {
             mapView.overlays[OVERLAY_GRID] = MaidenheadGridOverlay().apply {
                 isEnabled = gridMode
                 this.workedGrids = workedGrids
+                this.roamedGrids = roamedGrids
                 this.ownGrid = ownGridOf(stationPosition)
             }
         }
@@ -704,7 +840,7 @@ private fun setGridMode(
         // first composition this runs before MapView's first layout, and a
         // setCenter issued pre-layout is discarded when the view lays out —
         // the map then keeps its default center forever.
-        if (gridMode && shouldCenter) {
+        if (gridMode && centerOnStation) {
             val pos = stationPosition ?: return
             val lat = pos.latitude
             val lon = pos.longitude
@@ -764,6 +900,27 @@ private fun setStationPosition(stationPos: GeoPos, mapView: MapView) {
     }
 }
 
+/** Above this many satellites inside the viewport labels are dropped in favor of a single
+ * shared dot icon. Per-satellite label bitmaps cost ~90KB each, so drawing thousands of them
+ * exhausts memory and stalls the UI thread — and overlapping labels are unreadable anyway. */
+private const val LABEL_LIMIT = 128
+
+/** Degrees of space around the viewport so markers don't pop in at the edges */
+private const val VIEWPORT_MARGIN = 8.0
+
+/** Debounce for viewport-driven marker refreshes, in milliseconds */
+private const val MAP_LISTENER_DELAY = 128L
+
+/** Shared dot icon used when too many satellites are visible to label them */
+private var dotIcon: Drawable? = null
+
+/** Scratch list reused every frame to avoid per-tick allocation */
+private val visibleSats = ArrayList<Pair<OrbitalObject, GeoPos>>()
+
+/** Last emitted positions, replayed on scroll/zoom so culled markers appear without waiting for a tick */
+private var lastPositions: Map<OrbitalObject, GeoPos>? = null
+private var lastAction: ((OrbitalObject) -> Unit)? = null
+
 /** Pool of reusable Marker objects keyed by satellite name, to avoid re-creation every frame */
 private val markerPool = HashMap<String, Marker>()
 private var lastMapView: MapView? = null
@@ -774,13 +931,20 @@ private fun setPositions(
     action: (OrbitalObject) -> Unit
 ) {
     try {
+        lastPositions = posMap
+        lastAction = action
         // Clear caches when the MapView instance changes (e.g. config change)
         if (lastMapView !== mapView) {
             lastMapView = mapView
             markerPool.clear()
             iconCache.evictAll()
+            dotIcon = null
             footprintPolyline = null
             footprintPoints = null
+            mapView.addMapListener(DelayedMapListener(object : MapListener {
+                override fun onScroll(event: ScrollEvent?) = refreshPositions(mapView)
+                override fun onZoom(event: ZoomEvent?) = refreshPositions(mapView)
+            }, MAP_LISTENER_DELAY))
         }
         // Reuse the existing FolderOverlay — creating a new one and replacing it
         // causes osmdroid to detach shared Marker objects, making them invisible.
@@ -789,17 +953,48 @@ private fun setPositions(
         }
         folder.items.clear()
 
-        val activeNames = HashSet<String>(posMap.size)
-        posMap.forEach { (satellite, geoPos) ->
+        // Cull satellites outside the viewport: only meaningful once zoomed in, but that is
+        // exactly when marker labels are shown and drawing is most expensive.
+        visibleSats.clear()
+        if (mapView.width > 0 && mapView.height > 0) {
+            val box = mapView.boundingBox
+            val latNorth = box.latNorth + VIEWPORT_MARGIN
+            val latSouth = box.latSouth - VIEWPORT_MARGIN
+            val lonWest = box.lonWest - VIEWPORT_MARGIN
+            val lonEast = box.lonEast + VIEWPORT_MARGIN
+            val wrapsDateLine = box.lonWest > box.lonEast
+            for ((satellite, geoPos) in posMap) {
+                val lat = geoPos.latitude
+                if (lat !in latSouth..latNorth) continue
+                val lon = geoPos.longitude
+                val isLonVisible = if (wrapsDateLine) lon >= lonWest || lon <= lonEast
+                else lon in lonWest..lonEast
+                if (isLonVisible) visibleSats.add(satellite to geoPos)
+            }
+        } else {
+            for (entry in posMap) visibleSats.add(entry.key to entry.value)
+        }
+
+        val showLabels = visibleSats.size <= LABEL_LIMIT
+        val activeNames = HashSet<String>(visibleSats.size)
+        for ((satellite, geoPos) in visibleSats) {
             val name = satellite.data.name
             activeNames.add(name)
             val marker = markerPool.getOrPut(name) {
                 Marker(mapView).apply {
                     setInfoWindow(null)
                     setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
-                    icon = getCachedTextIcon(name, mapView)
+                    // Resolve the satellite via relatedObject so the listener is allocated
+                    // once per marker instead of once per satellite per tick
+                    setOnMarkerClickListener { clicked, _ ->
+                        (clicked.relatedObject as? OrbitalObject)?.let(action)
+                        true
+                    }
                 }
             }
+            marker.relatedObject = satellite
+            val icon = if (showLabels) getCachedTextIcon(name, mapView) else getDotIcon(mapView)
+            if (marker.icon !== icon) marker.icon = icon
             // Update position in-place — reuse existing GeoPoint if available
             val pos = marker.position
             if (pos != null) {
@@ -808,20 +1003,32 @@ private fun setPositions(
             } else {
                 marker.position = GeoPoint(geoPos.latitude, geoPos.longitude)
             }
-            marker.setOnMarkerClickListener { _, _ ->
-                action(satellite)
-                true
-            }
             folder.add(marker)
         }
-        // Evict markers for satellites no longer tracked
-        val iter = markerPool.keys.iterator()
-        while (iter.hasNext()) {
-            if (iter.next() !in activeNames) iter.remove()
-        }
+        // Evict markers that are no longer tracked or no longer visible
+        markerPool.keys.retainAll(activeNames)
+        visibleSats.clear()
     } catch (e: Exception) {
         println(e)
     }
+}
+
+/** Re-applies the last known positions against the new viewport after a pan or zoom */
+private fun refreshPositions(mapView: MapView): Boolean {
+    // Grid mode disables the satellite layer — don't re-populate markers off-screen
+    if (mapView.overlays.getOrNull(OVERLAY_POSITIONS)?.isEnabled == false) return true
+    val posMap = lastPositions ?: return false
+    val action = lastAction ?: return false
+    setPositions(posMap, mapView, action)
+    mapView.invalidate()
+    return true
+}
+
+private fun getDotIcon(mapView: MapView): Drawable = dotIcon ?: run {
+    val size = 20
+    val bitmap = createBitmap(size, size)
+    Canvas(bitmap).drawCircle(size / 2f, size / 2f, size / 2f - 2f, textPaint)
+    bitmap.toDrawable(mapView.context.resources).also { dotIcon = it }
 }
 
 private fun getCachedTextIcon(name: String, mapView: MapView): Drawable {
@@ -974,6 +1181,11 @@ private fun rememberMapViewWithLifecycle(): MapView {
         MapView(context).apply {
             setMultiTouchControls(true)
             setUseDataConnection(false)
+            // Vertical map repetition wraps points below the viewport up to the
+            // top edge (osmdroid Y-wrap). Antarctica's full-circle ring then
+            // draws a full-height artifact line whenever its X range crosses
+            // the screen at low zoom. The map must never repeat vertically.
+            setVerticalMapRepetitionEnabled(false)
             setTileSource(tileSource)
             minZoomLevel = getMinZoom(resources.displayMetrics.heightPixels, isVertical)
             maxZoomLevel = 7.0
@@ -994,19 +1206,21 @@ private fun rememberMapViewWithLifecycle(): MapView {
         lifecycle.addObserver(lifecycleObserver)
         onDispose { lifecycle.removeObserver(lifecycleObserver) }
     }
+    // The overlay caches below are file-level (shared across MapView instances), so they must be
+    // released with the MapView or they keep the Activity and its bitmaps alive after disposal.
     DisposableEffect(mapView) {
-        onDispose {
-            mapView.onDetach()
-            if (lastMapView === mapView) {
-                lastMapView = null
-                markerPool.clear()
-                iconCache.evictAll()
-                footprintPolyline = null
-                footprintPoints = null
-            }
-        }
+        onDispose { clearMapCaches() }
     }
     return mapView
+}
+
+private fun clearMapCaches() {
+    markerPool.clear()
+    iconCache.evictAll()
+    dotIcon = null
+    lastPositions = null
+    lastAction = null
+    lastMapView = null
 }
 
 @Composable

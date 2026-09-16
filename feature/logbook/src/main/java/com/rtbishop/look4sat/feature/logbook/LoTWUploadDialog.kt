@@ -4,6 +4,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
@@ -14,6 +15,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -29,6 +31,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
@@ -105,7 +108,7 @@ internal fun LoTWUploadDialog(state: LogbookState, onAction: (LogbookAction) -> 
     val unavailable = stringResource(R.string.logbook_value_unavailable)
     AlertDialog(
         onDismissRequest = { if (!busy) onAction(LogbookAction.DismissLoTW) },
-        title = { LoTWTabs(true, !busy, onAction) },
+        title = { Text(stringResource(R.string.lotw_upload)) },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 ElevatedCard(Modifier.fillMaxWidth()) {
@@ -289,6 +292,14 @@ internal fun LoTWUploadDialog(state: LogbookState, onAction: (LogbookAction) -> 
 @Composable
 private fun LoTWField(value: String, update: (String) -> Unit, label: Int, enabled: Boolean) {
     OutlinedTextField(value, update, label = { Text(stringResource(label)) }, singleLine = true, enabled = enabled, modifier = Modifier.fillMaxWidth())
+}
+
+@Composable
+private fun LoTWCheck(checked: Boolean, onChange: (Boolean) -> Unit, label: Int, enabled: Boolean) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Checkbox(checked = checked, onCheckedChange = onChange, enabled = enabled)
+        Text(stringResource(label), style = MaterialTheme.typography.bodySmall)
+    }
 }
 
 private fun problemText(problem: LoTWProblem): Int = when (problem) {

@@ -31,6 +31,7 @@ import com.rtbishop.look4sat.core.domain.model.PassesSettings
 import com.rtbishop.look4sat.core.domain.model.RCSettings
 import com.rtbishop.look4sat.core.domain.model.RadioControlSettings
 import com.rtbishop.look4sat.core.domain.model.supportedRadioBaudRates
+import com.rtbishop.look4sat.core.domain.model.WavelogSettings
 import com.rtbishop.look4sat.core.domain.predict.GeoPos
 import com.rtbishop.look4sat.core.domain.repository.ISettingsRepo
 import com.rtbishop.look4sat.core.domain.utility.positionToQth
@@ -83,6 +84,7 @@ class SettingsRepo(
     private val keyStateOfUtc = "stateOfUtc"
     private val keyStateOfLightTheme = "stateOfLightTheme"
     private val keyStateOfNightMode = "stateOfNightMode"
+    private val keyStateOfMapGrid = "stateOfMapGrid"
     private val keyStationAltitude = "stationAltitude"
     private val keyStationLatitude = "stationLatitude"
     private val keyStationLongitude = "stationLongitude"
@@ -146,7 +148,177 @@ class SettingsRepo(
     }
     //endregion
 
-    //region # Passes filter settings
+    //region # Wavelog worked-grids settings
+    private val keyWavelogUrl = "wavelogUrl"
+    private val keyWavelogToken = "wavelogToken"
+    private val keyWorkedGrids = "workedGrids"
+
+    private val _wavelogSettings = MutableStateFlow(getWavelogSettings())
+    override val wavelogSettings: StateFlow<WavelogSettings> = _wavelogSettings
+
+    override fun updateWavelogSettings(settings: WavelogSettings) {
+        preferences.edit {
+            putString(keyWavelogUrl, settings.url.trim())
+            putString(keyWavelogToken, settings.token.trim())
+        }
+        _wavelogSettings.value = settings.copy(url = settings.url.trim(), token = settings.token.trim())
+    }
+
+    private fun getWavelogSettings(): WavelogSettings = WavelogSettings(
+        url = preferences.getString(keyWavelogUrl, null).orEmpty(),
+        token = preferences.getString(keyWavelogToken, null).orEmpty()
+    )
+
+    override fun getWorkedGrids(): Set<String> {
+        val json = preferences.getString(keyWorkedGrids, null).orEmpty()
+        if (json.isBlank()) return emptySet()
+        return try {
+            val array = org.json.JSONArray(json)
+            (0 until array.length()).mapNotNull { i ->
+                array.optString(i).takeIf { it.isNotBlank() }
+            }.toSet()
+        } catch (_: Exception) {
+            emptySet()
+        }
+    }
+
+    override fun setWorkedGrids(grids: Set<String>) {
+        val array = org.json.JSONArray()
+        grids.sorted().forEach { array.put(it) }
+        preferences.edit { putString(keyWorkedGrids, array.toString()) }
+    }
+
+    // Confirmed satellite QSOs per worked gridsquare, persisted as a single JSON
+    // object: {"OL62":[{"c":call,"t":epochMs,"s":sat,"m":mode,"bu":up,"bd":down}]}.
+    private val keyWorkedGridQsos = "workedGridQsos"
+
+    override fun getWorkedGridQsos(): Map<String, List<com.rtbishop.look4sat.core.domain.model.GridQso>> {
+        val json = preferences.getString(keyWorkedGridQsos, null).orEmpty()
+        if (json.isBlank()) return emptyMap()
+        return try {
+            val root = org.json.JSONObject(json)
+            val result = mutableMapOf<String, List<com.rtbishop.look4sat.core.domain.model.GridQso>>()
+            for (grid in root.keys()) {
+                val array = root.optJSONArray(grid) ?: continue
+                val list = (0 until array.length()).mapNotNull { i ->
+                    val o = array.optJSONObject(i) ?: return@mapNotNull null
+                    com.rtbishop.look4sat.core.domain.model.GridQso(
+                        call = o.optString("c"),
+                        epochMs = o.optLong("t"),
+                        satName = o.optString("s"),
+                        mode = o.optString("m"),
+                        bandUp = o.optString("bu"),
+                        bandDown = o.optString("bd"),
+                        // New award fields: absent in pre-award data -> null.
+                        dxcc = o.optInt("dx", 0).takeIf { it > 0 },
+                        country = o.optString("cty").ifBlank { null },
+                        cqz = o.optInt("cq", 0).takeIf { it > 0 },
+                        state = o.optString("st").ifBlank { null },
+                        // Own-grid field: absent in pre-myGrid data -> null.
+                        myGrid = o.optString("mg").ifBlank { null }
+                    )
+                }
+                if (list.isNotEmpty()) result[grid] = list
+            }
+            result
+        } catch (_: Exception) {
+            emptyMap()
+        }
+    }
+
+    override fun setWorkedGridQsos(qsos: Map<String, List<com.rtbishop.look4sat.core.domain.model.GridQso>>) {
+        val root = org.json.JSONObject()
+        for ((grid, list) in qsos) {
+            val array = org.json.JSONArray()
+            for (q in list) {
+                array.put(
+                    org.json.JSONObject()
+                        .put("c", q.call)
+                        .put("t", q.epochMs)
+                        .put("s", q.satName)
+                        .put("m", q.mode)
+                        .put("bu", q.bandUp)
+                        .put("bd", q.bandDown)
+                        .put("dx", q.dxcc ?: 0)
+                        .put("cty", q.country ?: "")
+                        .put("cq", q.cqz ?: 0)
+                        .put("st", q.state ?: "")
+                        .put("mg", q.myGrid ?: "")
+                )
+            }
+            root.put(grid, array)
+        }
+        preferences.edit { putString(keyWorkedGridQsos, root.toString()) }
+    }
+
+    // Distinct 4-char gridsquares the account operated from (LoTW <MY_GRIDSQUARE>,
+    // satellite QSOs only). Stored as a JSONArray like workedGrids.
+    private val keyRoamedGrids = "roamedGrids"
+
+    override fun getRoamedGrids(): Set<String> {
+        val json = preferences.getString(keyRoamedGrids, null).orEmpty()
+        if (json.isBlank()) return emptySet()
+        return try {
+            val array = org.json.JSONArray(json)
+            (0 until array.length()).mapNotNull { i ->
+                array.optString(i).takeIf { it.isNotBlank() }
+            }.toSet()
+        } catch (_: Exception) {
+            emptySet()
+        }
+    }
+
+    override fun setRoamedGrids(grids: Set<String>) {
+        val array = org.json.JSONArray()
+        grids.sorted().forEach { array.put(it) }
+        preferences.edit { putString(keyRoamedGrids, array.toString()) }
+    }
+
+    // LoTW credentials (stored locally on the device only)
+    private val keyLoTWCall = "lotwCallsign"
+    private val keyLoTWPass = "lotwPassword"
+
+    override val lotwSettings: kotlinx.coroutines.flow.StateFlow<com.rtbishop.look4sat.core.domain.model.LoTWSettings>
+        get() = _lotwSettings
+    private val _lotwSettings = MutableStateFlow(getLoTWSettings())
+
+    override fun updateLoTWSettings(settings: com.rtbishop.look4sat.core.domain.model.LoTWSettings) {
+        preferences.edit {
+            putString(keyLoTWCall, settings.callsign.trim().uppercase())
+            putString(keyLoTWPass, settings.password)
+        }
+        _lotwSettings.value = settings.copy(
+            callsign = settings.callsign.trim().uppercase(),
+            password = settings.password
+        )
+    }
+
+    private fun getLoTWSettings(): com.rtbishop.look4sat.core.domain.model.LoTWSettings =
+        com.rtbishop.look4sat.core.domain.model.LoTWSettings(
+            callsign = preferences.getString(keyLoTWCall, null).orEmpty(),
+            password = preferences.getString(keyLoTWPass, null).orEmpty()
+        )
+
+    // Last successful sync bookkeeping: date ("yyyyMMdd") and callsign. Used to
+    // decide incremental (same callsign) vs full (first time / callsign change)
+    // report requests and to merge increments into the stored grid data.
+    private val keyLastLotwSyncDate = "lotwLastSyncDate"
+    private val keyLastLotwSyncCallsign = "lotwLastSyncCallsign"
+
+    override fun getLastLotwSyncDate(): String =
+        preferences.getString(keyLastLotwSyncDate, null).orEmpty()
+
+    override fun setLastLotwSyncDate(date: String) =
+        preferences.edit { putString(keyLastLotwSyncDate, date) }
+
+    override fun getLastLotwSyncCallsign(): String =
+        preferences.getString(keyLastLotwSyncCallsign, null).orEmpty()
+
+    override fun setLastLotwSyncCallsign(callsign: String) =
+        preferences.edit { putString(keyLastLotwSyncCallsign, callsign.trim().uppercase()) }
+    //endregion
+
+    //region # Transceivers settings
     private val _passesSettings = MutableStateFlow(getPassesSettings())
     override val passesSettings: StateFlow<PassesSettings> = _passesSettings
 
@@ -380,9 +552,9 @@ class SettingsRepo(
                 putBoolean(keyStateOfSensors, new.stateOfSensors)
                 putBoolean(keyStateOfSweep, new.stateOfSweep)
                 putBoolean(keyStateOfUtc, new.stateOfUtc)
-                putBoolean("stateOfMapGrid", new.stateOfMapGrid)
                 putBoolean(keyStateOfLightTheme, new.stateOfLightTheme)
                 putBoolean(keyStateOfNightMode, new.stateOfNightMode)
+                putBoolean(keyStateOfMapGrid, new.stateOfMapGrid)
                 putBoolean(keyShouldSeeWarning, new.shouldSeeWarning)
                 putBoolean(keyShouldSeeWhatsNew, new.shouldSeeWhatsNew)
                 putString(keySstvMode, new.sstvMode)
@@ -398,9 +570,9 @@ class SettingsRepo(
         stateOfSensors = preferences.getBoolean(keyStateOfSensors, true),
         stateOfSweep = preferences.getBoolean(keyStateOfSweep, true),
         stateOfUtc = preferences.getBoolean(keyStateOfUtc, false),
-        stateOfMapGrid = preferences.getBoolean("stateOfMapGrid", false),
         stateOfLightTheme = preferences.getBoolean(keyStateOfLightTheme, false),
         stateOfNightMode = preferences.getBoolean(keyStateOfNightMode, false),
+        stateOfMapGrid = preferences.getBoolean(keyStateOfMapGrid, false),
         shouldSeeWarning = preferences.getBoolean(keyShouldSeeWarning, true),
         shouldSeeWhatsNew = preferences.getBoolean(keyShouldSeeWhatsNew, true),
         sstvMode = preferences.getString(keySstvMode, null) ?: "Auto",

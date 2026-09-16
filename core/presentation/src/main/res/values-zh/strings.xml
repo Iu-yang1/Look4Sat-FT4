@@ -109,6 +109,8 @@
     <!-- Map screen -->
     <string name="map_prev">上一个</string>
     <string name="map_next">下一个</string>
+    <string name="map_grid_mode">网格模式</string>
+    <string name="map_satellite_mode">卫星模式</string>
     <string name="map_azimuth">方位角：%.1f°</string>
     <string name="map_elevation">仰角：%.1f°</string>
     <string name="map_altitude">高度：%.0f km</string>
@@ -120,6 +122,12 @@
     <string name="map_period">周期：% .0f min</string>
     <string name="map_velocity">速度：%.2f km/s</string>
     <string name="map_visibility">能见度：%s</string>
+    <!-- Worked-grid QSO dialog -->
+    <string name="grid_qso_calls_count">%1$d 个呼号 · %2$d 次通联</string>
+    <string name="grid_qso_count_one">%d QSO</string>
+    <string name="grid_qso_count_many">%d QSOs</string>
+    <string name="grid_qso_first">首通</string>
+    <string name="grid_qso_no_sat">卫星未知</string>
     <string name="map_visible">日照中</string>
 
     <!-- Settings screen -->
@@ -141,6 +149,36 @@
     <string name="prefs_station_lat_text">输入站点的纬度</string>
     <string name="prefs_station_lon_text">输入站点的经度</string>
     <string name="prefs_locator_title">QTH 网格</string>
+    <string name="prefs_wavelog_title">Wavelog 已通联网格</string>
+    <string name="prefs_wavelog_configure">配置</string>
+    <string name="prefs_wavelog_configured">已从 Wavelog 同步 — 通联 %1$d 个网格</string>
+    <string name="prefs_wavelog_not_configured">未配置 — 连接你的 Wavelog 日志以在地图上高亮已通联网格</string>
+    <string name="prefs_wavelog_url">Wavelog 地址</string>
+    <string name="prefs_wavelog_token">API key ：日志 ID</string>
+    <string name="prefs_wavelog_hint">已同步网格数：%1$d。格式：API key:日志ID。填好直接点同步，会自动保存并拉取。</string>
+    <string name="prefs_wavelog_sync">立即同步</string>
+    <string name="prefs_wavelog_syncing">同步中…</string>
+    <string name="prefs_lotw_title">LoTW 已确认网格</string>
+    <string name="prefs_lotw_callsign">LoTW 呼号</string>
+    <string name="prefs_lotw_password">LoTW 密码</string>
+    <string name="prefs_lotw_hint">已确认网格：%1$d · 凭据仅保存在本机</string>
+    <string name="prefs_lotw_sync">同步</string>
+    <string name="prefs_lotw_syncing">同步中…</string>
+    <string name="prefs_lotw_configured">已从 LoTW 同步 — 共 %1$d 个网格</string>
+    <string name="prefs_lotw_not_configured">未配置 — 直接登录 ARRL LoTW 拉取已确认 QSO 的网格，无需自建服务器</string>
+    <string name="lotw_sync_error_not_configured">LoTW 呼号/密码未配置</string>
+    <string name="lotw_sync_error_credentials">LoTW 同步失败——呼号或密码错误</string>
+    <string name="lotw_sync_error_rate_limited">LoTW 同步失败——服务器限流，请等几分钟后再试</string>
+    <string name="lotw_sync_error_timeout">LoTW 同步失败——连接超时，请更换网络重试</string>
+    <string name="lotw_sync_error_network">LoTW 同步失败——网络错误（%1$s）</string>
+    <string name="lotw_sync_full">全量同步</string>
+    <string name="lotw_sync_incremental">增量合并</string>
+    <string name="lotw_sync_rate_hint">下载速度约每 100 条 QSO 需 8 秒（另有 5–40 秒服务器生成时间）</string>
+    <string name="lotw_sync_progress_connecting">正在连接 LoTW 服务器…</string>
+    <string name="lotw_sync_progress_downloading">正在下载报告…</string>
+    <string name="lotw_sync_progress_saving">正在处理下载的数据…</string>
+    <string name="lotw_sync_progress_count">本次同步 %1$d 条 QSO…</string>
+    <string name="lotw_sync_progress_qso">本次同步 %1$d 条 QSO，预计还需 %2$d 秒</string>
     <string name="prefs_locator_text">使用梅登黑德网格设置站点位置</string>
 
     <string name="prefs_data_title">卫星数据更新</string>
@@ -212,7 +250,7 @@
     <string name="rc_baud_rate">波特率：</string>
     <string name="rc_cat_transport">CAT 传输</string>
     <string name="rc_tcp_protocol">TCP 协议</string>
-    <string name="rc_tcp_protocol_raw">直接 CAT</string>
+    <string name="rc_tcp_protocol_raw">原始 CAT</string>
     <string name="rc_tcp_protocol_hamlib">Hamlib rigctld</string>
     <string name="rc_tx_tcp_address">TX TCP 主机:端口</string>
     <string name="rc_rx_tcp_address">RX TCP 主机:端口</string>
@@ -266,6 +304,7 @@
     <string name="prefs_other_switch_sweep">启用雷达扫描动画</string>
     <string name="prefs_other_switch_sensors">使用传感器旋转雷达视图</string>
     <string name="prefs_other_switch_night_mode">启用红色夜间模式</string>
+    <string name="prefs_other_switch_map_grid">地图显示 Maidenhead 网格</string>
 
     <string name="prefs_highlight_title">仰角高亮</string>
     <string name="prefs_highlight_low">低 &lt; %1$d°</string>
@@ -494,11 +533,6 @@
     <string name="ft4_abort_time_gate_closed">自动 FT4 时间门限已关闭</string>
     <string name="ft4_abort_operation_failed">自动 FT4 操作失败</string>
     <string name="ft4_label_value">%1$s：</string>
-    <string name="map_grid_mode">网格模式</string>
-    <string name="map_satellite_mode">卫星模式</string>
-    <string name="grid_qso_calls_count">%1$d 个呼号 · %2$d 次通联</string>
-    <string name="grid_qso_first">首通</string>
-    <string name="grid_qso_no_sat">卫星未知</string>
     <string name="grid_qso_pair">%1$s · %2$s</string>
     <string name="nav_logbook">日志本</string>
     <string name="radar_tab_transceivers">收发器</string>

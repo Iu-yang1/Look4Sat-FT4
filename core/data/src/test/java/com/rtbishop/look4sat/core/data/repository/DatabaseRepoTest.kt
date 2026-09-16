@@ -20,12 +20,15 @@ package com.rtbishop.look4sat.core.data.repository
 import com.rtbishop.look4sat.core.domain.model.DataSourcesSettings
 import com.rtbishop.look4sat.core.domain.model.DatabaseState
 import com.rtbishop.look4sat.core.domain.model.Ft4Settings
+import com.rtbishop.look4sat.core.domain.model.GridQso
+import com.rtbishop.look4sat.core.domain.model.LoTWSettings
 import com.rtbishop.look4sat.core.domain.model.OtherSettings
 import com.rtbishop.look4sat.core.domain.model.PassesSettings
 import com.rtbishop.look4sat.core.domain.model.RCSettings
 import com.rtbishop.look4sat.core.domain.model.RadioControlSettings
 import com.rtbishop.look4sat.core.domain.model.SatItem
 import com.rtbishop.look4sat.core.domain.model.SatRadio
+import com.rtbishop.look4sat.core.domain.model.WavelogSettings
 import com.rtbishop.look4sat.core.domain.predict.GeoPos
 import com.rtbishop.look4sat.core.domain.predict.OrbitalData
 import com.rtbishop.look4sat.core.domain.predict.OrbitalObject
@@ -241,8 +244,12 @@ private class FakeLocalSource : ILocalSource {
 
     override suspend fun getRadiosWithId(id: Int): List<SatRadio> = emptyList()
 
-    override suspend fun insertRadios(radios: List<SatRadio>) {
-        insertedRadios += radios
+    override suspend fun insertRadios(radios: List<SatRadio>, isCustom: Boolean) {
+        insertedRadios += radios.map { it.copy(isCustom = isCustom) }
+    }
+
+    override suspend fun deleteManagedRadios() {
+        insertedRadios.removeAll { !it.isCustom }
     }
 
     override suspend fun deleteRadios() {
@@ -271,7 +278,17 @@ internal class FakeSettingsRepo(dataSources: DataSourcesSettings = defaultDataSo
     )
 
     override val otherSettings: StateFlow<OtherSettings> = MutableStateFlow(
-        OtherSettings(false, false, false, false, false, false, false, false)
+        OtherSettings(
+            stateOfAutoUpdate = false,
+            stateOfSensors = false,
+            stateOfSweep = false,
+            stateOfUtc = false,
+            stateOfLightTheme = false,
+            stateOfNightMode = false,
+            stateOfMapGrid = false,
+            shouldSeeWarning = false,
+            shouldSeeWhatsNew = false
+        )
     )
 
     override val ft4Settings: StateFlow<Ft4Settings> = MutableStateFlow(Ft4Settings())
@@ -331,6 +348,34 @@ internal class FakeSettingsRepo(dataSources: DataSourcesSettings = defaultDataSo
     override fun getAmSatCallsign(): String = ""
 
     override fun setAmSatCallsign(callsign: String) = Unit
+
+    override val wavelogSettings: StateFlow<WavelogSettings> = MutableStateFlow(WavelogSettings())
+
+    override fun updateWavelogSettings(settings: WavelogSettings) = Unit
+
+    override fun getWorkedGrids(): Set<String> = emptySet()
+
+    override fun setWorkedGrids(grids: Set<String>) = Unit
+
+    override fun getWorkedGridQsos(): Map<String, List<GridQso>> = emptyMap()
+
+    override fun setWorkedGridQsos(qsos: Map<String, List<GridQso>>) = Unit
+
+    override fun getRoamedGrids(): Set<String> = emptySet()
+
+    override fun setRoamedGrids(grids: Set<String>) = Unit
+
+    override val lotwSettings: StateFlow<LoTWSettings> = MutableStateFlow(LoTWSettings())
+
+    override fun updateLoTWSettings(settings: LoTWSettings) = Unit
+
+    override fun getLastLotwSyncDate(): String = ""
+
+    override fun setLastLotwSyncDate(date: String) = Unit
+
+    override fun getLastLotwSyncCallsign(): String = ""
+
+    override fun setLastLotwSyncCallsign(callsign: String) = Unit
 }
 
 private fun defaultDataSourcesSettings(): DataSourcesSettings {

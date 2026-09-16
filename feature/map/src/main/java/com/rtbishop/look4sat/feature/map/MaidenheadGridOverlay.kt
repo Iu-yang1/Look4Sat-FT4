@@ -56,10 +56,19 @@ class MaidenheadGridOverlay : Overlay() {
         style = android.graphics.Paint.Style.FILL
         color = Color.argb(90, 76, 217, 100)
     }
-    private val ownLinePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        strokeWidth = 4.5f
+    private val roamStripePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
-        color = Color.argb(255, 90, 200, 255)
+        strokeWidth = 14f
+        // Same alpha as the green worked fill (90) — user req: stripe opacity
+        // must match the green grid. Wide 14f stripes at 44f spacing read as a
+        // sparse GridMaster-style zebra (user picked spacing 44 / width 14).
+        color = Color.argb(90, 66, 133, 244)
+    }
+    private val ownLinePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        strokeWidth = 6f
+        style = Paint.Style.STROKE
+        // 与普通网格线同色(淡黄), 仅加粗 — 用户要求当前网格框线不换色
+        color = Color.argb(160, 255, 224, 130)
     }
     private val selectedLinePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         strokeWidth = 4.5f
@@ -69,6 +78,12 @@ class MaidenheadGridOverlay : Overlay() {
 
     /** Worked gridsquares (4-char, uppercase) to highlight, e.g. {"OL62", "PM95"}. */
     var workedGrids: Set<String> = emptySet()
+
+    /**
+     * Gridsquares the station operated from (4-char, uppercase) — drawn with
+     * blue 45° stripes (GridMaster-style zebra), e.g. {"OL62", "PM95"}.
+     */
+    var roamedGrids: Set<String> = emptySet()
 
     /** The station's own 4-char gridsquare, drawn with a distinct outline. */
     var ownGrid: String? = null
@@ -120,9 +135,13 @@ class MaidenheadGridOverlay : Overlay() {
         val worldTurns = ceil(((rightLon - leftLon) / 360.0) - 1e-9).toInt().coerceAtLeast(0)
         val colRepeats = if (worldTurns > 0) worldTurns else 0
 
-        // The station's own grid square (4-char, only meaningful at sub-square zoom)
-        val ownCell = ownGrid?.takeIf { zoom >= GRID_ZOOM_SUB }
-        // The tapped worked grid gets a distinct outline (same zoom gate).
+        // The station's own grid: always keep a bold outline of the 4-char
+        // square. At sub-square zoom it matches the visible cell grid; at field
+        // zoom (2-char labels) the own 2°x1° square is drawn on top of the
+        // field grid so the operator still sees exactly where they are (user
+        // req: "field zoom must also draw the own 4-char grid, bolded").
+        val ownCell = ownGrid
+        // The tapped worked grid gets a distinct outline (sub-square zoom only).
         val selectedCell = selectedGrid?.takeIf { zoom >= GRID_ZOOM_SUB }
 
         // Worked-grid highlight fills.
@@ -182,6 +201,57 @@ class MaidenheadGridOverlay : Overlay() {
             }
         }
 
+        // Roamed/activated grid stripes: blue 45° zebra (GridMaster style) over
+        // every cell the station operated from. Drawn AFTER the worked fills so
+        // a worked+roamed cell shows blue stripes with green between them — the
+        // stripe paint is fully opaque, so the two colors never alpha-blend
+        // into a teal/green mix. Same geometry as the worked fills (per-4-char
+        // cell at both zoom levels). The station's OWN grid is excluded: it
+        // already carries the bold outline and must not be striped (user req).
+        if (roamedGrids.isNotEmpty()) {
+            if (zoom >= GRID_ZOOM_SUB) {
+                for (row in firstRow..lastRow) {
+                    val lat = row * cellLat
+                    if (lat < -90.0 || lat >= 90.0) continue
+                    val topLatCell = lat + cellLat
+                    if (topLatCell > 90.0) continue
+                    val yTop = projectionToY(projection, topLatCell) ?: continue
+                    val yBottom = projectionToY(projection, lat) ?: continue
+                    for (turn in -colRepeats..colRepeats) for (col in firstCol..lastCol) {
+                        val lon = col * cellLon
+                        val xLeftBase = projectionToX(projection, lon, centerLon, worldWidthPx) ?: continue
+                        val xRightBase = projectionToX(projection, lon + cellLon, centerLon, worldWidthPx) ?: continue
+                        val xLeft = xLeftBase + turn * worldWidthPx.toFloat()
+                        val xRight = xRightBase + turn * worldWidthPx.toFloat()
+                        if (xRight < 0f || xLeft > canvas.width) continue
+                        val label = cellLabel(lat, lon, zoom)
+                        if (label in roamedGrids && label != ownGrid) {
+                            drawStripes(canvas, xLeft, yTop, xRight, yBottom, zoom)
+                        }
+                    }
+                }
+            } else {
+                for (grid in roamedGrids) {
+                    // The own grid keeps only its bold outline — no stripes.
+                    if (grid == ownGrid) continue
+                    val cell = gridCellBounds(grid) ?: continue
+                    for (turn in -colRepeats..colRepeats) {
+                        val dLon = turn * 360.0
+                        if (cell.lonRight + dLon <= leftLon || cell.lonLeft + dLon >= rightLon) continue
+                        val yTop = projectionToY(projection, cell.latTop) ?: continue
+                        val yBottom = projectionToY(projection, cell.latBottom) ?: continue
+                        val xLeftBase = projectionToX(projection, cell.lonLeft, centerLon, worldWidthPx) ?: continue
+                        val xRightBase = projectionToX(projection, cell.lonRight, centerLon, worldWidthPx) ?: continue
+                        val xLeft = xLeftBase + turn * worldWidthPx.toFloat()
+                        val xRight = xRightBase + turn * worldWidthPx.toFloat()
+                        if (xRight < 0f || xLeft > canvas.width) continue
+                        if (yBottom < 0f || yTop > canvas.height) continue
+                        drawStripes(canvas, xLeft, yTop, xRight, yBottom, zoom)
+                    }
+                }
+            }
+        }
+
         // Vertical lines (meridians). Worked-grid cells are NOT excluded:
         // the boundary lines between adjacent worked squares must stay visible
         // so the grid structure remains readable (reverted 2026-09-09 — the
@@ -225,22 +295,50 @@ class MaidenheadGridOverlay : Overlay() {
         // The station's own grid square: redraw its four borders thicker on top.
         // The tapped worked grid gets the same treatment in a different color.
         if (ownCell != null || selectedCell != null) {
-            for (row in firstRow..lastRow) {
-                val lat = row * cellLat
-                if (lat < -90.0 || lat >= 90.0) continue
-                for (col in firstCol..lastCol) {
-                    val lon = col * cellLon
-                    val label = cellLabel(lat, lon, zoom)
-                    if (label != ownCell && label != selectedCell) continue
-                    val yTop = projectionToY(projection, lat + cellLat) ?: continue
-                    val yBottom = projectionToY(projection, lat) ?: continue
-                    val xLeft = projectionToX(projection, lon, centerLon, worldWidthPx) ?: continue
-                    val xRight = projectionToX(projection, lon + cellLon, centerLon, worldWidthPx) ?: continue
-                    val paint = if (label == selectedCell) selectedLinePaint else ownLinePaint
-                    canvas.drawLine(xLeft, yTop, xRight, yTop, paint)
-                    canvas.drawLine(xLeft, yBottom, xRight, yBottom, paint)
-                    canvas.drawLine(xLeft, yTop, xLeft, yBottom, paint)
-                    canvas.drawLine(xRight, yTop, xRight, yBottom, paint)
+            if (zoom >= GRID_ZOOM_SUB) {
+                for (row in firstRow..lastRow) {
+                    val lat = row * cellLat
+                    if (lat < -90.0 || lat >= 90.0) continue
+                    for (col in firstCol..lastCol) {
+                        val lon = col * cellLon
+                        val label = cellLabel(lat, lon, zoom)
+                        if (label != ownCell && label != selectedCell) continue
+                        val yTop = projectionToY(projection, lat + cellLat) ?: continue
+                        val yBottom = projectionToY(projection, lat) ?: continue
+                        val xLeft = projectionToX(projection, lon, centerLon, worldWidthPx) ?: continue
+                        val xRight = projectionToX(projection, lon + cellLon, centerLon, worldWidthPx) ?: continue
+                        val paint = if (label == selectedCell) selectedLinePaint else ownLinePaint
+                        canvas.drawLine(xLeft, yTop, xRight, yTop, paint)
+                        canvas.drawLine(xLeft, yBottom, xRight, yBottom, paint)
+                        canvas.drawLine(xLeft, yTop, xLeft, yBottom, paint)
+                        canvas.drawLine(xRight, yTop, xRight, yBottom, paint)
+                    }
+                }
+            } else {
+                // Field zoom: the visible grid shows 2-char fields only, but the
+                // station's own 2°x1° square still gets its bold outline drawn
+                // on top of the field grid (user req). selectedCell is null here.
+                val grid = ownCell
+                if (grid != null) {
+                    val cell = gridCellBounds(grid)
+                    if (cell != null) {
+                        for (turn in -colRepeats..colRepeats) {
+                            val dLon = turn * 360.0
+                            if (cell.lonRight + dLon <= leftLon || cell.lonLeft + dLon >= rightLon) continue
+                            val yTop = projectionToY(projection, cell.latTop) ?: continue
+                            val yBottom = projectionToY(projection, cell.latBottom) ?: continue
+                            val xLeftBase = projectionToX(projection, cell.lonLeft, centerLon, worldWidthPx) ?: continue
+                            val xRightBase = projectionToX(projection, cell.lonRight, centerLon, worldWidthPx) ?: continue
+                            val xLeft = xLeftBase + turn * worldWidthPx.toFloat()
+                            val xRight = xRightBase + turn * worldWidthPx.toFloat()
+                            if (xRight < 0f || xLeft > canvas.width) continue
+                            if (yBottom < 0f || yTop > canvas.height) continue
+                            canvas.drawLine(xLeft, yTop, xRight, yTop, ownLinePaint)
+                            canvas.drawLine(xLeft, yBottom, xRight, yBottom, ownLinePaint)
+                            canvas.drawLine(xLeft, yTop, xLeft, yBottom, ownLinePaint)
+                            canvas.drawLine(xRight, yTop, xRight, yBottom, ownLinePaint)
+                        }
+                    }
                 }
             }
         }
@@ -270,8 +368,14 @@ class MaidenheadGridOverlay : Overlay() {
             if (topLatCell > 90.0) continue
             val yTop = projectionToY(projection, topLatCell) ?: continue
             val yBottom = projectionToY(projection, lat) ?: continue
-            val yCenter = (yTop + yBottom) / 2f - textHalfHeight
-            if (yBottom < 0f || yTop > canvas.height) continue
+            // Polar bands (80..90 / -90..-80) extend beyond the map's latitude
+            // limit, so their geometric center falls off-screen and the label
+            // would never be visible. Center the label in the VISIBLE part of
+            // the cell instead; fully off-screen cells are still skipped.
+            val visTop = maxOf(yTop, 0f)
+            val visBottom = minOf(yBottom, canvas.height.toFloat())
+            if (visBottom < 0f || visTop > canvas.height) continue
+            val yCenter = (visTop + visBottom) / 2f - textHalfHeight
             for (turn in -colRepeats..colRepeats) for (col in firstCol..lastCol) {
                 val lon = col * cellLon
                 // World-repeat copies: keep the turn offset in pixels (same
@@ -285,6 +389,30 @@ class MaidenheadGridOverlay : Overlay() {
                 canvas.drawText(label, (xLeft + xRight) / 2f, yCenter, labelPaint)
             }
         }
+    }
+
+    /**
+     * Draws 45° diagonal stripes (GridMaster-style zebra) clipped to the cell
+     * rectangle, from top-left to bottom-right. The paint is nearly opaque so
+     * stripes stay blue even over a green worked fill underneath.
+     */
+    private fun drawStripes(canvas: Canvas, xLeft: Float, yTop: Float, xRight: Float, yBottom: Float, zoom: Double) {
+        if (xRight <= xLeft || yBottom <= yTop) return
+        canvas.save()
+        canvas.clipRect(xLeft, yTop, xRight, yBottom)
+        val height = yBottom - yTop
+        // Geographic density is kept constant: spacing is the reference pixel
+        // spacing (STRIPE_SPACING_PX at the map's max zoom) scaled by 2^(zoom-max),
+        // so stripes shrink/grow with the map instead of staying fixed on screen.
+        val spacing = STRIPE_SPACING_PX * Math.pow(2.0, zoom - MAX_GRID_ZOOM).toFloat()
+        // Start one stripe-width left of the cell so the top-left corner is
+        // always covered; each stripe runs from (x, top) to (x+height, bottom).
+        var x = xLeft - height
+        while (x < xRight) {
+            canvas.drawLine(x, yTop, x + height, yBottom, roamStripePaint)
+            x += spacing
+        }
+        canvas.restore()
     }
 
     /** X pixel for a longitude (meridians are vertical in Web Mercator). */
@@ -304,7 +432,15 @@ class MaidenheadGridOverlay : Overlay() {
 
     /** Y pixel for a latitude, or null when outside the viewport. */
     private fun projectionToY(projection: Projection, lat: Double): Float? {
-        val geo = org.osmdroid.util.GeoPoint(lat, 0.0)
+        // Web Mercator is undefined beyond ±85.0511° (osmdroid clamps the world
+        // to TileSystemWebMercator limits). Projecting the polar field rows
+        // (lat=±90: Maidenhead row R = 80..90°N, row A = -90..-80°S) yields
+        // ±9.2e18 pixel coordinates that the canvas cannot rasterize, so the
+        // polar grid lines silently vanish. Clamp to the Mercator limit: the
+        // polar rows then project onto the screen edge and their lines are
+        // drawn (the off-limit sliver beyond 85.05° is invisible anyway).
+        val clamped = lat.coerceIn(-MAX_MERCATOR_LAT, MAX_MERCATOR_LAT)
+        val geo = org.osmdroid.util.GeoPoint(clamped, 0.0)
         val p = projection.toPixels(geo, null)
         return p.y.toFloat()
     }
@@ -360,6 +496,9 @@ class MaidenheadGridOverlay : Overlay() {
         const val FIELD_LON = 20.0
         const val SUB_SQUARE_LAT = 1.0
         const val SUB_SQUARE_LON = 2.0
+        // Web Mercator latitude limit (osmdroid TileSystemWebMercator): projecting
+        // beyond it produces ±9.2e18 pixel coordinates the canvas cannot draw.
+        const val MAX_MERCATOR_LAT = 85.05112877980658
         // Zoom at which the 2°x1° sub-square grid lines/fills appear.
         // 5.0 → 6.0: at zoom 5 a full field spans too little screen width and
         // the sub-square grid is too dense to read; 6 roughly doubles the
@@ -370,5 +509,16 @@ class MaidenheadGridOverlay : Overlay() {
         const val LABEL_ZOOM_SUB = 6.5
         const val MIN_LABEL_CELL_PX = 48f
         const val MAX_OVERSHOOT_PX = 64
+        /** Center-to-center spacing of the roamed-grid zebra stripes, in px. */
+        // 44f spacing (was 16f — too dense per user) with 14f-wide stripes;
+        // sparse GridMaster-style zebra.
+        const val STRIPE_SPACING_PX = 44f
+        /**
+         * Reference zoom for stripe spacing: the map's max zoom (MapScreen sets
+         * maxZoomLevel = 7.0). At this zoom stripes are STRIPE_SPACING_PX apart;
+         * at lower zooms spacing scales by 2^(zoom-max) so the geographic
+         * density matches the max-zoom look at every level.
+         */
+        const val MAX_GRID_ZOOM = 7.0
     }
 }

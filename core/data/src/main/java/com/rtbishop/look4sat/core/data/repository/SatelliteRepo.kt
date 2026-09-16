@@ -38,6 +38,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -76,9 +78,11 @@ class SatelliteRepo(
         combine(
             settingsRepo.selectedIds,
             settingsRepo.stationPosition,
-            settingsRepo.databaseState
-        ) { selectedIds, _, databaseState -> selectedIds to databaseState.contentVersion }
-            .collectLatest { (selectedIds, _) ->
+            settingsRepo.databaseState,
+            settingsRepo.otherSettings.map { it.stateOfUtc }.distinctUntilChanged()
+        ) { selectedIds, _, databaseState, useUtc ->
+            Triple(selectedIds, databaseState.contentVersion, useUtc)
+        }.collectLatest { (selectedIds, _, _) ->
                 _satellites.update { localStorage.getEntriesWithIds(selectedIds) }
                 val settings = settingsRepo.passesSettings.value
                 calculatePasses(

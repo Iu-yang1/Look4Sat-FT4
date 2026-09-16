@@ -128,6 +128,7 @@ private class TestLocalSource(
     override suspend fun getIdsWithModes(modes: List<String>) = this.modes(modes)
     override suspend fun getRadiosTotal() = 0
     override suspend fun getRadiosWithId(id: Int) = emptyList<SatRadio>()
-    override suspend fun insertRadios(radios: List<SatRadio>) = Unit
+    override suspend fun insertRadios(radios: List<SatRadio>, isCustom: Boolean) = Unit
+    override suspend fun deleteManagedRadios() = Unit
     override suspend fun deleteRadios() = Unit
 }

@@ -45,6 +45,7 @@ import com.rtbishop.look4sat.core.data.repository.SelectionRepo
 import com.rtbishop.look4sat.core.data.repository.SensorsRepo
 import com.rtbishop.look4sat.core.data.repository.SettingsRepo
 import com.rtbishop.look4sat.core.data.repository.UpdateRepository
+import com.rtbishop.look4sat.core.data.repository.WavelogRepository
 import com.rtbishop.look4sat.core.data.source.LocalSource
 import com.rtbishop.look4sat.core.data.source.RemoteSource
 import com.rtbishop.look4sat.core.data.usecase.AddToCalendar
@@ -65,10 +66,12 @@ import com.rtbishop.look4sat.core.domain.repository.IDatabaseRepo
 import com.rtbishop.look4sat.core.domain.repository.IMainContainer
 import com.rtbishop.look4sat.core.domain.repository.IRadioTrackingService
 import com.rtbishop.look4sat.core.domain.repository.IReporter
+import com.rtbishop.look4sat.core.domain.repository.ILoTWRepository
 import com.rtbishop.look4sat.core.domain.repository.ISatelliteRepo
 import com.rtbishop.look4sat.core.domain.repository.ISelectionRepo
 import com.rtbishop.look4sat.core.domain.repository.ISensorsRepo
 import com.rtbishop.look4sat.core.domain.repository.ISettingsRepo
+import com.rtbishop.look4sat.core.domain.repository.IWavelogRepository
 import com.rtbishop.look4sat.core.domain.repository.MutualPassData
 import com.rtbishop.look4sat.core.domain.source.ILocalSource
 import com.rtbishop.look4sat.core.domain.source.IRemoteSource
@@ -102,7 +105,8 @@ class MainContainer(private val context: Context) : IMainContainer {
         QsoRepository(database.qsoDao(), Dispatchers.IO)
     }
     override val amSatRepo by lazy { AmSatRepository(remoteSource, appScope) }
-    override val lotwRepository by lazy { LoTWRepository() }
+    override val lotwRepo: ILoTWRepository by lazy { LoTWRepository() }
+    override val wavelogRepo: IWavelogRepository by lazy { WavelogRepository() }
     override val lotwUploadRepository by lazy { LoTWUploadRepository(context) }
     override val updateRepo by lazy { UpdateRepository(remoteSource, context) }
     override val audioHub: IAudioHub by lazy {

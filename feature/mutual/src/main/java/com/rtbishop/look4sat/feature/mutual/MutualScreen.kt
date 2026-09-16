@@ -29,6 +29,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -40,6 +41,7 @@ import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -63,17 +65,15 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.rtbishop.look4sat.core.domain.repository.MutualPassData
 import com.rtbishop.look4sat.core.domain.repository.TrackSampleData
+import com.rtbishop.look4sat.core.presentation.GridTargetChip
 import com.rtbishop.look4sat.core.presentation.R
 import com.rtbishop.look4sat.core.presentation.ScreenColumn
 import com.rtbishop.look4sat.core.presentation.TopBar
-import com.rtbishop.look4sat.core.presentation.GridTargetChip
-import com.rtbishop.look4sat.core.presentation.greatCircleBearingDeg
-import com.rtbishop.look4sat.core.presentation.greatCircleDistanceKm
-import com.rtbishop.look4sat.core.domain.utility.positionToQth
 import com.rtbishop.look4sat.core.presentation.isVerticalLayout
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.TimeZone
 
 @Composable
 fun MutualScreen(
@@ -82,11 +82,6 @@ fun MutualScreen(
     modifier: Modifier = Modifier
 ) {
     val state by viewModel.uiState.collectAsState()
-    val latA = state.stationALat.toDoubleOrNull()?.takeIf { it.isFinite() && it in -90.0..90.0 }
-    val lonA = state.stationALon.toDoubleOrNull()?.takeIf { it.isFinite() && it in -180.0..180.0 }
-    val latB = state.stationBLat.toDoubleOrNull()?.takeIf { it.isFinite() && it in -90.0..90.0 }
-    val lonB = state.stationBLon.toDoubleOrNull()?.takeIf { it.isFinite() && it in -180.0..180.0 }
-    val hasTarget = latA != null && lonA != null && latB != null && lonB != null
 
     ScreenColumn(
         topBar = { isVertical ->
@@ -97,15 +92,20 @@ fun MutualScreen(
                     Text(
                         text = stringResource(R.string.mutual_title),
                         style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(start = 12.dp)
                     )
                 },
                 bottomInfo = {
-                    GridTargetChip(
-                        grid = if (latB != null && lonB != null) positionToQth(latB, lonB) else null,
-                        distanceKm = if (hasTarget) greatCircleDistanceKm(latA, lonA, latB, lonB) else null,
-                        bearingDeg = if (hasTarget) greatCircleBearingDeg(latA, lonA, latB, lonB) else null,
-                        modifier = Modifier.weight(1f)
+                    Text(
+                        text = mutualStatusText(state),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(start = 12.dp)
                     )
                 },
                 endAction = {
@@ -121,7 +121,29 @@ fun MutualScreen(
                                 strokeWidth = 2.dp
                             )
                         }
-                        MutualStatusChip(state)
+                        // Target-grid chip: station B grid (station A defaults to
+                        // the user's own position), bearing/distance from A to B.
+                        val gridB = state.stationBGrid.trim().uppercase()
+                        val posA = com.rtbishop.look4sat.core.domain.utility.qthToPosition(state.stationAGrid)
+                            ?: state.stationALat.toDoubleOrNull()?.let { lat ->
+                                state.stationALon.toDoubleOrNull()?.let { lon ->
+                                    com.rtbishop.look4sat.core.domain.predict.GeoPos(lat, lon)
+                                }
+                            }
+                        val posB = com.rtbishop.look4sat.core.domain.utility.qthToPosition(gridB)
+                        if (posA != null && posB != null) {
+                            GridTargetChip(
+                                grid = gridB,
+                                distanceKm = com.rtbishop.look4sat.core.presentation.greatCircleDistanceKm(
+                                    posA.latitude, posA.longitude, posB.latitude, posB.longitude
+                                ),
+                                bearingDeg = com.rtbishop.look4sat.core.presentation.greatCircleBearingDeg(
+                                    posA.latitude, posA.longitude, posB.latitude, posB.longitude
+                                )
+                            )
+                        } else {
+                            GridTargetChip(grid = null, distanceKm = null, bearingDeg = null)
+                        }
                     }
                 }
             )
@@ -167,7 +189,11 @@ private fun MutualContent(
     onHoursAhead: (Int) -> Unit,
     onClearError: () -> Unit
 ) {
-    val timeFormat = remember { SimpleDateFormat("MM/dd HH:mm", Locale.getDefault()) }
+    val timeFormat = remember(state.isUtc) {
+        SimpleDateFormat("MM/dd HH:mm", Locale.getDefault()).apply {
+            if (state.isUtc) timeZone = TimeZone.getTimeZone("UTC")
+        }
+    }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -304,6 +330,7 @@ private fun MutualContent(
                 pass = pass,
                 isExpanded = state.selectedPassIndex == index,
                 timeFormat = timeFormat,
+                isUtc = state.isUtc,
                 minElevA = state.stationAMinElev,
                 minElevB = state.stationBMinElev,
                 onClick = { onSelectPass(if (state.selectedPassIndex == index) -1 else index) },
@@ -508,6 +535,7 @@ private fun MutualPassCard(
     pass: MutualPass,
     isExpanded: Boolean,
     timeFormat: SimpleDateFormat,
+    isUtc: Boolean,
     minElevA: Double,
     minElevB: Double,
     onClick: () -> Unit,
@@ -539,39 +567,62 @@ private fun MutualPassCard(
             .clickable(onClick = onClick)
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = pass.name,
-                    style = MaterialTheme.typography.bodyLarge,
-                    fontWeight = FontWeight.Medium,
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.weight(1f)
-                )
-                Text(
-                    text = "${timeFormat.format(Date(pass.startTime))} - ${timeFormat.format(Date(pass.endTime))}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            Spacer(Modifier.height(4.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Text(
-                    text = stringResource(R.string.mutual_elevation_you, pass.maxElevationA.toInt()),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.primary
-                )
-                Text(
-                    text = stringResource(R.string.mutual_elevation_opposite, pass.maxElevationB.toInt()),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.tertiary
-                )
+            // Header: pass info (name/time + elevations) on the left, and a
+            // larger radar shortcut on the right that spans both rows vertically.
+            // The pass info column narrows, so the "Opposite" elevation shifts
+            // left to make room for the taller button.
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = pass.name,
+                            style = MaterialTheme.typography.bodyLarge,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.primary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Text(
+                            text = "${timeFormat.format(Date(pass.startTime))} - ${timeFormat.format(Date(pass.endTime))}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Spacer(Modifier.height(4.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            text = stringResource(R.string.mutual_elevation_you, pass.maxElevationA.toInt()),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Text(
+                            text = stringResource(R.string.mutual_elevation_opposite, pass.maxElevationB.toInt()),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.tertiary
+                        )
+                    }
+                }
+                // Radar shortcut, visible even on the collapsed card: a taller
+                // button spanning both header rows. The card's own click
+                // (expand) is not triggered by the IconButton's tap.
+                IconButton(
+                    onClick = onNavigateToRadar,
+                    modifier = Modifier.size(48.dp)
+                ) {
+                    Icon(
+                        painter = painterResource(id = R.drawable.ic_radar),
+                        contentDescription = stringResource(R.string.mutual_open_radar),
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
             }
 
             AnimatedVisibility(
@@ -603,6 +654,7 @@ private fun MutualPassCard(
                             startTime = visibleStart,
                             endTime = visibleEnd,
                             maxElev = adjustedMaxElev,
+                            isUtc = isUtc,
                             progress = dragProgress,
                             onProgressChange = { dragProgress = it }
                         )

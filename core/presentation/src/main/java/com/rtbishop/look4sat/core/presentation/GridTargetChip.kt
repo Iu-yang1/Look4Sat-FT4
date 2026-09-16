@@ -18,7 +18,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
-import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -35,7 +34,7 @@ import kotlin.math.sqrt
  */
 fun formatGridDisplay(grid: String): String? {
     val g = grid.trim().uppercase()
-    if (!g.matches(Regex("[A-R]{2}[0-9]{2}([A-X]{2}([0-9]{2})?)?"))) return null
+    if (g.length !in listOf(4, 6, 8) || g.any { !it.isLetterOrDigit() }) return null
     if (g.length == 4) return g
     if (g.length == 6) return g.take(4) + g.drop(4).lowercase()
     return g.take(4) + g.drop(4).take(2).lowercase() + g.drop(6)
@@ -75,7 +74,7 @@ fun GridTargetChip(
             modifier = Modifier.size(22.dp)
         )
         Text(
-            text = grid?.let { formatGridDisplay(it) } ?: stringResource(R.string.grid_target_placeholder),
+            text = grid?.let { formatGridDisplay(it) } ?: "----",
             fontSize = 15.sp,
             fontWeight = FontWeight.Bold,
             fontFamily = FontFamily.Monospace,
@@ -83,17 +82,10 @@ fun GridTargetChip(
             letterSpacing = 1.sp
         )
         Text(
-            text = distanceKm?.let { stringResource(R.string.grid_target_distance, it) }
-                ?: stringResource(R.string.grid_target_distance_placeholder),
+            text = distanceKm?.let { "${"%,.0f".format(it)} km" } ?: "-- km",
             fontSize = 14.sp,
             color = MaterialTheme.colorScheme.onSurface,
             modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
-        )
-        Text(
-            text = bearingDeg?.let { stringResource(R.string.grid_target_bearing, it) }
-                ?: stringResource(R.string.grid_target_bearing_placeholder),
-            fontSize = 12.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
         )
     }
 }
@@ -134,9 +126,9 @@ fun greatCircleDistanceKm(lat1: Double, lon1: Double, lat2: Double, lon2: Double
     val rad = Math.PI / 180.0
     val dLat = (lat2 - lat1) * rad
     val dLon = (lon2 - lon1) * rad
-    val a = (sin(dLat / 2) * sin(dLat / 2) +
-        cos(lat1 * rad) * cos(lat2 * rad) * sin(dLon / 2) * sin(dLon / 2)).coerceIn(0.0, 1.0)
-    return 6371.0 * 2 * atan2(sqrt(a), sqrt(1 - a))
+    val a = sin(dLat / 2) * sin(dLat / 2) +
+        cos(lat1 * rad) * cos(lat2 * rad) * sin(dLon / 2) * sin(dLon / 2)
+    return 6371.0 * 2 * kotlin.math.atan2(kotlin.math.sqrt(a), kotlin.math.sqrt(1 - a))
 }
 
 /** Initial great-circle bearing in degrees (0 = north, clockwise). */

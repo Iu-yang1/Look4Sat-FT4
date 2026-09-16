@@ -70,6 +70,8 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.rtbishop.look4sat.core.domain.model.DataSourcesSettings
 import com.rtbishop.look4sat.core.domain.time.ClockSource
 import com.rtbishop.look4sat.core.domain.model.OtherSettings
+import com.rtbishop.look4sat.core.domain.model.RadioControlSettings
+import com.rtbishop.look4sat.core.domain.model.WavelogSettings
 import com.rtbishop.look4sat.core.domain.predict.GeoPos
 import com.rtbishop.look4sat.core.domain.repository.IContainerProvider
 import com.rtbishop.look4sat.core.presentation.CardButton
@@ -208,6 +210,32 @@ private fun SettingsScreen(uiState: SettingsState, onAction: (SettingsAction) ->
             onSave = { onAction(SettingsAction.UpdateRadioControl(it)) }
         )
     }
+    if (dialogs.lotw) {
+        // LoTW sync failures are typed codes from the ViewModel; render them
+        // through string resources so the dialog follows the system language.
+        val lotwErrorMessage = uiState.lotwError?.let { error ->
+            when (error) {
+                LoTWError.NotConfigured -> stringResource(R.string.lotw_sync_error_not_configured)
+                LoTWError.BadCredentials -> stringResource(R.string.lotw_sync_error_credentials)
+                LoTWError.RateLimited -> stringResource(R.string.lotw_sync_error_rate_limited)
+                LoTWError.Timeout -> stringResource(R.string.lotw_sync_error_timeout)
+                is LoTWError.Network -> stringResource(R.string.lotw_sync_error_network, error.detail)
+            }
+        }
+        LoTWDialog(
+            initialSettings = uiState.lotwSettings,
+            workedGridsCount = uiState.workedGridsCount,
+            isSyncing = uiState.lotwSyncing,
+            syncMode = uiState.lotwSyncMode,
+            progress = uiState.lotwProgress,
+            message = lotwErrorMessage,
+            dismiss = { dialogs.lotw = false },
+            onCancelSync = { onAction(SettingsAction.CancelLoTWSync); dialogs.lotw = false },
+            onSave = { onAction(SettingsAction.UpdateLoTW(it)) },
+            onSyncFull = { onAction(SettingsAction.SyncLoTWGrids(it, LoTWSyncMode.Full)) },
+            onSyncIncremental = { onAction(SettingsAction.SyncLoTWGrids(it, LoTWSyncMode.Incremental)) }
+        )
+    }
 
     // URLs for top bar
     val uriHandler = LocalUriHandler.current
@@ -318,6 +346,13 @@ private fun SettingsScreen(uiState: SettingsState, onAction: (SettingsAction) ->
                     editGrid = { dialogs.locator = true },
                     enableGnss = permissions.launchGnss,
                     onAction = onAction
+                )
+            }
+            item {
+                LoTWCard(
+                    settings = uiState.lotwSettings,
+                    workedGridsCount = uiState.workedGridsCount,
+                    showLoTWDialog = { dialogs.lotw = true }
                 )
             }
             item { OtherCard(uiState.otherSettings, onAction) }
@@ -637,6 +672,7 @@ private fun OtherCardPreview() = MainTheme {
         stateOfUtc = false,
         stateOfLightTheme = false,
         stateOfNightMode = false,
+        stateOfMapGrid = false,
         shouldSeeWarning = false,
         shouldSeeWhatsNew = false
     )
@@ -648,7 +684,7 @@ private fun OtherCard(settings: OtherSettings, onAction: (SettingsAction) -> Uni
     ElevatedCard(
         modifier = Modifier
             .fillMaxWidth()
-            .height(268.dp)
+            .height(272.dp)
     ) {
         Column(modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) {
             Text(
@@ -688,6 +724,38 @@ private fun SwitchRow(
     ) {
         Text(text = stringResource(id = labelResId))
         Switch(checked = checked, enabled = enabled, onCheckedChange = onCheckedChange)
+    }
+}
+
+@Composable
+private fun LoTWCard(
+    settings: com.rtbishop.look4sat.core.domain.model.LoTWSettings,
+    workedGridsCount: Int,
+    showLoTWDialog: () -> Unit
+) {
+    ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) {
+            Text(
+                text = stringResource(id = R.string.prefs_lotw_title),
+                color = MaterialTheme.colorScheme.primary
+            )
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = if (settings.isConfigured) {
+                    stringResource(R.string.prefs_lotw_configured, workedGridsCount)
+                } else {
+                    stringResource(R.string.prefs_lotw_not_configured)
+                },
+                style = MaterialTheme.typography.bodySmall,
+                maxLines = 2
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            CardButton(
+                onClick = showLoTWDialog,
+                text = stringResource(id = R.string.prefs_wavelog_configure),
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
     }
 }
 
@@ -810,6 +878,8 @@ private class DialogVisibility {
     var network by mutableStateOf(false)
     var bluetooth by mutableStateOf(false)
     var radioControl by mutableStateOf(false)
+    var wavelog by mutableStateOf(false)
+    var lotw by mutableStateOf(false)
 }
 
 @Composable
@@ -817,12 +887,13 @@ private fun rememberDialogVisibility(): DialogVisibility {
     return rememberSaveable(saver = run {
         androidx.compose.runtime.saveable.Saver(
             save = {
-                listOf(it.position, it.locator, it.dataSources, it.network, it.bluetooth, it.radioControl)
+                listOf(it.position, it.locator, it.dataSources, it.network, it.bluetooth, it.radioControl, it.wavelog, it.lotw)
             },
             restore = {
                 DialogVisibility().apply {
                     position = it[0]; locator = it[1]; dataSources = it[2]
-                    network = it[3]; bluetooth = it[4]; radioControl = it[5]
+                    network = it[3]; bluetooth = it[4]; radioControl = it[5]; wavelog = it[6]
+                    lotw = it.getOrElse(7) { false }
                 }
             }
         )

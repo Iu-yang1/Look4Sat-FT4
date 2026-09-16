@@ -3,11 +3,14 @@ package com.rtbishop.look4sat.feature.mutual
 import com.rtbishop.look4sat.core.domain.model.DataSourcesSettings
 import com.rtbishop.look4sat.core.domain.model.DatabaseState
 import com.rtbishop.look4sat.core.domain.model.Ft4Settings
+import com.rtbishop.look4sat.core.domain.model.GridQso
+import com.rtbishop.look4sat.core.domain.model.LoTWSettings
 import com.rtbishop.look4sat.core.domain.model.OtherSettings
 import com.rtbishop.look4sat.core.domain.model.PassesSettings
 import com.rtbishop.look4sat.core.domain.model.RCSettings
 import com.rtbishop.look4sat.core.domain.model.RadioControlSettings
 import com.rtbishop.look4sat.core.domain.model.SatRadio
+import com.rtbishop.look4sat.core.domain.model.WavelogSettings
 import com.rtbishop.look4sat.core.domain.predict.GeoPos
 import com.rtbishop.look4sat.core.domain.predict.OrbitalObject
 import com.rtbishop.look4sat.core.domain.predict.OrbitalPass
@@ -63,7 +66,17 @@ class FakeSettingsRepo(initialPosition: GeoPos = GeoPos(23.13, 113.26)) : ISetti
         RCSettings(false, "", "", "", false, "", "", "", 0L, false, "", "", "", false, "", "")
     )
     override val otherSettings: StateFlow<OtherSettings> = MutableStateFlow(
-        OtherSettings(false, false, false, false, false, false, false, false)
+        OtherSettings(
+            stateOfAutoUpdate = false,
+            stateOfSensors = false,
+            stateOfSweep = false,
+            stateOfUtc = false,
+            stateOfLightTheme = false,
+            stateOfNightMode = false,
+            stateOfMapGrid = false,
+            shouldSeeWarning = false,
+            shouldSeeWhatsNew = false
+        )
     )
     override val ft4Settings: StateFlow<Ft4Settings> = MutableStateFlow(Ft4Settings())
     override val dataSourcesSettings: StateFlow<DataSourcesSettings> = MutableStateFlow(
@@ -72,6 +85,8 @@ class FakeSettingsRepo(initialPosition: GeoPos = GeoPos(23.13, 113.26)) : ISetti
     override val radioControlSettings: StateFlow<RadioControlSettings> = MutableStateFlow(
         RadioControlSettings(false, RadioControlSettings.MODEL_YAESU_FT817, "", "", "", "", 9600)
     )
+    override val wavelogSettings: StateFlow<WavelogSettings> = MutableStateFlow(WavelogSettings())
+    override val lotwSettings: StateFlow<LoTWSettings> = MutableStateFlow(LoTWSettings())
 
     override fun setSelectedIds(ids: List<Int>) = TODO()
     override fun setSelectedTypes(types: List<String>) = TODO()
@@ -96,4 +111,16 @@ class FakeSettingsRepo(initialPosition: GeoPos = GeoPos(23.13, 113.26)) : ISetti
     override fun setSatelliteOffset(catnum: Int, offset: String) = TODO()
     override fun getAmSatCallsign(): String = ""
     override fun setAmSatCallsign(callsign: String) = TODO()
+    override fun updateWavelogSettings(settings: WavelogSettings) = TODO()
+    override fun getWorkedGrids(): Set<String> = TODO()
+    override fun setWorkedGrids(grids: Set<String>) = TODO()
+    override fun getWorkedGridQsos(): Map<String, List<GridQso>> = TODO()
+    override fun setWorkedGridQsos(qsos: Map<String, List<GridQso>>) = TODO()
+    override fun getRoamedGrids(): Set<String> = TODO()
+    override fun setRoamedGrids(grids: Set<String>) = TODO()
+    override fun updateLoTWSettings(settings: LoTWSettings) = TODO()
+    override fun getLastLotwSyncDate(): String = ""
+    override fun setLastLotwSyncDate(date: String) = Unit
+    override fun getLastLotwSyncCallsign(): String = ""
+    override fun setLastLotwSyncCallsign(callsign: String) = Unit
 }

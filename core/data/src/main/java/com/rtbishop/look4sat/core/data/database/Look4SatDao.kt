@@ -60,4 +60,7 @@ interface Look4SatDao {
 
     @Query("DELETE FROM radios")
     suspend fun deleteRadios()
+
+    @Query("DELETE FROM radios WHERE isCustom = 0")
+    suspend fun deleteManagedRadios()
 }

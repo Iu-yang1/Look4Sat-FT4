@@ -26,9 +26,11 @@ import com.rtbishop.look4sat.core.domain.audio.IAudioHub
 import com.rtbishop.look4sat.core.domain.repository.IDatabaseRepo
 import com.rtbishop.look4sat.core.domain.ft4.IFt4AudioTransmitter
 import com.rtbishop.look4sat.core.domain.ft4.IFt4Service
+import com.rtbishop.look4sat.core.domain.model.WavelogSettings
 import com.rtbishop.look4sat.core.domain.repository.IMainContainer
 import com.rtbishop.look4sat.core.domain.repository.ISettingsRepo
 import com.rtbishop.look4sat.core.domain.repository.IUpdateRepository
+import com.rtbishop.look4sat.core.domain.repository.IWavelogRepository
 import com.rtbishop.look4sat.core.domain.usecase.IShowToast
 import com.rtbishop.look4sat.core.domain.time.IDisciplinedClock
 import com.rtbishop.look4sat.core.domain.time.ITimeSynchronizationService
@@ -40,6 +42,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 
 class SettingsViewModel(
@@ -51,12 +54,16 @@ class SettingsViewModel(
     private val disciplinedClock: IDisciplinedClock,
     private val timeSynchronizationService: ITimeSynchronizationService,
     private val updateRepo: IUpdateRepository,
+    private val wavelogRepo: IWavelogRepository,
+    private val lotwRepo: com.rtbishop.look4sat.core.domain.repository.ILoTWRepository,
     private val apkFile: File,
     private val showToast: IShowToast
 ) : ViewModel() {
 
     private val defaultPosSettings = PositionSettings(false, settingsRepo.stationPosition.value, 0)
     private val defaultDataSettings = DataSettings(false, 0, 0, 0L)
+    /** In-flight LoTW sync job, cancelled by CancelLoTWSync. */
+    private var lotwSyncJob: kotlinx.coroutines.Job? = null
     private val _uiState = MutableStateFlow(
         SettingsState(
             appVersionName = settingsRepo.appVersionName,
@@ -71,7 +78,9 @@ class SettingsViewModel(
             rcSettings = settingsRepo.rcSettings.value,
             radioControlSettings = settingsRepo.radioControlSettings.value,
             dataSourcesSettings = settingsRepo.dataSourcesSettings.value,
-            dataSourcesStatus = settingsRepo.dataSourcesStatus.value
+            dataSourcesStatus = settingsRepo.dataSourcesStatus.value,
+            wavelogSettings = settingsRepo.wavelogSettings.value,
+            workedGridsCount = settingsRepo.getWorkedGrids().size
         )
     )
 
@@ -161,6 +170,16 @@ class SettingsViewModel(
                 _uiState.update { it.copy(radioControlSettings = settings) }
             }
         }
+        viewModelScope.launch {
+            settingsRepo.wavelogSettings.collect { settings ->
+                _uiState.update { it.copy(wavelogSettings = settings) }
+            }
+        }
+        viewModelScope.launch {
+            settingsRepo.lotwSettings.collect { settings ->
+                _uiState.update { it.copy(lotwSettings = settings) }
+            }
+        }
     }
 
 
@@ -219,6 +238,13 @@ class SettingsViewModel(
             is SettingsAction.UpdateRC -> settingsRepo.updateRCSettings(action.settings)
             is SettingsAction.UpdateRadioControl -> settingsRepo.updateRadioControlSettings(action.settings)
             is SettingsAction.UpdateDataSources -> settingsRepo.updateDataSourcesSettings(action.settings)
+            // Wavelog worked grids
+            is SettingsAction.UpdateWavelog -> settingsRepo.updateWavelogSettings(action.settings)
+            is SettingsAction.SyncWorkedGrids -> syncWorkedGrids(action.settings)
+            // LoTW confirmed grids
+            is SettingsAction.UpdateLoTW -> settingsRepo.updateLoTWSettings(action.settings)
+            is SettingsAction.SyncLoTWGrids -> syncLoTWGrids(action.settings, action.mode)
+            SettingsAction.CancelLoTWSync -> cancelLoTWSync()
             // Update checker
             SettingsAction.CheckForUpdate -> checkForUpdate()
             SettingsAction.DownloadUpdate -> downloadUpdate()
@@ -227,6 +253,154 @@ class SettingsViewModel(
             is SettingsAction.ShowToast -> showToast(action.message)
         }
     }
+
+    // region Wavelog worked grids
+
+    private fun syncWorkedGrids(settings: WavelogSettings) {
+        if (!settings.isConfigured) {
+            _uiState.update { it.copy(wavelogMessage = "Wavelog URL/token not configured") }
+            return
+        }
+        // Persist the credentials first, then sync with the freshly-typed values.
+        settingsRepo.updateWavelogSettings(settings)
+        _uiState.update { it.copy(wavelogSyncing = true, wavelogMessage = null) }
+        viewModelScope.launch {
+            val grids = wavelogRepo.fetchWorkedGrids(settings.url, settings.token)
+            _uiState.update {
+                if (grids != null) {
+                    settingsRepo.setWorkedGrids(grids)
+                    it.copy(wavelogSyncing = false, workedGridsCount = grids.size, wavelogMessage = null)
+                } else {
+                    it.copy(wavelogSyncing = false, wavelogMessage = "Sync failed — check URL/token/network")
+                }
+            }
+        }
+    }
+
+    private fun syncLoTWGrids(
+        settings: com.rtbishop.look4sat.core.domain.model.LoTWSettings,
+        mode: LoTWSyncMode
+    ) {
+        if (!settings.isConfigured) {
+            _uiState.update { it.copy(lotwError = LoTWError.NotConfigured) }
+            return
+        }
+        // Persist the credentials first, then sync with the freshly-typed values.
+        settingsRepo.updateLoTWSettings(settings)
+        // Incremental only makes sense for the same callsign as the last sync;
+        // a first sync, an unknown/empty record or a callsign change must fall
+        // back to a full report so no stale grids from another account linger.
+        val callsign = settings.callsign.trim().uppercase()
+        val lastCallsign = settingsRepo.getLastLotwSyncCallsign()
+        val effectiveMode = if (mode == LoTWSyncMode.Incremental &&
+            lastCallsign.isNotBlank() && lastCallsign == callsign
+        ) LoTWSyncMode.Incremental else LoTWSyncMode.Full
+        val since = if (effectiveMode == LoTWSyncMode.Incremental) {
+            settingsRepo.getLastLotwSyncDate()
+        } else ""
+        _uiState.update {
+            it.copy(lotwSyncing = true, lotwSyncMode = effectiveMode, lotwProgress = null, lotwError = null)
+        }
+        lotwSyncJob = viewModelScope.launch {
+            val result = lotwRepo.fetchConfirmedGridQsos(callsign, settings.password, since) { progress ->
+                _uiState.update { it.copy(lotwProgress = progress) }
+            }
+            when (result) {
+                is com.rtbishop.look4sat.core.domain.repository.LoTWResult.Success -> {
+                    // Incremental: merge new grids/QSOs into the stored set (dedup
+                    // by call + QSO time); full: the fresh report replaces it all.
+                    val existingGrids = settingsRepo.getWorkedGrids()
+                    val existingQsos = settingsRepo.getWorkedGridQsos()
+                    val existingRoamed = settingsRepo.getRoamedGrids()
+                    val mergedGrids = if (effectiveMode == LoTWSyncMode.Incremental) {
+                        existingGrids + result.grids
+                    } else result.grids
+                    val mergedQsos = if (effectiveMode == LoTWSyncMode.Incremental) {
+                        mergeGridQsos(existingQsos, result.qsos)
+                    } else result.qsos
+                    val mergedRoamed = if (effectiveMode == LoTWSyncMode.Incremental) {
+                        existingRoamed + result.roamedGrids
+                    } else result.roamedGrids
+                    // Remember when/what we synced, so the next incremental pull
+                    // asks LoTW for only the confirmations since today.
+                    val today = java.text.SimpleDateFormat("yyyyMMdd", java.util.Locale.US)
+                        .apply { timeZone = java.util.TimeZone.getTimeZone("UTC") }
+                        .format(java.util.Date())
+                    settingsRepo.setLastLotwSyncDate(today)
+                    settingsRepo.setLastLotwSyncCallsign(callsign)
+                    // Persist on the IO dispatcher: building the per-grid QSO JSON
+                    // and writing SharedPreferences synchronously blocks the
+                    // calling thread, and for large accounts (tens of thousands
+                    // of QSOs → multi-MB JSON) that froze the main thread after
+                    // the download finished — 'bar done but app stuck'.
+                    withContext(kotlinx.coroutines.Dispatchers.IO) {
+                        settingsRepo.setWorkedGrids(mergedGrids)
+                        settingsRepo.setWorkedGridQsos(mergedQsos)
+                        settingsRepo.setRoamedGrids(mergedRoamed)
+                    }
+                    _uiState.update { state ->
+                        state.copy(
+                            lotwSyncing = false, lotwSyncMode = null, lotwProgress = null,
+                            workedGridsCount = mergedGrids.size, lotwError = null
+                        )
+                    }
+                }
+                is com.rtbishop.look4sat.core.domain.repository.LoTWResult.BadCredentials ->
+                    _uiState.update { state ->
+                        state.copy(
+                            lotwSyncing = false, lotwSyncMode = null, lotwProgress = null,
+                            lotwError = LoTWError.BadCredentials
+                        )
+                    }
+                is com.rtbishop.look4sat.core.domain.repository.LoTWResult.RateLimited ->
+                    _uiState.update { state ->
+                        state.copy(
+                            lotwSyncing = false, lotwSyncMode = null, lotwProgress = null,
+                            lotwError = LoTWError.RateLimited
+                        )
+                    }
+                is com.rtbishop.look4sat.core.domain.repository.LoTWResult.Timeout ->
+                    _uiState.update { state ->
+                        state.copy(
+                            lotwSyncing = false, lotwSyncMode = null, lotwProgress = null,
+                            lotwError = LoTWError.Timeout
+                        )
+                    }
+                is com.rtbishop.look4sat.core.domain.repository.LoTWResult.NetworkError ->
+                    _uiState.update { state ->
+                        state.copy(
+                            lotwSyncing = false, lotwSyncMode = null, lotwProgress = null,
+                            lotwError = LoTWError.Network(result.detail)
+                        )
+                    }
+            }
+        }
+    }
+
+    /** Abort the in-flight LoTW sync job and reset its progress state. */
+    private fun cancelLoTWSync() {
+        lotwSyncJob?.cancel()
+        lotwSyncJob = null
+        _uiState.update { it.copy(lotwSyncing = false, lotwSyncMode = null, lotwProgress = null) }
+    }
+
+    /** Merge fresh QSO detail into existing per-grid lists, dedup by call + QSO time. */
+    private fun mergeGridQsos(
+        existing: Map<String, List<com.rtbishop.look4sat.core.domain.model.GridQso>>,
+        fresh: Map<String, List<com.rtbishop.look4sat.core.domain.model.GridQso>>
+    ): Map<String, List<com.rtbishop.look4sat.core.domain.model.GridQso>> {
+        val merged = existing.mapValues { (_, list) -> list.toMutableList() }.toMutableMap()
+        fresh.forEach { (grid, list) ->
+            val target = merged.getOrPut(grid) { mutableListOf() }
+            val known = target.mapTo(mutableSetOf()) { it.call to it.epochMs }
+            list.forEach { qso ->
+                if (known.add(qso.call to qso.epochMs)) target.add(qso)
+            }
+        }
+        return merged
+    }
+
+    // endregion
 
     // region Update checker
 
@@ -354,6 +528,8 @@ class SettingsViewModel(
                     disciplinedClock = container.disciplinedClock,
                     timeSynchronizationService = container.timeSynchronizationService,
                     updateRepo = container.updateRepo,
+                    wavelogRepo = container.wavelogRepo,
+                    lotwRepo = container.lotwRepo,
                     apkFile = File(context.cacheDir, "look4sat-update.apk"),
                     showToast = container.provideShowToast()
                 )

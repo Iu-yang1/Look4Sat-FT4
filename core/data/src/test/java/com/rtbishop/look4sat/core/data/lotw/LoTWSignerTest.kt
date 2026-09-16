@@ -1,6 +1,5 @@
 package com.rtbishop.look4sat.core.data.lotw
 
-import com.rtbishop.look4sat.core.data.repository.parseLoTWFields
 import com.rtbishop.look4sat.core.domain.logbook.QsoRecord
 import com.rtbishop.look4sat.core.domain.logbook.QsoStatus
 import com.rtbishop.look4sat.core.domain.repository.LoTWOperationException
@@ -10,6 +9,7 @@ import org.junit.Assert.*
 import org.junit.Test
 import java.io.File
 import java.security.Signature
+import java.util.Locale
 import java.util.zip.GZIPInputStream
 import kotlin.io.encoding.Base64
 
@@ -93,4 +93,50 @@ class LoTWSignerTest {
     private fun assertProblem(expected: LoTWProblem, block: () -> Unit) {
         assertEquals(expected, assertThrows(LoTWOperationException::class.java) { block() }.reason)
     }
+}
+
+private data class LoTWFields(val header: Map<String, String>, val records: List<Map<String, String>>)
+
+/** Minimal length-aware ADIF reader used to verify the generated TQ8 payload. */
+private fun parseLoTWFields(content: String): LoTWFields {
+    val records = mutableListOf<Map<String, String>>()
+    var header: Map<String, String>? = null
+    var values = linkedMapOf<String, String>()
+    var index = 0
+    while (index < content.length) {
+        val start = content.indexOf('<', index)
+        if (start < 0) break
+        val end = content.indexOf('>', start + 1)
+        require(end >= 0)
+        val parts = content.substring(start + 1, end).split(':')
+        val name = parts.first().trim().uppercase(Locale.US)
+        index = end + 1
+        when (name) {
+            "EOH" -> {
+                require(header == null && records.isEmpty())
+                header = values.toMap()
+                values = linkedMapOf()
+            }
+            "EOR" -> {
+                require(header != null && values.isNotEmpty())
+                records += values.toMap()
+                values = linkedMapOf()
+            }
+            "APP_LOTW_EOF" -> {
+                require(values.isEmpty())
+                val size = parts.getOrNull(1)?.toIntOrNull() ?: 0
+                require(size in 0..(content.length - index))
+                index += size
+                require(content.substring(index).isBlank())
+            }
+            else -> {
+                val size = parts.getOrNull(1)?.toIntOrNull() ?: error("Missing field length")
+                require(size in 0..(content.length - index))
+                values[name] = content.substring(index, index + size)
+                index += size
+            }
+        }
+    }
+    require(header != null && values.isEmpty())
+    return LoTWFields(header, records)
 }

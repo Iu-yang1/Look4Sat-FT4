@@ -11,6 +11,11 @@ android {
         encoding = "UTF-8"
     }
     // Morse Expert 1.15 官方 Play 分包提供 ARM32/ARM64 原生解码器。
+    defaultConfig {
+        ndk {
+            abiFilters += listOf("armeabi-v7a", "arm64-v8a")
+        }
+    }
 }
 
 // CW 类保持规则(JNI 按类名注册 + 照搬混淆类保逻辑), 由 app 的 R8 消费

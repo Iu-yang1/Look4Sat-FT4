@@ -35,7 +35,8 @@ import kotlin.math.min
  * One administrative/boundary region loaded from the award GeoJSON assets.
  *
  * @param code     match key against award statistics (e.g. "GD", "34", "24", "CA", "318")
- * @param name     display label (province/prefecture/state/country name)
+ * @param name     display label in the source language (province/prefecture/state/country name)
+ * @param nameEn   optional English display label (null when the source already is English)
  * @param labelLon/labelLat preferred label anchor (usually the region centroid)
  * @param rings    polygon exterior rings as lon/lat pairs; the overlay projects
  *                 them per frame with the same projection helpers as the grid overlay
@@ -43,6 +44,7 @@ import kotlin.math.min
 data class AwardRegion(
     val code: String,
     val name: String,
+    val nameEn: String? = null,
     val labelLon: Double,
     val labelLat: Double,
     val rings: List<List<DoubleArray>>,
@@ -67,7 +69,6 @@ object AwardBoundaryData {
         DXCC("dxcc.json")
     }
 
-    @Synchronized
     fun load(context: Context, asset: AwardAsset): List<AwardRegion> {
         cache[asset]?.let { return it }
         val regions = try {
@@ -94,6 +95,7 @@ object AwardBoundaryData {
                     AwardRegion(
                         code = o.optString("code"),
                         name = o.optString("name"),
+                        nameEn = o.optString("name_en").takeIf { it.isNotEmpty() },
                         labelLon = o.optDouble("label_lon", 0.0),
                         labelLat = o.optDouble("label_lat", 0.0),
                         rings = rings,
@@ -140,7 +142,6 @@ class AwardBoundaryOverlay : Overlay() {
     /** Boundary regions to render; assigning recomputes culling bounds. */
     var regions: List<AwardRegion> = emptyList()
         set(value) {
-            if (field === value) return
             field = value
             regionBounds.clear()
             for (r in value) {
@@ -186,6 +187,10 @@ class AwardBoundaryOverlay : Overlay() {
         labelPaint.textAlign = Paint.Align.CENTER
         val fontMetrics = labelPaint.fontMetrics
         val textHalfHeight = (fontMetrics.descent + fontMetrics.ascent) / 2f
+        // Label language follows the system: Chinese UI keeps the source
+        // (Chinese/Japanese) names; any other UI language uses the English
+        // name when the asset provides one (falls back to the source name).
+        val useEnglishLabels = mapView.context.resources.configuration.locales[0].language != "zh"
 
         for (i in regions.indices) {
             val region = regions[i]
@@ -238,7 +243,8 @@ class AwardBoundaryOverlay : Overlay() {
             // anchor sits out on the sea where there is room for the text.
             val regionH = (projectionToY(projection, b[3]) ?: 0f) - (projectionToY(projection, b[1]) ?: 0f)
             if (abs(regionH) < MIN_LABEL_REGION_PX && !region.forceLabel) continue
-            canvas.drawText(region.name, lx, ly - textHalfHeight, labelPaint)
+            val label = if (useEnglishLabels) region.nameEn ?: region.name else region.name
+            canvas.drawText(label, lx, ly - textHalfHeight, labelPaint)
         }
     }
 
@@ -263,9 +269,23 @@ class AwardBoundaryOverlay : Overlay() {
             val prevLon = pts[i - 1][0]
             val lon = pts[i][0]
             if (abs(lon - prevLon) > 180.0) {
-                // Crossed the antimeridian: start a fresh segment.
+                // Crossed the antimeridian. Do NOT drop this edge — that would
+                // leave a visible gap in the outline (WAZ Pacific zones 1/19/
+                // 31/32, e.g. zone 31's 40°N boundary from 130°W to 160°E).
+                // Split the edge IN TWO at ±180 instead: each half stays in its
+                // own segment, so the outline closes across the map's left and
+                // right edges. The crossing latitude is interpolated along the
+                // edge (constant for latitude-aligned edges).
+                val a = pts[i - 1]
+                val b = pts[i]
+                val span = 360.0 - abs(lon - prevLon) // shortest angular distance
+                val edgeLon = if (prevLon < lon) -180.0 else 180.0 // side being crossed
+                val t = abs(edgeLon - prevLon) / span
+                val latAt = a[1] + (b[1] - a[1]) * t
+                cur.add(doubleArrayOf(edgeLon, latAt))
                 if (cur.size >= 2) segments.add(cur)
                 cur = mutableListOf()
+                cur.add(doubleArrayOf(-edgeLon, latAt))
             }
             cur.add(pts[i])
         }
@@ -380,8 +400,12 @@ class AwardBoundaryOverlay : Overlay() {
 
     private fun normalizeLon(lon: Double): Double {
         var l = lon % 360.0
-        if (l >= 180.0) l -= 360.0
-        if (l < -180.0) l += 360.0
+        // Normalize into (-180, 180] — +180, not -180. An edge whose endpoint
+        // sits ON the antimeridian (e.g. a ring starting at -180°) must not be
+        // seen as a >180° jump away from a nearby 165° vertex; keeping the
+        // antimeridian value as +180 makes such edges short and un-split.
+        if (l <= -180.0) l += 360.0
+        if (l > 180.0) l -= 360.0
         return l
     }
 

@@ -1,7 +1,6 @@
 package com.rtbishop.look4sat.core.data.lotw
 
 import android.content.Context
-import com.rtbishop.look4sat.core.data.repository.readBoundedBody
 import com.rtbishop.look4sat.core.domain.logbook.QsoRecord
 import com.rtbishop.look4sat.core.domain.logbook.QsoStatus
 import com.rtbishop.look4sat.core.domain.repository.ILoTWUploadRepository
@@ -37,6 +36,18 @@ import java.util.UUID
 import java.util.concurrent.TimeUnit
 import kotlin.coroutines.coroutineContext
 import kotlin.coroutines.resume
+
+private fun readBoundedBody(response: Response, limit: Int): String = response.body.charStream().use { reader ->
+    val result = StringBuilder()
+    val buffer = CharArray(8192)
+    while (true) {
+        val count = reader.read(buffer)
+        if (count < 0) break
+        require(result.length <= limit - count) { "Response exceeds size limit" }
+        result.append(buffer, 0, count)
+    }
+    result.toString()
+}
 
 class LoTWUploadRepository internal constructor(
     private val storage: LoTWStorage,

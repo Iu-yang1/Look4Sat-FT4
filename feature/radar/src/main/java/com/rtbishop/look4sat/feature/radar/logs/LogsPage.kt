@@ -153,9 +153,14 @@ fun LogsPage(
             Button(
                 onClick = model::save,
                 enabled = !state.saving && state.callsign.isNotBlank(),
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(52.dp)
             ) {
-                Text(stringResource(R.string.quicklog_save))
+                Text(
+                    text = stringResource(R.string.quicklog_save),
+                    style = MaterialTheme.typography.titleMedium
+                )
             }
         }
     }

@@ -110,13 +110,22 @@ fun NavRoot(deeplink: String? = null) {
         while (rootBackStack.size > 1) rootBackStack.removeAt(rootBackStack.size - 1)
         openMapRequest += 1
     }
+    val context = LocalContext.current
+    val container = (context.applicationContext as IContainerProvider).getMainContainer()
+    val otherSettings by container.settingsRepo.otherSettings.collectAsStateWithLifecycle()
     // Incoming screen slides in from the right, outgoing drifts left at 1/3 speed (API35+ style)
     val pushTransition = slideInHorizontally(tween(300)) { it } togetherWith
         slideOutHorizontally(tween(300)) { -it / 3 }
     // Reverse: outgoing slides out to the right, incoming drifts in from the left
     val popTransition = slideInHorizontally(tween(300)) { -it / 3 } togetherWith
         slideOutHorizontally(tween(300)) { it }
-    NavDisplay(
+    CompositionLocalProvider(
+        LocalElevationThresholds provides ElevationThresholds(
+            low = otherSettings.lowElevation,
+            high = otherSettings.highElevation
+        )
+    ) {
+        NavDisplay(
         modifier = Modifier.fillMaxSize(),
         backStack = rootBackStack,
         onBack = navigateBack,
@@ -161,7 +170,8 @@ fun NavRoot(deeplink: String? = null) {
                 }
             }
         }
-    )
+        )
+    }
 }
 
 @Composable
@@ -185,7 +195,16 @@ fun MainScreen(
         }
     }
     val fadeTransition = fadeIn(animationSpec = tween(350)) togetherWith fadeOut(animationSpec = tween(350))
-    val navItems = listOf(Screen.Satellites, Screen.Passes, Screen.Logbook, Screen.Mutual, Screen.Ft4, Screen.Settings)
+    val navItems = listOf(
+        Screen.Satellites,
+        Screen.Passes,
+        Screen.AMSAT,
+        Screen.Map,
+        Screen.Logbook,
+        Screen.Mutual,
+        Screen.Ft4,
+        Screen.Settings
+    )
 
     val context = LocalContext.current
     val container = (context.applicationContext as IContainerProvider).getMainContainer()
@@ -209,7 +228,7 @@ fun MainScreen(
                     val isSelected = when (currentKey) {
                         is Screen.Satellites -> screen is Screen.Satellites
                         is Screen.Passes -> screen is Screen.Passes
-                        is Screen.Map -> screen is Screen.Passes
+                        is Screen.Map -> screen is Screen.Map
                         is Screen.AMSAT -> screen is Screen.AMSAT
                         is Screen.Mutual -> screen is Screen.Mutual
                         is Screen.Ft4 -> screen is Screen.Ft4
@@ -222,7 +241,7 @@ fun MainScreen(
                         label = { Text(stringResource(screen.titleResId)) },
                         selected = isSelected,
                         onClick = {
-                            if (isSelected && !(currentKey is Screen.Map && screen is Screen.Passes)) return@item
+                            if (isSelected) return@item
                             if (screen is Screen.Ft4) {
                                 navigateToFt4()
                                 return@item
@@ -269,8 +288,7 @@ fun MainScreen(
                                     container.setMutualPassData(MutualPassData())
                                     container.satelliteRepo.selectPass(catNum, aosTime)
                                     navigateToRadar()
-                                },
-                                navigateToMap = navigateToMap
+                                }
                             )
                         }
                         entry<Screen.Map> {

@@ -33,6 +33,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -53,6 +54,7 @@ data class MutualUiState(
     val isCalculating: Boolean = false,
     val hasSearched: Boolean = false,
     val selectedPassIndex: Int = -1,
+    val isUtc: Boolean = false,
     val errorMessage: String? = null
 )
 
@@ -77,8 +79,15 @@ class MutualViewModel(
             stationALat = "%.4f".format(pos.latitude),
             stationALon = "%.4f".format(pos.longitude),
             stationAMinElev = 0.0,
-            stationBMinElev = 0.0
+            stationBMinElev = 0.0,
+            isUtc = settingsRepo.otherSettings.value.stateOfUtc
         ) }
+        // Keep the time display in sync with the UTC toggle in Settings
+        viewModelScope.launch {
+            settingsRepo.otherSettings.collectLatest { settings ->
+                _uiState.update { it.copy(isUtc = settings.stateOfUtc) }
+            }
+        }
     }
 
     fun onStationALat(value: String) {

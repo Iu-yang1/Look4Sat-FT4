@@ -25,6 +25,7 @@ import com.rtbishop.look4sat.core.domain.model.LatestRelease
 import com.rtbishop.look4sat.core.domain.model.OtherSettings
 import com.rtbishop.look4sat.core.domain.model.RCSettings
 import com.rtbishop.look4sat.core.domain.model.RadioControlSettings
+import com.rtbishop.look4sat.core.domain.model.WavelogSettings
 import com.rtbishop.look4sat.core.domain.predict.GeoPos
 import com.rtbishop.look4sat.core.domain.time.ClockSnapshot
 import com.rtbishop.look4sat.core.domain.time.TimeSynchronizationState
@@ -64,8 +65,29 @@ data class SettingsState(
     val radioControlSettings: RadioControlSettings,
     val dataSourcesSettings: DataSourcesSettings,
     val dataSourcesStatus: Map<String, Int> = emptyMap(),
+    val wavelogSettings: WavelogSettings = WavelogSettings(),
+    val workedGridsCount: Int = 0,
+    val wavelogSyncing: Boolean = false,
+    val wavelogMessage: String? = null,
+    val lotwSettings: com.rtbishop.look4sat.core.domain.model.LoTWSettings = com.rtbishop.look4sat.core.domain.model.LoTWSettings(),
+    val lotwSyncing: Boolean = false,
+    val lotwSyncMode: LoTWSyncMode? = null,
+    val lotwProgress: com.rtbishop.look4sat.core.domain.repository.LoTWProgress? = null,
+    val lotwError: LoTWError? = null,
     val updateChecker: UpdateCheckerState = UpdateCheckerState()
 )
+
+/** What a LoTW sync button does: pull everything, or only new QSLs since the last sync. */
+enum class LoTWSyncMode { Full, Incremental }
+
+/** LoTW sync failure, kept as a translatable code until the UI renders it. */
+sealed interface LoTWError {
+    data object NotConfigured : LoTWError
+    data object BadCredentials : LoTWError
+    data object RateLimited : LoTWError
+    data object Timeout : LoTWError
+    data class Network(val detail: String) : LoTWError
+}
 
 sealed interface SettingsAction {
     // Position
@@ -103,6 +125,19 @@ sealed interface SettingsAction {
 
     // Data sources
     data class UpdateDataSources(val settings: DataSourcesSettings) : SettingsAction
+
+    // Wavelog worked grids
+    data class UpdateWavelog(val settings: WavelogSettings) : SettingsAction
+    data class SyncWorkedGrids(val settings: WavelogSettings) : SettingsAction
+
+    // LoTW confirmed grids
+    data class UpdateLoTW(val settings: com.rtbishop.look4sat.core.domain.model.LoTWSettings) : SettingsAction
+    data class SyncLoTWGrids(
+        val settings: com.rtbishop.look4sat.core.domain.model.LoTWSettings,
+        val mode: LoTWSyncMode
+    ) : SettingsAction
+    /** Abort an in-flight LoTW sync (wrong button / changed mind). */
+    data object CancelLoTWSync : SettingsAction
 
     // Update checker
     data object CheckForUpdate : SettingsAction

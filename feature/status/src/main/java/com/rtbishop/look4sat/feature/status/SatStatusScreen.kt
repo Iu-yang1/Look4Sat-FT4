@@ -58,7 +58,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.rtbishop.look4sat.core.domain.model.SatDay
 import com.rtbishop.look4sat.core.domain.model.SatReport
-import com.rtbishop.look4sat.core.domain.model.SatSlot
 import com.rtbishop.look4sat.core.domain.model.SatStatus
 import com.rtbishop.look4sat.core.domain.repository.IContainerProvider
 import com.rtbishop.look4sat.core.presentation.CardButton
@@ -316,7 +315,6 @@ private fun HeaderRow(statuses: List<SatStatus>) {
 /** Satellite row: name takes remaining width; day tiles are fixed-width (tablet-safe). */
 @Composable
 private fun StatusRow(status: SatStatus, onClickDay: (SatDay) -> Unit) {
-    val noReportGray = 0xFFC0C0C0L
     Row(
         modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -329,9 +327,8 @@ private fun StatusRow(status: SatStatus, onClickDay: (SatDay) -> Unit) {
             modifier = Modifier.weight(1f).padding(end = 4.dp)
         )
         status.days.forEach { day ->
-            val slot = day.slots.firstOrNull { it.statusColor != noReportGray } ?: day.slots.first()
             DayCell(
-                slot = slot,
+                day = day,
                 modifier = Modifier.width(TILE_WIDTH).padding(horizontal = 2.dp),
                 onClick = { onClickDay(day) }
             )
@@ -339,10 +336,17 @@ private fun StatusRow(status: SatStatus, onClickDay: (SatDay) -> Unit) {
     }
 }
 
-/** Day block: newest reported status among the day's 12 slots; gray when none. */
+/**
+ * Day block: colored by the newest reported status among the day's 12 slots
+ * (gray when none); the number is the TOTAL report count of the whole day
+ * (sum over all slots), not the count of the newest slot alone.
+ */
 @Composable
-private fun DayCell(slot: SatSlot, modifier: Modifier, onClick: () -> Unit) {
+private fun DayCell(day: SatDay, modifier: Modifier, onClick: () -> Unit) {
+    val noReportGray = 0xFFC0C0C0L
+    val slot = day.slots.firstOrNull { it.statusColor != noReportGray } ?: day.slots.first()
     val color = Color(slot.statusColor)
+    val totalCount = day.slots.sumOf { it.count }
     Box(
         modifier = modifier
             .height(28.dp)
@@ -351,8 +355,8 @@ private fun DayCell(slot: SatSlot, modifier: Modifier, onClick: () -> Unit) {
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
-        if (slot.count > 0) {
-            Text(text = slot.count.toString(), fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.White)
+        if (totalCount > 0) {
+            Text(text = totalCount.toString(), fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.White)
         }
     }
 }

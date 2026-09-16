@@ -195,16 +195,7 @@ fun MainScreen(
         }
     }
     val fadeTransition = fadeIn(animationSpec = tween(350)) togetherWith fadeOut(animationSpec = tween(350))
-    val navItems = listOf(
-        Screen.Satellites,
-        Screen.Passes,
-        Screen.AMSAT,
-        Screen.Map,
-        Screen.Logbook,
-        Screen.Mutual,
-        Screen.Ft4,
-        Screen.Settings
-    )
+    val navItems = listOf(Screen.Satellites, Screen.Passes, Screen.Logbook, Screen.Mutual, Screen.Ft4, Screen.Settings)
 
     val context = LocalContext.current
     val container = (context.applicationContext as IContainerProvider).getMainContainer()
@@ -228,7 +219,7 @@ fun MainScreen(
                     val isSelected = when (currentKey) {
                         is Screen.Satellites -> screen is Screen.Satellites
                         is Screen.Passes -> screen is Screen.Passes
-                        is Screen.Map -> screen is Screen.Map
+                        is Screen.Map -> screen is Screen.Passes
                         is Screen.AMSAT -> screen is Screen.AMSAT
                         is Screen.Mutual -> screen is Screen.Mutual
                         is Screen.Ft4 -> screen is Screen.Ft4
@@ -241,7 +232,7 @@ fun MainScreen(
                         label = { Text(stringResource(screen.titleResId)) },
                         selected = isSelected,
                         onClick = {
-                            if (isSelected) return@item
+                            if (isSelected && !(currentKey is Screen.Map && screen is Screen.Passes)) return@item
                             if (screen is Screen.Ft4) {
                                 navigateToFt4()
                                 return@item
@@ -288,7 +279,8 @@ fun MainScreen(
                                     container.setMutualPassData(MutualPassData())
                                     container.satelliteRepo.selectPass(catNum, aosTime)
                                     navigateToRadar()
-                                }
+                                },
+                                navigateToMap = navigateToMap
                             )
                         }
                         entry<Screen.Map> {

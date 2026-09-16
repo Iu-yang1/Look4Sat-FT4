@@ -17,6 +17,7 @@
  */
 package com.rtbishop.look4sat.core.data.database.entity
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.PrimaryKey
 
@@ -34,5 +35,5 @@ data class SatRadio(
     val isInverted: Boolean,
     val catnum: Int?,
     /** Set for manually imported transceivers, which remote updates must not replace. */
-    val isCustom: Boolean = false
+    @ColumnInfo(defaultValue = "0") val isCustom: Boolean = false
 )

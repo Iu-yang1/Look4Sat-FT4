@@ -24,14 +24,58 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 import com.rtbishop.look4sat.core.data.database.entity.SatEntry
 import com.rtbishop.look4sat.core.data.database.entity.SatRadio
 
-@Database(entities = [SatEntry::class, SatRadio::class], version = 2, exportSchema = false)
+@Database(entities = [SatEntry::class, SatRadio::class], version = 3, exportSchema = false)
 abstract class Look4SatDb : RoomDatabase() {
     abstract fun look4SatDao(): Look4SatDao
 }
 
 val MIGRATION_1_2 = object : Migration(1, 2) {
-    override fun migrate(database: SupportSQLiteDatabase) {
-        database.execSQL("ALTER TABLE entries ADD COLUMN ndot REAL NOT NULL DEFAULT 0.0")
-        database.execSQL("ALTER TABLE radios ADD COLUMN isCustom INTEGER NOT NULL DEFAULT 0")
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE entries ADD COLUMN ndot REAL NOT NULL DEFAULT 0")
+    }
+}
+
+val MIGRATION_2_3 = object : Migration(2, 3) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        val hasIsCustom = db.query("PRAGMA table_info(radios)").use { cursor ->
+            val nameIndex = cursor.getColumnIndexOrThrow("name")
+            var found = false
+            while (cursor.moveToNext()) {
+                if (cursor.getString(nameIndex) == "isCustom") {
+                    found = true
+                    break
+                }
+            }
+            found
+        }
+        db.execSQL(
+            """CREATE TABLE radios_new (
+                uuid TEXT NOT NULL,
+                info TEXT NOT NULL,
+                isAlive INTEGER NOT NULL,
+                downlinkLow INTEGER,
+                downlinkHigh INTEGER,
+                downlinkMode TEXT,
+                uplinkLow INTEGER,
+                uplinkHigh INTEGER,
+                uplinkMode TEXT,
+                isInverted INTEGER NOT NULL,
+                catnum INTEGER,
+                isCustom INTEGER NOT NULL DEFAULT 0,
+                PRIMARY KEY(uuid)
+            )""".trimIndent()
+        )
+        val customValue = if (hasIsCustom) "isCustom" else "0"
+        db.execSQL(
+            """INSERT INTO radios_new (
+                uuid, info, isAlive, downlinkLow, downlinkHigh, downlinkMode,
+                uplinkLow, uplinkHigh, uplinkMode, isInverted, catnum, isCustom
+            ) SELECT
+                uuid, info, isAlive, downlinkLow, downlinkHigh, downlinkMode,
+                uplinkLow, uplinkHigh, uplinkMode, isInverted, catnum, $customValue
+            FROM radios""".trimIndent()
+        )
+        db.execSQL("DROP TABLE radios")
+        db.execSQL("ALTER TABLE radios_new RENAME TO radios")
     }
 }

@@ -29,6 +29,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -659,10 +660,14 @@ private fun VuccGridSelector(
         shape = RoundedCornerShape(8.dp),
         modifier = modifier
     ) {
-        Column {
+        // Width = widest child (header or list item), never the full screen:
+        // the expanded rows use fillMaxWidth, which would otherwise stretch
+        // this box to the whole map width.
+        Column(modifier = Modifier.width(IntrinsicSize.Max)) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier
+                    .fillMaxWidth()
                     .clickable { expanded = !expanded }
                     .padding(start = 10.dp, end = 6.dp, top = 4.dp, bottom = 4.dp)
             ) {

@@ -521,7 +521,7 @@ private fun OtherCard(settings: OtherSettings, onAction: (SettingsAction) -> Uni
     ElevatedCard(
         modifier = Modifier
             .fillMaxWidth()
-            .height(312.dp)
+            .height(272.dp)
     ) {
         Column(modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) {
             Text(
@@ -542,9 +542,6 @@ private fun OtherCard(settings: OtherSettings, onAction: (SettingsAction) -> Uni
             }
             SwitchRow(R.string.prefs_other_switch_night_mode, settings.stateOfNightMode) {
                 onAction(SettingsAction.ToggleNightMode(it))
-            }
-            SwitchRow(R.string.prefs_other_switch_map_grid, settings.stateOfMapGrid) {
-                onAction(SettingsAction.ToggleMapGrid(it))
             }
         }
     }

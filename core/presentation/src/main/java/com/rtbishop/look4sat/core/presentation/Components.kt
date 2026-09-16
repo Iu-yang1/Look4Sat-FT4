@@ -375,7 +375,10 @@ fun SharedDialog(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier
                     .weight(1f)
-                    .padding(horizontal = if (onCancel != null && onAccept != null) padding else 0.dp)
+                    .padding(
+                        start = if (onCancel != null) padding else 0.dp,
+                        end = if (onAccept != null) padding else 0.dp
+                    )
             )
             if (onAccept != null) {
                 CardButton(

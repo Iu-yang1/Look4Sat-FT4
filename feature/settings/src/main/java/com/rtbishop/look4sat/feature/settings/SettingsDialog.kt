@@ -323,9 +323,10 @@ fun LoTWDialog(
             )
         }
         Row(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
             modifier = Modifier.fillMaxWidth().padding(horizontal = LocalSpacing.current.large)
         ) {
+            // Full sync bottom-left, incremental merge bottom-right.
             CardButton(
                 onClick = { onSyncFull(com.rtbishop.look4sat.core.domain.model.LoTWSettings(call.value, pass.value)) },
                 text = stringResource(R.string.lotw_sync_full),

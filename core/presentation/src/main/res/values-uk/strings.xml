@@ -147,6 +147,7 @@
     <string name="prefs_other_title">Інші налаштування</string>
     <string name="prefs_other_switch_utc">Показувати час в UTC</string>
     <string name="prefs_other_switch_update">Автоматичне оновлення даних</string>
+    <string name="prefs_other_switch_lotw_sync">Автосинхронізація підтверджених сіток LoTW</string>
     <string name="prefs_other_switch_sweep">Показувати анімацію радара</string>
     <string name="prefs_other_switch_sensors">Використовувати сенсори пристрою</string>
     <string name="prefs_other_switch_night_mode">Увімкнути червоний нічний фільтр</string>

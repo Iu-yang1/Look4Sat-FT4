@@ -335,6 +335,7 @@
     <string name="prefs_ft4_gnss_permission">Precise location permission is required for GNSS time</string>
     <string name="prefs_other_switch_utc">Show pass time in UTC</string>
     <string name="prefs_other_switch_update">Enable automatic data update</string>
+    <string name="prefs_other_switch_lotw_sync">Auto-sync LoTW confirmed grids</string>
     <string name="prefs_other_switch_sweep">Enable radar sweep animation</string>
     <string name="prefs_other_switch_sensors">Use sensors to rotate radar view</string>
     <string name="prefs_other_switch_night_mode">Enable red night mode filter</string>

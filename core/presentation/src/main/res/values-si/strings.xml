@@ -147,6 +147,7 @@
     <string name="prefs_other_title">වෙනත් සැකසුම්</string>
     <string name="prefs_other_switch_utc">පසුකර වේලාවන් UTC මගින්</string>
     <string name="prefs_other_switch_update">ස්වයං දත්ත යාවත්කාලීනය</string>
+    <string name="prefs_other_switch_lotw_sync">LoTW තහවුරු කළ ජාල ස්වයං සමමුහුර්තකරණය</string>
     <string name="prefs_other_switch_sweep">radar sweep සජීවිකරණය සබල කරන්න</string>
     <string name="prefs_other_switch_sensors">Radar දර්ශනය කරකැවීමට සංවේදක භාවිතා කරන්න </string>
     <string name="prefs_other_switch_night_mode">රතු රාත්‍රී පෙරහන සබල කරන්න</string>

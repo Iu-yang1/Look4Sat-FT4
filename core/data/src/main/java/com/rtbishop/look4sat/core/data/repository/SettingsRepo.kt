@@ -79,6 +79,7 @@ class SettingsRepo(
     private val keySelectedTypes = "selectedTypes"
     private val keySelectedModes = "selectedModes"
     private val keyStateOfAutoUpdate = "stateOfAutoUpdate"
+    private val keyStateOfAutoLotwSync = "stateOfAutoLotwSync"
     private val keyStateOfSensors = "stateOfSensors"
     private val keyStateOfSweep = "stateOfSweep"
     private val keyStateOfUtc = "stateOfUtc"
@@ -549,6 +550,7 @@ class SettingsRepo(
             val new = transform(current)
             preferences.edit {
                 putBoolean(keyStateOfAutoUpdate, new.stateOfAutoUpdate)
+                putBoolean(keyStateOfAutoLotwSync, new.stateOfAutoLotwSync)
                 putBoolean(keyStateOfSensors, new.stateOfSensors)
                 putBoolean(keyStateOfSweep, new.stateOfSweep)
                 putBoolean(keyStateOfUtc, new.stateOfUtc)
@@ -567,6 +569,7 @@ class SettingsRepo(
 
     private fun getOtherSettings(): OtherSettings = OtherSettings(
         stateOfAutoUpdate = preferences.getBoolean(keyStateOfAutoUpdate, true),
+        stateOfAutoLotwSync = preferences.getBoolean(keyStateOfAutoLotwSync, true),
         stateOfSensors = preferences.getBoolean(keyStateOfSensors, true),
         stateOfSweep = preferences.getBoolean(keyStateOfSweep, true),
         stateOfUtc = preferences.getBoolean(keyStateOfUtc, false),

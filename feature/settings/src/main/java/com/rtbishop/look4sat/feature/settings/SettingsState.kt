@@ -27,6 +27,7 @@ import com.rtbishop.look4sat.core.domain.model.RCSettings
 import com.rtbishop.look4sat.core.domain.model.RadioControlSettings
 import com.rtbishop.look4sat.core.domain.model.WavelogSettings
 import com.rtbishop.look4sat.core.domain.predict.GeoPos
+import com.rtbishop.look4sat.core.domain.repository.LoTWSyncMode
 import com.rtbishop.look4sat.core.domain.time.ClockSnapshot
 import com.rtbishop.look4sat.core.domain.time.TimeSynchronizationState
 import java.io.File
@@ -77,9 +78,6 @@ data class SettingsState(
     val updateChecker: UpdateCheckerState = UpdateCheckerState()
 )
 
-/** What a LoTW sync button does: pull everything, or only new QSLs since the last sync. */
-enum class LoTWSyncMode { Full, Incremental }
-
 /** LoTW sync failure, kept as a translatable code until the UI renders it. */
 sealed interface LoTWError {
     data object NotConfigured : LoTWError
@@ -105,6 +103,7 @@ sealed interface SettingsAction {
     // Toggles
     data class ToggleUtc(val value: Boolean) : SettingsAction
     data class ToggleUpdate(val value: Boolean) : SettingsAction
+    data class ToggleAutoLotwSync(val value: Boolean) : SettingsAction
     data class ToggleSweep(val value: Boolean) : SettingsAction
     data class ToggleSensor(val value: Boolean) : SettingsAction
     data class ToggleLightTheme(val value: Boolean) : SettingsAction

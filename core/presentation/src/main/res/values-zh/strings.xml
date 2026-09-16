@@ -301,6 +301,7 @@
     <string name="prefs_ft4_gnss_permission">GNSS 时间需要精确位置权限</string>
     <string name="prefs_other_switch_utc">以 UTC 时间显示</string>
     <string name="prefs_other_switch_update">启用卫星数据自动更新</string>
+    <string name="prefs_other_switch_lotw_sync">自动同步 LoTW 已确认网格</string>
     <string name="prefs_other_switch_sweep">启用雷达扫描动画</string>
     <string name="prefs_other_switch_sensors">使用传感器旋转雷达视图</string>
     <string name="prefs_other_switch_night_mode">启用红色夜间模式</string>

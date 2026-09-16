@@ -233,6 +233,8 @@ fun LoTWDialog(
     progress: com.rtbishop.look4sat.core.domain.repository.LoTWProgress?,
     message: String?,
     dismiss: () -> Unit,
+    /** Called on cancel/back while a sync is running: aborts the job. */
+    onCancelSync: () -> Unit,
     onSave: (com.rtbishop.look4sat.core.domain.model.LoTWSettings) -> Unit,
     onSyncFull: (com.rtbishop.look4sat.core.domain.model.LoTWSettings) -> Unit,
     onSyncIncremental: (com.rtbishop.look4sat.core.domain.model.LoTWSettings) -> Unit
@@ -241,8 +243,10 @@ fun LoTWDialog(
     val pass = rememberSaveable { mutableStateOf(initialSettings.password) }
     SharedDialog(
         title = stringResource(R.string.prefs_lotw_title),
-        onDismissRequest = dismiss,
-        onCancel = dismiss,
+        // While syncing, cancel/back aborts the download instead of merely
+        // hiding the dialog — a full sync started by mistake must be stoppable.
+        onDismissRequest = { if (isSyncing) onCancelSync() else dismiss() },
+        onCancel = { if (isSyncing) onCancelSync() else dismiss() },
         // The two sync buttons below are the primary actions: saving
         // credentials and fetching confirmed grids happen in one step.
         onAccept = null
@@ -276,6 +280,11 @@ fun LoTWDialog(
                 progress == null ||
                     progress.phase == com.rtbishop.look4sat.core.domain.repository.LoTWPhase.Connecting ->
                     stringResource(R.string.lotw_sync_progress_connecting)
+                // Download finished (or the size estimate reached its cap):
+                // parsing and saving may still run — say so instead of the bar
+                // sitting at 100% with no feedback, which reads as "stuck".
+                progress.fraction >= 1f ->
+                    stringResource(R.string.lotw_sync_progress_saving)
                 progress.qsoCount > 0 && progress.remainingSeconds > 0 ->
                     stringResource(R.string.lotw_sync_progress_qso, progress.qsoCount, progress.remainingSeconds)
                 progress.qsoCount > 0 ->
@@ -303,12 +312,6 @@ fun LoTWDialog(
             // ~10 KB/s stream rate), plus the fixed server-side generation time.
             Text(
                 text = stringResource(R.string.lotw_sync_rate_hint),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = LocalSpacing.current.large)
-            )
-            Text(
-                text = stringResource(R.string.prefs_lotw_sync_duration_hint),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(horizontal = LocalSpacing.current.large)

@@ -160,7 +160,6 @@
     <string name="prefs_lotw_callsign">LoTW 呼号</string>
     <string name="prefs_lotw_password">LoTW 密码</string>
     <string name="prefs_lotw_hint">直接从 ARRL LoTW 拉取该呼号已确认 QSO 的网格并覆盖本地已存集合（当前 %1$d 个）。密码仅保存在手机本地。点"同步"会自动保存凭据并拉取。</string>
-    <string name="prefs_lotw_sync_duration_hint">同步通常约需 3–10 秒；首次同步或 ARRL 服务器繁忙时可能更久。</string>
     <string name="prefs_lotw_sync">同步</string>
     <string name="prefs_lotw_syncing">同步中…</string>
     <string name="prefs_lotw_configured">已从 LoTW 同步 — 共 %1$d 个网格</string>
@@ -175,6 +174,7 @@
     <string name="lotw_sync_rate_hint">下载速度约每 100 条 QSO 需 8 秒（另有 5–40 秒服务器生成时间）</string>
     <string name="lotw_sync_progress_connecting">正在连接 LoTW 服务器…</string>
     <string name="lotw_sync_progress_downloading">正在下载报告…</string>
+    <string name="lotw_sync_progress_saving">正在处理下载的数据…</string>
     <string name="lotw_sync_progress_count">本次同步 %1$d 条 QSO…</string>
     <string name="lotw_sync_progress_qso">本次同步 %1$d 条 QSO，预计还需 %2$d 秒</string>
     <string name="prefs_locator_text">使用梅登黑德网格设置站点位置</string>

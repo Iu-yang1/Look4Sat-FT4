@@ -223,6 +223,7 @@ private fun SettingsScreen(uiState: SettingsState, onAction: (SettingsAction) ->
             progress = uiState.lotwProgress,
             message = lotwErrorMessage,
             dismiss = { dialogs.lotw = false },
+            onCancelSync = { onAction(SettingsAction.CancelLoTWSync); dialogs.lotw = false },
             onSave = { onAction(SettingsAction.UpdateLoTW(it)) },
             onSyncFull = { onAction(SettingsAction.SyncLoTWGrids(it, LoTWSyncMode.Full)) },
             onSyncIncremental = { onAction(SettingsAction.SyncLoTWGrids(it, LoTWSyncMode.Incremental)) }

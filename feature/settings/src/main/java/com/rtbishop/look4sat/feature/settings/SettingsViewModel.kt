@@ -35,6 +35,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 
 class SettingsViewModel(
@@ -49,6 +50,8 @@ class SettingsViewModel(
 
     private val defaultPosSettings = PositionSettings(false, settingsRepo.stationPosition.value, 0)
     private val defaultDataSettings = DataSettings(false, 0, 0, 0L)
+    /** In-flight LoTW sync job, cancelled by CancelLoTWSync. */
+    private var lotwSyncJob: kotlinx.coroutines.Job? = null
     private val _uiState = MutableStateFlow(
         SettingsState(
             appVersionName = settingsRepo.appVersionName,
@@ -159,6 +162,7 @@ class SettingsViewModel(
             // LoTW confirmed grids
             is SettingsAction.UpdateLoTW -> settingsRepo.updateLoTWSettings(action.settings)
             is SettingsAction.SyncLoTWGrids -> syncLoTWGrids(action.settings, action.mode)
+            SettingsAction.CancelLoTWSync -> cancelLoTWSync()
             // Update checker
             SettingsAction.CheckForUpdate -> checkForUpdate()
             SettingsAction.DownloadUpdate -> downloadUpdate()
@@ -215,7 +219,7 @@ class SettingsViewModel(
         _uiState.update {
             it.copy(lotwSyncing = true, lotwSyncMode = effectiveMode, lotwProgress = null, lotwError = null)
         }
-        viewModelScope.launch {
+        lotwSyncJob = viewModelScope.launch {
             val result = lotwRepo.fetchConfirmedGridQsos(callsign, settings.password, since) { progress ->
                 _uiState.update { it.copy(lotwProgress = progress) }
             }
@@ -235,9 +239,6 @@ class SettingsViewModel(
                     val mergedRoamed = if (effectiveMode == LoTWSyncMode.Incremental) {
                         existingRoamed + result.roamedGrids
                     } else result.roamedGrids
-                    settingsRepo.setWorkedGrids(mergedGrids)
-                    settingsRepo.setWorkedGridQsos(mergedQsos)
-                    settingsRepo.setRoamedGrids(mergedRoamed)
                     // Remember when/what we synced, so the next incremental pull
                     // asks LoTW for only the confirmations since today.
                     val today = java.text.SimpleDateFormat("yyyyMMdd", java.util.Locale.US)
@@ -245,6 +246,16 @@ class SettingsViewModel(
                         .format(java.util.Date())
                     settingsRepo.setLastLotwSyncDate(today)
                     settingsRepo.setLastLotwSyncCallsign(callsign)
+                    // Persist on the IO dispatcher: building the per-grid QSO JSON
+                    // and writing SharedPreferences synchronously blocks the
+                    // calling thread, and for large accounts (tens of thousands
+                    // of QSOs → multi-MB JSON) that froze the main thread after
+                    // the download finished — 'bar done but app stuck'.
+                    withContext(kotlinx.coroutines.Dispatchers.IO) {
+                        settingsRepo.setWorkedGrids(mergedGrids)
+                        settingsRepo.setWorkedGridQsos(mergedQsos)
+                        settingsRepo.setRoamedGrids(mergedRoamed)
+                    }
                     _uiState.update { state ->
                         state.copy(
                             lotwSyncing = false, lotwSyncMode = null, lotwProgress = null,
@@ -282,6 +293,13 @@ class SettingsViewModel(
                     }
             }
         }
+    }
+
+    /** Abort the in-flight LoTW sync job and reset its progress state. */
+    private fun cancelLoTWSync() {
+        lotwSyncJob?.cancel()
+        lotwSyncJob = null
+        _uiState.update { it.copy(lotwSyncing = false, lotwSyncMode = null, lotwProgress = null) }
     }
 
     /** Merge fresh QSO detail into existing per-grid lists, dedup by call + QSO time. */

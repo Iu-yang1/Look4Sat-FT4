@@ -22,7 +22,9 @@ import com.rtbishop.look4sat.core.domain.repository.LoTWPhase
 import com.rtbishop.look4sat.core.domain.repository.LoTWProgress
 import com.rtbishop.look4sat.core.domain.repository.LoTWResult
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
+import kotlin.coroutines.coroutineContext
 import java.net.HttpURLConnection
 import java.net.SocketTimeoutException
 import java.net.URL
@@ -91,7 +93,7 @@ class LoTWRepository : ILoTWRepository {
         return Triple(grids, qsos, roamed)
     }
 
-    private fun fetchReportBody(
+    private suspend fun fetchReportBody(
         callsign: String,
         password: String,
         since: String,
@@ -151,6 +153,9 @@ class LoTWRepository : ILoTWRepository {
                 !body.contains("<eoh>", ignoreCase = true) -> Result.failure(RateLimitException())
                 else -> Result.success(body)
             }
+        } catch (e: java.util.concurrent.CancellationException) {
+            // Cancellation must propagate — it is not a network failure.
+            throw e
         } catch (e: SocketTimeoutException) {
             Result.failure(TimeoutException(e.message ?: "timed out"))
         } catch (e: SSLException) {
@@ -167,7 +172,7 @@ class LoTWRepository : ILoTWRepository {
      * body size is estimated as NUMREC * AVG_RECORD_BYTES so the UI can show a
      * meaningful progress bar and remaining-time estimate.
      */
-    private fun readBodyWithProgress(
+    private suspend fun readBodyWithProgress(
         stream: java.io.InputStream,
         isGzip: Boolean,
         onProgress: (LoTWProgress) -> Unit
@@ -185,6 +190,11 @@ class LoTWRepository : ILoTWRepository {
         var lastSampleBytes = 0L
         var lastEmitMs = 0L
         while (true) {
+            // Cooperative cancellation: lets the user abort a full sync that
+            // was started by mistake. Throws CancellationException once the
+            // job is cancelled; the blocking read below is fast while chunks
+            // keep arriving, so the abort lands on the next chunk boundary.
+            coroutineContext.ensureActive()
             val n = reader.read(buf)
             if (n <= 0) break
             sb.append(buf, 0, n)
@@ -440,9 +450,11 @@ class LoTWRepository : ILoTWRepository {
         val NUMREC_REGEX = Regex("<APP_LoTW_NUMREC:\\d+>(\\d+)")
         /**
          * Measured 2026-09-16 (BH6RJD, 2367 QSLs): 1.7 MB body streamed at
-         * ~9.5 KB/s ≈ 180 s, i.e. ≈ 720 bytes per ADIF record. Used to predict
-         * the total body size from the header record count.
+         * ~9.5 KB/s ≈ 180 s, i.e. ≈ 720 bytes per ADIF record. Use a
+         * CONSERVATIVE (larger) estimate so the progress bar never hits 100%
+         * before the download truly ends — an under-estimate made the bar sit
+         * at 100% while data was still flowing, read as "finished but stuck".
          */
-        const val AVG_RECORD_BYTES = 720L
+        const val AVG_RECORD_BYTES = 900L
     }
 }

@@ -117,6 +117,8 @@ sealed interface SettingsAction {
         val settings: com.rtbishop.look4sat.core.domain.model.LoTWSettings,
         val mode: LoTWSyncMode
     ) : SettingsAction
+    /** Abort an in-flight LoTW sync (wrong button / changed mind). */
+    data object CancelLoTWSync : SettingsAction
 
     // Update checker
     data object CheckForUpdate : SettingsAction

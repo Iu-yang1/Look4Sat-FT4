@@ -27,6 +27,7 @@ import com.rtbishop.look4sat.core.domain.repository.IMainContainer
 import com.rtbishop.look4sat.core.domain.repository.LoTWSyncMode
 import com.rtbishop.look4sat.core.domain.repository.LoTWResult
 import com.rtbishop.look4sat.core.domain.repository.applyLoTWGridResult
+import com.rtbishop.look4sat.core.domain.repository.lotwCursorApi
 import com.rtbishop.look4sat.core.domain.repository.lotwSyncToday
 import com.rtbishop.look4sat.core.domain.repository.resolveLoTWSyncMode
 import com.rtbishop.look4sat.core.domain.repository.shouldAutoSyncLoTW
@@ -110,7 +111,7 @@ class MainApplication : Application(), IContainerProvider {
         ) return
         val callsign = lotwSettings.callsign.trim().uppercase()
         val mode = resolveLoTWSyncMode(settingsRepo.getLastLotwSyncCallsign(), callsign, requested = null)
-        val since = if (mode == LoTWSyncMode.Incremental) settingsRepo.getLastLotwSyncDate() else ""
+        val since = if (mode == LoTWSyncMode.Incremental) lotwCursorApi(settingsRepo.getLastLotwSyncDate()) else ""
         println("Started periodic LoTW grid sync (${mode.name.lowercase()})")
         val result = container.lotwRepo.fetchConfirmedGridQsos(callsign, lotwSettings.password, since)
         if (result is LoTWResult.Success) {

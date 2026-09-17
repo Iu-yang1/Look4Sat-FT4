@@ -69,6 +69,15 @@ class MutualViewModel(
     private val _uiState = MutableStateFlow(MutualUiState())
     val uiState: StateFlow<MutualUiState> = _uiState.asStateFlow()
 
+    // Session-scoped scroll position of the pass list (Activity-scoped VM, so it
+    // survives switching to another page and back). Reset to the top whenever a
+    // new query replaces the results.
+    var listScrollIndex: Int = 0
+    var listScrollOffset: Int = 0
+
+    /** Bumped on every new query so the list scrolls back to the top. */
+    var queryGeneration: Int = 0
+
     init {
         // Pre-fill station A with the user's current station position (as grid),
         // and default min elevation to the same value used by the main radar passes
@@ -201,6 +210,11 @@ class MutualViewModel(
                 selectedPassIndex = -1
             )
         }
+        // The results list is about to be replaced, so the scroll position must
+        // not leak from the previous query's list.
+        listScrollIndex = 0
+        listScrollOffset = 0
+        queryGeneration += 1
 
         viewModelScope.launch {
             val time = System.currentTimeMillis()

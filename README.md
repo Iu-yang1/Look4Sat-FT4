@@ -1,4 +1,4 @@
-# Look4Sat-BA7OPF
+# Look4Sat-BA7OPF-FT4
 
 [![Release](https://img.shields.io/github/v/release/atsunatsu/Look4Sat)](https://github.com/atsunatsu/Look4Sat/releases)
 
@@ -16,10 +16,13 @@
 - **应用内更新检查** — 设置页一键检查 GitHub 最新 Release，展示版本说明并直接下载安装
 - **自定义 TLE 数据源** — 可添加自定义 TLE/Celestrak CSV 数据源，长按拖拽排序，数据源启停开关与 HTTP 状态码显示
 - **中文界面优化** — 翻译修正、UI 布局调整，系统语言自动切换
+- **FT4模式** — FT4线性卫星通联功能
+- **日志本** — 完整的日志保存功能
+- **CAT电台控制** — 支持蓝牙,USB CAT直连以及网络TCP链接控制电台的方式,支持Yaesu FT-817/818,Yaesu FT-857/897,Icom IC-705,Icom IC-9700,Icom IC910/D/H 的电台控制功能
 
 ## 上游仓库
 
-本仓库是 [rt-bishop/Look4Sat](https://github.com/rt-bishop/Look4Sat) 的分支，上游仓库的原始功能包括：
+本仓库是 [rt-bishop/Look4Sat](https://github.com/rt-bishop/Look4Sat) 的分支，上游仓库的原始功能包括
 
 - 基于 Celestrak / SatNOGS 数据的 9000+ 活跃卫星追踪
 - SGP4/SDP4 轨道预测，10 天过境预报

@@ -32,6 +32,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
@@ -49,11 +50,13 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
@@ -74,6 +77,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.TimeZone
+import kotlinx.coroutines.flow.distinctUntilChanged
 
 @Composable
 fun MutualScreen(
@@ -150,6 +154,7 @@ fun MutualScreen(
         }
     ) { isVertical ->
         MutualContent(
+            viewModel = viewModel,
             state = state,
             isVertical = isVertical,
             onQuery = viewModel::queryMutualPasses,
@@ -172,6 +177,7 @@ fun MutualScreen(
 
 @Composable
 private fun MutualContent(
+    viewModel: MutualViewModel,
     state: MutualUiState,
     isVertical: Boolean,
     onQuery: () -> Unit,
@@ -195,8 +201,28 @@ private fun MutualContent(
         }
     }
 
+    // List state survives page switches via the Activity-scoped ViewModel: the
+    // initial position is restored from the VM, and scrolling writes back to it,
+    // so returning to this page keeps exactly where the user left off. A new
+    // query (queryGeneration bump) rebuilds the state at the top.
+    val listState = remember(viewModel.queryGeneration) {
+        LazyListState(
+            firstVisibleItemIndex = viewModel.listScrollIndex,
+            firstVisibleItemScrollOffset = viewModel.listScrollOffset
+        )
+    }
+    LaunchedEffect(listState) {
+        snapshotFlow { listState.firstVisibleItemIndex to listState.firstVisibleItemScrollOffset }
+            .distinctUntilChanged()
+            .collect { (index, offset) ->
+                viewModel.listScrollIndex = index
+                viewModel.listScrollOffset = offset
+            }
+    }
+
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
+        state = listState,
         verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
         // Error message

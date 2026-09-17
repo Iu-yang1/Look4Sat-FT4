@@ -151,8 +151,23 @@ fun MapDestination(
     val container = (context.applicationContext as IContainerProvider).getMainContainer()
     val viewModel: MapViewModel = viewModel(factory = MapViewModel.factory(container))
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-    val mapView = rememberMapViewWithLifecycle()
+    val mapView = rememberMapViewWithLifecycle(mapFilterViewModel, restoreViewport = uiState.isGridMode)
     val lifecycle = LocalLifecycleOwner.current.lifecycle
+    // Save the viewport when leaving the page, but only in grid mode: the
+    // satellite mode intentionally keeps its original behavior (default center,
+    // follow the selected satellite), so a satellite-mode exit must not
+    // overwrite the last grid-mode viewport.
+    DisposableEffect(mapView, uiState.isGridMode) {
+        onDispose {
+            if (uiState.isGridMode) {
+                mapFilterViewModel.saveMapViewState(
+                    mapView.mapCenter.latitude,
+                    mapView.mapCenter.longitude,
+                    mapView.zoomLevelDouble
+                )
+            }
+        }
+    }
     DisposableEffect(lifecycle) {
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
@@ -222,6 +237,14 @@ private fun MapScreen(
         else vuccByMyGrid[selectedMyGrid] ?: emptySet()
     }
     val isGridMode = uiState.isGridMode
+    // True when this composition restored a saved viewport. Only grid mode
+    // restores the viewport the user left (satellite mode keeps its original
+    // follow-the-satellite behavior); this implies grid mode was already on
+    // when re-entering, which is why the grid-mode auto-centering below can
+    // treat the entry as already centered.
+    val restoredViewport = remember {
+        isGridMode && mapFilterViewModel.mapCenterLat != null && mapFilterViewModel.mapZoom != null
+    }
     DisposableEffect(isGridMode, workedGrids) {
         val receiver = object : org.osmdroid.events.MapEventsReceiver {
             override fun singleTapConfirmedHelper(p: GeoPoint?): Boolean {
@@ -282,9 +305,14 @@ private fun MapScreen(
         }
         ElevatedCard(modifier = Modifier.weight(1f)) {
             Box(contentAlignment = Alignment.BottomCenter) {
-                // Track grid-mode transitions; initial value false so that entering
-                // the map page with grid mode already ON also centers the map.
-                var prevGridMode by remember { mutableStateOf(false) }
+                // Track grid-mode transitions. When the map was just restored to
+                // the viewport the user left (re-entry after a page switch) and
+                // grid mode is already on, treat the entry as already centered so
+                // the restored position survives. Cold-start entries and in-page
+                // toggles still center on the station grid as before.
+                var prevGridMode by remember {
+                    mutableStateOf(restoredViewport && uiState.isGridMode)
+                }
                 AndroidView({ mapView }) { view ->
                     // Award filter mode: show the selected award's regions with
                     // worked ones filled green; hide satellite layers like grid mode.
@@ -298,6 +326,10 @@ private fun MapScreen(
                         prevGridMode = uiState.isGridMode
                     } else {
                         // Center on the station grid whenever entering grid mode.
+                        // (prevGridMode is initialized to "already centered" when
+                        // the map was just restored to the viewport the user left,
+                        // so a re-entry keeps the restored position; in-page
+                        // toggles still center normally.)
                         // Only mark the transition as consumed once a real position
                         // was available; otherwise a first frame with a null
                         // stationPosition would swallow the centering forever.
@@ -1174,7 +1206,10 @@ private fun setMoonPosition(moonLatDeg: Double, moonLonDeg: Double, mapView: Map
 
 // region MapView lifecycle
 @Composable
-private fun rememberMapViewWithLifecycle(): MapView {
+private fun rememberMapViewWithLifecycle(
+    mapFilterViewModel: MapFilterViewModel,
+    restoreViewport: Boolean
+): MapView {
     val tileSource = XYTileSource("tiles", 0, 6, 256, ".webp", emptyArray<String>())
     val context = LocalContext.current
     val isVertical = isVerticalLayout()
@@ -1190,8 +1225,19 @@ private fun rememberMapViewWithLifecycle(): MapView {
             setTileSource(tileSource)
             minZoomLevel = getMinZoom(resources.displayMetrics.heightPixels, isVertical)
             maxZoomLevel = 7.0
-            controller.setCenter(GeoPoint(48.8575, 6.3514))
-            controller.setZoom(minZoomLevel + 2)
+            // Restore the viewport the user left on the previous visit, but only
+            // in grid mode: satellite mode intentionally keeps its original
+            // behavior (default center, then follows the selected satellite).
+            val savedLat = mapFilterViewModel.mapCenterLat
+            val savedLon = mapFilterViewModel.mapCenterLon
+            val savedZoom = mapFilterViewModel.mapZoom
+            if (restoreViewport && savedLat != null && savedLon != null && savedZoom != null) {
+                controller.setCenter(GeoPoint(savedLat, savedLon))
+                controller.setZoom(savedZoom)
+            } else {
+                controller.setCenter(GeoPoint(48.8575, 6.3514))
+                controller.setZoom(minZoomLevel + 2)
+            }
             zoomController.setVisibility(CustomZoomButtonsController.Visibility.NEVER)
             overlayManager.tilesOverlay.loadingBackgroundColor = Color.TRANSPARENT
             overlayManager.tilesOverlay.loadingLineColor = Color.TRANSPARENT
@@ -1209,6 +1255,7 @@ private fun rememberMapViewWithLifecycle(): MapView {
     }
     // The overlay caches below are file-level (shared across MapView instances), so they must be
     // released with the MapView or they keep the Activity and its bitmaps alive after disposal.
+    // (The viewport save lives in MapDestination, where the grid/satellite mode is known.)
     DisposableEffect(mapView) {
         onDispose { clearMapCaches() }
     }

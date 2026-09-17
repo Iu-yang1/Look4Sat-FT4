@@ -36,11 +36,52 @@ import java.util.TimeZone
  * - [LoTWSyncMode.Full] pulls everything and REPLACES the stored data.
  */
 
-/** UTC date ("yyyyMMdd") of the given instant — the LoTW sync cursor granularity. */
+/**
+ * UTC date ("yyyyMMdd") of the given instant — the "already synced today"
+ * gate granularity.
+ */
 fun lotwSyncToday(now: Long = System.currentTimeMillis()): String =
     SimpleDateFormat("yyyyMMdd", Locale.US)
         .apply { timeZone = TimeZone.getTimeZone("UTC") }
         .format(Date(now))
+
+/**
+ * Full UTC timestamp cursor ("yyyy-MM-dd HH:mm:ss") written after a
+ * successful sync. This is exactly the format LoTW's qso_qslsince accepts
+ * (measured live 2026-09-17: the legacy "yyyyMMdd" cursor is silently
+ * ignored by LoTW, which falls back to its own system-supplied default),
+ * and it keeps enough precision to display the last-sync time like the
+ * ephemeris update time.
+ */
+fun lotwSyncCursor(now: Long = System.currentTimeMillis()): String =
+    SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US)
+        .apply { timeZone = TimeZone.getTimeZone("UTC") }
+        .format(Date(now))
+
+/** Date part of a stored cursor as "yyyyMMdd", tolerating the legacy
+ *  "yyyyMMdd" format and the current "yyyy-MM-dd HH:mm:ss" format. */
+fun lotwCursorDate(cursor: String): String = when {
+    cursor.length >= 10 && cursor[4] == '-' -> cursor.substring(0, 10).replace("-", "")
+    else -> cursor.take(8)
+}
+
+/** qso_qslsince value for the API: passes the full timestamp through and
+ *  normalizes a legacy "yyyyMMdd" cursor to the documented "yyyy-MM-dd". */
+fun lotwCursorApi(cursor: String): String = when {
+    cursor.isBlank() -> ""
+    cursor.length >= 10 && cursor[4] == '-' -> cursor
+    else -> "${cursor.take(4)}-${cursor.substring(4, 6)}-${cursor.substring(6, 8)}"
+}
+
+/** Stored cursor parsed to UTC epoch ms for display; 0 when unparseable. */
+fun lotwCursorEpochMs(cursor: String): Long = try {
+    val pattern = if (cursor.length >= 10 && cursor[4] == '-') "yyyy-MM-dd HH:mm:ss" else "yyyyMMdd"
+    SimpleDateFormat(pattern, Locale.US)
+        .apply { timeZone = TimeZone.getTimeZone("UTC") }
+        .parse(cursor)?.time ?: 0L
+} catch (_: Exception) {
+    0L
+}
 
 /**
  * Resolves the effective sync mode for a given request:
@@ -73,7 +114,10 @@ fun shouldAutoSyncLoTW(
     autoLotwSyncEnabled: Boolean,
     lastSyncDate: String,
     today: String
-): Boolean = isConfigured && autoLotwSyncEnabled && lastSyncDate.isNotBlank() && lastSyncDate != today
+): Boolean {
+    val lastDate = lotwCursorDate(lastSyncDate)
+    return isConfigured && autoLotwSyncEnabled && lastDate.isNotBlank() && lastDate != today
+}
 
 /**
  * Applies a successful LoTW report to the stored grid data and advances the
@@ -98,7 +142,7 @@ suspend fun applyLoTWGridResult(
     val mergedGrids = if (mode == LoTWSyncMode.Incremental) existingGrids + result.grids else result.grids
     val mergedQsos = if (mode == LoTWSyncMode.Incremental) mergeGridQsos(existingQsos, result.qsos) else result.qsos
     val mergedRoamed = if (mode == LoTWSyncMode.Incremental) existingRoamed + result.roamedGrids else result.roamedGrids
-    settingsRepo.setLastLotwSyncDate(lotwSyncToday(now))
+    settingsRepo.setLastLotwSyncDate(lotwSyncCursor(now))
     settingsRepo.setLastLotwSyncCallsign(callsign)
     withContext(Dispatchers.IO) {
         settingsRepo.setWorkedGrids(mergedGrids)

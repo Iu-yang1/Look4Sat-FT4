@@ -65,6 +65,8 @@ data class SettingsState(
     val lotwSyncMode: LoTWSyncMode? = null,
     val lotwProgress: com.rtbishop.look4sat.core.domain.repository.LoTWProgress? = null,
     val lotwError: LoTWError? = null,
+    /** Epoch ms of the last successful LoTW sync (0 = never) — shown like the ephemeris update time. */
+    val lotwLastSyncEpochMs: Long = 0L,
     val updateChecker: UpdateCheckerState = UpdateCheckerState()
 )
 

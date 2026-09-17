@@ -79,15 +79,44 @@ class LoTWGridSyncTest {
     fun autoSyncGateRequiresEverything() {
         val today = "20260916"
         // Not configured.
-        assertFalse(shouldAutoSyncLoTW(false, true, "20260915", today))
-        // Auto-update toggle off.
-        assertFalse(shouldAutoSyncLoTW(true, false, "20260915", today))
+        assertFalse(shouldAutoSyncLoTW(false, true, "2026-09-15 10:00:00", today))
+        // LoTW auto-sync toggle off.
+        assertFalse(shouldAutoSyncLoTW(true, false, "2026-09-15 10:00:00", today))
         // Never synced manually — first sync stays manual/full.
         assertFalse(shouldAutoSyncLoTW(true, true, "", today))
-        // Already synced today — ARRL rate-limit guard.
-        assertFalse(shouldAutoSyncLoTW(true, true, today, today))
-        // All gates open.
+        // Already synced today (both legacy and current cursor formats) — ARRL rate-limit guard.
+        assertFalse(shouldAutoSyncLoTW(true, true, "20260916", today))
+        assertFalse(shouldAutoSyncLoTW(true, true, "2026-09-16 08:00:00", today))
+        // All gates open — yesterday in either format.
         assertTrue(shouldAutoSyncLoTW(true, true, "20260915", today))
+        assertTrue(shouldAutoSyncLoTW(true, true, "2026-09-15 10:00:00", today))
+    }
+
+    // endregion
+
+    // region cursor helpers
+
+    @Test
+    fun cursorApiNormalizesLegacyAndPassesFullThrough() {
+        assertEquals("2026-09-16", lotwCursorApi("20260916"))
+        assertEquals("2026-09-16 08:16:02", lotwCursorApi("2026-09-16 08:16:02"))
+        assertEquals("", lotwCursorApi(""))
+    }
+
+    @Test
+    fun cursorDateToleratesBothFormats() {
+        assertEquals("20260916", lotwCursorDate("20260916"))
+        assertEquals("20260916", lotwCursorDate("2026-09-16 08:16:02"))
+        assertEquals("", lotwCursorDate(""))
+    }
+
+    @Test
+    fun cursorEpochMsParsesBothFormatsUtc() {
+        // 2026-09-16T00:00:00Z in both spellings.
+        assertEquals(now, lotwCursorEpochMs("20260916"))
+        assertEquals(now, lotwCursorEpochMs("2026-09-16 00:00:00"))
+        assertEquals(0L, lotwCursorEpochMs(""))
+        assertEquals(0L, lotwCursorEpochMs("garbage"))
     }
 
     // endregion
@@ -148,7 +177,7 @@ class LoTWGridSyncTest {
         assertEquals(setOf("OL62", "PM95"), repo.getWorkedGrids())
         assertEquals(1, repo.getWorkedGridQsos()["OL62"]?.size) // deduped
         assertEquals(setOf("OL62", "PM95"), repo.getRoamedGrids())
-        assertEquals("20260916", repo.getLastLotwSyncDate())
+        assertEquals("2026-09-16 00:00:00", repo.getLastLotwSyncDate())
         assertEquals("BA7OPF", repo.getLastLotwSyncCallsign())
     }
 
@@ -172,7 +201,7 @@ class LoTWGridSyncTest {
         assertEquals(setOf("PM95"), repo.getWorkedGrids())
         assertEquals(setOf("PM95"), repo.getWorkedGridQsos().keys)
         assertEquals(setOf("PM95"), repo.getRoamedGrids())
-        assertEquals("20260916", repo.getLastLotwSyncDate())
+        assertEquals("2026-09-16 00:00:00", repo.getLastLotwSyncDate())
         assertEquals("BA7OPF", repo.getLastLotwSyncCallsign())
     }
 

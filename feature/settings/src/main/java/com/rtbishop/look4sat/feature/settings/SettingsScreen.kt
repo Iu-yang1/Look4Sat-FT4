@@ -338,6 +338,7 @@ private fun SettingsScreen(uiState: SettingsState, onAction: (SettingsAction) ->
                 LoTWCard(
                     settings = uiState.lotwSettings,
                     workedGridsCount = uiState.workedGridsCount,
+                    lastSyncEpochMs = uiState.lotwLastSyncEpochMs,
                     showLoTWDialog = { dialogs.lotw = true }
                 )
             }
@@ -582,6 +583,7 @@ private fun SwitchRow(labelResId: Int, checked: Boolean, onCheckedChange: (Boole
 private fun LoTWCard(
     settings: com.rtbishop.look4sat.core.domain.model.LoTWSettings,
     workedGridsCount: Int,
+    lastSyncEpochMs: Long,
     showLoTWDialog: () -> Unit
 ) {
     ElevatedCard(modifier = Modifier.fillMaxWidth()) {
@@ -600,6 +602,14 @@ private fun LoTWCard(
                 style = MaterialTheme.typography.bodySmall,
                 maxLines = 2
             )
+            // Last successful sync, shown exactly like the ephemeris update time.
+            if (lastSyncEpochMs != 0L) {
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = formatUpdateTime(updateTime = lastSyncEpochMs),
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
             Spacer(modifier = Modifier.height(4.dp))
             CardButton(
                 onClick = showLoTWDialog,

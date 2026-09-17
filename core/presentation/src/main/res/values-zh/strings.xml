@@ -133,7 +133,7 @@
     <string name="prefs_privacy_title">隐私政策</string>
 
     <string name="prefs_updated_title">更新：%s</string>
-    <string name="prefs_updated_time">yyyy MMM d - HH:mm:ss</string>
+    <string name="prefs_updated_time">yyyy年M月d日 HH:mm:ss</string>
 
     <string name="prefs_loc_title">站点位置</string>
     <string name="prefs_loc_gps_title">GPS 定位</string>

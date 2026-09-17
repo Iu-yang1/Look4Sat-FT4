@@ -144,7 +144,9 @@ private val moonIconPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
 }
 
 @Composable
-fun MapDestination() {
+fun MapDestination(
+    mapFilterViewModel: MapFilterViewModel
+) {
     val context = LocalContext.current
     val container = (context.applicationContext as IContainerProvider).getMainContainer()
     val viewModel: MapViewModel = viewModel(factory = MapViewModel.factory(container))
@@ -165,11 +167,16 @@ fun MapDestination() {
             viewModel.onAction(MapAction.SetVisible(false))
         }
     }
-    MapScreen(uiState, viewModel::onAction, mapView)
+    MapScreen(uiState, viewModel::onAction, mapView, mapFilterViewModel)
 }
 
 @Composable
-private fun MapScreen(uiState: MapState, onAction: (MapAction) -> Unit, mapView: MapView) {
+private fun MapScreen(
+    uiState: MapState,
+    onAction: (MapAction) -> Unit,
+    mapView: MapView,
+    mapFilterViewModel: MapFilterViewModel
+) {
     val rotateMod = Modifier.rotate(180f)
     val timeString = uiState.mapData?.aosTime ?: "00:00:00"
     val isTimeAos = uiState.mapData?.isTimeAos ?: true
@@ -177,9 +184,9 @@ private fun MapScreen(uiState: MapState, onAction: (MapAction) -> Unit, mapView:
     // Tapped worked grid -> centered QSO dialog. Local UI state: the map is the
     // only consumer and it resets when leaving the page.
     var selectedGrid by remember { mutableStateOf<String?>(null) }
-    // Selected award filter. Entering grid mode defaults to VUCC (the plain
-    // worked-grid view); the reset effect below re-asserts that on every entry.
-    var selectedAward by remember { mutableStateOf<AwardType?>(AwardType.VUCC) }
+    // Selected award filter. Lives in an Activity-scoped ViewModel so it
+    // survives page switches; defaults to VUCC only once per process (cold start).
+    var selectedAward by mapFilterViewModel.selectedAward
     // Six-award progress derived from the confirmed QSO store; recomputed when
     // the store changes (LoTW/Wavelog sync).
     // Per operated-grid VUCC breakdown: myGrid -> set of worked grids worked from it.
@@ -240,12 +247,6 @@ private fun MapScreen(uiState: MapState, onAction: (MapAction) -> Unit, mapView:
         (mapView.overlays.getOrNull(OVERLAY_GRID) as? MaidenheadGridOverlay)?.selectedGrid = selectedGrid
         mapView.invalidate()
     }
-    // Re-assert the VUCC default each time grid mode is entered; while already
-    // in grid mode the user's chip choice is preserved.
-    LaunchedEffect(uiState.isGridMode) {
-        if (uiState.isGridMode) selectedAward = AwardType.VUCC
-    }
-
     LaunchedEffect(uiState.track) {
         // In grid mode the map is centered on the local grid square; following
         // the satellite subpoint here would override that centering on every

@@ -83,9 +83,10 @@ import com.rtbishop.look4sat.core.presentation.RadarDestination
 import com.rtbishop.look4sat.core.presentation.Screen
 import com.rtbishop.look4sat.core.presentation.hasEnoughHeight
 import com.rtbishop.look4sat.core.presentation.hasEnoughWidth
-import com.rtbishop.look4sat.feature.map.MapDestination
 import com.rtbishop.look4sat.feature.ft4.Ft4ShellDestination
 import com.rtbishop.look4sat.feature.logbook.LogbookScreenDestination
+import com.rtbishop.look4sat.feature.map.MapDestination
+import com.rtbishop.look4sat.feature.map.MapFilterViewModel
 import com.rtbishop.look4sat.feature.mutual.MutualScreen
 import com.rtbishop.look4sat.feature.mutual.MutualViewModel
 import com.rtbishop.look4sat.feature.passes.PassesDestination
@@ -206,6 +207,12 @@ fun MainScreen(
         viewModelStoreOwner = context as ViewModelStoreOwner,
         factory = MutualViewModel.factory(container)
     )
+    // Activity-scoped so the map's award filter survives page switches;
+    // resets to VUCC only on cold start (fresh process).
+    val mapFilterViewModel: MapFilterViewModel = viewModel(
+        viewModelStoreOwner = context as ViewModelStoreOwner,
+        factory = MapFilterViewModel.factory()
+    )
 
     CompositionLocalProvider(
         LocalElevationThresholds provides ElevationThresholds(
@@ -284,7 +291,7 @@ fun MainScreen(
                             )
                         }
                         entry<Screen.Map> {
-                            MapDestination()
+                            MapDestination(mapFilterViewModel = mapFilterViewModel)
                         }
                         entry<Screen.Mutual> {
                             MutualScreen(

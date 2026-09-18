@@ -20,7 +20,8 @@ data class SatSlot(
 /** One satellite day (12 two-hour slots) */
 data class SatDay(
     val dateLabel: String,   // "Aug 4"
-    val slots: List<SatSlot> // 12 槽(00-02 ... 22-24)
+    val slots: List<SatSlot>, // 12 槽(00-02 ... 22-24)
+    val streakCount: Int = 0 // 当天最近连续相同状态报告数(0 = 当天无报告)
 )
 
 /** One satellite, 3 days of state */

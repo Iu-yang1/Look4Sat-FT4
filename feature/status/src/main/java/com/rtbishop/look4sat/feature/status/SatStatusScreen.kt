@@ -338,15 +338,16 @@ private fun StatusRow(status: SatStatus, onClickDay: (SatDay) -> Unit) {
 
 /**
  * Day block: colored by the newest reported status among the day's 12 slots
- * (gray when none); the number is the TOTAL report count of the whole day
- * (sum over all slots), not the count of the newest slot alone.
+ * (gray when none); the number is the count of the most recent consecutive
+ * reports sharing that same status (day.streakCount), not the total report
+ * count of the whole day.
  */
 @Composable
 private fun DayCell(day: SatDay, modifier: Modifier, onClick: () -> Unit) {
     val noReportGray = 0xFFC0C0C0L
     val slot = day.slots.firstOrNull { it.statusColor != noReportGray } ?: day.slots.first()
     val color = Color(slot.statusColor)
-    val totalCount = day.slots.sumOf { it.count }
+    val streakCount = day.streakCount
     Box(
         modifier = modifier
             .height(28.dp)
@@ -355,8 +356,8 @@ private fun DayCell(day: SatDay, modifier: Modifier, onClick: () -> Unit) {
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
-        if (totalCount > 0) {
-            Text(text = totalCount.toString(), fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.White)
+        if (streakCount > 0) {
+            Text(text = streakCount.toString(), fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.White)
         }
     }
 }

@@ -1,0 +1,197 @@
+/*
+ * Look4Sat. Amateur radio satellite tracker and pass predictor.
+ * Copyright (C) 2019-2026 Arty Bishop and contributors.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ */
+package com.rtbishop.look4sat.core.data.repository
+
+import com.rtbishop.look4sat.core.domain.model.DataSourcesSettings
+import com.rtbishop.look4sat.core.domain.model.DatabaseState
+import com.rtbishop.look4sat.core.domain.model.OtherSettings
+import com.rtbishop.look4sat.core.domain.model.PassesSettings
+import com.rtbishop.look4sat.core.domain.model.RCSettings
+import com.rtbishop.look4sat.core.domain.model.RadioControlSettings
+import com.rtbishop.look4sat.core.domain.model.SatItem
+import com.rtbishop.look4sat.core.domain.model.SatRadio
+import com.rtbishop.look4sat.core.domain.predict.GeoPos
+import com.rtbishop.look4sat.core.domain.predict.OrbitalData
+import com.rtbishop.look4sat.core.domain.predict.OrbitalObject
+import com.rtbishop.look4sat.core.domain.repository.ISelectionRepo
+import com.rtbishop.look4sat.core.domain.repository.ISettingsRepo
+import com.rtbishop.look4sat.core.domain.source.ILocalSource
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.test.runTest
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+@OptIn(ExperimentalCoroutinesApi::class)
+class SelectionRepoSearchTest {
+
+    private val sampleItems = listOf(
+        SatItem(catnum = 25544, name = "ISS (ZARYA)"),
+        SatItem(catnum = 7530, name = "AO-7 (AMSAT-OSCAR 7)"),
+        SatItem(catnum = 39444, name = "AO-73 (FUNcube-1)"),
+        SatItem(catnum = 43803, name = "JO-97 (BIRDS-3)"),
+        SatItem(catnum = 99999, name = "FO-29"),
+    )
+
+    @Test
+    fun `query without separators matches name with dashes spaces brackets`() = runTest {
+        val repo = createRepo(sampleItems)
+        repo.setQuery("ao7")
+        val results = repo.getEntriesFlow().first()
+        // "ao7" is a substring of the normalized "AO-73 (FUNcube-1)" too, so a
+        // fuzzy search legitimately returns both AO-7 (first) and AO-73. The
+        // key guarantee is that AO-7 — which was unreachable before because of
+        // the dashes/brackets — is now found.
+        assertTrue(results.map { it.catnum }.contains(7530))
+        assertEquals(7530, results.first().catnum)
+    }
+
+    @Test
+    fun `query without separators matches name with only dashes`() = runTest {
+        val repo = createRepo(sampleItems)
+        repo.setQuery("fo29")
+        val results = repo.getEntriesFlow().first()
+        assertEquals(listOf(99999), results.map { it.catnum })
+    }
+
+    @Test
+    fun `space-separated tokens all must match in any order`() = runTest {
+        val repo = createRepo(sampleItems)
+        repo.setQuery("zarya iss")
+        val results = repo.getEntriesFlow().first()
+        assertEquals(listOf(25544), results.map { it.catnum })
+    }
+
+    @Test
+    fun `exact name query still matches`() = runTest {
+        val repo = createRepo(sampleItems)
+        repo.setQuery("AO-7 (AMSAT-OSCAR 7)")
+        val results = repo.getEntriesFlow().first()
+        assertEquals(listOf(7530), results.map { it.catnum })
+    }
+
+    @Test
+    fun `partial token query matches substring`() = runTest {
+        val repo = createRepo(sampleItems)
+        repo.setQuery("funcube")
+        val results = repo.getEntriesFlow().first()
+        assertEquals(listOf(39444), results.map { it.catnum })
+    }
+
+    @Test
+    fun `numeric query matches catnum exactly`() = runTest {
+        val repo = createRepo(sampleItems)
+        repo.setQuery("25544")
+        val results = repo.getEntriesFlow().first()
+        assertEquals(listOf(25544), results.map { it.catnum })
+    }
+
+    @Test
+    fun `no query returns all items`() = runTest {
+        val repo = createRepo(sampleItems)
+        repo.setQuery("")
+        val results = repo.getEntriesFlow().first()
+        assertEquals(sampleItems.size, results.size)
+    }
+
+    @Test
+    fun `unmatched query returns nothing`() = runTest {
+        val repo = createRepo(sampleItems)
+        repo.setQuery("zzzznomatch")
+        assertTrue(repo.getEntriesFlow().first().isEmpty())
+    }
+
+    private fun createRepo(items: List<SatItem>): ISelectionRepo {
+        return SelectionRepo(
+            dispatcher = Dispatchers.Unconfined,
+            localSource = FakeLocalSourceForSearch(items),
+            settingsRepo = FakeSettingsRepoForSearch()
+        )
+    }
+}
+
+private class FakeLocalSourceForSearch(private val items: List<SatItem>) : ILocalSource {
+    override suspend fun getEntriesTotal(): Int = items.size
+    override suspend fun getEntriesList(): List<SatItem> = items
+    override suspend fun getEntriesWithIds(ids: List<Int>): List<OrbitalObject> = emptyList()
+    override suspend fun insertEntries(entries: List<OrbitalData>) = Unit
+    override suspend fun deleteEntries() = Unit
+    override suspend fun getIdsWithModes(modes: List<String>): List<Int> = emptyList()
+    override suspend fun getRadiosTotal(): Int = 0
+    override suspend fun getRadiosWithId(id: Int): List<SatRadio> = emptyList()
+    override suspend fun insertRadios(radios: List<SatRadio>, isCustom: Boolean) = Unit
+    override suspend fun deleteManagedRadios() = Unit
+    override suspend fun deleteRadios() = Unit
+}
+
+private class FakeSettingsRepoForSearch : ISettingsRepo {
+    override val appVersionName: String = "test"
+    override val selectedIds: StateFlow<List<Int>> = MutableStateFlow(emptyList())
+    override val selectedTypes: StateFlow<List<String>> = MutableStateFlow(emptyList())
+    override val passesSettings: StateFlow<PassesSettings> = MutableStateFlow(
+        PassesSettings(hoursAhead = 24, minElevation = 0.0, selectedModes = emptyList())
+    )
+    override val stationPosition: StateFlow<GeoPos> = MutableStateFlow(GeoPos(0.0, 0.0))
+    override val databaseState: MutableStateFlow<DatabaseState> = MutableStateFlow(DatabaseState(0, 0, 0L))
+    override val rcSettings: StateFlow<RCSettings> = MutableStateFlow(
+        RCSettings(false, "", "", "", false, "", "", "", 0L, false, "", "", "", false, "", "")
+    )
+    override val otherSettings: StateFlow<OtherSettings> = MutableStateFlow(
+        OtherSettings(
+            false, false, false, false, false, false, false,
+            shouldSeeWarning = false, shouldSeeWhatsNew = false
+        )
+    )
+    override val dataSourcesSettings: MutableStateFlow<DataSourcesSettings> =
+        MutableStateFlow(DataSourcesSettings(satelliteUrls = emptyList(), transceiversUrls = emptyList()))
+    override val dataSourcesStatus: StateFlow<Map<String, Int>> = MutableStateFlow(emptyMap())
+    override val radioControlSettings: StateFlow<RadioControlSettings> = MutableStateFlow(
+        RadioControlSettings(false, RadioControlSettings.MODEL_YAESU_FT817, "", "", "", "", 9600)
+    )
+    override val wavelogSettings: StateFlow<com.rtbishop.look4sat.core.domain.model.WavelogSettings> =
+        MutableStateFlow(com.rtbishop.look4sat.core.domain.model.WavelogSettings())
+    override val lotwSettings: StateFlow<com.rtbishop.look4sat.core.domain.model.LoTWSettings> =
+        MutableStateFlow(com.rtbishop.look4sat.core.domain.model.LoTWSettings())
+
+    override fun setSelectedIds(ids: List<Int>) = Unit
+    override fun setSelectedTypes(types: List<String>) = Unit
+    override fun setPassesSettings(settings: PassesSettings) = Unit
+    override fun setStationPosition(latitude: Double, longitude: Double, altitude: Double): Boolean = true
+    override fun setStationPosition(): Boolean = true
+    override fun setStationPosition(locator: String): Boolean = true
+    override fun getSatelliteTypesIds(types: List<String>): List<Int> = emptyList()
+    override fun setSatelliteTypeIds(type: String, ids: List<Int>) = Unit
+    override fun updateDatabaseState(state: DatabaseState) = Unit
+    override fun updateRCSettings(settings: RCSettings) = Unit
+    override fun updateOtherSettings(transform: (OtherSettings) -> OtherSettings) = Unit
+    override fun updateDataSourcesSettings(settings: DataSourcesSettings) = Unit
+    override fun updateDataSourcesStatus(status: Map<String, Int>) = Unit
+    override fun updateRadioControlSettings(settings: RadioControlSettings) = Unit
+    override fun getSatelliteOffset(catnum: Int): String = ""
+    override fun setSatelliteOffset(catnum: Int, offset: String) = Unit
+    override fun getAmSatCallsign(): String = ""
+    override fun setAmSatCallsign(callsign: String) = Unit
+    override fun updateWavelogSettings(settings: com.rtbishop.look4sat.core.domain.model.WavelogSettings) = Unit
+    override fun getWorkedGrids(): Set<String> = emptySet()
+    override fun setWorkedGrids(grids: Set<String>) = Unit
+    override fun getWorkedGridQsos(): Map<String, List<com.rtbishop.look4sat.core.domain.model.GridQso>> = emptyMap()
+    override fun setWorkedGridQsos(qsos: Map<String, List<com.rtbishop.look4sat.core.domain.model.GridQso>>) = Unit
+    override fun getRoamedGrids(): Set<String> = emptySet()
+    override fun setRoamedGrids(grids: Set<String>) = Unit
+    override fun updateLoTWSettings(settings: com.rtbishop.look4sat.core.domain.model.LoTWSettings) = Unit
+    override fun getLastLotwSyncDate(): String = ""
+    override fun setLastLotwSyncDate(date: String) = Unit
+    override fun getLastLotwSyncCallsign(): String = ""
+    override fun setLastLotwSyncCallsign(callsign: String) = Unit
+}

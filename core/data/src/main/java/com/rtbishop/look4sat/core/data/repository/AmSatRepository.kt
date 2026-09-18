@@ -221,7 +221,22 @@ class AmSatRepository(
                 }
             }
             val days = (0 until 3).map { d ->
-                SatDay(dateLabel = labels[d], slots = slots.subList(d * 12, (d + 1) * 12))
+                // 当天最近连续相同状态报告数:从最新一条往回数,遇状态不同即停。
+                // 空时段(无报告)不打断;按状态文本严格比较,不跨天。
+                val dayStart = nowSec - (d + 1) * 86400L
+                val dayEnd = nowSec - d * 86400L
+                val dayReports = byName[name].orEmpty()
+                    .filter { it.reportedTimeUtcSec in dayStart until dayEnd }
+                    .sortedByDescending { it.reportedTimeUtcSec }
+                val streakCount = if (dayReports.isEmpty()) 0 else {
+                    val newestStatus = dayReports.first().report
+                    dayReports.takeWhile { it.report == newestStatus }.size
+                }
+                SatDay(
+                    dateLabel = labels[d],
+                    slots = slots.subList(d * 12, (d + 1) * 12),
+                    streakCount = streakCount
+                )
             }
             SatStatus(name = name, days = days)
         }

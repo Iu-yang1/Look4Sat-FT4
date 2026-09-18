@@ -80,6 +80,8 @@ other-osmdroid = { module = "org.osmdroid:osmdroid-android", version.ref = "othe
 
 test-coroutines = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "kotlin-coroutines" }
 test-junit4 = { module = "junit:junit", version.ref = "test-junit4" }
+# Real org.json for unit tests (android.jar stub throws "not mocked")
+test-json = { module = "org.json:json", version = "20240303" }
 
 androidTest-junit = { module = "androidx.test.ext:junit", version.ref = "androidTest-junit" }
 androidTest-espresso = { module = "androidx.test.espresso:espresso-core", version.ref = "androidTest-espresso" }

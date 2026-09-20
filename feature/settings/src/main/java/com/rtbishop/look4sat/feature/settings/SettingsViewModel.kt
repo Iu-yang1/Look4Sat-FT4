@@ -37,6 +37,7 @@ import com.rtbishop.look4sat.core.domain.repository.lotwCursorApi
 import com.rtbishop.look4sat.core.domain.repository.lotwCursorEpochMs
 import com.rtbishop.look4sat.core.domain.repository.resolveLoTWSyncMode
 import com.rtbishop.look4sat.core.domain.repository.IWavelogRepository
+import com.rtbishop.look4sat.core.domain.logbook.IQsoRepository
 import com.rtbishop.look4sat.core.domain.usecase.IShowToast
 import com.rtbishop.look4sat.core.domain.time.IDisciplinedClock
 import com.rtbishop.look4sat.core.domain.time.ITimeSynchronizationService
@@ -61,6 +62,7 @@ class SettingsViewModel(
     private val updateRepo: IUpdateRepository,
     private val wavelogRepo: IWavelogRepository,
     private val lotwRepo: com.rtbishop.look4sat.core.domain.repository.ILoTWRepository,
+    private val qsoRepo: IQsoRepository,
     private val apkFile: File,
     private val showToast: IShowToast
 ) : ViewModel() {
@@ -306,11 +308,12 @@ class SettingsViewModel(
             it.copy(lotwSyncing = true, lotwSyncMode = effectiveMode, lotwProgress = null, lotwError = null)
         }
         lotwSyncJob = viewModelScope.launch {
-            val result = lotwRepo.fetchConfirmedGridQsos(callsign, settings.password, since) { progress ->
+            val result = lotwRepo.fetchQsos(callsign, settings.password, effectiveMode, since) { progress ->
                 _uiState.update { it.copy(lotwProgress = progress) }
             }
             when (result) {
                 is LoTWResult.Success -> {
+                    qsoRepo.mergeLoTW(result.records)
                     // Incremental: merge new grids/QSOs into the stored set (dedup
                     // by call + QSO time); full: the fresh report replaces it all.
                     // Shared with the automatic sync on app start (MainApplication).
@@ -492,6 +495,7 @@ class SettingsViewModel(
                     updateRepo = container.updateRepo,
                     wavelogRepo = container.wavelogRepo,
                     lotwRepo = container.lotwRepo,
+                    qsoRepo = container.qsoRepository,
                     apkFile = File(context.cacheDir, "look4sat-update.apk"),
                     showToast = container.provideShowToast()
                 )

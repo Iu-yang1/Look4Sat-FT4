@@ -17,10 +17,14 @@
  */
 package com.rtbishop.look4sat.core.data.repository
 
+import com.rtbishop.look4sat.core.domain.logbook.displayMode
+import com.rtbishop.look4sat.core.domain.logbook.isSatellite
+import com.rtbishop.look4sat.core.domain.model.GridQso
 import com.rtbishop.look4sat.core.domain.repository.ILoTWRepository
 import com.rtbishop.look4sat.core.domain.repository.LoTWPhase
 import com.rtbishop.look4sat.core.domain.repository.LoTWProgress
 import com.rtbishop.look4sat.core.domain.repository.LoTWResult
+import com.rtbishop.look4sat.core.domain.repository.LoTWSyncMode
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
@@ -48,12 +52,29 @@ import javax.net.ssl.SSLException
  */
 class LoTWRepository : ILoTWRepository {
 
+    override suspend fun fetchQsos(
+        callsign: String,
+        password: String,
+        mode: LoTWSyncMode,
+        since: String,
+        onProgress: (LoTWProgress) -> Unit
+    ): LoTWResult = withContext(Dispatchers.IO) {
+        val confirmedOnly = mode == LoTWSyncMode.Incremental
+        fetchReportBody(callsign, password, since, confirmedOnly, onProgress).fold(
+            onSuccess = { body ->
+                parseSyncReport(body, callsign, assumeConfirmed = confirmedOnly)
+                    ?: LoTWResult.RateLimited
+            },
+            onFailure = { toResult(it) }
+        )
+    }
+
     override suspend fun fetchConfirmedGrids(callsign: String, password: String): LoTWResult =
         withContext(Dispatchers.IO) {
-            fetchReportBody(callsign, password, since = "", onProgress = {}).fold(
+            fetchReportBody(callsign, password, since = "", confirmedOnly = true, onProgress = {}).fold(
                 onSuccess = { body ->
-                    parseBoth(body)?.let { (grids, _, roamed) ->
-                        LoTWResult.Success(grids, emptyMap(), roamed)
+                    parseSyncReport(body, callsign, assumeConfirmed = true)?.let {
+                        it.copy(qsos = emptyMap(), records = emptyList(), downloaded = 0)
                     } ?: LoTWResult.RateLimited
                 },
                 onFailure = { toResult(it) }
@@ -66,11 +87,9 @@ class LoTWRepository : ILoTWRepository {
         since: String,
         onProgress: (LoTWProgress) -> Unit
     ): LoTWResult = withContext(Dispatchers.IO) {
-        fetchReportBody(callsign, password, since, onProgress).fold(
+        fetchReportBody(callsign, password, since, confirmedOnly = true, onProgress).fold(
             onSuccess = { body ->
-                parseBoth(body)?.let { (grids, qsos, roamed) ->
-                    LoTWResult.Success(grids, qsos, roamed)
-                } ?: LoTWResult.RateLimited
+                parseSyncReport(body, callsign, assumeConfirmed = true) ?: LoTWResult.RateLimited
             },
             onFailure = { toResult(it) }
         )
@@ -83,36 +102,55 @@ class LoTWRepository : ILoTWRepository {
         else -> LoTWResult.NetworkError(e.message ?: e.javaClass.simpleName)
     }
 
-    /** Single report fetch feeding the grid set, the per-QSO detail and the roamed set. */
-    private fun parseBoth(
-        body: String
-    ): Triple<Set<String>, Map<String, List<com.rtbishop.look4sat.core.domain.model.GridQso>>, Set<String>>? {
-        val grids = parseConfirmedGrids(body) ?: return null
-        val qsos = parseConfirmedGridQsos(body) ?: return null
-        val roamed = parseRoamedGrids(body) ?: return null
-        return Triple(grids, qsos, roamed)
+    /** Parse once, then derive both local-logbook records and confirmed satellite grid data. */
+    internal fun parseSyncReport(
+        body: String,
+        defaultCallsign: String,
+        assumeConfirmed: Boolean
+    ): LoTWResult.Success? {
+        val parsed = parseLoTWRecords(body, defaultCallsign, assumeConfirmed) ?: return null
+        val confirmedSatellite = parsed.records.filter { it.lotwConfirmed && it.isSatellite }
+        val gridQsos = linkedMapOf<String, MutableList<GridQso>>()
+        confirmedSatellite.forEach { record ->
+            val detail = GridQso(
+                call = record.theirCallsign,
+                epochMs = record.startUtcMillis,
+                satName = record.satelliteName,
+                mode = record.displayMode,
+                bandUp = record.rxBand,
+                bandDown = record.band,
+                dxcc = record.dxcc,
+                country = record.country.ifBlank { null },
+                cqz = record.cqZone,
+                state = record.region.ifBlank { null },
+                myGrid = record.myGrid.toFourCharGrid()
+            )
+            (listOf(record.theirGrid) + record.vuccGrids)
+                .mapNotNull(String::toFourCharGrid)
+                .distinct()
+                .forEach { grid -> gridQsos.getOrPut(grid) { mutableListOf() }.add(detail) }
+        }
+        val roamed = confirmedSatellite.mapNotNullTo(linkedSetOf()) { it.myGrid.toFourCharGrid() }
+        return LoTWResult.Success(
+            grids = gridQsos.keys,
+            qsos = gridQsos,
+            roamedGrids = roamed,
+            records = parsed.records,
+            downloaded = parsed.downloaded
+        )
     }
 
     private suspend fun fetchReportBody(
         callsign: String,
         password: String,
         since: String,
+        confirmedOnly: Boolean,
         onProgress: (LoTWProgress) -> Unit
     ): Result<String> {
         val call = callsign.trim().uppercase()
         val pwd = password.trim()
         if (call.isBlank() || pwd.isBlank()) return Result.failure(IOException("empty credentials"))
-        // Empty since -> full report. qso_qslsince with an early date forces a
-        // FULL confirmed-QSL report; without it LoTW applies a "system supplied
-        // default" since-date and only returns confirmations newer than the
-        // account's last query — subsequent syncs would be incremental/empty.
-        val effectiveSince = since.ifBlank { "2000-01-01" }
-        val query = buildString {
-            append("login=").append(URLEncoder.encode(call, "UTF-8"))
-            append("&password=").append(URLEncoder.encode(pwd, "UTF-8"))
-            append("&qso_query=1&qso_qsl=yes&qso_qsldetail=yes&qso_mydetail=yes")
-            append("&qso_qslsince=").append(URLEncoder.encode(effectiveSince, "UTF-8"))
-        }
+        val query = buildReportQuery(call, pwd, confirmedOnly, since)
         return try {
             val connection = URL("$BASE_URL?$query").openConnection() as HttpURLConnection
             // ARRL can be slow to accept connections from mobile networks
@@ -163,6 +201,27 @@ class LoTWRepository : ILoTWRepository {
         } catch (e: Exception) {
             println("LoTWRepository fetch failure: $e")
             Result.failure(IOException(e.message ?: e.javaClass.simpleName))
+        }
+    }
+
+    internal fun buildReportQuery(
+        callsign: String,
+        password: String,
+        confirmedOnly: Boolean,
+        since: String
+    ): String {
+        val effectiveSince = if (confirmedOnly) {
+            since.ifBlank { FULL_REPORT_START }.toLoTWDate()
+        } else {
+            FULL_REPORT_START
+        }
+        return buildString {
+            append("login=").append(URLEncoder.encode(callsign, "UTF-8"))
+            append("&password=").append(URLEncoder.encode(password, "UTF-8"))
+            append("&qso_query=1&qso_qsl=").append(if (confirmedOnly) "yes" else "no")
+            append("&qso_qsldetail=yes&qso_mydetail=yes&qso_withown=yes")
+            append(if (confirmedOnly) "&qso_qslsince=" else "&qso_qsorxsince=")
+            append(URLEncoder.encode(effectiveSince, "UTF-8"))
         }
     }
 
@@ -445,6 +504,7 @@ class LoTWRepository : ILoTWRepository {
 
     private companion object {
         const val BASE_URL = "https://lotw.arrl.org/lotwuser/lotwreport.adi"
+        const val FULL_REPORT_START = "1900-01-01"
 
         /** Record count in the report header: `<APP_LoTW_NUMREC:4>2367`. */
         val NUMREC_REGEX = Regex("<APP_LoTW_NUMREC:\\d+>(\\d+)")
@@ -457,4 +517,13 @@ class LoTWRepository : ILoTWRepository {
          */
         const val AVG_RECORD_BYTES = 900L
     }
+}
+
+private fun String.toFourCharGrid(): String? = trim().uppercase().takeIf { it.length >= 4 }
+    ?.take(4)?.takeIf { it.matches(Regex("[A-R]{2}[0-9]{2}")) }
+
+private fun String.toLoTWDate(): String = if (matches(Regex("[0-9]{8}"))) {
+    "${substring(0, 4)}-${substring(4, 6)}-${substring(6, 8)}"
+} else {
+    this
 }

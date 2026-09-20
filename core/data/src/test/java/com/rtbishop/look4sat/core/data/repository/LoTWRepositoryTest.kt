@@ -308,5 +308,49 @@ class LoTWRepositoryTest {
         assertNull(result["PM95"]!!.first().state)
     }
 
+    @Test
+    fun fullSyncKeepsUnconfirmedLogsButOnlyCountsConfirmedGrids() {
+        val confirmed = "<CALL:5>K1ABC\n<QSO_DATE:8>20260820\n<TIME_ON:4>1130\n" +
+            "<STATION_CALLSIGN:6>BA7OPF\n<MODE:2>CW\n<PROP_MODE:3>SAT\n" +
+            "<SAT_NAME:5>FO-29\n<QSL_RCVD:1>Y\n<GRIDSQUARE:4>FN31\n<EOR>\n"
+        val unconfirmed = "<CALL:5>JH1AA\n<QSO_DATE:8>20260821\n<TIME_ON:4>1200\n" +
+            "<STATION_CALLSIGN:6>BA7OPF\n<MODE:2>CW\n<PROP_MODE:3>SAT\n" +
+            "<SAT_NAME:5>RS-44\n<QSL_RCVD:1>N\n<EOR>\n"
+
+        val result = repo.parseSyncReport(
+            report(confirmed, unconfirmed),
+            defaultCallsign = "BA7OPF",
+            assumeConfirmed = false
+        )!!
+
+        assertEquals(2, result.downloaded)
+        assertEquals(2, result.records.size)
+        assertTrue(result.records.first { it.theirCallsign == "K1ABC" }.lotwConfirmed)
+        assertEquals(false, result.records.first { it.theirCallsign == "JH1AA" }.lotwConfirmed)
+        assertEquals(setOf("FN31"), result.grids)
+    }
+
+    @Test
+    fun reportQueryUsesAllQsosForFullAndConfirmationsForIncremental() {
+        val full = repo.buildReportQuery("BA7OPF", "secret", confirmedOnly = false, since = "")
+        assertTrue(full.contains("qso_qsl=no"))
+        assertTrue(full.contains("qso_qsorxsince=1900-01-01"))
+        assertTrue(full.contains("qso_withown=yes"))
+
+        val incremental = repo.buildReportQuery("BA7OPF", "secret", confirmedOnly = true, since = "20260917")
+        assertTrue(incremental.contains("qso_qsl=yes"))
+        assertTrue(incremental.contains("qso_qslsince=2026-09-17"))
+    }
+
+    @Test
+    fun syncReportRejectsRecordCountMismatchAndTruncatedFields() {
+        val oneRecord = "<APP_LoTW_NUMREC:1>2<EOH>" +
+            "<CALL:5>K1ABC<QSO_DATE:8>20260820<TIME_ON:4>1130<EOR>"
+        assertNull(repo.parseSyncReport(oneRecord, "BA7OPF", assumeConfirmed = false))
+
+        val truncated = "<EOH><CALL:5>K1"
+        assertNull(repo.parseSyncReport(truncated, "BA7OPF", assumeConfirmed = false))
+    }
+
     // endregion
 }

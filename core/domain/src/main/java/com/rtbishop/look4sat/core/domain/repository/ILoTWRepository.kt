@@ -21,6 +21,20 @@ package com.rtbishop.look4sat.core.domain.repository
 interface ILoTWRepository {
 
     /**
+     * Fetch LoTW records for a logbook sync. A full sync downloads every QSO
+     * accepted by LoTW, including unconfirmed records; an incremental sync
+     * downloads confirmations received since [since]. Both variants retain
+     * enough detail to update the local logbook and confirmed-grid data.
+     */
+    suspend fun fetchQsos(
+        callsign: String,
+        password: String,
+        mode: LoTWSyncMode,
+        since: String = "",
+        onProgress: (LoTWProgress) -> Unit = {}
+    ): LoTWResult
+
+    /**
      * Fetch all confirmed (QSL_RCVD=Y) gridsquares for the given LoTW account.
      * Returns the 4-char grid set with an explicit failure cause on error.
      */

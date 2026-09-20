@@ -19,15 +19,24 @@ import com.rtbishop.look4sat.core.domain.logbook.QsoRecord
 import com.rtbishop.look4sat.core.domain.logbook.QsoStatus
 import com.rtbishop.look4sat.core.domain.logbook.displayMode
 import com.rtbishop.look4sat.core.domain.logbook.frequencyBand
+import com.rtbishop.look4sat.core.domain.model.LoTWSettings
+import com.rtbishop.look4sat.core.domain.repository.ILoTWRepository
 import com.rtbishop.look4sat.core.domain.repository.ILoTWUploadRepository
 import com.rtbishop.look4sat.core.domain.repository.IMainContainer
+import com.rtbishop.look4sat.core.domain.repository.ISettingsRepo
 import com.rtbishop.look4sat.core.domain.repository.LoTWCertificate
 import com.rtbishop.look4sat.core.domain.repository.LoTWOperationException
 import com.rtbishop.look4sat.core.domain.repository.LoTWProblem
+import com.rtbishop.look4sat.core.domain.repository.LoTWProgress
+import com.rtbishop.look4sat.core.domain.repository.LoTWResult
 import com.rtbishop.look4sat.core.domain.repository.LoTWStation
+import com.rtbishop.look4sat.core.domain.repository.LoTWSyncMode
 import com.rtbishop.look4sat.core.domain.repository.LoTWUploadAudit
 import com.rtbishop.look4sat.core.domain.repository.LoTWUploadPreview
 import com.rtbishop.look4sat.core.domain.repository.LoTWUploadResult
+import com.rtbishop.look4sat.core.domain.repository.applyLoTWGridResult
+import com.rtbishop.look4sat.core.domain.repository.lotwCursorApi
+import com.rtbishop.look4sat.core.domain.repository.resolveLoTWSyncMode
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -136,6 +145,23 @@ enum class LogbookError {
     IMPORT
 }
 
+sealed interface LoTWDownloadError {
+    data object NotConfigured : LoTWDownloadError
+    data object BadCredentials : LoTWDownloadError
+    data object RateLimited : LoTWDownloadError
+    data object Timeout : LoTWDownloadError
+    data object Storage : LoTWDownloadError
+    data class Network(val detail: String) : LoTWDownloadError
+}
+
+data class LoTWDownloadSummary(
+    val downloaded: Int,
+    val imported: Int,
+    val updated: Int,
+    val skipped: Int,
+    val confirmedGrids: Int
+)
+
 data class LogbookState(
     val records: List<QsoRecord> = emptyList(),
     val editor: LogbookEditor? = null,
@@ -149,6 +175,12 @@ data class LogbookState(
     val isBusy: Boolean = false,
     val showLoTW: Boolean = false,
     val lotwSyncing: Boolean = false,
+    val lotwSettings: LoTWSettings = LoTWSettings(),
+    val lotwSyncMode: LoTWSyncMode? = null,
+    val lotwProgress: LoTWProgress? = null,
+    val lotwDownloadError: LoTWDownloadError? = null,
+    val lotwDownloadSummary: LoTWDownloadSummary? = null,
+    val workedGridsCount: Int = 0,
     val lotwCertificate: LoTWCertificate? = null,
     val lotwPreview: LoTWUploadPreview? = null,
     val lotwUploadResult: LoTWUploadResult? = null,
@@ -191,6 +223,7 @@ sealed interface LogbookAction {
     data object ToggleGrouping : LogbookAction
     data object ShowLoTW : LogbookAction
     data object DismissLoTW : LogbookAction
+    data class SyncLoTW(val settings: LoTWSettings, val mode: LoTWSyncMode) : LogbookAction
     data class SaveLoTWProfile(
         val certificate: ByteArray?,
         val password: CharArray?,
@@ -214,10 +247,17 @@ class LogbookViewModel(
     private val nowMillis: () -> Long,
     private val defaultCallsign: () -> String,
     private val defaultGrid: () -> String,
+    private val settingsRepo: ISettingsRepo,
+    private val lotwRepository: ILoTWRepository,
     private val lotwUploadRepository: ILoTWUploadRepository,
     private val updateDefaultCallsign: (String) -> Unit
 ) : ViewModel() {
-    private val mutableState = MutableStateFlow(LogbookState())
+    private val mutableState = MutableStateFlow(
+        LogbookState(
+            lotwSettings = settingsRepo.lotwSettings.value,
+            workedGridsCount = settingsRepo.getWorkedGrids().size
+        )
+    )
     val state: StateFlow<LogbookState> = mutableState
     private var syncJob: Job? = null
     private var auditJob: Job? = null
@@ -228,6 +268,11 @@ class LogbookViewModel(
             repository.records.collect { records ->
                 mutableState.update { it.copy(records = records) }
                 if (mutableState.value.showLoTW) refreshLoTWAudit()
+            }
+        }
+        viewModelScope.launch {
+            settingsRepo.lotwSettings.collect { settings ->
+                mutableState.update { it.copy(lotwSettings = settings) }
             }
         }
     }
@@ -266,6 +311,8 @@ class LogbookViewModel(
                     it.copy(
                         showLoTW = true,
                         lotwProblem = null,
+                        lotwDownloadError = null,
+                        workedGridsCount = settingsRepo.getWorkedGrids().size,
                         lotwDefaultGrid = defaultGrid(),
                         lotwProfileSaved = false
                     )
@@ -286,6 +333,7 @@ class LogbookViewModel(
                 auditJob?.cancel()
                 mutableState.update { it.copy(showLoTW = false, lotwAudit = null, lotwAuditing = false) }
             }
+            is LogbookAction.SyncLoTW -> syncLoTW(action.settings, action.mode)
             is LogbookAction.SaveLoTWProfile -> lotwOperation {
                 val certificate = when {
                     action.certificate != null -> lotwUploadRepository.importCertificate(
@@ -352,6 +400,81 @@ class LogbookViewModel(
         ids = mutableState.value.filteredRecords.mapTo(mutableSetOf()) { it.id },
         includeIncomplete = includeIncomplete
     )
+
+    private fun syncLoTW(settings: LoTWSettings, requestedMode: LoTWSyncMode) {
+        if (syncJob?.isActive == true) return
+        if (!settings.isConfigured) {
+            mutableState.update {
+                it.copy(
+                    lotwDownloadError = LoTWDownloadError.NotConfigured,
+                    lotwDownloadSummary = null
+                )
+            }
+            return
+        }
+        settingsRepo.updateLoTWSettings(settings)
+        val callsign = settings.callsign.trim().uppercase(Locale.US)
+        val mode = resolveLoTWSyncMode(settingsRepo.getLastLotwSyncCallsign(), callsign, requestedMode)
+        val since = if (mode == LoTWSyncMode.Incremental) {
+            lotwCursorApi(settingsRepo.getLastLotwSyncDate())
+        } else ""
+        mutableState.update {
+            it.copy(
+                lotwSyncing = true,
+                lotwSyncMode = mode,
+                lotwProgress = null,
+                lotwDownloadError = null,
+                lotwDownloadSummary = null
+            )
+        }
+        syncJob = viewModelScope.launch {
+            try {
+                when (val result = lotwRepository.fetchQsos(
+                    callsign,
+                    settings.password,
+                    mode,
+                    since
+                ) { progress -> mutableState.update { it.copy(lotwProgress = progress) } }) {
+                    is LoTWResult.Success -> {
+                        val logbook = repository.mergeLoTW(result.records)
+                        val grids = applyLoTWGridResult(settingsRepo, result, mode, callsign)
+                        mutableState.update {
+                            it.copy(
+                                workedGridsCount = grids,
+                                lotwDownloadSummary = LoTWDownloadSummary(
+                                    downloaded = result.downloaded,
+                                    imported = logbook.imported,
+                                    updated = logbook.updated,
+                                    skipped = logbook.skipped,
+                                    confirmedGrids = grids
+                                )
+                            )
+                        }
+                    }
+                    LoTWResult.BadCredentials -> mutableState.update {
+                        it.copy(lotwDownloadError = LoTWDownloadError.BadCredentials)
+                    }
+                    LoTWResult.RateLimited -> mutableState.update {
+                        it.copy(lotwDownloadError = LoTWDownloadError.RateLimited)
+                    }
+                    LoTWResult.Timeout -> mutableState.update {
+                        it.copy(lotwDownloadError = LoTWDownloadError.Timeout)
+                    }
+                    is LoTWResult.NetworkError -> mutableState.update {
+                        it.copy(lotwDownloadError = LoTWDownloadError.Network(result.detail))
+                    }
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                mutableState.update { it.copy(lotwDownloadError = LoTWDownloadError.Storage) }
+            } finally {
+                mutableState.update {
+                    it.copy(lotwSyncing = false, lotwSyncMode = null, lotwProgress = null)
+                }
+            }
+        }
+    }
 
     private fun lotwOperation(block: suspend () -> Unit) {
         if (syncJob?.isActive == true) return
@@ -455,6 +578,8 @@ class LogbookViewModel(
                     nowMillis = container.disciplinedClock::nowMillis,
                     defaultCallsign = { container.settingsRepo.ft4Settings.value.operatorCallsign },
                     defaultGrid = { container.settingsRepo.stationPosition.value.qthLocator },
+                    settingsRepo = container.settingsRepo,
+                    lotwRepository = container.lotwRepo,
                     lotwUploadRepository = container.lotwUploadRepository,
                     updateDefaultCallsign = { call -> container.settingsRepo.updateFt4Settings { it.copy(operatorCallsign = call) } }
                 )

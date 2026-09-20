@@ -1,6 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="lotw_upload">LoTW upload</string>
+    <string name="lotw_upload">LoTW</string>
+    <string name="lotw_download_section">Download and synchronize</string>
+    <string name="lotw_download_hint">Full sync downloads every QSO accepted by LoTW, including unconfirmed contacts, and merges them into this logbook. Incremental sync downloads new confirmations. Both update confirmed satellite grids.</string>
+    <string name="lotw_download_result">Downloaded %1$d QSOs · added %2$d · updated %3$d · unchanged %4$d · confirmed grids %5$d</string>
     <string name="lotw_certificate_section">Certificate and station information</string>
     <string name="lotw_certificate_hint">Import a TrustedQSL .p12 certificate with its private key. It is encrypted and kept on this device.</string>
     <string name="lotw_certificate_info">%1$s · DXCC %2$d\nCertificate expires: %3$s\nQSO dates: %4$s — %5$s</string>

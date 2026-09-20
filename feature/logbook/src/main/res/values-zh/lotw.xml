@@ -1,6 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="lotw_upload">LoTW 上传</string>
+    <string name="lotw_upload">LoTW</string>
+    <string name="lotw_download_section">下载与同步</string>
+    <string name="lotw_download_hint">全量同步会下载 LoTW 已接收的全部 QSO（包括未确认通联）并合并到本日志本；增量同步下载新增确认。两种同步都会更新卫星已确认网格。</string>
+    <string name="lotw_download_result">下载 %1$d 条 QSO · 新增 %2$d 条 · 更新 %3$d 条 · 未变化 %4$d 条 · 已确认网格 %5$d 个</string>
     <string name="lotw_certificate_section">证书与台站信息</string>
     <string name="lotw_certificate_hint">导入含私钥的 TrustedQSL .p12 证书；数据加密保存在本机。</string>
     <string name="lotw_certificate_info">%1$s · DXCC %2$d\n证书到期：%3$s\n允许 QSO 日期：%4$s — %5$s</string>

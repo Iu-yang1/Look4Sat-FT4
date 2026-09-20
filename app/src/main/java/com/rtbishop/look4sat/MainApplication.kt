@@ -112,13 +112,17 @@ class MainApplication : Application(), IContainerProvider {
         val callsign = lotwSettings.callsign.trim().uppercase()
         val mode = resolveLoTWSyncMode(settingsRepo.getLastLotwSyncCallsign(), callsign, requested = null)
         val since = if (mode == LoTWSyncMode.Incremental) lotwCursorApi(settingsRepo.getLastLotwSyncDate()) else ""
-        println("Started periodic LoTW grid sync (${mode.name.lowercase()})")
-        val result = container.lotwRepo.fetchConfirmedGridQsos(callsign, lotwSettings.password, since)
+        println("Started periodic LoTW sync (${mode.name.lowercase()})")
+        val result = container.lotwRepo.fetchQsos(callsign, lotwSettings.password, mode, since)
         if (result is LoTWResult.Success) {
+            val logbook = container.qsoRepository.mergeLoTW(result.records)
             val count = applyLoTWGridResult(settingsRepo, result, mode, callsign, timeNow)
-            println("Periodic LoTW grid sync finished: $count worked grids")
+            println(
+                "Periodic LoTW sync finished: $count worked grids, " +
+                    "${logbook.imported} logs added, ${logbook.updated} updated"
+            )
         } else {
-            println("Periodic LoTW grid sync skipped (${result::class.simpleName})")
+            println("Periodic LoTW sync skipped (${result::class.simpleName})")
         }
     }
 }

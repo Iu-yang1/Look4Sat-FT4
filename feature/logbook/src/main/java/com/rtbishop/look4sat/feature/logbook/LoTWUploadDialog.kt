@@ -29,6 +29,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
@@ -38,8 +39,11 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.rtbishop.look4sat.core.domain.repository.LoTWProblem
+import com.rtbishop.look4sat.core.domain.repository.LoTWPhase
 import com.rtbishop.look4sat.core.domain.repository.LoTWStation
+import com.rtbishop.look4sat.core.domain.repository.LoTWSyncMode
 import com.rtbishop.look4sat.core.domain.repository.LoTWUploadResult
+import com.rtbishop.look4sat.core.presentation.R as CoreR
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -51,6 +55,8 @@ internal fun LoTWUploadDialog(state: LogbookState, onAction: (LogbookAction) -> 
     val scope = rememberCoroutineScope()
     var certificateBytes by remember { mutableStateOf<ByteArray?>(null) }
     var password by remember { mutableStateOf("") }
+    var accountCallsign by rememberSaveable { mutableStateOf(state.lotwSettings.callsign) }
+    var accountPassword by rememberSaveable { mutableStateOf(state.lotwSettings.password) }
     var grid by remember { mutableStateOf(state.lotwDefaultGrid) }
     var cq by remember { mutableStateOf("") }
     var itu by remember { mutableStateOf("") }
@@ -65,6 +71,12 @@ internal fun LoTWUploadDialog(state: LogbookState, onAction: (LogbookAction) -> 
         state.lotwStation?.let { saved ->
             grid = saved.grid; cq = saved.cqZone; itu = saved.ituZone
             region = saved.region; county = saved.county; iota = saved.iota
+        }
+    }
+    LaunchedEffect(state.lotwSettings) {
+        if (!state.lotwSyncing) {
+            accountCallsign = state.lotwSettings.callsign
+            accountPassword = state.lotwSettings.password
         }
     }
     DisposableEffect(Unit) { onDispose { certificateBytes?.fill(0) } }
@@ -111,6 +123,25 @@ internal fun LoTWUploadDialog(state: LogbookState, onAction: (LogbookAction) -> 
         title = { Text(stringResource(R.string.lotw_upload)) },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                LoTWDownloadCard(
+                    state = state,
+                    callsign = accountCallsign,
+                    password = accountPassword,
+                    onCallsignChange = { accountCallsign = it.uppercase() },
+                    onPasswordChange = { accountPassword = it },
+                    busy = busy,
+                    onSync = { mode ->
+                        onAction(
+                            LogbookAction.SyncLoTW(
+                                com.rtbishop.look4sat.core.domain.model.LoTWSettings(
+                                    accountCallsign,
+                                    accountPassword
+                                ),
+                                mode
+                            )
+                        )
+                    }
+                )
                 ElevatedCard(Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text(stringResource(R.string.lotw_certificate_section), style = MaterialTheme.typography.titleMedium)
@@ -233,7 +264,7 @@ internal fun LoTWUploadDialog(state: LogbookState, onAction: (LogbookAction) -> 
                         }
                     }
                 }
-                if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
+                if (busy && state.lotwSyncMode == null) LinearProgressIndicator(Modifier.fillMaxWidth())
                 if (fileError) Text(stringResource(R.string.lotw_certificate_file_error), color = MaterialTheme.colorScheme.error)
                 state.lotwProblem?.let { error ->
                     Text(stringResource(problemText(error.reason)), color = MaterialTheme.colorScheme.error)
@@ -287,6 +318,117 @@ internal fun LoTWUploadDialog(state: LogbookState, onAction: (LogbookAction) -> 
         confirmButton = { TextButton(onClick = { onAction(LogbookAction.RemoveLoTWCertificate); removeConfirmation = false }) { Text(stringResource(R.string.logbook_delete)) } },
         dismissButton = { TextButton(onClick = { removeConfirmation = false }) { Text(stringResource(R.string.logbook_cancel)) } }
     )
+}
+
+@Composable
+private fun LoTWDownloadCard(
+    state: LogbookState,
+    callsign: String,
+    password: String,
+    onCallsignChange: (String) -> Unit,
+    onPasswordChange: (String) -> Unit,
+    busy: Boolean,
+    onSync: (LoTWSyncMode) -> Unit
+) {
+    ElevatedCard(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(stringResource(R.string.lotw_download_section), style = MaterialTheme.typography.titleMedium)
+            Text(stringResource(R.string.lotw_download_hint), style = MaterialTheme.typography.bodySmall)
+            OutlinedTextField(
+                value = callsign,
+                onValueChange = onCallsignChange,
+                label = { Text(stringResource(CoreR.string.prefs_lotw_callsign)) },
+                singleLine = true,
+                enabled = !busy,
+                modifier = Modifier.fillMaxWidth()
+            )
+            OutlinedTextField(
+                value = password,
+                onValueChange = onPasswordChange,
+                label = { Text(stringResource(CoreR.string.prefs_lotw_password)) },
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.Password,
+                    autoCorrectEnabled = false
+                ),
+                visualTransformation = PasswordVisualTransformation(),
+                singleLine = true,
+                enabled = !busy,
+                modifier = Modifier.fillMaxWidth()
+            )
+            Text(
+                stringResource(CoreR.string.prefs_lotw_hint, state.workedGridsCount),
+                style = MaterialTheme.typography.bodySmall
+            )
+            if (state.lotwSyncMode != null) {
+                val progress = state.lotwProgress
+                val progressText = when {
+                    progress == null || progress.phase == LoTWPhase.Connecting ->
+                        stringResource(CoreR.string.lotw_sync_progress_connecting)
+                    progress.fraction >= 1f ->
+                        stringResource(CoreR.string.lotw_sync_progress_saving)
+                    progress.qsoCount > 0 && progress.remainingSeconds > 0 ->
+                        stringResource(
+                            CoreR.string.lotw_sync_progress_qso,
+                            progress.qsoCount,
+                            progress.remainingSeconds
+                        )
+                    progress.qsoCount > 0 ->
+                        stringResource(CoreR.string.lotw_sync_progress_count, progress.qsoCount)
+                    else -> stringResource(CoreR.string.lotw_sync_progress_downloading)
+                }
+                Text(progressText, style = MaterialTheme.typography.bodySmall)
+                if (progress != null && progress.expectedBytes > 0) {
+                    LinearProgressIndicator(
+                        progress = { progress.fraction },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                } else {
+                    LinearProgressIndicator(Modifier.fillMaxWidth())
+                }
+            }
+            state.lotwDownloadError?.let { error ->
+                val message = when (error) {
+                    LoTWDownloadError.NotConfigured -> stringResource(CoreR.string.lotw_sync_error_not_configured)
+                    LoTWDownloadError.BadCredentials -> stringResource(CoreR.string.lotw_sync_error_credentials)
+                    LoTWDownloadError.RateLimited -> stringResource(CoreR.string.lotw_sync_error_rate_limited)
+                    LoTWDownloadError.Timeout -> stringResource(CoreR.string.lotw_sync_error_timeout)
+                    LoTWDownloadError.Storage -> stringResource(R.string.lotw_storage_error)
+                    is LoTWDownloadError.Network ->
+                        stringResource(CoreR.string.lotw_sync_error_network, error.detail)
+                }
+                Text(message, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+            }
+            state.lotwDownloadSummary?.let { result ->
+                Text(
+                    stringResource(
+                        R.string.lotw_download_result,
+                        result.downloaded,
+                        result.imported,
+                        result.updated,
+                        result.skipped,
+                        result.confirmedGrids
+                    ),
+                    color = MaterialTheme.colorScheme.primary,
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Button(
+                    onClick = { onSync(LoTWSyncMode.Full) },
+                    enabled = !busy,
+                    modifier = Modifier.weight(1f)
+                ) { Text(stringResource(CoreR.string.lotw_sync_full)) }
+                Button(
+                    onClick = { onSync(LoTWSyncMode.Incremental) },
+                    enabled = !busy,
+                    modifier = Modifier.weight(1f)
+                ) { Text(stringResource(CoreR.string.lotw_sync_incremental)) }
+            }
+        }
+    }
 }
 
 @Composable

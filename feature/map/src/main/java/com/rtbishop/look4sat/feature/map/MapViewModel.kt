@@ -79,7 +79,13 @@ class MapViewModel(
     init {
         viewModelScope.launch {
             settingsRepo.otherSettings.collectLatest { settings ->
-                _uiState.update { it.copy(isUtc = settings.stateOfUtc, isGridMode = settings.stateOfMapGrid) }
+                _uiState.update {
+                    it.copy(
+                        isUtc = settings.stateOfUtc,
+                        isGridMode = settings.stateOfMapGrid,
+                        showFirstCallLabels = settings.stateOfMapFirstCall
+                    )
+                }
             }
         }
         viewModelScope.launch {
@@ -105,6 +111,7 @@ class MapViewModel(
             is MapAction.SelectItem -> selectSatellite(action.item)
             is MapAction.SelectDefaultItem -> selectDefaultSatellite(action.catnum)
             is MapAction.ToggleGridMode -> settingsRepo.updateOtherSettings { it.copy(stateOfMapGrid = action.value) }
+            is MapAction.ToggleFirstCallLabels -> settingsRepo.updateOtherSettings { it.copy(stateOfMapFirstCall = action.value) }
             is MapAction.SetVisible -> isScreenVisible.value = action.isVisible
         }
     }

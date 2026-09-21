@@ -215,6 +215,13 @@ private fun MapScreen(
         }
         m
     }
+    // First callsign worked in each grid (earliest QSO by time), used by the
+    // "首通呼号" label mode — derived from the same QSO store as the worked fills.
+    val firstCallsByGrid: Map<String, String> = remember(uiState.workedGridQsos) {
+        uiState.workedGridQsos.mapNotNull { (grid, qsos) ->
+            qsos.minByOrNull { it.epochMs }?.let { grid to it.call }
+        }.toMap()
+    }
     // Selected operated grid for VUCC counting; defaults to the grid with the
     // most worked grids. Null when the store carries no per-QSO myGrid data
     // (requires a LoTW resync) — then VUCC falls back to the global count.
@@ -337,7 +344,10 @@ private fun MapScreen(
                         setGridMode(
                             uiState.isGridMode, workedGrids, uiState.roamedGrids, view,
                             uiState.stationPosition,
-                            centerOnStation = shouldCenter
+                            centerOnStation = shouldCenter,
+                            // 首通呼号标签只作用于 VUCC 视图(用户要求); "All"/其他奖状不过滤.
+                            showFirstCallLabels = uiState.showFirstCallLabels && selectedAward == AwardType.VUCC,
+                            firstCallsByGrid = firstCallsByGrid
                         )
                         if (!shouldCenter || uiState.stationPosition != null) {
                             prevGridMode = uiState.isGridMode
@@ -372,13 +382,27 @@ private fun MapScreen(
                             .padding(8.dp)
                     )
                 }
-                GridModeToggle(
-                    isGridMode = uiState.isGridMode,
-                    onToggle = { onAction(MapAction.ToggleGridMode(it)) },
+                // Top-right: grid-mode pill + (grid mode only) the first-call
+                // label pill, stacked vertically.
+                Column(
                     modifier = Modifier
                         .align(Alignment.TopEnd)
-                        .padding(8.dp)
-                )
+                        .padding(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                    horizontalAlignment = Alignment.End
+                ) {
+                    GridModeToggle(
+                        isGridMode = uiState.isGridMode,
+                        onToggle = { onAction(MapAction.ToggleGridMode(it)) }
+                    )
+                    // 首通呼号开关仅 VUCC 视图显示(与 VuccGridSelector 同条件).
+                    if (uiState.isGridMode && selectedAward == AwardType.VUCC) {
+                        FirstCallToggle(
+                            checked = uiState.showFirstCallLabels,
+                            onToggle = { onAction(MapAction.ToggleFirstCallLabels(it)) }
+                        )
+                    }
+                }
             }
         }
     }
@@ -800,6 +824,40 @@ private fun GridModeToggle(
     }
 }
 
+/**
+ * 网格模式下的"首通呼号"开关: 打开后绿格(worked)的标签显示该格第一个通联的
+ * 呼号, 非绿格不显示任何文字. 仅在网格模式下显示(与网格模式开关叠放).
+ */
+@Composable
+private fun FirstCallToggle(
+    checked: Boolean,
+    onToggle: (Boolean) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        color = ComposeColor.Black.copy(alpha = 0.45f),
+        shape = RoundedCornerShape(percent = 50),
+        modifier = modifier
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.padding(start = 12.dp, end = 6.dp, top = 2.dp, bottom = 2.dp)
+        ) {
+            Text(
+                text = stringResource(R.string.map_first_call_mode),
+                color = ComposeColor.White,
+                fontSize = 12.sp,
+                modifier = Modifier.padding(end = 2.dp)
+            )
+            Switch(
+                checked = checked,
+                onCheckedChange = onToggle,
+                modifier = Modifier.scale(0.75f)
+            )
+        }
+    }
+}
+
 // endregion
 
 // region Map overlay helpers
@@ -843,7 +901,9 @@ private fun setGridMode(
     roamedGrids: Set<String>,
     mapView: MapView,
     stationPosition: GeoPos?,
-    centerOnStation: Boolean = false
+    centerOnStation: Boolean = false,
+    showFirstCallLabels: Boolean = false,
+    firstCallsByGrid: Map<String, String> = emptyMap()
 ) {
     try {
         val gridOverlay = mapView.overlays[OVERLAY_GRID]
@@ -851,6 +911,9 @@ private fun setGridMode(
             gridOverlay.isEnabled = gridMode
             gridOverlay.workedGrids = workedGrids
             gridOverlay.roamedGrids = roamedGrids
+            // 首通呼号模式: 绿格标注第一个通联的呼号, 非绿格不显示标签.
+            gridOverlay.showFirstCallLabels = showFirstCallLabels
+            gridOverlay.firstCallsByGrid = firstCallsByGrid
             // ownGrid must be set on EVERY update — the position is available
             // regardless of whether this frame centers (centering happens only
             // on entry, but passing null here would wipe the bold outline).
@@ -860,6 +923,8 @@ private fun setGridMode(
                 isEnabled = gridMode
                 this.workedGrids = workedGrids
                 this.roamedGrids = roamedGrids
+                this.showFirstCallLabels = showFirstCallLabels
+                this.firstCallsByGrid = firstCallsByGrid
                 this.ownGrid = ownGridOf(stationPosition)
             }
         }

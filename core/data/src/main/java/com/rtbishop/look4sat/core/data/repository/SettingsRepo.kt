@@ -84,6 +84,7 @@ class SettingsRepo(
     private val keyStateOfLightTheme = "stateOfLightTheme"
     private val keyStateOfNightMode = "stateOfNightMode"
     private val keyStateOfMapGrid = "stateOfMapGrid"
+    private val keyStateOfMapFirstCall = "stateOfMapFirstCall"
     private val keyStationAltitude = "stationAltitude"
     private val keyStationLatitude = "stationLatitude"
     private val keyStationLongitude = "stationLongitude"
@@ -546,6 +547,7 @@ class SettingsRepo(
                 putBoolean(keyStateOfLightTheme, new.stateOfLightTheme)
                 putBoolean(keyStateOfNightMode, new.stateOfNightMode)
                 putBoolean(keyStateOfMapGrid, new.stateOfMapGrid)
+                putBoolean(keyStateOfMapFirstCall, new.stateOfMapFirstCall)
                 putBoolean(keyShouldSeeWarning, new.shouldSeeWarning)
                 putBoolean(keyShouldSeeWhatsNew, new.shouldSeeWhatsNew)
                 putString(keySstvMode, new.sstvMode)
@@ -565,6 +567,7 @@ class SettingsRepo(
         stateOfLightTheme = preferences.getBoolean(keyStateOfLightTheme, false),
         stateOfNightMode = preferences.getBoolean(keyStateOfNightMode, false),
         stateOfMapGrid = preferences.getBoolean(keyStateOfMapGrid, false),
+        stateOfMapFirstCall = preferences.getBoolean(keyStateOfMapFirstCall, false),
         shouldSeeWarning = preferences.getBoolean(keyShouldSeeWarning, true),
         shouldSeeWhatsNew = preferences.getBoolean(keyShouldSeeWhatsNew, true),
         sstvMode = preferences.getString(keySstvMode, null) ?: "Auto",

@@ -52,6 +52,13 @@ class MaidenheadGridOverlay : Overlay() {
         color = Color.argb(220, 255, 224, 130)
         setShadowLayer(3f, 2f, 2f, Color.BLACK)
     }
+    // 首通呼号标签: 比 4 字符网格代码略小, 以容纳更长的呼号(如 BG2GQG).
+    private val firstCallPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        textSize = 20f
+        style = android.graphics.Paint.Style.FILL
+        color = Color.argb(230, 255, 224, 130)
+        setShadowLayer(3f, 2f, 2f, Color.BLACK)
+    }
     private val workedPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = android.graphics.Paint.Style.FILL
         color = Color.argb(90, 76, 217, 100)
@@ -78,6 +85,15 @@ class MaidenheadGridOverlay : Overlay() {
 
     /** Worked gridsquares (4-char, uppercase) to highlight, e.g. {"OL62", "PM95"}. */
     var workedGrids: Set<String> = emptySet()
+
+    /** Grid-mode first-call labels: label worked (green) cells with the first
+     *  callsign worked in that grid instead of the Maidenhead code; non-worked
+     *  cells get no label at all. Only meaningful at sub-square zoom. */
+    var showFirstCallLabels: Boolean = false
+
+    /** Worked grid -> first callsign worked in it (earliest QSO by time).
+     *  Only read when [showFirstCallLabels] is on. */
+    var firstCallsByGrid: Map<String, String> = emptyMap()
 
     /**
      * Gridsquares the station operated from (4-char, uppercase) — drawn with
@@ -348,6 +364,10 @@ class MaidenheadGridOverlay : Overlay() {
         // Field (2-char) labels show at every zoom, subject only to the pixel-
         // size check below; sub-square (4-char) labels only from LABEL_ZOOM_SUB
         // (one level above the grid lines, so zoom 6 shows lines but no names).
+        // First-call labels replace the 4-char grid codes and only exist at
+        // sub-square zoom; at field zoom NO labels are drawn at all (the user
+        // requirement is that non-worked cells carry no grid characters).
+        if (showFirstCallLabels && zoom < LABEL_ZOOM_SUB) return
         val showLabels = zoom >= LABEL_ZOOM_SUB || cellLat == FIELD_LAT
         if (!showLabels) return
         // Estimate on-screen cell height to avoid clutter at low zoom:
@@ -358,8 +378,9 @@ class MaidenheadGridOverlay : Overlay() {
         val pixelsPerDegree = Math.abs(y2 - y1)
         if (pixelsPerDegree * cellLat < MIN_LABEL_CELL_PX) return
 
-        labelPaint.textAlign = Paint.Align.CENTER
-        val fontMetrics = labelPaint.fontMetrics
+        val activePaint = if (showFirstCallLabels) firstCallPaint else labelPaint
+        activePaint.textAlign = Paint.Align.CENTER
+        val fontMetrics = activePaint.fontMetrics
         val textHalfHeight = (fontMetrics.descent + fontMetrics.ascent) / 2f
         for (row in firstRow..lastRow) {
             val lat = row * cellLat
@@ -386,7 +407,17 @@ class MaidenheadGridOverlay : Overlay() {
                 val xRight = xRightBase + turn * worldWidthPx.toFloat()
                 if (xRight < 0f || xLeft > canvas.width) continue
                 val label = cellLabel(lat, lon, zoom)
-                canvas.drawText(label, (xLeft + xRight) / 2f, yCenter, labelPaint)
+                if (showFirstCallLabels) {
+                    // 首通呼号模式: 只有绿格(worked)标注该格第一个通联的呼号,
+                    // 非绿格空着不写网格字符.
+                    if (label in workedGrids) {
+                        firstCallsByGrid[label]?.let { call ->
+                            canvas.drawText(call, (xLeft + xRight) / 2f, yCenter, firstCallPaint)
+                        }
+                    }
+                } else {
+                    canvas.drawText(label, (xLeft + xRight) / 2f, yCenter, labelPaint)
+                }
             }
         }
     }

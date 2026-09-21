@@ -41,20 +41,7 @@
     <string name="pass_welcome_message">请务必在设置中通过GPS、经纬度或QTH定位您的位置\n建议至少每周更新一次数据库，以确保预测结果的准确性</string>
 
     <!-- AMSAT Status screen -->
-        <string name="pass_whatsnew_message">4.4.6 以来的全部更新（4.4.7 系列）：
-\n• 网格模式地图：LoTW 已确认网格绿色填充、漫游网格蓝色条纹、当前网格加粗框；右上角网格/卫星模式开关。
-\n• 首通呼号（VUCC 视图）：绿格显示该格最早通联的呼号，非绿格空白。
-\n• worked 网格可按操作网格筛选（含“全部”）；点击网格弹出 QSO 明细；每格 QSO 计数。
-\n• 各操作网格独立 VUCC 计数；极区网格标签；反经线修复；漫游条纹密度一致。
-\n• WAPC/WAJA 地图标签随系统语言。
-\n• 网格模式视口与筛选跨页保持。
-\n• LoTW 同步：账号直连、全量/增量模式、实时进度、可取消、启动自动同步（独立开关）、设置页显示上次同步时间。
-\n• 历史过境：过境筛选可回看过去数小时（先前时间）。
-\n• 指南针校准：8 字动作精度指示 + 手动航向偏置。
-\n• AMSAT 状态页：连续相同状态报告计数。
-\n• 过境/雷达：UTC 切换重算过境；日出日落与仰角颜色修复；卫星模糊搜索；相互过境页滚动保持、跟随 UTC、雷达快捷入口。
-\n• CW 解码器支持 32/64 位设备；Android 17 (API 37) 适配。
-    </string>
+    <string name="pass_whatsnew_message">4.4.6 以来的全部更新（4.4.7 系列）：\n\n• 网格模式地图：LoTW 已确认网格绿色填充、漫游网格蓝色条纹、当前网格加粗框；右上角网格/卫星模式开关。\n\n• 首通呼号（VUCC 视图）：绿格显示该格最早通联的呼号，非绿格空白。\n\n• worked 网格可按操作网格筛选（含“全部”）；点击网格弹出 QSO 明细；每格 QSO 计数。\n\n• 各操作网格独立 VUCC 计数；极区网格标签；反经线修复；漫游条纹密度一致。\n\n• WAPC/WAJA 地图标签随系统语言。\n\n• 网格模式视口与筛选跨页保持。\n\n• LoTW 同步：账号直连、全量/增量模式、实时进度、可取消、启动自动同步（独立开关）、设置页显示上次同步时间。\n\n• 历史过境：过境筛选可回看过去数小时（先前时间）。\n\n• 指南针校准：8 字动作精度指示 + 手动航向偏置。\n\n• AMSAT 状态页：连续相同状态报告计数。\n\n• 过境/雷达：UTC 切换重算过境；日出日落与仰角颜色修复；卫星模糊搜索；相互过境页滚动保持、跟随 UTC、雷达快捷入口。\n\n• CW 解码器支持 32/64 位设备；Android 17 (API 37) 适配。</string>
 
 <string name="nav_amsat">AMSAT</string>
     <string name="amsat_title">AMSAT 卫星状态</string>
@@ -138,7 +125,7 @@
     <string name="map_velocity">速度：%.2f km/s</string>
     <string name="map_visibility">能见度：%s</string>
     <!-- Worked-grid QSO dialog -->
-    <string name="grid_qso_calls_count">%d 个呼号 · %d 次通联</string>
+    <string name="grid_qso_calls_count" formatted="false">%d 个呼号 · %d 次通联</string>
     <string name="grid_qso_count_one">%d QSO</string>
     <string name="grid_qso_count_many">%d QSOs</string>
     <string name="grid_qso_first">首通</string>

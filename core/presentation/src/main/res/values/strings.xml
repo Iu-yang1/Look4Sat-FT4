@@ -52,32 +52,7 @@
         Make sure to set your position via GPS, Lat/Lon or QTH in Settings.
         \n\nPlease update the database at least weekly to get accurate predictions.</string>
     <string name="pass_whatsnew_title" translatable="false">What\'s new in Look4Sat</string>
-    <string name="pass_whatsnew_message">All changes since 4.4.6 (the 4.4.7 series):
-
-• Grid-mode map: LoTW confirmed grids in green, roamed grids with blue stripes, current grid highlighted; mode switch pill at the map's top-right.
-
-• First-call labels (VUCC view): show the first callsign worked in each green grid instead of the grid code; non-worked cells stay empty.
-
-• Worked grids filtered by operated grid (with an All option); tap a grid to see its QSO detail dialog; per-grid QSO counts.
-
-• Per-operated-grid VUCC counting; polar grid labels; antimeridian fixes; consistent roamed-stripe density.
-
-• WAPC/WAJA map labels follow the system language.
-
-• Grid-mode viewport and award filter survive page switches.
-
-• LoTW sync: direct login, full/incremental modes, live progress, cancel button, auto-sync on app start with its own toggle, last-sync time shown.
-
-• Pass history: filter can look back over past passes (Time before).
-
-• Compass calibration: figure-eight accuracy meter plus manual heading offset.
-
-• AMSAT status page: consecutive same-status report counts.
-
-• Passes/radar: UTC toggle recalculates passes; sunrise/sunset and elevation color fixes; satellite fuzzy search; mutual page keeps scroll, follows UTC, radar shortcut.
-
-• CW decoder for 32/64-bit devices; Android 17 (API 37) support.
-    </string>
+    <string name="pass_whatsnew_message">All changes since 4.4.6 (the 4.4.7 series):\n\n• Grid-mode map: LoTW confirmed grids in green, roamed grids with blue stripes, current grid highlighted; mode switch pill at the map\'s top-right.\n\n• First-call labels (VUCC view): show the first callsign worked in each green grid instead of the grid code; non-worked cells stay empty.\n\n• Worked grids filtered by operated grid (with an All option); tap a grid to see its QSO detail dialog; per-grid QSO counts.\n\n• Per-operated-grid VUCC counting; polar grid labels; antimeridian fixes; consistent roamed-stripe density.\n\n• WAPC/WAJA map labels follow the system language.\n\n• Grid-mode viewport and award filter survive page switches.\n\n• LoTW sync: direct login, full/incremental modes, live progress, cancel button, auto-sync on app start with its own toggle, last-sync time shown.\n\n• Pass history: filter can look back over past passes (Time before).\n\n• Compass calibration: figure-eight accuracy meter plus manual heading offset.\n\n• AMSAT status page: consecutive same-status report counts.\n\n• Passes/radar: UTC toggle recalculates passes; sunrise/sunset and elevation color fixes; satellite fuzzy search; mutual page keeps scroll, follows UTC, radar shortcut.\n\n• CW decoder for 32/64-bit devices; Android 17 (API 37) support.</string>
 
     <!-- AMSAT Status screen -->
     <string name="nav_amsat">AMSAT</string>
@@ -170,7 +145,7 @@
     <string name="map_velocity">Velocity: %.2f km/s</string>
     <string name="map_visibility">Visibility: %s</string>
     <!-- Worked-grid QSO dialog -->
-    <string name="grid_qso_calls_count">%d callsigns · %d QSOs</string>
+    <string name="grid_qso_calls_count" formatted="false">%d callsigns · %d QSOs</string>
     <string name="grid_qso_count_one">%d QSO</string>
     <string name="grid_qso_count_many">%d QSOs</string>
     <string name="grid_qso_first">First</string>

@@ -370,7 +370,13 @@ class MaidenheadGridOverlay : Overlay() {
         // Show as soon as the 4-char grid LINES appear (GRID_ZOOM_SUB), not
         // only at the name-label zoom — user req 2026-09-21.
         if (showFirstCallLabels && zoom < GRID_ZOOM_SUB) return
-        val showLabels = zoom >= LABEL_ZOOM_SUB || cellLat == FIELD_LAT
+        // First-call labels gate on the grid-LINE zoom; normal labels keep the
+        // name-label zoom (one level above the lines).
+        val showLabels = if (showFirstCallLabels) {
+            zoom >= GRID_ZOOM_SUB
+        } else {
+            zoom >= LABEL_ZOOM_SUB || cellLat == FIELD_LAT
+        }
         if (!showLabels) return
         // Estimate on-screen cell height to avoid clutter at low zoom:
         // project two points 1° apart in latitude and measure the pixel distance.
@@ -378,7 +384,11 @@ class MaidenheadGridOverlay : Overlay() {
         val y2 = projectionToY(projection, 1.0)
         if (y1 == null || y2 == null) return
         val pixelsPerDegree = Math.abs(y2 - y1)
-        if (pixelsPerDegree * cellLat < MIN_LABEL_CELL_PX) return
+        // First-call labels must appear as soon as the 4-char grid LINES do
+        // (zoom 6.0), where 1° cells are ~45 px on the equator — below the
+        // 48 px normal-label threshold. Relax the pixel gate for this mode only.
+        val minCellPx = if (showFirstCallLabels) MIN_LABEL_CELL_PX * 0.6f else MIN_LABEL_CELL_PX
+        if (pixelsPerDegree * cellLat < minCellPx) return
 
         val activePaint = if (showFirstCallLabels) firstCallPaint else labelPaint
         activePaint.textAlign = Paint.Align.CENTER

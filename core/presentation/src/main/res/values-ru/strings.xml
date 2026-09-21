@@ -31,6 +31,7 @@
     <string name="pass_filter_title">Фильтровать пролеты</string>
     <string name="pass_filter_elev">Минимальная элевация</string>
     <string name="pass_filter_hours">Период расчёта</string>
+    <string name="pass_filter_history_hours">Прошедший период</string>
     <string name="pass_filter_aos_time">Окно AOS</string>
     <string name="pass_filter_invert_time">Инвертировать окно AOS</string>
     <string name="pass_filter_deep_space">DeepSpace (период &gt;225мин)</string>

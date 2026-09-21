@@ -85,9 +85,10 @@ class SatelliteRepo(
         }.collectLatest { (selectedIds, _, _) ->
                 _satellites.update { localStorage.getEntriesWithIds(selectedIds) }
                 val settings = settingsRepo.passesSettings.value
+                val now = System.currentTimeMillis()
                 calculatePasses(
-                    time = System.currentTimeMillis(),
-                    hoursAhead = settings.hoursAhead,
+                    time = now - settings.hoursBefore * 60L * 60L * 1000L,
+                    hoursAhead = settings.hoursBefore + settings.hoursAhead,
                     minElevation = settings.minElevation,
                     aosStartMinute = settings.aosStartMinute,
                     aosEndMinute = settings.aosEndMinute,

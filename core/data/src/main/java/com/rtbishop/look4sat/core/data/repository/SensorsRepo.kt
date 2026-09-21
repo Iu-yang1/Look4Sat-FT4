@@ -27,6 +27,7 @@ import android.view.Display
 import android.view.Surface
 import com.rtbishop.look4sat.core.domain.predict.GeoPos
 import com.rtbishop.look4sat.core.domain.predict.RAD2DEG
+import com.rtbishop.look4sat.core.domain.repository.CompassAccuracy
 import com.rtbishop.look4sat.core.domain.repository.ISensorsRepo
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -41,7 +42,12 @@ class SensorsRepo(
 ) : ISensorsRepo, SensorEventListener {
 
     private val _sensorData = MutableStateFlow(Pair(0f, 0f))
-    private val sensor: Sensor? = sensorManager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR)
+    private val rotationSensor: Sensor? = sensorManager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR)
+    private val magneticSensor: Sensor? = sensorManager.getDefaultSensor(Sensor.TYPE_MAGNETIC_FIELD)
+    private val _compassAccuracy = MutableStateFlow(
+        if (rotationSensor == null || magneticSensor == null) CompassAccuracy.UNAVAILABLE
+        else CompassAccuracy.UNRELIABLE
+    )
     private val rotationMatrix = FloatArray(9)
     private val tempMatrix = FloatArray(9)
     private val orientationValues = FloatArray(3)
@@ -50,6 +56,7 @@ class SensorsRepo(
     private var hasInitialReading = false
 
     override val sensorData: StateFlow<Pair<Float, Float>> = _sensorData
+    override val compassAccuracy: StateFlow<CompassAccuracy> = _compassAccuracy
 
     override fun getMagDeclination(geoPos: GeoPos, time: Long): Float {
         return GeomagneticField(
@@ -62,15 +69,41 @@ class SensorsRepo(
 
     override fun enableSensor() {
         hasInitialReading = false
-        sensor?.let { sensorManager.registerListener(this, it, SENSOR_RATE_US) }
+        if (rotationSensor == null || magneticSensor == null) {
+            _compassAccuracy.value = CompassAccuracy.UNAVAILABLE
+            return
+        }
+        _compassAccuracy.value = CompassAccuracy.UNRELIABLE
+        val rotationRegistered = sensorManager.registerListener(this, rotationSensor, SENSOR_RATE_US)
+        val magneticRegistered = sensorManager.registerListener(this, magneticSensor, SENSOR_RATE_US)
+        if (!rotationRegistered || !magneticRegistered) {
+            sensorManager.unregisterListener(this)
+            _compassAccuracy.value = CompassAccuracy.UNAVAILABLE
+        }
     }
 
     override fun disableSensor() = sensorManager.unregisterListener(this)
 
-    override fun onAccuracyChanged(sensor: Sensor, accuracy: Int) = Unit
+    override fun onAccuracyChanged(sensor: Sensor, accuracy: Int) {
+        if (sensor.type == Sensor.TYPE_MAGNETIC_FIELD) {
+            updateAccuracy(accuracy)
+        }
+    }
 
     override fun onSensorChanged(event: SensorEvent) {
-        if (event.sensor.type == Sensor.TYPE_ROTATION_VECTOR) handleSensorEvent(event)
+        when (event.sensor.type) {
+            Sensor.TYPE_ROTATION_VECTOR -> handleSensorEvent(event)
+            Sensor.TYPE_MAGNETIC_FIELD -> updateAccuracy(event.accuracy)
+        }
+    }
+
+    private fun updateAccuracy(accuracy: Int) {
+        _compassAccuracy.value = when (accuracy) {
+            SensorManager.SENSOR_STATUS_ACCURACY_HIGH -> CompassAccuracy.HIGH
+            SensorManager.SENSOR_STATUS_ACCURACY_MEDIUM -> CompassAccuracy.MEDIUM
+            SensorManager.SENSOR_STATUS_ACCURACY_LOW -> CompassAccuracy.LOW
+            else -> CompassAccuracy.UNRELIABLE
+        }
     }
 
     private fun getDisplayRotation(): Int {

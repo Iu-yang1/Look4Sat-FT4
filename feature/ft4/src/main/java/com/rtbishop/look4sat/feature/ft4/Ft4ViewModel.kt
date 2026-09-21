@@ -297,8 +297,10 @@ class Ft4ViewModel(
     private fun collectPhoneOrientation() = viewModelScope.launch {
         sensorsRepo.sensorData.collect { orientation ->
             val declination = sensorsRepo.getMagDeclination(container.settingsRepo.stationPosition.value)
+            val offset = container.settingsRepo.otherSettings.value.compassOffsetDegrees
+            val azimuth = ((orientation.first + declination + offset) % 360f + 360f) % 360f
             mutableState.update {
-                it.copy(orientationValues = (orientation.first + declination) to orientation.second)
+                it.copy(orientationValues = azimuth to orientation.second)
             }
         }
     }

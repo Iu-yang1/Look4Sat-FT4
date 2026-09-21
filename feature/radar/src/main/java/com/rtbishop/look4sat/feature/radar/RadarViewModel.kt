@@ -90,7 +90,7 @@ class RadarViewModel(
     private val _uiState = MutableStateFlow(
         RadarState(
             isUtc = settingsRepo.otherSettings.value.stateOfUtc,
-            orientationValues = sensorsRepo.sensorData.value,
+            orientationValues = correctedOrientation(sensorsRepo.sensorData.value),
             shouldShowSweep = settingsRepo.otherSettings.value.stateOfSweep,
             shouldUseCompass = settingsRepo.otherSettings.value.stateOfSensors,
             sstv = SstvSubState(selectedMode = settingsRepo.otherSettings.value.sstvMode),
@@ -111,10 +111,16 @@ class RadarViewModel(
         viewModelScope.launch {
             sensorsRepo.enableSensor()
             sensorsRepo.sensorData.collect { data ->
-                val orientationValues = (data.first + magDeclination) to data.second
+                val orientationValues = correctedOrientation(data)
                 _uiState.update { it.copy(orientationValues = orientationValues) }
             }
         }
+    }
+
+    private fun correctedOrientation(data: Pair<Float, Float>): Pair<Float, Float> {
+        val offset = settingsRepo.otherSettings.value.compassOffsetDegrees
+        val azimuth = ((data.first + magDeclination + offset) % 360f + 360f) % 360f
+        return azimuth to data.second
     }
 
     private fun collectSettingsChanges() {

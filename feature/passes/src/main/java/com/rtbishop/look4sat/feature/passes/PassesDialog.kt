@@ -73,6 +73,7 @@ private val allModes = listOf(
 )
 
 private val hourSteps = listOf(1, 2, 4, 8, 12, 24, 48, 72, 96, 120, 144, 168, 192, 216, 240)
+private val historyHourSteps = listOf(0) + hourSteps
 private const val dayMinutes = 24 * 60
 private const val minuteStep = 15
 private const val endOfDayMinute = dayMinutes - 1
@@ -80,6 +81,7 @@ private const val quarterHourSlots = dayMinutes / minuteStep
 
 data class PassFilterParams(
     val hours: Int,
+    val hoursBefore: Int,
     val elevation: Double,
     val lowElevation: Double,
     val highElevation: Double,
@@ -95,6 +97,7 @@ private fun PassesDialogPreview() {
     MainTheme {
         PassesFilterDialog(
             hours = 24,
+            hoursBefore = 0,
             elevation = 16.0,
             lowElevation = 16.0,
             highElevation = 65.0,
@@ -111,6 +114,7 @@ private fun PassesDialogPreview() {
 @Composable
 internal fun PassesFilterDialog(
     hours: Int,
+    hoursBefore: Int,
     elevation: Double,
     lowElevation: Double,
     highElevation: Double,
@@ -122,6 +126,9 @@ internal fun PassesFilterDialog(
     accept: (PassFilterParams) -> Unit
 ) {
     val hoursIndex = remember { mutableIntStateOf(hourSteps.indexOfFirst { it >= hours }.coerceAtLeast(0)) }
+    val hoursBeforeIndex = remember {
+        mutableIntStateOf(historyHourSteps.indexOfFirst { it >= hoursBefore }.coerceAtLeast(0))
+    }
     val elevationValueNew = remember { mutableDoubleStateOf(elevation) }
     val highlightBounds = 0f..90f
     var highlightRange by remember(lowElevation, highElevation) {
@@ -136,6 +143,7 @@ internal fun PassesFilterDialog(
         accept(
             PassFilterParams(
                 hours = hourSteps[hoursIndex.intValue],
+                hoursBefore = historyHourSteps[hoursBeforeIndex.intValue],
                 elevation = elevationValueNew.doubleValue,
                 lowElevation = highlightRange.start.roundToInt().toDouble(),
                 highElevation = highlightRange.endInclusive.roundToInt().toDouble(),
@@ -164,6 +172,14 @@ internal fun PassesFilterDialog(
             valueRange = 0f..(hourSteps.size - 1).toFloat(),
             steps = hourSteps.size - 2
         ) { hoursIndex.intValue = it.toInt().coerceIn(0, hourSteps.size - 1) }
+        SliderRow(
+            title = stringResource(R.string.pass_filter_history_hours),
+            value = hoursBeforeIndex.intValue.toDouble(),
+            displayValue = formatHoursLabel(historyHourSteps[hoursBeforeIndex.intValue]),
+            valueResId = R.drawable.ic_clock,
+            valueRange = 0f..(historyHourSteps.size - 1).toFloat(),
+            steps = historyHourSteps.size - 2
+        ) { hoursBeforeIndex.intValue = it.toInt().coerceIn(0, historyHourSteps.size - 1) }
         ToggleRow(
             title = stringResource(R.string.pass_filter_deep_space),
             checked = deepSpaceEnabled,

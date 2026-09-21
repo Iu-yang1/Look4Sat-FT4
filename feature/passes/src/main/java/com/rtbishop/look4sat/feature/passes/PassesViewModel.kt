@@ -55,6 +55,7 @@ class PassesViewModel(
             isUtc = settingsRepo.otherSettings.value.stateOfUtc,
             nextPass = defaultPass,
             hours = settingsRepo.passesSettings.value.hoursAhead,
+            hoursBefore = settingsRepo.passesSettings.value.hoursBefore,
             elevation = settingsRepo.passesSettings.value.minElevation,
             lowElevation = settingsRepo.otherSettings.value.lowElevation,
             highElevation = settingsRepo.otherSettings.value.highElevation,
@@ -126,6 +127,7 @@ class PassesViewModel(
             is PassesAction.FilterPasses ->
                 applyFilter(
                     hoursAhead = action.hoursAhead,
+                    hoursBefore = action.hoursBefore,
                     minElevation = action.minElevation,
                     lowElevation = action.lowElevation,
                     highElevation = action.highElevation,
@@ -138,6 +140,7 @@ class PassesViewModel(
             is PassesAction.FilterRadios ->
                 applyFilter(
                     hoursAhead = _uiState.value.hours,
+                    hoursBefore = _uiState.value.hoursBefore,
                     minElevation = _uiState.value.elevation,
                     lowElevation = _uiState.value.lowElevation,
                     highElevation = _uiState.value.highElevation,
@@ -249,7 +252,7 @@ class PassesViewModel(
         return ordered
     }
 
-    /** Computes live progress for each pass, filtering out expired ones. */
+    /** Computes live progress while retaining completed passes in the requested history window. */
     private fun computePassProgress(passList: List<OrbitalPass>, time: Long): List<OrbitalPass> {
         val result = ArrayList<OrbitalPass>(passList.size)
         for (pass in passList) {
@@ -257,9 +260,9 @@ class PassesViewModel(
                 val deltaNow = time.minus(pass.aosTime).toFloat()
                 val deltaTotal = pass.losTime.minus(pass.aosTime).toFloat()
                 val newProgress = (deltaNow / deltaTotal).round(2)
-                if (newProgress >= 1.0f) continue
-                if (newProgress != pass.progress) {
-                    result.add(pass.copy(progress = newProgress))
+                val boundedProgress = newProgress.coerceIn(0f, 1f)
+                if (boundedProgress != pass.progress) {
+                    result.add(pass.copy(progress = boundedProgress))
                 } else {
                     result.add(pass)
                 }
@@ -288,6 +291,7 @@ class PassesViewModel(
 
     private fun applyFilter(
         hoursAhead: Int,
+        hoursBefore: Int,
         minElevation: Double,
         lowElevation: Double,
         highElevation: Double,
@@ -305,13 +309,15 @@ class PassesViewModel(
                 aosStartMinute,
                 aosEndMinute,
                 invertAosTimeWindow,
-                modes
+                modes,
+                hoursBefore
             )
         )
         settingsRepo.updateOtherSettings { it.copy(lowElevation = lowElevation, highElevation = highElevation) }
         _uiState.update {
             it.copy(
                 hours = hoursAhead,
+                hoursBefore = hoursBefore,
                 elevation = minElevation,
                 lowElevation = lowElevation,
                 highElevation = highElevation,
@@ -322,9 +328,10 @@ class PassesViewModel(
                 modes = modes
             )
         }
+        val now = System.currentTimeMillis()
         satelliteRepo.calculatePasses(
-            time = System.currentTimeMillis(),
-            hoursAhead = hoursAhead,
+            time = now - hoursBefore * 60L * 60L * 1000L,
+            hoursAhead = hoursBefore + hoursAhead,
             minElevation = minElevation,
             aosStartMinute = aosStartMinute,
             aosEndMinute = aosEndMinute,
@@ -335,9 +342,10 @@ class PassesViewModel(
 
     private fun refreshPasses() = viewModelScope.launch {
         val settings = settingsRepo.passesSettings.value
+        val now = System.currentTimeMillis()
         satelliteRepo.calculatePasses(
-            time = System.currentTimeMillis(),
-            hoursAhead = settings.hoursAhead,
+            time = now - settings.hoursBefore * 60L * 60L * 1000L,
+            hoursAhead = settings.hoursBefore + settings.hoursAhead,
             minElevation = settings.minElevation,
             aosStartMinute = settings.aosStartMinute,
             aosEndMinute = settings.aosEndMinute,

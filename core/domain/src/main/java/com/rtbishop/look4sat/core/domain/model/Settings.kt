@@ -31,7 +31,8 @@ data class PassesSettings(
     val aosStartMinute: Int = 0,
     val aosEndMinute: Int = 23 * 60 + 59,
     val invertAosTimeWindow: Boolean = false,
-    val selectedModes: List<String>
+    val selectedModes: List<String>,
+    val hoursBefore: Int = 0
 )
 
 data class RCSettings(
@@ -68,7 +69,8 @@ data class OtherSettings(
     val highElevation: Double = 45.0,
     /** Independent auto-sync toggle for LoTW confirmed grids (separate from the
      *  ephemeris auto-update; only effective after at least one manual sync). */
-    val stateOfAutoLotwSync: Boolean = true
+    val stateOfAutoLotwSync: Boolean = true,
+    val compassOffsetDegrees: Float = 0f
 )
 
 data class Ft4Settings(

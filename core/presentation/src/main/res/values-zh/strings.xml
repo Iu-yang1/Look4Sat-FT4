@@ -28,6 +28,7 @@
     <string name="pass_filter_title">筛选过境</string>
     <string name="pass_filter_elev">仰角值</string>
     <string name="pass_filter_hours">提前时间</string>
+    <string name="pass_filter_history_hours">先前时间</string>
     <string name="pass_filter_aos_time">AOS 时间段</string>
     <string name="pass_filter_invert_time">反选 AOS 时间段</string>
     <string name="pass_filter_deep_space">DeepSpace（周期 &gt;225分钟）</string>
@@ -304,6 +305,19 @@
     <string name="prefs_other_switch_lotw_sync">自动同步 LoTW 已确认网格</string>
     <string name="prefs_other_switch_sweep">启用雷达扫描动画</string>
     <string name="prefs_other_switch_sensors">使用传感器旋转雷达视图</string>
+    <string name="prefs_compass_calibration_button">校准指南针</string>
+    <string name="prefs_compass_calibration_title">指南针校准</string>
+    <string name="prefs_compass_calibration_instruction">缓慢移动手机画“8”字，直到精度提高。请远离磁铁和金属物体。</string>
+    <string name="prefs_compass_accuracy">精度：%s</string>
+    <string name="prefs_compass_accuracy_high">高——校准完成</string>
+    <string name="prefs_compass_accuracy_medium">中——请继续移动</string>
+    <string name="prefs_compass_accuracy_low">低——请继续移动</string>
+    <string name="prefs_compass_accuracy_unreliable">不可靠——请开始“8”字动作</string>
+    <string name="prefs_compass_accuracy_unavailable">设备没有可用的磁场传感器</string>
+    <string name="prefs_compass_heading">校正后航向：%.1f°</string>
+    <string name="prefs_compass_offset">手动航向偏置（°）</string>
+    <string name="prefs_compass_offset_support">范围 −180° 至 +180°；正值为顺时针偏移。</string>
+    <string name="prefs_compass_offset_reset">偏置归零</string>
     <string name="prefs_other_switch_night_mode">启用红色夜间模式</string>
     <string name="prefs_other_switch_map_grid">地图显示 Maidenhead 网格</string>
 

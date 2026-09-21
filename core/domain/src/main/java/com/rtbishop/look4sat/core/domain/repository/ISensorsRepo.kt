@@ -20,8 +20,17 @@ package com.rtbishop.look4sat.core.domain.repository
 import com.rtbishop.look4sat.core.domain.predict.GeoPos
 import kotlinx.coroutines.flow.StateFlow
 
+enum class CompassAccuracy {
+    UNAVAILABLE,
+    UNRELIABLE,
+    LOW,
+    MEDIUM,
+    HIGH
+}
+
 interface ISensorsRepo {
     val sensorData: StateFlow<Pair<Float, Float>>
+    val compassAccuracy: StateFlow<CompassAccuracy>
     fun getMagDeclination(geoPos: GeoPos, time: Long = System.currentTimeMillis()): Float
     fun enableSensor()
     fun disableSensor()

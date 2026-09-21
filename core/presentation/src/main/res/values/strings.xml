@@ -33,6 +33,7 @@
     <string name="pass_filter_title">Filter passes</string>
     <string name="pass_filter_elev">Minimal elevation</string>
     <string name="pass_filter_hours">Time ahead</string>
+    <string name="pass_filter_history_hours">Time before</string>
     <string name="pass_filter_aos_time">AOS window</string>
     <string name="pass_filter_invert_time">Invert AOS window</string>
     <string name="pass_filter_deep_space">DeepSpace (period >225min)</string>
@@ -338,6 +339,19 @@
     <string name="prefs_other_switch_lotw_sync">Auto-sync LoTW confirmed grids</string>
     <string name="prefs_other_switch_sweep">Enable radar sweep animation</string>
     <string name="prefs_other_switch_sensors">Use sensors to rotate radar view</string>
+    <string name="prefs_compass_calibration_button">Calibrate compass</string>
+    <string name="prefs_compass_calibration_title">Compass calibration</string>
+    <string name="prefs_compass_calibration_instruction">Move the phone slowly in a figure-eight until accuracy improves. Keep it away from magnets and metal.</string>
+    <string name="prefs_compass_accuracy">Accuracy: %s</string>
+    <string name="prefs_compass_accuracy_high">High — calibration complete</string>
+    <string name="prefs_compass_accuracy_medium">Medium — keep moving</string>
+    <string name="prefs_compass_accuracy_low">Low — keep moving</string>
+    <string name="prefs_compass_accuracy_unreliable">Unreliable — start the figure-eight motion</string>
+    <string name="prefs_compass_accuracy_unavailable">Magnetic sensor unavailable</string>
+    <string name="prefs_compass_heading">Corrected heading: %.1f°</string>
+    <string name="prefs_compass_offset">Manual heading offset (°)</string>
+    <string name="prefs_compass_offset_support">Range −180° to +180°. Positive values rotate clockwise.</string>
+    <string name="prefs_compass_offset_reset">Reset offset</string>
     <string name="prefs_other_switch_night_mode">Enable red night mode filter</string>
     <string name="prefs_other_switch_map_grid">Show Maidenhead grid on map</string>
 

@@ -32,6 +32,7 @@
     <string name="pass_filter_title">Filtrar pases</string>
     <string name="pass_filter_elev">Elevación mínima</string>
     <string name="pass_filter_hours">Tiempo por delante</string>
+    <string name="pass_filter_history_hours">Tiempo anterior</string>
     <string name="pass_filter_aos_time">Ventana AOS</string>
     <string name="pass_filter_invert_time">Invertir ventana AOS</string>
     <string name="pass_filter_deep_space">DeepSpace (período &gt;225min)</string>

@@ -32,6 +32,7 @@
     <string name="pass_filter_title">Фільтр прольотів</string>
     <string name="pass_filter_elev">Мінімальне піднесень</string>
     <string name="pass_filter_hours">Час вперед</string>
+    <string name="pass_filter_history_hours">Час назад</string>
     <string name="pass_filter_aos_time">Вікно AOS</string>
     <string name="pass_filter_invert_time">Інвертувати вікно AOS</string>
     <string name="pass_filter_deep_space">DeepSpace (період &gt;225хв)</string>

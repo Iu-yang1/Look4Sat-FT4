@@ -32,6 +32,7 @@
     <string name="pass_filter_title">පසුකිරිම් පිරිපහදුව</string>
     <string name="pass_filter_elev">අවම උත්තෝලනය</string>
     <string name="pass_filter_hours">ඉදිරි කාලය</string>
+    <string name="pass_filter_history_hours">පෙර කාලය</string>
     <string name="pass_filter_aos_time">AOS කවුළුව</string>
     <string name="pass_filter_invert_time">AOS කවුළුව ප්‍රතිවිරුද්ධ කරන්න</string>
     <string name="pass_filter_deep_space">DeepSpace (කාලය &gt;225min)</string>

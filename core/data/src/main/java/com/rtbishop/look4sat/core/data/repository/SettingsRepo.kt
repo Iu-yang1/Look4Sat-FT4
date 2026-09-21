@@ -58,6 +58,7 @@ class SettingsRepo(
     private val keyBluetoothFrequencyFormat = "bluetoothFrequencyFormat"
     private val keyFilterShowDeepSpace = "filterShowDeepSpace"
     private val keyFilterHoursAhead = "filterHoursAhead"
+    private val keyFilterHoursBefore = "filterHoursBefore"
     private val keyFilterMinElevation = "filterMinElevation"
     private val keyFilterAosStartMinute = "filterAosStartMinute"
     private val keyFilterAosEndMinute = "filterAosEndMinute"
@@ -79,6 +80,7 @@ class SettingsRepo(
     private val keyStateOfAutoUpdate = "stateOfAutoUpdate"
     private val keyStateOfAutoLotwSync = "stateOfAutoLotwSync"
     private val keyStateOfSensors = "stateOfSensors"
+    private val keyCompassOffsetDegrees = "compassOffsetDegrees"
     private val keyStateOfSweep = "stateOfSweep"
     private val keyStateOfUtc = "stateOfUtc"
     private val keyStateOfLightTheme = "stateOfLightTheme"
@@ -318,6 +320,7 @@ class SettingsRepo(
     override fun setPassesSettings(settings: PassesSettings) = preferences.edit {
         putBoolean(keyFilterShowDeepSpace, settings.showDeepSpace)
         putInt(keyFilterHoursAhead, settings.hoursAhead)
+        putInt(keyFilterHoursBefore, settings.hoursBefore)
         putLong(keyFilterMinElevation, settings.minElevation.toRawBits())
         putInt(keyFilterAosStartMinute, settings.aosStartMinute)
         putInt(keyFilterAosEndMinute, settings.aosEndMinute)
@@ -329,6 +332,7 @@ class SettingsRepo(
     private fun getPassesSettings(): PassesSettings {
         val showDeepSpace = preferences.getBoolean(keyFilterShowDeepSpace, true)
         val hoursAhead = preferences.getInt(keyFilterHoursAhead, 24)
+        val hoursBefore = preferences.getInt(keyFilterHoursBefore, 0).coerceIn(0, 240)
         val minElevation = Double.fromBits(preferences.getLong(keyFilterMinElevation, 16.0.toRawBits()))
         val aosStartMinute = preferences.getInt(keyFilterAosStartMinute, 0).coerceIn(0, 23 * 60 + 59)
         val aosEndMinute = preferences.getInt(keyFilterAosEndMinute, 23 * 60 + 59).coerceIn(0, 23 * 60 + 59)
@@ -342,7 +346,8 @@ class SettingsRepo(
             aosStartMinute,
             aosEndMinute,
             invertAosTimeWindow,
-            selectedModes
+            selectedModes,
+            hoursBefore
         )
     }
     //endregion
@@ -542,6 +547,7 @@ class SettingsRepo(
                 putBoolean(keyStateOfAutoUpdate, new.stateOfAutoUpdate)
                 putBoolean(keyStateOfAutoLotwSync, new.stateOfAutoLotwSync)
                 putBoolean(keyStateOfSensors, new.stateOfSensors)
+                putFloat(keyCompassOffsetDegrees, new.compassOffsetDegrees.coerceIn(-180f, 180f))
                 putBoolean(keyStateOfSweep, new.stateOfSweep)
                 putBoolean(keyStateOfUtc, new.stateOfUtc)
                 putBoolean(keyStateOfLightTheme, new.stateOfLightTheme)
@@ -562,6 +568,7 @@ class SettingsRepo(
         stateOfAutoUpdate = preferences.getBoolean(keyStateOfAutoUpdate, true),
         stateOfAutoLotwSync = preferences.getBoolean(keyStateOfAutoLotwSync, true),
         stateOfSensors = preferences.getBoolean(keyStateOfSensors, true),
+        compassOffsetDegrees = preferences.getFloat(keyCompassOffsetDegrees, 0f).coerceIn(-180f, 180f),
         stateOfSweep = preferences.getBoolean(keyStateOfSweep, true),
         stateOfUtc = preferences.getBoolean(keyStateOfUtc, false),
         stateOfLightTheme = preferences.getBoolean(keyStateOfLightTheme, false),

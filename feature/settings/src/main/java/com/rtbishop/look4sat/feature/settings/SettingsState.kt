@@ -24,6 +24,7 @@ import com.rtbishop.look4sat.core.domain.model.RCSettings
 import com.rtbishop.look4sat.core.domain.model.RadioControlSettings
 import com.rtbishop.look4sat.core.domain.model.WavelogSettings
 import com.rtbishop.look4sat.core.domain.predict.GeoPos
+import com.rtbishop.look4sat.core.domain.repository.CompassAccuracy
 import com.rtbishop.look4sat.core.domain.repository.LoTWSyncMode
 import java.io.File
 
@@ -67,6 +68,10 @@ data class SettingsState(
     val lotwError: LoTWError? = null,
     /** Epoch ms of the last successful LoTW sync (0 = never) — shown like the ephemeris update time. */
     val lotwLastSyncEpochMs: Long = 0L,
+    /** 指南针校准精度等级 (校准对话框进度条). */
+    val compassAccuracy: CompassAccuracy = CompassAccuracy.UNRELIABLE,
+    /** 校正后航向(度, 含磁偏角+手动偏置), 校准对话框实时显示. */
+    val compassHeadingDegrees: Float = 0f,
     val updateChecker: UpdateCheckerState = UpdateCheckerState()
 )
 
@@ -98,6 +103,9 @@ sealed interface SettingsAction {
     data class ToggleAutoLotwSync(val value: Boolean) : SettingsAction
     data class ToggleSweep(val value: Boolean) : SettingsAction
     data class ToggleSensor(val value: Boolean) : SettingsAction
+    data object StartCompassCalibration : SettingsAction
+    data object StopCompassCalibration : SettingsAction
+    data class SetCompassOffset(val degrees: Float) : SettingsAction
     data class ToggleLightTheme(val value: Boolean) : SettingsAction
     data class ToggleNightMode(val value: Boolean) : SettingsAction
 

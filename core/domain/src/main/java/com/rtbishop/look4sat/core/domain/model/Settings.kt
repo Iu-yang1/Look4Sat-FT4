@@ -30,7 +30,9 @@ data class PassesSettings(
     val aosStartMinute: Int = 0,
     val aosEndMinute: Int = 23 * 60 + 59,
     val invertAosTimeWindow: Boolean = false,
-    val selectedModes: List<String>
+    val selectedModes: List<String>,
+    /** 历史过境回看窗口(小时): 过境列表从 now-hoursBefore 开始计算. */
+    val hoursBefore: Int = 0
 )
 
 data class RCSettings(
@@ -71,7 +73,9 @@ data class OtherSettings(
     val highElevation: Double = 45.0,
     /** Independent auto-sync toggle for LoTW confirmed grids (separate from the
      *  ephemeris auto-update; only effective after at least one manual sync). */
-    val stateOfAutoLotwSync: Boolean = true
+    val stateOfAutoLotwSync: Boolean = true,
+    /** 指南针手动航向偏置(度, -180..180): 雷达方位 = 传感器方位 + 磁偏角 + 该偏置. */
+    val compassOffsetDegrees: Float = 0f
 )
 
 data class DataSourcesSettings(

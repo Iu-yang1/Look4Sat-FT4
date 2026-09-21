@@ -28,6 +28,8 @@ data class PassesState(
     val nextTime: String = "00:00:00",
     val isNextTimeAos: Boolean = true,
     val hours: Int = 24,
+    /** 历史过境回看窗口(小时), 0 = 只看未来. */
+    val hoursBefore: Int = 0,
     val elevation: Double = 16.0,
     val lowElevation: Double = 16.0,
     val highElevation: Double = 65.0,
@@ -47,6 +49,7 @@ sealed interface PassesAction {
     data object DismissWhatsNew : PassesAction
     data class FilterPasses(
         val hoursAhead: Int,
+        val hoursBefore: Int,
         val minElevation: Double,
         val lowElevation: Double,
         val highElevation: Double,

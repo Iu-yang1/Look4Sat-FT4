@@ -76,9 +76,11 @@ class SatelliteRepo(
             .collect { selectedIds ->
                 _satellites.update { localStorage.getEntriesWithIds(selectedIds) }
                 val settings = settingsRepo.passesSettings.value
+                val now = System.currentTimeMillis()
+                // 历史过境: 回看窗口 hoursBefore 小时, 过境列表从更早时间开始计算.
                 calculatePasses(
-                    time = System.currentTimeMillis(),
-                    hoursAhead = settings.hoursAhead,
+                    time = now - settings.hoursBefore * 60L * 60L * 1000L,
+                    hoursAhead = settings.hoursBefore + settings.hoursAhead,
                     minElevation = settings.minElevation,
                     aosStartMinute = settings.aosStartMinute,
                     aosEndMinute = settings.aosEndMinute,

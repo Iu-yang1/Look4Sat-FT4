@@ -25,6 +25,7 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import com.rtbishop.look4sat.core.domain.repository.IDatabaseRepo
 import com.rtbishop.look4sat.core.domain.model.WavelogSettings
 import com.rtbishop.look4sat.core.domain.repository.IMainContainer
+import com.rtbishop.look4sat.core.domain.repository.ISensorsRepo
 import com.rtbishop.look4sat.core.domain.repository.ISettingsRepo
 import com.rtbishop.look4sat.core.domain.repository.IUpdateRepository
 import com.rtbishop.look4sat.core.domain.repository.LoTWResult
@@ -49,6 +50,7 @@ class SettingsViewModel(
     private val updateRepo: IUpdateRepository,
     private val wavelogRepo: IWavelogRepository,
     private val lotwRepo: com.rtbishop.look4sat.core.domain.repository.ILoTWRepository,
+    private val sensorsRepo: ISensorsRepo,
     private val apkFile: File,
     private val showToast: IShowToast
 ) : ViewModel() {
@@ -57,6 +59,8 @@ class SettingsViewModel(
     private val defaultDataSettings = DataSettings(false, 0, 0, 0L)
     /** In-flight LoTW sync job, cancelled by CancelLoTWSync. */
     private var lotwSyncJob: kotlinx.coroutines.Job? = null
+    /** 指南针校准: 传感器原始方位(未加磁偏角/偏置), 校准对话框实时显示校正后航向. */
+    private var rawCompassHeading = sensorsRepo.sensorData.value.first
     private val _uiState = MutableStateFlow(
         SettingsState(
             appVersionName = settingsRepo.appVersionName,
@@ -69,6 +73,8 @@ class SettingsViewModel(
             dataSourcesStatus = settingsRepo.dataSourcesStatus.value,
             wavelogSettings = settingsRepo.wavelogSettings.value,
             workedGridsCount = settingsRepo.getWorkedGrids().size,
+            compassAccuracy = sensorsRepo.compassAccuracy.value,
+            compassHeadingDegrees = correctedCompassHeading(),
             lotwLastSyncEpochMs = lotwCursorEpochMs(settingsRepo.getLastLotwSyncDate())
         )
     )
@@ -79,7 +85,10 @@ class SettingsViewModel(
         viewModelScope.launch {
             settingsRepo.stationPosition.collect { geoPos ->
                 _uiState.update {
-                    it.copy(positionSettings = it.positionSettings.copy(isUpdating = false, stationPos = geoPos))
+                    it.copy(
+                        positionSettings = it.positionSettings.copy(isUpdating = false, stationPos = geoPos),
+                        compassHeadingDegrees = correctedCompassHeading()
+                    )
                 }
             }
         }
@@ -104,7 +113,20 @@ class SettingsViewModel(
         }
         viewModelScope.launch {
             settingsRepo.otherSettings.collect { settings ->
-                _uiState.update { it.copy(otherSettings = settings) }
+                _uiState.update {
+                    it.copy(otherSettings = settings, compassHeadingDegrees = correctedCompassHeading())
+                }
+            }
+        }
+        viewModelScope.launch {
+            sensorsRepo.compassAccuracy.collect { accuracy ->
+                _uiState.update { it.copy(compassAccuracy = accuracy) }
+            }
+        }
+        viewModelScope.launch {
+            sensorsRepo.sensorData.collect { orientation ->
+                rawCompassHeading = orientation.first
+                _uiState.update { it.copy(compassHeadingDegrees = correctedCompassHeading()) }
             }
         }
         viewModelScope.launch {
@@ -157,6 +179,11 @@ class SettingsViewModel(
             is SettingsAction.ToggleAutoLotwSync -> settingsRepo.updateOtherSettings { it.copy(stateOfAutoLotwSync = action.value) }
             is SettingsAction.ToggleSweep -> settingsRepo.updateOtherSettings { it.copy(stateOfSweep = action.value) }
             is SettingsAction.ToggleSensor -> settingsRepo.updateOtherSettings { it.copy(stateOfSensors = action.value) }
+            SettingsAction.StartCompassCalibration -> sensorsRepo.enableSensor()
+            SettingsAction.StopCompassCalibration -> sensorsRepo.disableSensor()
+            is SettingsAction.SetCompassOffset -> settingsRepo.updateOtherSettings {
+                it.copy(compassOffsetDegrees = action.degrees.coerceIn(-180f, 180f))
+            }
             is SettingsAction.ToggleLightTheme -> settingsRepo.updateOtherSettings { it.copy(stateOfLightTheme = action.value) }
             is SettingsAction.ToggleNightMode -> settingsRepo.updateOtherSettings { it.copy(stateOfNightMode = action.value) }
             // Remote control & data sources
@@ -358,6 +385,18 @@ class SettingsViewModel(
         }
     }
 
+    /** 校正后航向 = 传感器原始方位 + 磁偏角 + 手动偏置. */
+    private fun correctedCompassHeading(): Float {
+        val declination = sensorsRepo.getMagDeclination(settingsRepo.stationPosition.value)
+        val offset = settingsRepo.otherSettings.value.compassOffsetDegrees
+        return ((rawCompassHeading + declination + offset) % 360f + 360f) % 360f
+    }
+
+    override fun onCleared() {
+        sensorsRepo.disableSensor()
+        super.onCleared()
+    }
+
     // endregion
 
     // region Data update helpers — consolidated from 3 near-identical functions
@@ -405,6 +444,7 @@ class SettingsViewModel(
                     updateRepo = container.updateRepo,
                     wavelogRepo = container.wavelogRepo,
                     lotwRepo = container.lotwRepo,
+                    sensorsRepo = container.provideSensorsRepo(),
                     apkFile = File(context.cacheDir, "look4sat-update.apk"),
                     showToast = container.provideShowToast()
                 )

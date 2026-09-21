@@ -38,8 +38,10 @@ import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
@@ -56,6 +58,8 @@ import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -66,9 +70,11 @@ import com.rtbishop.look4sat.core.domain.model.OtherSettings
 import com.rtbishop.look4sat.core.domain.model.RadioControlSettings
 import com.rtbishop.look4sat.core.domain.model.WavelogSettings
 import com.rtbishop.look4sat.core.domain.predict.GeoPos
+import com.rtbishop.look4sat.core.domain.repository.CompassAccuracy
 import com.rtbishop.look4sat.core.domain.repository.IContainerProvider
 import com.rtbishop.look4sat.core.domain.repository.LoTWSyncMode
 import com.rtbishop.look4sat.core.presentation.CardButton
+import com.rtbishop.look4sat.core.presentation.SharedDialog
 import com.rtbishop.look4sat.core.presentation.IconCard
 import com.rtbishop.look4sat.core.presentation.MainTheme
 import com.rtbishop.look4sat.core.presentation.PrimaryIconCard
@@ -202,6 +208,19 @@ private fun SettingsScreen(uiState: SettingsState, onAction: (SettingsAction) ->
             initialSettings = uiState.radioControlSettings,
             onDismiss = { dialogs.radioControl = false },
             onSave = { onAction(SettingsAction.UpdateRadioControl(it)) }
+        )
+    }
+    if (dialogs.compassCalibration) {
+        LaunchedEffect(Unit) { onAction(SettingsAction.StartCompassCalibration) }
+        CompassCalibrationDialog(
+            accuracy = uiState.compassAccuracy,
+            headingDegrees = uiState.compassHeadingDegrees,
+            initialOffsetDegrees = uiState.otherSettings.compassOffsetDegrees,
+            onDismiss = {
+                onAction(SettingsAction.StopCompassCalibration)
+                dialogs.compassCalibration = false
+            },
+            onSave = { onAction(SettingsAction.SetCompassOffset(it)) }
         )
     }
     if (dialogs.lotw) {
@@ -342,7 +361,13 @@ private fun SettingsScreen(uiState: SettingsState, onAction: (SettingsAction) ->
                     showLoTWDialog = { dialogs.lotw = true }
                 )
             }
-            item { OtherCard(uiState.otherSettings, onAction) }
+            item {
+                OtherCard(
+                    settings = uiState.otherSettings,
+                    onCompassCalibration = { dialogs.compassCalibration = true },
+                    onAction = onAction
+                )
+            }
             item { CardCredits() }
             item(span = { GridItemSpan(maxLineSpan) }) {
                 CardButton(
@@ -530,15 +555,19 @@ private fun OtherCardPreview() = MainTheme {
         shouldSeeWarning = false,
         shouldSeeWhatsNew = false
     )
-    OtherCard(settings = values) {}
+    OtherCard(settings = values, onCompassCalibration = {}, onAction = {})
 }
 
 @Composable
-private fun OtherCard(settings: OtherSettings, onAction: (SettingsAction) -> Unit) {
+private fun OtherCard(
+    settings: OtherSettings,
+    onCompassCalibration: () -> Unit,
+    onAction: (SettingsAction) -> Unit
+) {
     ElevatedCard(
         modifier = Modifier
             .fillMaxWidth()
-            .height(320.dp)
+            .height(370.dp)
     ) {
         Column(modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) {
             Text(
@@ -560,9 +589,102 @@ private fun OtherCard(settings: OtherSettings, onAction: (SettingsAction) -> Uni
             SwitchRow(R.string.prefs_other_switch_sensors, settings.stateOfSensors) {
                 onAction(SettingsAction.ToggleSensor(it))
             }
+            CardButton(
+                onClick = onCompassCalibration,
+                text = stringResource(R.string.prefs_compass_calibration_button),
+                modifier = Modifier.fillMaxWidth()
+            )
             SwitchRow(R.string.prefs_other_switch_night_mode, settings.stateOfNightMode) {
                 onAction(SettingsAction.ToggleNightMode(it))
             }
+        }
+    }
+}
+
+/**
+ * 指南针校准对话框: 8 字动作提升精度, 实时显示校正后航向, 可手动输入偏置(±180°).
+ */
+@Composable
+private fun CompassCalibrationDialog(
+    accuracy: CompassAccuracy,
+    headingDegrees: Float,
+    initialOffsetDegrees: Float,
+    onDismiss: () -> Unit,
+    onSave: (Float) -> Unit
+) {
+    var offsetText by rememberSaveable(initialOffsetDegrees) {
+        mutableStateOf(initialOffsetDegrees.toString())
+    }
+    val parsedOffset = offsetText.replace(',', '.').toFloatOrNull()?.takeIf { it in -180f..180f }
+    val statusRes = when (accuracy) {
+        CompassAccuracy.HIGH -> R.string.prefs_compass_accuracy_high
+        CompassAccuracy.MEDIUM -> R.string.prefs_compass_accuracy_medium
+        CompassAccuracy.LOW -> R.string.prefs_compass_accuracy_low
+        CompassAccuracy.UNRELIABLE -> R.string.prefs_compass_accuracy_unreliable
+        CompassAccuracy.UNAVAILABLE -> R.string.prefs_compass_accuracy_unavailable
+    }
+    val progress = when (accuracy) {
+        CompassAccuracy.HIGH -> 1f
+        CompassAccuracy.MEDIUM -> 0.66f
+        CompassAccuracy.LOW -> 0.33f
+        CompassAccuracy.UNRELIABLE, CompassAccuracy.UNAVAILABLE -> 0f
+    }
+    SharedDialog(
+        title = stringResource(R.string.prefs_compass_calibration_title),
+        onDismissRequest = onDismiss,
+        onCancel = onDismiss,
+        onAccept = {
+            parsedOffset?.let {
+                onSave(it)
+                onDismiss()
+            }
+        }
+    ) { padding ->
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.padding(horizontal = padding)
+        ) {
+            Text(
+                text = "∞",
+                fontSize = 92.sp,
+                color = MaterialTheme.colorScheme.primary,
+                lineHeight = 92.sp
+            )
+            Text(
+                text = stringResource(R.string.prefs_compass_calibration_instruction),
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Text(
+                text = stringResource(R.string.prefs_compass_accuracy, stringResource(statusRes)),
+                fontWeight = FontWeight.Medium,
+                color = if (accuracy == CompassAccuracy.HIGH) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.onSurface
+                }
+            )
+            LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth())
+            Text(
+                text = stringResource(R.string.prefs_compass_heading, headingDegrees),
+                fontSize = 20.sp,
+                fontWeight = FontWeight.Medium
+            )
+            OutlinedTextField(
+                value = offsetText,
+                onValueChange = { offsetText = it },
+                label = { Text(stringResource(R.string.prefs_compass_offset)) },
+                supportingText = { Text(stringResource(R.string.prefs_compass_offset_support)) },
+                isError = parsedOffset == null,
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Done),
+                modifier = Modifier.fillMaxWidth()
+            )
+            CardButton(
+                onClick = { offsetText = "0" },
+                text = stringResource(R.string.prefs_compass_offset_reset),
+                modifier = Modifier.fillMaxWidth()
+            )
         }
     }
 }
@@ -741,6 +863,7 @@ private class DialogVisibility {
     var radioControl by mutableStateOf(false)
     var wavelog by mutableStateOf(false)
     var lotw by mutableStateOf(false)
+    var compassCalibration by mutableStateOf(false)
 }
 
 @Composable
@@ -748,13 +871,14 @@ private fun rememberDialogVisibility(): DialogVisibility {
     return rememberSaveable(saver = run {
         androidx.compose.runtime.saveable.Saver(
             save = {
-                listOf(it.position, it.locator, it.dataSources, it.network, it.bluetooth, it.radioControl, it.wavelog, it.lotw)
+                listOf(it.position, it.locator, it.dataSources, it.network, it.bluetooth, it.radioControl, it.wavelog, it.lotw, it.compassCalibration)
             },
             restore = {
                 DialogVisibility().apply {
                     position = it[0]; locator = it[1]; dataSources = it[2]
                     network = it[3]; bluetooth = it[4]; radioControl = it[5]; wavelog = it[6]
                     lotw = it.getOrElse(7) { false }
+                    compassCalibration = it.getOrElse(8) { false }
                 }
             }
         )

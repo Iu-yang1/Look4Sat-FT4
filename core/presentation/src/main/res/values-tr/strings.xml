@@ -32,6 +32,7 @@
     <string name="pass_filter_title">Geçişleri filtrele</string>
     <string name="pass_filter_elev">Minimum yükseklik açısı</string>
     <string name="pass_filter_hours">Gösterilecek zaman</string>
+    <string name="pass_filter_history_hours">Geçmiş süre</string>
     <string name="pass_filter_aos_time">AOS aralığı</string>
     <string name="pass_filter_invert_time">AOS aralığını tersine çevir</string>
     <string name="pass_filter_deep_space">DeepSpace (periyot &gt;225dk)</string>

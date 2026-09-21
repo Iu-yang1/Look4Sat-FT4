@@ -20,8 +20,19 @@ package com.rtbishop.look4sat.core.domain.repository
 import com.rtbishop.look4sat.core.domain.predict.GeoPos
 import kotlinx.coroutines.flow.StateFlow
 
+/** 指南针校准精度等级, 由磁场传感器 accuracy 事件映射而来. */
+enum class CompassAccuracy {
+    UNAVAILABLE,
+    UNRELIABLE,
+    LOW,
+    MEDIUM,
+    HIGH
+}
+
 interface ISensorsRepo {
     val sensorData: StateFlow<Pair<Float, Float>>
+    /** 指南针当前校准精度 (磁场传感器 accuracy), 用于校准对话框进度. */
+    val compassAccuracy: StateFlow<CompassAccuracy>
     fun getMagDeclination(geoPos: GeoPos, time: Long = System.currentTimeMillis()): Float
     fun enableSensor()
     fun disableSensor()

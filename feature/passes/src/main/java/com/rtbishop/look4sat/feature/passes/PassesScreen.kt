@@ -103,6 +103,7 @@ private fun PassesScreen(
     if (uiState.isPassesDialogShown) {
         PassesFilterDialog(
             hours = uiState.hours,
+            hoursBefore = uiState.hoursBefore,
             elevation = uiState.elevation,
             lowElevation = uiState.lowElevation,
             highElevation = uiState.highElevation,
@@ -115,6 +116,7 @@ private fun PassesScreen(
                 onAction(
                     PassesAction.FilterPasses(
                         hoursAhead = params.hours,
+                        hoursBefore = params.hoursBefore,
                         minElevation = params.elevation,
                         lowElevation = params.lowElevation,
                         highElevation = params.highElevation,

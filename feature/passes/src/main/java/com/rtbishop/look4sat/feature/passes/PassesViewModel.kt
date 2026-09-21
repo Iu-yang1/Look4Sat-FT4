@@ -96,8 +96,12 @@ class PassesViewModel(
                     val timeNow = System.currentTimeMillis()
                     val isUtc = _uiState.value.isUtc
                     val showDeepSpace = _uiState.value.showDeepSpace
+                    // 历史过境窗口: 已结束的过境保留到超过 hoursBefore 小时后消失;
+                    // DeepSpace 保持原行为(始终显示). hoursBefore=0 时过境一结束即消失.
+                    val historyCutoff = timeNow - _uiState.value.hoursBefore * 3600_000L
                     val filtered = allPasses
                         .let { if (showDeepSpace) it else it.filter { pass -> !pass.isDeepSpace } }
+                        .filter { pass -> pass.isDeepSpace || pass.losTime >= historyCutoff }
                     val processed = computePassProgress(filtered, timeNow)
                     val (nextPass, nextTime, isAos) = resolveNextPass(processed, timeNow)
                     val sunTimes = computeSunTimes(processed, isUtc)
@@ -339,9 +343,10 @@ class PassesViewModel(
 
     private fun refreshPasses() = viewModelScope.launch {
         val settings = settingsRepo.passesSettings.value
+        // 下拉刷新也保留历史过境窗口, 否则刷新即丢 history (与筛选/启动计算口径一致)
         satelliteRepo.calculatePasses(
-            time = System.currentTimeMillis(),
-            hoursAhead = settings.hoursAhead,
+            time = System.currentTimeMillis() - settings.hoursBefore * 60L * 60L * 1000L,
+            hoursAhead = settings.hoursBefore + settings.hoursAhead,
             minElevation = settings.minElevation,
             aosStartMinute = settings.aosStartMinute,
             aosEndMinute = settings.aosEndMinute,

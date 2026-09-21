@@ -367,7 +367,9 @@ class MaidenheadGridOverlay : Overlay() {
         // First-call labels replace the 4-char grid codes and only exist at
         // sub-square zoom; at field zoom NO labels are drawn at all (the user
         // requirement is that non-worked cells carry no grid characters).
-        if (showFirstCallLabels && zoom < LABEL_ZOOM_SUB) return
+        // Show as soon as the 4-char grid LINES appear (GRID_ZOOM_SUB), not
+        // only at the name-label zoom — user req 2026-09-21.
+        if (showFirstCallLabels && zoom < GRID_ZOOM_SUB) return
         val showLabels = zoom >= LABEL_ZOOM_SUB || cellLat == FIELD_LAT
         if (!showLabels) return
         // Estimate on-screen cell height to avoid clutter at low zoom:

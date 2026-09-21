@@ -130,6 +130,11 @@ class RadioTrackingService(
             )
         }
 
+        if (rcSettings.catTransport == RadioControlSettings.TRANSPORT_VOX) {
+            Log.i(tag, "VOX transport selected; CAT radios are not connected")
+            return
+        }
+
         if (rcSettings.catTransport == RadioControlSettings.TRANSPORT_TCP) {
             val invalidEndpoint = when {
                 txAddr.isNotBlank() && parseRadioTcpEndpoint(txAddr) == null -> "TX" to txAddr
@@ -280,8 +285,6 @@ class RadioTrackingService(
 
     override suspend fun beginTransmit(request: TxRequest): TxLease = transmitMutex.withLock {
         val startedNanos = System.nanoTime()
-        check(pendingControls.get() == 0) { "Radio settings are changing" }
-        val safetyGeneration = txController?.pttSafetyGeneration()
         require(request.waveformDurationMillis in 1L..MAX_WAVEFORM_MILLIS) {
             "Invalid FT4 waveform duration"
         }
@@ -289,6 +292,11 @@ class RadioTrackingService(
             "PTT watchdog is shorter than the waveform"
         }
         check(activeTxLease == null) { "Another transmit lease is active" }
+        if (settingsRepo.radioControlSettings.value.catTransport == RadioControlSettings.TRANSPORT_VOX) {
+            return@withLock beginVoxTransmit(request)
+        }
+        check(pendingControls.get() == 0) { "Radio settings are changing" }
+        val safetyGeneration = txController?.pttSafetyGeneration()
         transmitPreparing = true
         updateCommandState(busy = true)
         try {
@@ -391,7 +399,40 @@ class RadioTrackingService(
         }
     }
 
+    private fun beginVoxTransmit(request: TxRequest): TxLease {
+        val midpoint = request.waveformStartUtcMillis + request.waveformDurationMillis / 2L
+        val lease = TxLease(
+            id = nextLeaseId++,
+            sessionGeneration = request.sessionGeneration,
+            effectiveTxFrequencyHz = 0L,
+            txDopplerCorrectionHz = 0L,
+            waveformStartUtcMillis = request.waveformStartUtcMillis,
+            waveformMidpointUtcMillis = midpoint,
+            waveformDurationMillis = request.waveformDurationMillis,
+            maximumPttMillis = request.maximumPttMillis.coerceAtMost(MAX_PTT_MILLIS),
+            expectedSatelliteCatalogNumber = request.expectedSatelliteCatalogNumber,
+            expectedTransponderUuid = request.expectedTransponderUuid,
+            pttSafetyGeneration = 0L,
+            automatic = request.automatic,
+            usesVox = true
+        )
+        activeTxLease = lease
+        _state.update {
+            it.copy(
+                pttState = PttState.OFF,
+                txLeaseId = lease.id,
+                txLeaseGeneration = lease.sessionGeneration,
+                lastCommandError = null
+            )
+        }
+        return lease
+    }
+
     override suspend fun confirmTransmitReady(lease: TxLease) = transmitMutex.withLock {
+        if (lease.usesVox) {
+            check(activeTxLease == lease) { "Transmit lease is stale" }
+            return@withLock
+        }
         val startedNanos = System.nanoTime()
         check(activeTxLease == lease) { "Transmit lease is stale" }
         updateCommandState(busy = true, pttState = PttState.ARMING)
@@ -420,6 +461,9 @@ class RadioTrackingService(
     }
 
     override fun recommendedPrepareLeadMillis(): Long {
+        if (settingsRepo.radioControlSettings.value.catTransport == RadioControlSettings.TRANSPORT_VOX) {
+            return 350L
+        }
         // Include a tracking cycle already in flight and duplex mode/frequency readbacks,
         // including the first transmission before measured latency samples are available.
         val minimum = if (_state.value.splitMode) 2_000L else 1_500L
@@ -427,6 +471,12 @@ class RadioTrackingService(
     }
 
     override suspend fun endTransmit(lease: TxLease) {
+        if (lease.usesVox) {
+            transmitMutex.withLock {
+                if (activeTxLease == lease) releaseVoxLeaseLocked()
+            }
+            return
+        }
         txController?.invalidatePendingPttOn()
         val urgentOffConfirmed = activeTxLease == lease && sendUrgentPttOff()
         transmitMutex.withLock {
@@ -449,6 +499,14 @@ class RadioTrackingService(
     }
 
     override suspend fun emergencyPttOff() {
+        if (activeTxLease?.usesVox == true ||
+            settingsRepo.radioControlSettings.value.catTransport == RadioControlSettings.TRANSPORT_VOX
+        ) {
+            transmitMutex.withLock {
+                if (activeTxLease?.usesVox == true) releaseVoxLeaseLocked()
+            }
+            return
+        }
         txController?.invalidatePendingPttOn()
         val urgentOffConfirmed = sendUrgentPttOff()
         transmitMutex.withLock {
@@ -459,6 +517,11 @@ class RadioTrackingService(
                 updateCommandState(busy = false)
             }
         }
+    }
+
+    private fun releaseVoxLeaseLocked() {
+        activeTxLease = null
+        _state.update { it.copy(pttState = PttState.OFF, txLeaseId = null, lastCommandError = null) }
     }
 
     private suspend fun sendUrgentPttOff(): Boolean {

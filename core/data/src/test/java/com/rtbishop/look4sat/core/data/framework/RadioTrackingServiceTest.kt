@@ -193,6 +193,28 @@ class RadioTrackingServiceTest {
     }
 
     @Test
+    fun voxLeaseDoesNotRequireRadioOrTrackingAndNeverSendsPtt() = runTest {
+        val tx = FakeRadioController()
+        val rx = FakeRadioController()
+        val fixture = Fixture(
+            backgroundScope,
+            tx,
+            rx,
+            transport = RadioControlSettings.TRANSPORT_VOX
+        )
+
+        val lease = fixture.service.beginTransmit(fixture.request(generation = 100L, automatic = true))
+        assertTrue(lease.usesVox)
+        fixture.service.confirmTransmitReady(lease)
+        fixture.service.endTransmit(lease)
+
+        assertEquals(PttState.OFF, fixture.service.state.value.pttState)
+        assertTrue(tx.operations.isEmpty())
+        assertTrue(rx.operations.isEmpty())
+        fixture.close()
+    }
+
+    @Test
     fun leaseSetsInitialDopplerContinuesTrackingAndAlwaysReleasesPtt() = runTest {
         val tx = FakeRadioController()
         val rx = FakeRadioController()
@@ -693,11 +715,12 @@ class RadioTrackingServiceTest {
         nowProvider: () -> Long = System::currentTimeMillis,
         radioModel: String = RadioControlSettings.MODEL_YAESU_FT817,
         splitMode: Boolean = false,
-        duplexMode: String = RadioControlSettings.DUPLEX_MODE_SPLIT
+        duplexMode: String = RadioControlSettings.DUPLEX_MODE_SPLIT,
+        transport: String = RadioControlSettings.TRANSPORT_BLUETOOTH
     ) {
         val nominalTxHz = 145_900_000L
         val position = OrbitalPos(elevation = 0.5, distanceRate = 1.2, aboveHorizon = true)
-        val settings = FakeSettingsRepo(radioModel, splitMode, duplexMode)
+        val settings = FakeSettingsRepo(radioModel, splitMode, duplexMode, transport)
         val satelliteRepo = FakeSatelliteRepo(position)
         private val now = nowProvider()
         val afterPassStart = now + 180_000L
@@ -919,7 +942,8 @@ private class FakeSatelliteRepo(private val position: OrbitalPos) : ISatelliteRe
 private class FakeSettingsRepo(
     radioModel: String = RadioControlSettings.MODEL_YAESU_FT817,
     splitMode: Boolean = false,
-    duplexMode: String = RadioControlSettings.DUPLEX_MODE_SPLIT
+    duplexMode: String = RadioControlSettings.DUPLEX_MODE_SPLIT,
+    transport: String = RadioControlSettings.TRANSPORT_BLUETOOTH
 ) : ISettingsRepo {
     override val appVersionName = "test"
     override val selectedIds = MutableStateFlow<List<Int>>(emptyList())
@@ -958,7 +982,8 @@ private class FakeSettingsRepo(
             rxRadioName = "RX",
             baudRate = 9_600,
             splitMode = splitMode,
-            duplexMode = duplexMode
+            duplexMode = duplexMode,
+            catTransport = transport
         )
     )
 

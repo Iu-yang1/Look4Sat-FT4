@@ -131,6 +131,8 @@ data class RadioControlSettings(
         const val TRANSPORT_BLUETOOTH = "BLUETOOTH"
         const val TRANSPORT_USB = "USB"
         const val TRANSPORT_TCP = "TCP"
+        /** Audio-driven transmit; FT4 does not issue CAT frequency or PTT commands. */
+        const val TRANSPORT_VOX = "VOX"
         const val TCP_PROTOCOL_RAW_CAT = "RAW_CAT"
         const val TCP_PROTOCOL_HAMLIB = "HAMLIB_RIGCTLD"
         const val DUPLEX_MODE_SPLIT = "SPLIT"
@@ -145,7 +147,7 @@ data class RadioControlSettings(
         )
         val ICOM_RADIOS = setOf(MODEL_ICOM_IC705, MODEL_ICOM_IC9700, MODEL_ICOM_IC910)
         val SATELLITE_MODE_RADIOS = setOf(MODEL_ICOM_IC9700, MODEL_ICOM_IC910)
-        val SUPPORTED_TRANSPORTS = listOf(TRANSPORT_BLUETOOTH, TRANSPORT_USB, TRANSPORT_TCP)
+        val SUPPORTED_TRANSPORTS = listOf(TRANSPORT_BLUETOOTH, TRANSPORT_USB, TRANSPORT_TCP, TRANSPORT_VOX)
         val SUPPORTED_TCP_PROTOCOLS = listOf(TCP_PROTOCOL_RAW_CAT, TCP_PROTOCOL_HAMLIB)
 
         /** Baud rates available for Yaesu radios. */

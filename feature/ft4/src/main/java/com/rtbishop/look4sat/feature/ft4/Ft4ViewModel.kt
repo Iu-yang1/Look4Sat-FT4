@@ -27,6 +27,7 @@ import com.rtbishop.look4sat.core.domain.logbook.QsoEventResult
 import com.rtbishop.look4sat.core.domain.logbook.QsoMessageEvent
 import com.rtbishop.look4sat.core.domain.logbook.QsoRecord
 import com.rtbishop.look4sat.core.domain.logbook.QsoStatus
+import com.rtbishop.look4sat.core.domain.model.RadioControlSettings
 import com.rtbishop.look4sat.core.domain.repository.IMainContainer
 import com.rtbishop.look4sat.core.domain.repository.TrackingPhase
 import com.rtbishop.look4sat.core.domain.time.DisciplinedFt4SlotScheduler
@@ -272,6 +273,7 @@ class Ft4ViewModel(
                 mutableState.update { it.copy(radio = radio) }
                 val automation = automationController.snapshot
                 if (automation.phase.isRunning()) {
+                    if (mutableState.value.radioTransport == RadioControlSettings.TRANSPORT_VOX) return@collect
                     val mode = radio.txMode.orEmpty()
                     val band = bandKey(radio.nominalTxFrequencyHz)
                     if (radio.trackingPhase != TrackingPhase.READY || !radio.txConnected || radio.currentPass == null ||
@@ -392,19 +394,20 @@ class Ft4ViewModel(
         if (automationJob?.isActive == true || automationStopping) return
         val state = mutableState.value
         val radio = state.radio
+        val usesVox = state.radioTransport == RadioControlSettings.TRANSPORT_VOX
         when {
             !state.settings.decodeEnabled -> return setError(Ft4UiError.DECODE_DISABLED)
             !state.capability.receiveAvailable -> return setError(Ft4UiError.UNAVAILABLE)
             !state.capability.transmitAvailable -> return setError(Ft4UiError.UNAVAILABLE)
             !state.hasMicrophonePermission -> return setError(Ft4UiError.MICROPHONE_PERMISSION)
             !clock.automaticFt4TransmitAllowed() -> return setError(Ft4UiError.TIME_SYNCHRONIZATION)
-            radio.trackingPhase != TrackingPhase.READY || !radio.txConnected ->
+            !usesVox && (radio.trackingPhase != TrackingPhase.READY || !radio.txConnected) ->
                 return setError(Ft4UiError.RADIO_NOT_READY)
-            radio.currentPass == null || radio.selectedTransponder == null ->
+            !usesVox && (radio.currentPass == null || radio.selectedTransponder == null) ->
                 return setError(Ft4UiError.PASS_TRANSPONDER_REQUIRED)
             state.settings.operatorCallsign.isBlank() -> return setError(Ft4UiError.CALLSIGN_REQUIRED)
             state.grid4.isBlank() -> return setError(Ft4UiError.GRID_REQUIRED)
-            radio.txMode.isNullOrBlank() -> return setError(Ft4UiError.TX_MODE_UNAVAILABLE)
+            !usesVox && radio.txMode.isNullOrBlank() -> return setError(Ft4UiError.TX_MODE_UNAVAILABLE)
         }
         val next = scheduler.nextBoundaryAfter(clock.nowMillis())
         val sessionGeneration = ++generation
@@ -414,8 +417,8 @@ class Ft4ViewModel(
         val automation = runCatching {
             automationController.arm(
                 generation = sessionGeneration,
-                mode = radio.txMode.orEmpty(),
-                band = bandKey(radio.nominalTxFrequencyHz),
+                mode = if (usesVox) "VOX" else radio.txMode.orEmpty(),
+                band = if (usesVox) "" else bandKey(radio.nominalTxFrequencyHz),
                 myCall = state.settings.operatorCallsign,
                 targetCall = state.targetCall,
                 grid = state.grid4,
@@ -438,9 +441,10 @@ class Ft4ViewModel(
                 val state = mutableState.value
                 val radio = state.radio
                 val pass = radio.currentPass
+                val usesVox = state.radioTransport == RadioControlSettings.TRANSPORT_VOX
                 if (!state.settings.decodeEnabled || !clock.automaticFt4TransmitAllowed() ||
-                    radio.trackingPhase != TrackingPhase.READY || !radio.txConnected || pass == null ||
-                    radio.selectedTransponder == null
+                    (!usesVox && (radio.trackingPhase != TrackingPhase.READY || !radio.txConnected || pass == null ||
+                        radio.selectedTransponder == null))
                 ) {
                     val reason = if (!state.settings.decodeEnabled || !clock.automaticFt4TransmitAllowed()) {
                         Ft4AutomationAbortReason.TIME_GATE_CLOSED
@@ -509,8 +513,11 @@ class Ft4ViewModel(
         val radio = state.radio
         if (!state.settings.decodeEnabled) throw Ft4UiException(Ft4UiError.DECODE_DISABLED)
         if (!state.capability.transmitAvailable) throw Ft4UiException(Ft4UiError.UNAVAILABLE)
-        val pass = radio.currentPass ?: throw Ft4UiException(Ft4UiError.SELECT_PASS)
-        val transponder = radio.selectedTransponder ?: throw Ft4UiException(Ft4UiError.SELECT_TRANSPONDER)
+        val usesVox = state.radioTransport == RadioControlSettings.TRANSPORT_VOX
+        val pass = radio.currentPass
+        val transponder = radio.selectedTransponder
+        if (!usesVox && pass == null) throw Ft4UiException(Ft4UiError.SELECT_PASS)
+        if (!usesVox && transponder == null) throw Ft4UiException(Ft4UiError.SELECT_TRANSPONDER)
         val targetCall = if (automatic) automationController.snapshot.targetCall else state.targetCall
         val validation = ft4Service.validateMessage(message)
         if (!validation.valid) throw Ft4UiException(Ft4UiError.INVALID_MESSAGE)
@@ -524,8 +531,8 @@ class Ft4ViewModel(
                     slotStartUtcMillis = slotStartUtcMillis,
                     sessionGeneration = sessionGeneration,
                     sessionId = sessionId,
-                    satelliteCatalogNumber = pass.catNum,
-                    transponderUuid = transponder.uuid,
+                    satelliteCatalogNumber = pass?.catNum ?: 0,
+                    transponderUuid = transponder?.uuid.orEmpty(),
                     automatic = automatic,
                     isStillCurrent = {
                         intent == null || automationController.isIntentCurrent(intent)

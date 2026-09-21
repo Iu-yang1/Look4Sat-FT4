@@ -31,7 +31,9 @@ data class TxLease(
     val expectedSatelliteCatalogNumber: Int,
     val expectedTransponderUuid: String,
     val pttSafetyGeneration: Long,
-    val automatic: Boolean
+    val automatic: Boolean,
+    /** True when transmit is controlled by the radio's external VOX circuit. */
+    val usesVox: Boolean = false
 )
 
 interface IFt4TransmitCoordinator {

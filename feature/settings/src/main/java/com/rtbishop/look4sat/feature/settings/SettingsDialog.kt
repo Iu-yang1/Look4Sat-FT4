@@ -1170,6 +1170,7 @@ fun RadioControlDialog(
     }
 
     val isIcom = radioModel.value in RadioControlSettings.ICOM_RADIOS
+    val isVox = catTransport.value == RadioControlSettings.TRANSPORT_VOX
     val supportsSatelliteMode = radioModel.value in RadioControlSettings.SATELLITE_MODE_RADIOS &&
         !(catTransport.value == RadioControlSettings.TRANSPORT_TCP &&
             tcpProtocol.value == RadioControlSettings.TCP_PROTOCOL_HAMLIB)
@@ -1266,8 +1267,8 @@ fun RadioControlDialog(
                 else -> validateUsbSelection(usbManager, rxAddress.value, requiredStopBits)
             }
         }
-        val parsedCivAddress = if (isIcom) parseCivAddress(civAddress.value) else null
-        civAddressError.value = isIcom &&
+        val parsedCivAddress = if (!isVox && isIcom) parseCivAddress(civAddress.value) else null
+        civAddressError.value = !isVox && isIcom &&
             !(catTransport.value == RadioControlSettings.TRANSPORT_TCP &&
                 tcpProtocol.value == RadioControlSettings.TCP_PROTOCOL_HAMLIB) &&
             parsedCivAddress == null
@@ -1376,6 +1377,7 @@ fun RadioControlDialog(
                     }
                 }
             }
+            if (!isVox) {
             Spacer(modifier = Modifier.height(6.dp))
 
             // Radio model — FlowRow so chips wrap on small screens
@@ -1693,6 +1695,7 @@ fun RadioControlDialog(
                     }
                 }
                 Spacer(modifier = Modifier.height(6.dp))
+            }
             }
         }
     }

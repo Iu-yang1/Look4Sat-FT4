@@ -355,6 +355,7 @@ fun SharedDialog(
     onAccept: (() -> Unit)? = null,
     titleFontSize: Int = 16,
     titleTextAlign: TextAlign = if (onCancel != null && onAccept != null) TextAlign.Center else TextAlign.Start,
+    titleHorizontalPadding: Dp = 0.dp,
     content: @Composable (padding: Dp) -> Unit
 ) {
     DialogShell(onDismissRequest = onDismissRequest) { padding ->
@@ -377,7 +378,7 @@ fun SharedDialog(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier
                     .weight(1f)
-                    .padding(horizontal = if (onCancel != null && onAccept != null) padding else 0.dp)
+                    .padding(horizontal = if (onCancel != null && onAccept != null) padding else titleHorizontalPadding)
             )
             if (onAccept != null) {
                 CardButton(onClick = onAccept, text = stringResource(R.string.btn_accept))

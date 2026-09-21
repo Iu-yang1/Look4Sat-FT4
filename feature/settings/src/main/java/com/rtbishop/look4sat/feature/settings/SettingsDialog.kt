@@ -262,6 +262,7 @@ fun LoTWDialog(
     val pass = rememberSaveable { mutableStateOf(initialSettings.password) }
     SharedDialog(
         title = stringResource(R.string.prefs_lotw_title),
+        titleHorizontalPadding = LocalSpacing.current.medium,
         // While syncing, cancel/back aborts the download instead of merely
         // hiding the dialog — a full sync started by mistake must be stoppable.
         onDismissRequest = { if (isSyncing) onCancelSync() else dismiss() },

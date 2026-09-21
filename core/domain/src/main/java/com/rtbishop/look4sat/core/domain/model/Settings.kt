@@ -62,6 +62,10 @@ data class OtherSettings(
     val stateOfLightTheme: Boolean,
     val stateOfNightMode: Boolean = false,
     val stateOfMapGrid: Boolean = false,
+    /** Grid mode: label worked (green) cells with the FIRST callsign worked
+     *  in that grid instead of the Maidenhead code; non-worked cells get no
+     *  label at all. */
+    val stateOfMapFirstCall: Boolean = false,
     val shouldSeeWarning: Boolean,
     val shouldSeeWhatsNew: Boolean,
     val sstvMode: String = "Auto",

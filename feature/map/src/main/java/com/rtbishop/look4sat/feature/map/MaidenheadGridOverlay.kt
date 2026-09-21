@@ -46,15 +46,16 @@ class MaidenheadGridOverlay : Overlay() {
         style = Paint.Style.STROKE
         color = Color.argb(160, 255, 224, 130)
     }
+    // 网格标签与首通呼号标签同字号 (用户要求 2026-09-21: 字体一样大)
     private val labelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        textSize = 26f
+        textSize = LABEL_TEXT_SIZE
         style = android.graphics.Paint.Style.FILL
         color = Color.argb(220, 255, 224, 130)
         setShadowLayer(3f, 2f, 2f, Color.BLACK)
     }
-    // 首通呼号标签: 比 4 字符网格代码略小, 以容纳更长的呼号(如 BG2GQG).
+    // 首通呼号标签: 与网格标签同字号.
     private val firstCallPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        textSize = 20f
+        textSize = LABEL_TEXT_SIZE
         style = android.graphics.Paint.Style.FILL
         color = Color.argb(230, 255, 224, 130)
         setShadowLayer(3f, 2f, 2f, Color.BLACK)
@@ -362,21 +363,15 @@ class MaidenheadGridOverlay : Overlay() {
         // Labels: centered in each cell, only when the cell is large enough on
         // screen to hold a label (avoid clutter at low zoom).
         // Field (2-char) labels show at every zoom, subject only to the pixel-
-        // size check below; sub-square (4-char) labels only from LABEL_ZOOM_SUB
-        // (one level above the grid lines, so zoom 6 shows lines but no names).
+        // size check below; sub-square (4-char) labels appear together with the
+        // grid LINES at GRID_ZOOM_SUB (user req 2026-09-21: 与首通呼号同一显示缩放).
         // First-call labels replace the 4-char grid codes and only exist at
         // sub-square zoom; at field zoom NO labels are drawn at all (the user
         // requirement is that non-worked cells carry no grid characters).
-        // Show as soon as the 4-char grid LINES appear (GRID_ZOOM_SUB), not
-        // only at the name-label zoom — user req 2026-09-21.
         if (showFirstCallLabels && zoom < GRID_ZOOM_SUB) return
-        // First-call labels gate on the grid-LINE zoom; normal labels keep the
-        // name-label zoom (one level above the lines).
-        val showLabels = if (showFirstCallLabels) {
-            zoom >= GRID_ZOOM_SUB
-        } else {
-            zoom >= LABEL_ZOOM_SUB || cellLat == FIELD_LAT
-        }
+        // 网格标签与首通呼号同一显示缩放 (用户要求 2026-09-21): 子方块(4字符)
+        // 标签与首通呼号都在网格线出现的 GRID_ZOOM_SUB 同时显示, 不再晚一档.
+        val showLabels = zoom >= GRID_ZOOM_SUB || cellLat == FIELD_LAT
         if (!showLabels) return
         // Estimate on-screen cell height to avoid clutter at low zoom:
         // project two points 1° apart in latitude and measure the pixel distance.
@@ -384,10 +379,9 @@ class MaidenheadGridOverlay : Overlay() {
         val y2 = projectionToY(projection, 1.0)
         if (y1 == null || y2 == null) return
         val pixelsPerDegree = Math.abs(y2 - y1)
-        // First-call labels must appear as soon as the 4-char grid LINES do
-        // (zoom 6.0), where 1° cells are ~45 px on the equator — below the
-        // 48 px normal-label threshold. Relax the pixel gate for this mode only.
-        val minCellPx = if (showFirstCallLabels) MIN_LABEL_CELL_PX * 0.6f else MIN_LABEL_CELL_PX
+        // 两种模式同一像素门限: GRID_ZOOM_SUB 处 1° 格约 45px, 低于 48px
+        // 常规阈值, 统一用放宽的 0.6x 门限, 保证网格标签与首通呼号同时出现.
+        val minCellPx = MIN_LABEL_CELL_PX * 0.6f
         if (pixelsPerDegree * cellLat < minCellPx) return
 
         val activePaint = if (showFirstCallLabels) firstCallPaint else labelPaint
@@ -547,9 +541,8 @@ class MaidenheadGridOverlay : Overlay() {
         // the sub-square grid is too dense to read; 6 roughly doubles the
         // on-screen size of each square.
         const val GRID_ZOOM_SUB = 6.0
-        // Zoom at which the 4-char sub-square names appear (one level above the
-        // grid lines: zoom 6 = lines only, zoom 6.5+ = lines + names).
-        const val LABEL_ZOOM_SUB = 6.5
+        // 网格标签与首通呼号标签统一字号 (用户要求 2026-09-21: 字体一样大).
+        const val LABEL_TEXT_SIZE = 20f
         const val MIN_LABEL_CELL_PX = 48f
         const val MAX_OVERSHOOT_PX = 64
         /** Center-to-center spacing of the roamed-grid zebra stripes, in px. */

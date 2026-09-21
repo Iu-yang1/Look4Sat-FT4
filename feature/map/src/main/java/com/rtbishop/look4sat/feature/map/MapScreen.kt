@@ -258,7 +258,7 @@ private fun MapScreen(
                 if (!isGridMode || p == null) return false
                 val zoom = mapView.zoomLevelDouble
                 // Allow tapping worked cells as soon as the 4-char grid LINES
-                // appear (GRID_ZOOM_SUB), not only when labels show (LABEL_ZOOM_SUB).
+                // appear (GRID_ZOOM_SUB); grid labels now appear at that zoom too.
                 if (zoom < MaidenheadGridOverlay.GRID_ZOOM_SUB) return false
                 val grid = gridOfPoint(p.latitude, p.longitude) ?: return false
                 if (grid !in workedGrids) return false

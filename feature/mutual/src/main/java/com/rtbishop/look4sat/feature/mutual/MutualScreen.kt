@@ -369,6 +369,20 @@ private fun MutualContent(
             )
         }
     }
+
+    // Prefill from the map's grid-QSO dialog "Match" button: once the page is
+    // laid out, jump straight to the time-range card. Index accounts for the
+    // optional error card at the top (error = 0, station inputs = 1, time
+    // range = 2; else 1). scrollToItem is used instead of initializing the
+    // LazyListState at index 1: the constructor parameter is ignored by this
+    // Compose version (verified in tests), while scrollToItem lands correctly.
+    val matchSearchIndex = if (state.errorMessage != null) 2 else 1
+    LaunchedEffect(state.scrollToTimeRange, matchSearchIndex) {
+        if (state.scrollToTimeRange) {
+            listState.scrollToItem(matchSearchIndex)
+            viewModel.consumeScrollToTimeRange()
+        }
+    }
 }
 
 @Composable

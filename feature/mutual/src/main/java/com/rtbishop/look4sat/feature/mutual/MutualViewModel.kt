@@ -55,7 +55,11 @@ data class MutualUiState(
     val hasSearched: Boolean = false,
     val selectedPassIndex: Int = -1,
     val isUtc: Boolean = false,
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
+    // One-shot flag set by prefillMatchFromGrid() (map grid → Match button):
+    // the page scrolls to the time-range card after the first layout, then
+    // consumeScrollToTimeRange() clears it.
+    val scrollToTimeRange: Boolean = false
 )
 
 class MutualViewModel(
@@ -187,9 +191,8 @@ class MutualViewModel(
      * Pre-fill the match page for a target grid picked from the map's grid-QSO
      * dialog ("Match" button): set the opposite-station grid (with its
      * coordinates), reset the time range to 24h, start the query immediately
-     * so results are ready when the page opens, and position the list at the
-     * time-range card (LazyColumn item 1, the card right below the station
-     * inputs) so the page opens showing it at the top.
+     * so results are ready when the page opens, and flag the page to scroll
+     * straight to the time-range card once it is laid out.
      */
     fun prefillMatchFromGrid(grid: String) {
         val g = grid.trim().uppercase()
@@ -199,10 +202,15 @@ class MutualViewModel(
                 stationBGrid = g,
                 stationBLat = pos?.let { p -> "%.4f".format(p.latitude) } ?: it.stationBLat,
                 stationBLon = pos?.let { p -> "%.4f".format(p.longitude) } ?: it.stationBLon,
-                hoursAhead = 24
+                hoursAhead = 24,
+                scrollToTimeRange = true
             )
         }
-        queryMutualPasses(initialScrollIndex = 1)
+        queryMutualPasses()
+    }
+
+    fun consumeScrollToTimeRange() {
+        _uiState.update { it.copy(scrollToTimeRange = false) }
     }
 
     fun queryMutualPasses(initialScrollIndex: Int = 0) {

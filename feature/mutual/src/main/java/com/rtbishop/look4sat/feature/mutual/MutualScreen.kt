@@ -246,7 +246,7 @@ private fun MutualContent(
         }
 
         // Input form
-        item {
+        item(key = "stationInputs") {
             Column(
                 modifier = Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(6.dp)
@@ -323,14 +323,19 @@ private fun MutualContent(
                         )
                     }
                 }
-
-                MatchSearchCard(
-                    hoursAhead = state.hoursAhead,
-                    isCalculating = state.isCalculating,
-                    onHoursAhead = onHoursAhead,
-                    onQuery = onQuery
-                )
             }
+        }
+
+        // Time range + query card. Its own LazyColumn item so a prefill from
+        // the map (grid-QSO dialog "Match" button) can scroll the page exactly
+        // to the time-range selector.
+        item(key = "matchSearch") {
+            MatchSearchCard(
+                hoursAhead = state.hoursAhead,
+                isCalculating = state.isCalculating,
+                onHoursAhead = onHoursAhead,
+                onQuery = onQuery
+            )
         }
 
         // Results
@@ -362,6 +367,17 @@ private fun MutualContent(
                 onClick = { onSelectPass(if (state.selectedPassIndex == index) -1 else index) },
                 onNavigateToRadar = { onNavigateToRadar(pass.catNum, pass.startTime, mutualData) }
             )
+        }
+    }
+
+    // Prefill from the map's grid-QSO dialog "Match" button: jump straight to
+    // the time-range card. Index accounts for the optional error card at the
+    // top (error = 0, station inputs = 1, time range = 2; else 1).
+    val matchSearchIndex = if (state.errorMessage != null) 2 else 1
+    LaunchedEffect(state.scrollToTimeRange, matchSearchIndex) {
+        if (state.scrollToTimeRange) {
+            listState.scrollToItem(matchSearchIndex)
+            viewModel.consumeScrollToTimeRange()
         }
     }
 }

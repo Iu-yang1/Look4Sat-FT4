@@ -150,6 +150,7 @@
     <string name="grid_qso_count_many">%d QSOs</string>
     <string name="grid_qso_first">First</string>
     <string name="grid_qso_no_sat">satellite unknown</string>
+    <string name="grid_qso_match">Match</string>
     <string name="map_visible">Visible</string>
 
     <!-- Settings screen -->

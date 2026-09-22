@@ -244,7 +244,16 @@ fun MainScreen(
                             )
                         }
                         entry<Screen.Map> {
-                            MapDestination(mapFilterViewModel = mapFilterViewModel)
+                            MapDestination(
+                                mapFilterViewModel = mapFilterViewModel,
+                                onMatchGrid = { grid ->
+                                    // Grid-QSO dialog "Match" button: pre-fill the
+                                    // match page for that grid and switch to its tab.
+                                    mutualViewModel.prefillMatchFromGrid(grid)
+                                    while (backStack.size > 1) backStack.removeAt(backStack.size - 1)
+                                    backStack.add(Screen.Mutual)
+                                }
+                            )
                         }
                         entry<Screen.Mutual> {
                             MutualScreen(

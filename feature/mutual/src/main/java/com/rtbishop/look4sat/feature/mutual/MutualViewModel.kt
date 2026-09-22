@@ -40,6 +40,8 @@ import kotlinx.coroutines.withContext
 import kotlin.math.PI
 import kotlin.math.roundToInt
 
+private const val TAG = "Look4SatMutual"
+
 data class MutualUiState(
     val stationALat: String = "",
     val stationALon: String = "",
@@ -197,6 +199,7 @@ class MutualViewModel(
     fun prefillMatchFromGrid(grid: String) {
         val g = grid.trim().uppercase()
         val pos = qthToPosition(g)
+        android.util.Log.d(TAG, "prefillMatchFromGrid('$g')")
         _uiState.update {
             it.copy(
                 stationBGrid = g,
@@ -210,6 +213,7 @@ class MutualViewModel(
     }
 
     fun consumeScrollToTimeRange() {
+        android.util.Log.d(TAG, "consumeScrollToTimeRange")
         _uiState.update { it.copy(scrollToTimeRange = false) }
     }
 

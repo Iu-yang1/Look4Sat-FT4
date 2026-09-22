@@ -17,6 +17,7 @@
  */
 package com.rtbishop.look4sat.feature.mutual
 
+import android.util.Log
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
@@ -229,11 +230,17 @@ private fun MutualContent(
     // page stays at the top). onGloballyPositioned fires on the first real
     // layout, so the subsequent scrollToItem always has a measured list.
     var listReady by remember { mutableStateOf(false) }
+    Log.d(TAG, "composed: scrollToTimeRange=${state.scrollToTimeRange} matchIndex=${if (state.errorMessage != null) 2 else 1} listReady=$listReady")
 
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
-            .onGloballyPositioned { listReady = true },
+            .onGloballyPositioned {
+                if (!listReady) {
+                    Log.d(TAG, "lazy list laid out, opening prefill scroll gate")
+                    listReady = true
+                }
+            },
         state = listState,
         verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
@@ -390,12 +397,22 @@ private fun MutualContent(
     // Compose version (verified in tests), while scrollToItem lands correctly.
     val matchSearchIndex = if (state.errorMessage != null) 2 else 1
     LaunchedEffect(state.scrollToTimeRange, matchSearchIndex, listReady) {
+        Log.d(TAG, "scroll effect: scrollToTimeRange=${state.scrollToTimeRange} matchIndex=$matchSearchIndex listReady=$listReady")
         if (state.scrollToTimeRange && listReady) {
-            listState.scrollToItem(matchSearchIndex)
+            Log.d(TAG, "attempting scrollToItem($matchSearchIndex)")
+            try {
+                listState.scrollToItem(matchSearchIndex)
+                Log.d(TAG, "scrollToItem($matchSearchIndex) done, firstVisible=${listState.firstVisibleItemIndex}")
+            } catch (t: Throwable) {
+                Log.e(TAG, "scrollToItem($matchSearchIndex) threw", t)
+            }
             viewModel.consumeScrollToTimeRange()
+            Log.d(TAG, "scrollToTimeRange consumed")
         }
     }
 }
+
+private const val TAG = "Look4SatMutual"
 
 @Composable
 private fun MutualStatusChip(state: MutualUiState) {

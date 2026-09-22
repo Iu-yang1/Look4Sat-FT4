@@ -12,6 +12,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
+import androidx.navigation3.runtime.entryProvider
+import androidx.navigation3.runtime.rememberNavBackStack
+import androidx.navigation3.ui.NavDisplay
+import com.rtbishop.look4sat.core.presentation.Screen
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -38,7 +42,7 @@ import org.robolectric.annotation.GraphicsMode
  */
 @RunWith(RobolectricTestRunner::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
-@Config(sdk = [34])
+@Config(sdk = [34], qualifiers = "w411dp-h891dp-port")
 class MutualMatchPrefillScrollTest {
 
     @get:Rule
@@ -114,8 +118,7 @@ class MutualMatchPrefillScrollTest {
     fun prefillAutoStartsQueryAndFillsState() {
         val vm = MutualViewModel(FakeSatelliteRepo(), FakeSettingsRepo())
         vm.prefillMatchFromGrid("OL62")
-        val s = vm.uiState.value
-        // Query auto-started: with the empty-satellite fake the query reaches
+        val s = vm.uiState.value        // Query auto-started: with the empty-satellite fake the query reaches
         // the "no satellite data" guard (rather than never being triggered),
         // proving prefillMatchFromGrid kicks off queryMutualPasses.
         assertTrue(
@@ -126,5 +129,29 @@ class MutualMatchPrefillScrollTest {
         // ...and the target grid + 24h range pre-filled.
         org.junit.Assert.assertEquals("OL62", s.stationBGrid)
         org.junit.Assert.assertEquals(24, s.hoursAhead)
+    }
+
+    @Test
+    fun navDisplayEntryAfterPrefill_scrollsToTimeRange() {
+        // Closest to the real device path: the Mutual screen composed inside a
+        // NavDisplay entry (back stack [Mutual]) right after prefillMatchFromGrid.
+        val vm = MutualViewModel(FakeSatelliteRepo(), FakeSettingsRepo())
+        vm.prefillMatchFromGrid("OL62")
+        composeRule.setContent {
+            val backStack = rememberNavBackStack(Screen.Mutual)
+            MaterialTheme {
+                Surface(modifier = Modifier.fillMaxSize()) {
+                    NavDisplay(
+                        backStack = backStack,
+                        onBack = { backStack.removeLastOrNull() },
+                        entryProvider = entryProvider {
+                            entry<Screen.Mutual> { MutualScreen(viewModel = vm) }
+                        }
+                    )
+                }
+            }
+        }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("Time range").assertIsDisplayed()
     }
 }

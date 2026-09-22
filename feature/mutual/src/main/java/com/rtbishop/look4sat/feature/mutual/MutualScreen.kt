@@ -161,7 +161,7 @@ fun MutualScreen(
             viewModel = viewModel,
             state = state,
             isVertical = isVertical,
-            onQuery = viewModel::queryMutualPasses,
+            onQuery = { viewModel.queryMutualPasses() },
             onSelectPass = viewModel::onSelectPass,
             onNavigateToRadar = navigateToRadar,
             onStationALat = viewModel::onStationALat,

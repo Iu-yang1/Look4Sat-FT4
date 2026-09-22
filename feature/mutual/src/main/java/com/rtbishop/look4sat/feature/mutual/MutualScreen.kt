@@ -80,6 +80,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.TimeZone
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 
 @Composable
@@ -399,12 +400,24 @@ private fun MutualContent(
     LaunchedEffect(state.scrollToTimeRange, matchSearchIndex, listReady) {
         Log.d(TAG, "scroll effect: scrollToTimeRange=${state.scrollToTimeRange} matchIndex=$matchSearchIndex listReady=$listReady")
         if (state.scrollToTimeRange && listReady) {
-            Log.d(TAG, "attempting scrollToItem($matchSearchIndex)")
-            try {
-                listState.scrollToItem(matchSearchIndex)
-                Log.d(TAG, "scrollToItem($matchSearchIndex) done, firstVisible=${listState.firstVisibleItemIndex}")
-            } catch (t: Throwable) {
-                Log.e(TAG, "scrollToItem($matchSearchIndex) threw", t)
+            // Keep trying until the scroll really lands: on a device the first
+            // frame only contains the station cards + time-range card, which
+            // can be shorter than the viewport (no scroll range), so a single
+            // scrollToItem does nothing. When the async query results arrive
+            // the list grows past one screen and the scroll becomes possible.
+            for (attempt in 0 until 20) {
+                Log.d(TAG, "attempting scrollToItem($matchSearchIndex) #$attempt")
+                try {
+                    listState.scrollToItem(matchSearchIndex)
+                } catch (t: Throwable) {
+                    Log.e(TAG, "scrollToItem($matchSearchIndex) threw", t)
+                    break
+                }
+                if (listState.firstVisibleItemIndex == matchSearchIndex) {
+                    Log.d(TAG, "scroll landed at $matchSearchIndex on attempt #$attempt")
+                    break
+                }
+                delay(100)
             }
             viewModel.consumeScrollToTimeRange()
             Log.d(TAG, "scrollToTimeRange consumed")

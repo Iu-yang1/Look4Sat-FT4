@@ -55,11 +55,7 @@ data class MutualUiState(
     val hasSearched: Boolean = false,
     val selectedPassIndex: Int = -1,
     val isUtc: Boolean = false,
-    val errorMessage: String? = null,
-    // One-shot flag set by prefillMatchFromGrid() (map grid → Match button):
-    // the page scrolls to the time-range card, then consumeScrollToTimeRange()
-    // clears it.
-    val scrollToTimeRange: Boolean = false
+    val errorMessage: String? = null
 )
 
 class MutualViewModel(
@@ -190,9 +186,10 @@ class MutualViewModel(
     /**
      * Pre-fill the match page for a target grid picked from the map's grid-QSO
      * dialog ("Match" button): set the opposite-station grid (with its
-     * coordinates), reset the time range to 24h, flag the page to scroll
-     * straight to the time-range card, and start the query immediately so
-     * results are ready when the page opens.
+     * coordinates), reset the time range to 24h, start the query immediately
+     * so results are ready when the page opens, and position the list at the
+     * time-range card (LazyColumn item 1, the card right below the station
+     * inputs) so the page opens showing it at the top.
      */
     fun prefillMatchFromGrid(grid: String) {
         val g = grid.trim().uppercase()
@@ -202,18 +199,13 @@ class MutualViewModel(
                 stationBGrid = g,
                 stationBLat = pos?.let { p -> "%.4f".format(p.latitude) } ?: it.stationBLat,
                 stationBLon = pos?.let { p -> "%.4f".format(p.longitude) } ?: it.stationBLon,
-                hoursAhead = 24,
-                scrollToTimeRange = true
+                hoursAhead = 24
             )
         }
-        queryMutualPasses()
+        queryMutualPasses(initialScrollIndex = 1)
     }
 
-    fun consumeScrollToTimeRange() {
-        _uiState.update { it.copy(scrollToTimeRange = false) }
-    }
-
-    fun queryMutualPasses() {
+    fun queryMutualPasses(initialScrollIndex: Int = 0) {
         val state = _uiState.value
 
         // Resolve positions from lat/lon or grid
@@ -241,8 +233,10 @@ class MutualViewModel(
             )
         }
         // The results list is about to be replaced, so the scroll position must
-        // not leak from the previous query's list.
-        listScrollIndex = 0
+        // not leak from the previous query's list. A prefill from the map
+        // (grid-QSO dialog "Match" button) instead starts at the time-range
+        // card so the page opens with it at the top.
+        listScrollIndex = initialScrollIndex
         listScrollOffset = 0
         queryGeneration += 1
 

@@ -291,7 +291,21 @@ fun MainScreen(
                             )
                         }
                         entry<Screen.Map> {
-                            MapDestination(mapFilterViewModel = mapFilterViewModel)
+                            MapDestination(
+                                mapFilterViewModel = mapFilterViewModel,
+                                onMatchGrid = { grid ->
+                                    // Grid-QSO dialog "Match" button: pre-fill the
+                                    // match page for that grid and open it.
+                                    mutualViewModel.prefillMatchFromGrid(grid)
+                                    // Push Mutual on top of the Map entry instead of
+                                    // replacing the stack (bottom-nav style): the
+                                    // system back gesture then pops back to the map
+                                    // page, which is the page the user came from.
+                                    if (backStack.lastOrNull() !is Screen.Mutual) {
+                                        backStack.add(Screen.Mutual)
+                                    }
+                                }
+                            )
                         }
                         entry<Screen.Mutual> {
                             MutualScreen(

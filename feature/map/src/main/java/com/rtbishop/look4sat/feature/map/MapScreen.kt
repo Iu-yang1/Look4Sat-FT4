@@ -31,10 +31,12 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -46,10 +48,12 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -63,6 +67,7 @@ import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color as ComposeColor
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -145,7 +150,10 @@ private val moonIconPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
 
 @Composable
 fun MapDestination(
-    mapFilterViewModel: MapFilterViewModel
+    mapFilterViewModel: MapFilterViewModel,
+    // Invoked with the tapped grid when the QSO dialog's "Match" button is
+    // pressed: navigate to the match page pre-filled for that grid.
+    onMatchGrid: (String) -> Unit
 ) {
     val context = LocalContext.current
     val container = (context.applicationContext as IContainerProvider).getMainContainer()
@@ -182,7 +190,7 @@ fun MapDestination(
             viewModel.onAction(MapAction.SetVisible(false))
         }
     }
-    MapScreen(uiState, viewModel::onAction, mapView, mapFilterViewModel)
+    MapScreen(uiState, viewModel::onAction, mapView, mapFilterViewModel, onMatchGrid)
 }
 
 @Composable
@@ -190,7 +198,8 @@ private fun MapScreen(
     uiState: MapState,
     onAction: (MapAction) -> Unit,
     mapView: MapView,
-    mapFilterViewModel: MapFilterViewModel
+    mapFilterViewModel: MapFilterViewModel,
+    onMatchGrid: (String) -> Unit
 ) {
     val rotateMod = Modifier.rotate(180f)
     val timeString = uiState.mapData?.aosTime ?: "00:00:00"
@@ -237,8 +246,7 @@ private fun MapScreen(
         }
     }
     // Worked grids drawn on the map: filtered by the selected operated grid
-    // (null = all operated grids). Drives both the green fills and the tap
-    // listener below, so switching the selector changes which cells are green.
+    // (null = all operated grids). Switching the selector changes which cells are green.
     val workedGrids = remember(uiState.workedGrids, vuccByMyGrid, selectedMyGrid) {
         if (selectedMyGrid == null) uiState.workedGrids
         else vuccByMyGrid[selectedMyGrid] ?: emptySet()
@@ -252,16 +260,17 @@ private fun MapScreen(
     val restoredViewport = remember {
         isGridMode && mapFilterViewModel.mapCenterLat != null && mapFilterViewModel.mapZoom != null
     }
-    DisposableEffect(isGridMode, workedGrids) {
+    DisposableEffect(isGridMode) {
         val receiver = object : org.osmdroid.events.MapEventsReceiver {
             override fun singleTapConfirmedHelper(p: GeoPoint?): Boolean {
                 if (!isGridMode || p == null) return false
                 val zoom = mapView.zoomLevelDouble
-                // Allow tapping worked cells as soon as the 4-char grid LINES
+                // Allow tapping grid cells as soon as the 4-char grid lines
                 // appear (GRID_ZOOM_SUB); grid labels now appear at that zoom too.
                 if (zoom < MaidenheadGridOverlay.GRID_ZOOM_SUB) return false
                 val grid = gridOfPoint(p.latitude, p.longitude) ?: return false
-                if (grid !in workedGrids) return false
+                // Every grid is tappable: worked grids show their confirmed QSOs,
+                // unworked grids open the same dialog with an empty list.
                 selectedGrid = grid
                 return true
             }
@@ -413,7 +422,8 @@ private fun MapScreen(
             grid = grid,
             qsos = uiState.workedGridQsos[grid].orEmpty().sortedBy { it.epochMs },
             isUtc = uiState.isUtc,
-            onDismiss = { selectedGrid = null }
+            onDismiss = { selectedGrid = null },
+            onMatch = { onMatchGrid(grid) }
         )
     }
 }
@@ -425,7 +435,8 @@ private fun WorkedGridQsoDialog(
     grid: String,
     qsos: List<com.rtbishop.look4sat.core.domain.model.GridQso>,
     isUtc: Boolean,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    onMatch: () -> Unit
 ) {
     androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
         // Centered card, ~85% width, internal scroll for long lists.
@@ -434,29 +445,43 @@ private fun WorkedGridQsoDialog(
             modifier = Modifier.fillMaxWidth(0.88f)
         ) {
             Column {
-                // Header: grid + counts
-                Column(Modifier.padding(horizontal = 16.dp, vertical = 10.dp)) {
-                    Text(
-                        text = grid,
-                        style = MaterialTheme.typography.titleLarge,
-                        color = MaterialTheme.colorScheme.primary,
-                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
-                    )
-                    val distinctCalls = qsos.map { it.call }.distinct().size
-                    Text(
-                        text = stringResource(R.string.grid_qso_calls_count, distinctCalls, qsos.size),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                // Header: grid + counts on the left, "Match" action on the right
+                // (jumps to the match page pre-filled with this grid).
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(start = 16.dp, end = 8.dp, top = 4.dp, bottom = 4.dp)
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            text = grid,
+                            style = MaterialTheme.typography.titleLarge,
+                            color = MaterialTheme.colorScheme.primary,
+                            fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+                        )
+                        val distinctCalls = qsos.map { it.call }.distinct().size
+                        Text(
+                            text = stringResource(R.string.grid_qso_calls_count, distinctCalls, qsos.size),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    TextButton(
+                        onClick = {
+                            onDismiss()
+                            onMatch()
+                        }
+                    ) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_radio_tower),
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(Modifier.width(4.dp))
+                        Text(stringResource(R.string.grid_qso_match))
+                    }
                 }
                 androidx.compose.material3.HorizontalDivider()
-                if (qsos.isEmpty()) {
-                    Text(
-                        text = stringResource(R.string.grid_qso_no_sat),
-                        style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.padding(16.dp)
-                    )
-                } else {
+                if (qsos.isNotEmpty()) {
                     // Group by callsign preserving first-contact order (list is
                     // already sorted oldest-first); expandable rows.
                     val grouped = remember(qsos) {

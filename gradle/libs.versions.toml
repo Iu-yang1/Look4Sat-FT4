@@ -1,8 +1,8 @@
 [versions]
 #noinspection UnusedVersionCatalogEntry
-appVersionCode = "481"
+appVersionCode = "482"
 #noinspection UnusedVersionCatalogEntry
-appVersionName = "4.4.8-ba7opf.15"
+appVersionName = "4.4.8-ba7opf.16"
 #noinspection UnusedVersionCatalogEntry
 compileSdk = "37"
 #noinspection UnusedVersionCatalogEntry
@@ -34,6 +34,8 @@ other-okhttp = "5.4.0"
 other-osmdroid = "6.1.20"
 
 test-junit4 = "4.13.2"
+robolectric = "4.16"
+androidx-test-core = "1.7.0"
 
 androidTest-junit = "1.3.0"
 androidTest-espresso = "3.7.0"
@@ -80,6 +82,9 @@ other-osmdroid = { module = "org.osmdroid:osmdroid-android", version.ref = "othe
 
 test-coroutines = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "kotlin-coroutines" }
 test-junit4 = { module = "junit:junit", version.ref = "test-junit4" }
+robolectric = { module = "org.robolectric:robolectric", version.ref = "robolectric" }
+androidx-test-core = { module = "androidx.test:core-ktx", version.ref = "androidx-test-core" }
+compose-ui-test-junit4 = { group = "androidx.compose.ui", name = "ui-test-junit4" }
 # Real org.json for unit tests (android.jar stub throws "not mocked")
 test-json = { module = "org.json:json", version = "20240303" }
 

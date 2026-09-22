@@ -54,11 +54,13 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -77,6 +79,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.TimeZone
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 
 @Composable
@@ -220,8 +223,21 @@ private fun MutualContent(
             }
     }
 
+    // Set once the list has actually been laid out. The prefill scroll only
+    // fires after this, because on a real device the Mutual entry appears
+    // through the NavDisplay transition and LaunchedEffect alone can run
+    // before the list is measurable (the scroll then never lands and the
+    // page stays at the top). onGloballyPositioned fires on the first real
+    // layout, so the subsequent scrollToItem always has a measured list.
+    var listReady by remember { mutableStateOf(false) }
     LazyColumn(
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier
+            .fillMaxSize()
+            .onGloballyPositioned {
+                if (!listReady) {
+                    listReady = true
+                }
+            },
         state = listState,
         verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
@@ -246,7 +262,7 @@ private fun MutualContent(
         }
 
         // Input form
-        item {
+        item(key = "stationInputs") {
             Column(
                 modifier = Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(6.dp)
@@ -323,14 +339,19 @@ private fun MutualContent(
                         )
                     }
                 }
-
-                MatchSearchCard(
-                    hoursAhead = state.hoursAhead,
-                    isCalculating = state.isCalculating,
-                    onHoursAhead = onHoursAhead,
-                    onQuery = onQuery
-                )
             }
+        }
+
+        // Time range + query card. Its own LazyColumn item so a prefill from
+        // the map (grid-QSO dialog "Match" button) can scroll the page exactly
+        // to the time-range selector.
+        item(key = "matchSearch") {
+            MatchSearchCard(
+                hoursAhead = state.hoursAhead,
+                isCalculating = state.isCalculating,
+                onHoursAhead = onHoursAhead,
+                onQuery = onQuery
+            )
         }
 
         // Results
@@ -362,6 +383,31 @@ private fun MutualContent(
                 onClick = { onSelectPass(if (state.selectedPassIndex == index) -1 else index) },
                 onNavigateToRadar = { onNavigateToRadar(pass.catNum, pass.startTime, mutualData) }
             )
+        }
+    }
+
+    // Prefill from the map's grid-QSO dialog "Match" button: once the page is
+    // laid out, jump straight to the time-range card. Index accounts for the
+    // optional error card at the top (error = 0, station inputs = 1, time
+    // range = 2; else 1). scrollToItem is used instead of initializing the
+    // LazyListState at index 1: the constructor parameter is ignored by this
+    // Compose version (verified in tests), while scrollToItem lands correctly.
+    val matchSearchIndex = if (state.errorMessage != null) 2 else 1
+    LaunchedEffect(state.scrollToTimeRange, matchSearchIndex, listReady) {
+        if (state.scrollToTimeRange && listReady) {
+            // Keep trying until the scroll really lands: on a device the first
+            // frame only contains the station cards + time-range card, which
+            // can be shorter than the viewport (no scroll range), so a single
+            // scrollToItem does nothing. When the async query results arrive
+            // the list grows past one screen and the scroll becomes possible.
+            for (attempt in 1..20) {
+                listState.scrollToItem(matchSearchIndex)
+                if (listState.firstVisibleItemIndex == matchSearchIndex) {
+                    break
+                }
+                if (attempt < 20) delay(100)
+            }
+            viewModel.consumeScrollToTimeRange()
         }
     }
 }

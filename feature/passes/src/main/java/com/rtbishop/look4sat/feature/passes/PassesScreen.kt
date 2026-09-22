@@ -30,12 +30,15 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -147,11 +150,16 @@ private fun PassesScreen(
             onAccept = dismiss,
             titleFontSize = 18
         ) { padding ->
+            // The changelog is long; keep the dialog frame fixed and let the
+            // text scroll inside it (matches the update-checker page pattern).
             Text(
                 text = stringResource(R.string.pass_whatsnew_message),
                 fontSize = 16.sp,
                 color = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.padding(horizontal = padding)
+                modifier = Modifier
+                    .padding(horizontal = padding)
+                    .heightIn(max = 360.dp)
+                    .verticalScroll(rememberScrollState())
             )
         }
     }

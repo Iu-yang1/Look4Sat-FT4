@@ -54,6 +54,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -152,8 +153,11 @@ private val moonIconPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
 fun MapDestination(
     mapFilterViewModel: MapFilterViewModel,
     // Invoked with the tapped grid when the QSO dialog's "Match" button is
-    // pressed: navigate to the match page pre-filled for that grid.
-    onMatchGrid: (String) -> Unit
+    // pressed: pre-fill that grid and start the match query.
+    onMatchGrid: (String) -> Unit,
+    // True while the map "Match" query is running (the page only navigates
+    // once the query finished, so the match page opens with results ready).
+    matchCalculating: Boolean
 ) {
     val context = LocalContext.current
     val container = (context.applicationContext as IContainerProvider).getMainContainer()
@@ -190,7 +194,7 @@ fun MapDestination(
             viewModel.onAction(MapAction.SetVisible(false))
         }
     }
-    MapScreen(uiState, viewModel::onAction, mapView, mapFilterViewModel, onMatchGrid)
+    MapScreen(uiState, viewModel::onAction, mapView, mapFilterViewModel, onMatchGrid, matchCalculating)
 }
 
 @Composable
@@ -199,7 +203,8 @@ private fun MapScreen(
     onAction: (MapAction) -> Unit,
     mapView: MapView,
     mapFilterViewModel: MapFilterViewModel,
-    onMatchGrid: (String) -> Unit
+    onMatchGrid: (String) -> Unit,
+    matchCalculating: Boolean
 ) {
     val rotateMod = Modifier.rotate(180f)
     val timeString = uiState.mapData?.aosTime ?: "00:00:00"
@@ -422,6 +427,7 @@ private fun MapScreen(
             grid = grid,
             qsos = uiState.workedGridQsos[grid].orEmpty().sortedBy { it.epochMs },
             isUtc = uiState.isUtc,
+            matchCalculating = matchCalculating,
             onDismiss = { selectedGrid = null },
             onMatch = { onMatchGrid(grid) }
         )
@@ -435,6 +441,7 @@ private fun WorkedGridQsoDialog(
     grid: String,
     qsos: List<com.rtbishop.look4sat.core.domain.model.GridQso>,
     isUtc: Boolean,
+    matchCalculating: Boolean,
     onDismiss: () -> Unit,
     onMatch: () -> Unit
 ) {
@@ -466,16 +473,24 @@ private fun WorkedGridQsoDialog(
                         )
                     }
                     TextButton(
+                        enabled = !matchCalculating,
                         onClick = {
                             onDismiss()
                             onMatch()
                         }
                     ) {
-                        Icon(
-                            painter = painterResource(R.drawable.ic_radio_tower),
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp)
-                        )
+                        if (matchCalculating) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(18.dp),
+                                strokeWidth = 2.dp
+                            )
+                        } else {
+                            Icon(
+                                painter = painterResource(R.drawable.ic_radio_tower),
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
                         Spacer(Modifier.width(4.dp))
                         Text(stringResource(R.string.grid_qso_match))
                     }

@@ -40,6 +40,8 @@ import kotlinx.coroutines.withContext
 import kotlin.math.PI
 import kotlin.math.roundToInt
 
+private const val TAG = "Look4SatMutual"
+
 data class MutualUiState(
     val stationALat: String = "",
     val stationALon: String = "",
@@ -59,7 +61,12 @@ data class MutualUiState(
     // One-shot flag set by prefillMatchFromGrid() (map grid → Match button):
     // the page scrolls to the time-range card after the first layout, then
     // consumeScrollToTimeRange() clears it.
-    val scrollToTimeRange: Boolean = false
+    val scrollToTimeRange: Boolean = false,
+    // One-shot flag set by prefillMatchFromGrid(): the map page waits for the
+    // pre-filled query to finish, then navigates to the match page so the very
+    // first frame already contains the results (time-range card + pass curves,
+    // no scroll flicker). consumePendingNavigation() clears it.
+    val pendingNavigation: Boolean = false
 )
 
 class MutualViewModel(
@@ -74,12 +81,11 @@ class MutualViewModel(
     val uiState: StateFlow<MutualUiState> = _uiState.asStateFlow()
 
     // Session-scoped scroll position of the pass list (Activity-scoped VM, so it
-    // survives switching to another page and back). Reset to the top whenever a
-    // new query replaces the results.
+    // survives switching to another page and back), including across re-queries.
     var listScrollIndex: Int = 0
     var listScrollOffset: Int = 0
 
-    /** Bumped on every new query so the list scrolls back to the top. */
+    /** Bumped on every query so the list state rebuilds from the stored position. */
     var queryGeneration: Int = 0
 
     init {
@@ -203,16 +209,27 @@ class MutualViewModel(
                 stationBLat = pos?.let { p -> "%.4f".format(p.latitude) } ?: it.stationBLat,
                 stationBLon = pos?.let { p -> "%.4f".format(p.longitude) } ?: it.stationBLon,
                 hoursAhead = 24,
-                scrollToTimeRange = true
+                scrollToTimeRange = true,
+                pendingNavigation = true
             )
         }
         queryMutualPasses()
+    }
+
+    fun consumePendingNavigation() {
+        _uiState.update { it.copy(pendingNavigation = false) }
     }
 
     fun consumeScrollToTimeRange() {
         _uiState.update { it.copy(scrollToTimeRange = false) }
     }
 
+    /**
+     * Run a mutual-pass query while preserving the current scroll position.
+     * Previous results remain visible during calculation so the list does not
+     * shrink and clamp the user's position; fresh results replace them when
+     * the query completes.
+     */
     fun queryMutualPasses() {
         val state = _uiState.value
 
@@ -236,15 +253,12 @@ class MutualViewModel(
                 isCalculating = true,
                 hasSearched = true,
                 errorMessage = null,
-                mutualPasses = emptyList(),
+                // Deliberately keep mutualPasses: clearing it would shrink the
+                // list below one screen and clamp the scroll position away.
+                // The stale results are replaced when the new ones arrive.
                 selectedPassIndex = -1
             )
         }
-        // The results list is about to be replaced, so the scroll position must
-        // not leak from the previous query's list. Map prefill scrolls to the
-        // time-range card after the list is laid out.
-        listScrollIndex = 0
-        listScrollOffset = 0
         queryGeneration += 1
 
         viewModelScope.launch {
@@ -253,8 +267,15 @@ class MutualViewModel(
             val minElevB = state.stationBMinElev
             val hours = state.hoursAhead
 
-            val results = withContext(computeDispatcher) {
-                findMutualPasses(satellites, posA, posB, minElevA, minElevB, time, hours)
+            val results = try {
+                withContext(computeDispatcher) {
+                    findMutualPasses(satellites, posA, posB, minElevA, minElevB, time, hours)
+                }
+            } catch (t: Throwable) {
+                // Never leave the query stuck in "calculating" (which would also
+                // block the pending map→match navigation forever).
+                android.util.Log.e(TAG, "findMutualPasses threw", t)
+                emptyList()
             }
 
             val errorMsg = if (results.isEmpty()) {

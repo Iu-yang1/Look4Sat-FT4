@@ -285,4 +285,38 @@ class MutualViewModelTest {
 
         assertNull(vm.uiState.value.errorMessage)
     }
+    @Test
+    fun `requery keeps scroll position and stale results while running`() = runTest(mainDispatcherRule.dispatcher.scheduler) {
+        val windows = TestOrbits.findPassWindows()
+        assertTrue("fixture must produce ISS windows", windows.isNotEmpty())
+        val vm = createVm(
+            satellites = listOf(TestOrbits.ISS),
+            passes = windows
+        )
+        vm.onStationBGrid("OL62")
+        queryAndSettle(vm)
+        assertTrue("fixture must yield passes", vm.uiState.value.mutualPasses.isNotEmpty())
+
+        // The user scrolled into the results; the snapshotFlow write-back has
+        // stored this position in the VM.
+        vm.listScrollIndex = 4
+        vm.listScrollOffset = 137
+
+        // Re-run the query from the match page ("query" button).
+        vm.queryMutualPasses()
+
+        // While the query runs, the old results stay on screen (the list keeps
+        // its height, so the scroll position is not clamped away)...
+        assertTrue("stale results kept while calculating", vm.uiState.value.mutualPasses.isNotEmpty())
+        // ...and the scroll position must not be reset to the top.
+        assertEquals(4, vm.listScrollIndex)
+        assertEquals(137, vm.listScrollOffset)
+
+        advanceUntilIdle()
+        assertFalse(vm.uiState.value.isCalculating)
+        assertTrue("fresh results replace the stale ones", vm.uiState.value.mutualPasses.isNotEmpty())
+        // Position intact after the query settled.
+        assertEquals(4, vm.listScrollIndex)
+        assertEquals(137, vm.listScrollOffset)
+    }
 }

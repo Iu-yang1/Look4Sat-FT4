@@ -146,6 +146,13 @@ class MutualMatchPrefillScrollTest {
         // ...and the target grid + 24h range pre-filled.
         org.junit.Assert.assertEquals("OL62", s.stationBGrid)
         org.junit.Assert.assertEquals(24, s.hoursAhead)
+        // ...and navigation to the match page is pending until the query done.
+        assertTrue("navigation should be pending", s.pendingNavigation)
+        // The early-return guard means the query finished immediately (no
+        // satellites): the map page must now be free to navigate.
+        org.junit.Assert.assertFalse("query finished -> not calculating", s.isCalculating)
+        vm.consumePendingNavigation()
+        org.junit.Assert.assertFalse("consume clears pending navigation", vm.uiState.value.pendingNavigation)
     }
 
     @Test

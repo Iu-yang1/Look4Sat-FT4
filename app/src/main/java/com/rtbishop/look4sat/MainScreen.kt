@@ -177,6 +177,28 @@ fun MainScreen(
         factory = MapFilterViewModel.factory()
     )
 
+    // Map grid-QSO dialog "Match" button: pre-fill the match page for that
+    // grid and run the query BEFORE navigating, so the page's first frame
+    // already contains the results (time-range card at the top, pass curves
+    // right below — no scroll flicker). Navigation happens once the query
+    // finishes (see the collector below).
+    val mutualState by mutualViewModel.uiState.collectAsStateWithLifecycle()
+    val matchCalculating = mutualState.pendingNavigation && mutualState.isCalculating
+
+    LaunchedEffect(mutualViewModel) {
+        mutualViewModel.uiState.collect { state ->
+            if (state.pendingNavigation && !state.isCalculating) {
+                mutualViewModel.consumePendingNavigation()
+                // Push Mutual on top of the Map entry instead of replacing the
+                // stack (bottom-nav style): the system back gesture then pops
+                // back to the map page, which is the page the user came from.
+                if (backStack.lastOrNull() !is Screen.Mutual) {
+                    backStack.add(Screen.Mutual)
+                }
+            }
+        }
+    }
+
     CompositionLocalProvider(
         LocalElevationThresholds provides ElevationThresholds(
             low = otherSettings.lowElevation,
@@ -246,17 +268,14 @@ fun MainScreen(
                         entry<Screen.Map> {
                             MapDestination(
                                 mapFilterViewModel = mapFilterViewModel,
+                                matchCalculating = matchCalculating,
                                 onMatchGrid = { grid ->
-                                    // Grid-QSO dialog "Match" button: pre-fill the
-                                    // match page for that grid and open it.
+                                    // Grid-QSO dialog "Match" button: pre-fill
+                                    // the match page for that grid and start the
+                                    // query. Navigation to the match page is
+                                    // handled by the uiState collector above,
+                                    // once the query finishes.
                                     mutualViewModel.prefillMatchFromGrid(grid)
-                                    // Push Mutual on top of the Map entry instead of
-                                    // replacing the stack (bottom-nav style): the
-                                    // system back gesture then pops back to the map
-                                    // page, which is the page the user came from.
-                                    if (backStack.lastOrNull() !is Screen.Mutual) {
-                                        backStack.add(Screen.Mutual)
-                                    }
                                 }
                             )
                         }

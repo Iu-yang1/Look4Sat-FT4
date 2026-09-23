@@ -111,6 +111,11 @@ interface ISettingsRepo {
     /** Distinct 4-char gridsquares the account operated from (LoTW <MY_GRIDSQUARE>). */
     fun getRoamedGrids(): Set<String>
     fun setRoamedGrids(grids: Set<String>)
+    /** Stations the user marked as "want to contact" in unworked gridsquares
+     *  (grid -> mark). One mark per grid; cleared automatically when the grid
+     *  becomes worked. */
+    fun getMarkedGridStations(): Map<String, com.rtbishop.look4sat.core.domain.model.MarkedStation>
+    fun setMarkedGridStations(stations: Map<String, com.rtbishop.look4sat.core.domain.model.MarkedStation>)
     //endregion
 
     //region # LoTW confirmed-grids settings

@@ -133,6 +133,12 @@
     <string name="grid_qso_first">首通</string>
     <string name="grid_qso_no_sat">卫星未知</string>
     <string name="grid_qso_match">匹配</string>
+    <!-- 未通联网格中的“标记想通联的电台”提醒 -->
+    <string name="grid_mark_station">标记你想通联的电台</string>
+    <string name="grid_mark_callsign">呼号</string>
+    <string name="grid_mark_confirm">标记</string>
+    <string name="grid_mark_label">标记</string>
+    <string name="grid_mark_delete">删除标记</string>
     <string name="map_visible">日照中</string>
 
     <!-- Settings screen -->

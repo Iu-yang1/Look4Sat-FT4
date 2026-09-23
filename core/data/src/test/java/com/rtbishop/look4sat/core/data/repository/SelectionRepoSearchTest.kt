@@ -192,6 +192,8 @@ private class FakeSettingsRepoForSearch : ISettingsRepo {
     override fun setWorkedGridQsos(qsos: Map<String, List<com.rtbishop.look4sat.core.domain.model.GridQso>>) = Unit
     override fun getRoamedGrids(): Set<String> = emptySet()
     override fun setRoamedGrids(grids: Set<String>) = Unit
+    override fun getMarkedGridStations(): Map<String, com.rtbishop.look4sat.core.domain.model.MarkedStation> = emptyMap()
+    override fun setMarkedGridStations(stations: Map<String, com.rtbishop.look4sat.core.domain.model.MarkedStation>) = Unit
     override fun updateLoTWSettings(settings: com.rtbishop.look4sat.core.domain.model.LoTWSettings) = Unit
     override fun getLastLotwSyncDate(): String = ""
     override fun setLastLotwSyncDate(date: String) = Unit

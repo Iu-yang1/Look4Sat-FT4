@@ -376,6 +376,10 @@ internal class FakeSettingsRepo(dataSources: DataSourcesSettings = defaultDataSo
     override fun getLastLotwSyncCallsign(): String = ""
 
     override fun setLastLotwSyncCallsign(callsign: String) = Unit
+
+    override fun getMarkedGridStations(): Map<String, com.rtbishop.look4sat.core.domain.model.MarkedStation> = emptyMap()
+
+    override fun setMarkedGridStations(stations: Map<String, com.rtbishop.look4sat.core.domain.model.MarkedStation>) = Unit
 }
 
 private fun defaultDataSourcesSettings(): DataSourcesSettings {

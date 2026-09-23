@@ -94,11 +94,19 @@ class MapViewModel(
         }
         viewModelScope.launch {
             settingsRepo.wavelogSettings.collectLatest { _ ->
+                val workedGrids = settingsRepo.getWorkedGrids()
+                val markedGrids = settingsRepo.getMarkedGridStations()
+                // Marked stations auto-clear once their grid becomes worked:
+                // the reminder has served its purpose (user req: 网格变绿后标记自动清除).
+                val stale = markedGrids.keys.filter { it in workedGrids }
+                val activeMarks = if (stale.isEmpty()) markedGrids else markedGrids - stale.toSet()
+                if (stale.isNotEmpty()) settingsRepo.setMarkedGridStations(activeMarks)
                 _uiState.update {
                     it.copy(
-                        workedGrids = settingsRepo.getWorkedGrids(),
+                        workedGrids = workedGrids,
                         workedGridQsos = settingsRepo.getWorkedGridQsos(),
-                        roamedGrids = settingsRepo.getRoamedGrids()
+                        roamedGrids = settingsRepo.getRoamedGrids(),
+                        markedGrids = activeMarks
                     )
                 }
             }
@@ -116,6 +124,20 @@ class MapViewModel(
             is MapAction.SelectDefaultItem -> selectDefaultSatellite(action.catnum)
             is MapAction.ToggleGridMode -> settingsRepo.updateOtherSettings { it.copy(stateOfMapGrid = action.value) }
             is MapAction.ToggleFirstCallLabels -> settingsRepo.updateOtherSettings { it.copy(stateOfMapFirstCall = action.value) }
+            is MapAction.SetMarkedStation -> {
+                val updated = settingsRepo.getMarkedGridStations() +
+                    (action.grid to com.rtbishop.look4sat.core.domain.model.MarkedStation(
+                        call = action.call.trim().uppercase(),
+                        epochMs = System.currentTimeMillis()
+                    ))
+                settingsRepo.setMarkedGridStations(updated)
+                _uiState.update { it.copy(markedGrids = updated) }
+            }
+            is MapAction.RemoveMarkedStation -> {
+                val updated = settingsRepo.getMarkedGridStations() - action.grid
+                settingsRepo.setMarkedGridStations(updated)
+                _uiState.update { it.copy(markedGrids = updated) }
+            }
             is MapAction.SetVisible -> isScreenVisible.value = action.isVisible
         }
     }

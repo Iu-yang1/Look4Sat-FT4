@@ -376,7 +376,8 @@ private fun MapScreen(
                             centerOnStation = shouldCenter,
                             // 首通呼号标签只作用于 VUCC 视图(用户要求); "All"/其他奖状不过滤.
                             showFirstCallLabels = uiState.showFirstCallLabels && selectedAward == AwardType.VUCC,
-                            firstCallsByGrid = firstCallsByGrid
+                            firstCallsByGrid = firstCallsByGrid,
+                            markedGrids = uiState.markedGrids
                         )
                         if (!shouldCenter || uiState.stationPosition != null) {
                             prevGridMode = uiState.isGridMode
@@ -437,15 +438,19 @@ private fun MapScreen(
         }
     }
     // Centered dialog listing the tapped worked grid's confirmed satellite QSOs.
-    // Dismissed by tapping outside (no explicit close button).
+    // Dismissed by tapping outside (no explicit close button). Unworked grids
+    // open the same dialog with an empty list plus a mark-a-station reminder.
     selectedGrid?.let { grid ->
         WorkedGridQsoDialog(
             grid = grid,
             qsos = uiState.workedGridQsos[grid].orEmpty().sortedBy { it.epochMs },
+            marked = uiState.markedGrids[grid],
             isUtc = uiState.isUtc,
             matchCalculating = matchCalculating,
             onDismiss = { selectedGrid = null },
-            onMatch = { onMatchGrid(grid) }
+            onMatch = { onMatchGrid(grid) },
+            onMark = { call -> onAction(MapAction.SetMarkedStation(grid, call)) },
+            onRemoveMark = { onAction(MapAction.RemoveMarkedStation(grid)) }
         )
     }
 }
@@ -456,11 +461,16 @@ private fun MapScreen(
 private fun WorkedGridQsoDialog(
     grid: String,
     qsos: List<com.rtbishop.look4sat.core.domain.model.GridQso>,
+    marked: com.rtbishop.look4sat.core.domain.model.MarkedStation?,
     isUtc: Boolean,
     matchCalculating: Boolean,
     onDismiss: () -> Unit,
-    onMatch: () -> Unit
+    onMatch: () -> Unit,
+    onMark: (String) -> Unit,
+    onRemoveMark: () -> Unit
 ) {
+    var showMarkInput by remember { mutableStateOf(false) }
+    var callInput by remember { mutableStateOf("") }
     androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
         // Centered card, ~85% width, internal scroll for long lists.
         Card(
@@ -512,24 +522,125 @@ private fun WorkedGridQsoDialog(
                     }
                 }
                 androidx.compose.material3.HorizontalDivider()
-                if (qsos.isNotEmpty()) {
-                    // Group by callsign preserving first-contact order (list is
-                    // already sorted oldest-first); expandable rows.
-                    val grouped = remember(qsos) {
-                        qsos.groupBy { it.call }.entries.sortedBy { it.value.first().epochMs }
+                Column(
+                    Modifier
+                        .heightIn(max = 380.dp)
+                        .verticalScroll(rememberScrollState())
+                ) {
+                    // A marked station shows first as a red reminder row: red
+                    // callsign, "标记" in the count column, the marking date in
+                    // the date column, and a small delete icon to remove it.
+                    if (marked != null) {
+                        MarkedStationRow(marked = marked, isUtc = isUtc, onRemoveMark = onRemoveMark)
+                        androidx.compose.material3.HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
                     }
-                    Column(
-                        Modifier
-                            .heightIn(max = 380.dp)
-                            .verticalScroll(rememberScrollState())
-                    ) {
+                    if (qsos.isNotEmpty()) {
+                        // Group by callsign preserving first-contact order (list is
+                        // already sorted oldest-first); expandable rows.
+                        val grouped = remember(qsos) {
+                            qsos.groupBy { it.call }.entries.sortedBy { it.value.first().epochMs }
+                        }
                         grouped.forEach { (call, callQsos) ->
                             WorkedGridCallRow(call, callQsos = callQsos, isUtc = isUtc)
                             androidx.compose.material3.HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
                         }
                     }
+                    // Unworked grids: offer to mark a station the user wants to
+                    // contact in this grid (a reminder, cleared when worked).
+                    if (qsos.isEmpty()) {
+                        TextButton(
+                            onClick = {
+                                callInput = marked?.call.orEmpty()
+                                showMarkInput = true
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(
+                                painter = painterResource(R.drawable.ic_add),
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(Modifier.width(4.dp))
+                            Text(stringResource(R.string.grid_mark_station))
+                        }
+                    }
                 }
             }
+        }
+    }
+    // Mark-a-station input dialog: enter a callsign as a reminder.
+    if (showMarkInput) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { showMarkInput = false },
+            title = { Text(stringResource(R.string.grid_mark_station)) },
+            text = {
+                androidx.compose.material3.OutlinedTextField(
+                    value = callInput,
+                    onValueChange = { callInput = it },
+                    label = { Text(stringResource(R.string.grid_mark_callsign)) },
+                    singleLine = true
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = callInput.isNotBlank(),
+                    onClick = {
+                        onMark(callInput)
+                        showMarkInput = false
+                    }
+                ) { Text(stringResource(R.string.grid_mark_confirm)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showMarkInput = false }) { Text(stringResource(R.string.btn_cancel)) }
+            }
+        )
+    }
+}
+
+@Composable
+private fun MarkedStationRow(
+    marked: com.rtbishop.look4sat.core.domain.model.MarkedStation,
+    isUtc: Boolean,
+    onRemoveMark: () -> Unit
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)
+    ) {
+        Text(
+            text = marked.call,
+            style = MaterialTheme.typography.titleMedium,
+            fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+            color = ComposeColor(0xFFFF3B30),
+            maxLines = 1,
+            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f)
+        )
+        Text(
+            text = stringResource(R.string.grid_mark_label),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+            modifier = Modifier.weight(1f)
+        )
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.End,
+            modifier = Modifier.weight(1f)
+        ) {
+            Text(
+                text = formatDate(marked.epochMs, isUtc),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Icon(
+                painter = painterResource(R.drawable.ic_delete),
+                contentDescription = stringResource(R.string.grid_mark_delete),
+                tint = MaterialTheme.colorScheme.error,
+                modifier = Modifier
+                    .size(18.dp)
+                    .clickable(onClick = onRemoveMark)
+            )
         }
     }
 }
@@ -1053,7 +1164,8 @@ private fun setGridMode(
     stationPosition: GeoPos?,
     centerOnStation: Boolean = false,
     showFirstCallLabels: Boolean = false,
-    firstCallsByGrid: Map<String, String> = emptyMap()
+    firstCallsByGrid: Map<String, String> = emptyMap(),
+    markedGrids: Map<String, com.rtbishop.look4sat.core.domain.model.MarkedStation> = emptyMap()
 ) {
     try {
         val gridOverlay = mapView.overlays[OVERLAY_GRID]
@@ -1064,6 +1176,7 @@ private fun setGridMode(
             // 首通呼号模式: 绿格标注第一个通联的呼号, 非绿格不显示标签.
             gridOverlay.showFirstCallLabels = showFirstCallLabels
             gridOverlay.firstCallsByGrid = firstCallsByGrid
+            gridOverlay.markedGrids = markedGrids
             // ownGrid must be set on EVERY update — the position is available
             // regardless of whether this frame centers (centering happens only
             // on entry, but passing null here would wipe the bold outline).
@@ -1075,6 +1188,7 @@ private fun setGridMode(
                 this.roamedGrids = roamedGrids
                 this.showFirstCallLabels = showFirstCallLabels
                 this.firstCallsByGrid = firstCallsByGrid
+                this.markedGrids = markedGrids
                 this.ownGrid = ownGridOf(stationPosition)
             }
         }

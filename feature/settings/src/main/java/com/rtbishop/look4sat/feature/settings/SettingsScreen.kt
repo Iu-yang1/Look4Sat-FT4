@@ -104,17 +104,6 @@ fun SettingsDestination() {
 private fun SettingsScreen(uiState: SettingsState, onAction: (SettingsAction) -> Unit) {
     var showUpdateChecker by rememberSaveable { mutableStateOf(false) }
     var showMapSettings by rememberSaveable { mutableStateOf(false) }
-    if (showMapSettings) {
-        MapSettingsScreen(
-            settings = uiState.otherSettings,
-            onBack = { showMapSettings = false },
-            onSave = { mapSource, tiandituKey ->
-                onAction(SettingsAction.UpdateMapSettings(mapSource, tiandituKey))
-                showMapSettings = false
-            }
-        )
-        return
-    }
     if (showUpdateChecker) {
         UpdateCheckerScreen(
             currentVersion = uiState.appVersionName,
@@ -144,6 +133,17 @@ private fun SettingsScreen(uiState: SettingsState, onAction: (SettingsAction) ->
             pendingCustomSourcesDeny.value = null
         }
     )
+
+    if (showMapSettings) {
+        MapSettingsDialog(
+            settings = uiState.otherSettings,
+            onDismiss = { showMapSettings = false },
+            onSave = { mapSource, tiandituKey ->
+                onAction(SettingsAction.UpdateMapSettings(mapSource, tiandituKey))
+                showMapSettings = false
+            }
+        )
+    }
 
     // Dialogs
     if (dialogs.position) {

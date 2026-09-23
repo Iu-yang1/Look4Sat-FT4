@@ -312,8 +312,8 @@
     <string name="prefs_map_source_tianditu_vector">TianDiTu vector</string>
     <string name="prefs_map_source_tianditu_image">TianDiTu imagery</string>
     <string name="prefs_map_tianditu_key">TianDiTu access key</string>
+    <string name="prefs_map_tianditu_key_help">Request a server-side application key from the TianDiTu developer console before using TianDiTu maps.</string>
     <string name="prefs_map_tianditu_key_required">A TianDiTu key is required. Offline OSM remains active until it is entered.</string>
-    <string name="prefs_map_save">Save map settings</string>
     <string name="prefs_ft4_title">FT4 and time synchronization</string>
     <string name="prefs_ft4_callsign">Operator callsign</string>
     <string name="prefs_ft4_grid">Maidenhead grid: %s</string>
@@ -379,6 +379,7 @@
         \n* Libre Space Foundation (SatNOGS)
         \n* xdsopl and Robot36 contributors!
         \n* BG7NTA BG5JSU (CW decoding feature)
+        \n* BH2VSQ (TianDiTu rendering support)
     </string>
     <string name="prefs_outro_license">The app comes with no warranty</string>
 

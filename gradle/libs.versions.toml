@@ -1,8 +1,8 @@
 [versions]
 #noinspection UnusedVersionCatalogEntry
-appVersionCode = "494"
+appVersionCode = "495"
 #noinspection UnusedVersionCatalogEntry
-appVersionName = "4.4.7-ba7opf.14"
+appVersionName = "4.4.7-ba7opf.14.1"
 #noinspection UnusedVersionCatalogEntry
 compileSdk = "37"
 #noinspection UnusedVersionCatalogEntry

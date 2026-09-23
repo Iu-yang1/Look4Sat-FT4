@@ -307,11 +307,14 @@ class MutualViewModel(
             val amSatFm = settingsRepo.getAmSatFmCatnums()
             val amSatLinear = settingsRepo.getAmSatLinearCatnums()
             val filteredSatellites = if (amSatFm.isEmpty() && amSatLinear.isEmpty()) {
+                // 回退到数据库模式过滤: 只用带上行频率的转发器记录, 排除纯下行
+                // 信标/遥测(如 CW 信标、FM 语音合成信标), 避免 ISS/IO-86/FO-29 等
+                // 因共享模式标签(CW/FM)被误判进错误类别.
                 val filterModes = buildList {
                     if (state.filterFM) add("FM")
                     if (state.filterLinear) addAll(listOf("USB", "LSB", "CW", "SSB"))
                 }
-                val idsWithModes = satelliteRepo.getSatelliteIdsWithModes(filterModes)
+                val idsWithModes = satelliteRepo.getSatelliteIdsWithModesAndUplink(filterModes)
                 if (idsWithModes.isEmpty()) satellites
                 else satellites.filter { it.data.catnum in idsWithModes }
             } else {

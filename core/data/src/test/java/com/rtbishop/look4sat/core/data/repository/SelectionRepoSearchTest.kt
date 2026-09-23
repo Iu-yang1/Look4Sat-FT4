@@ -157,6 +157,26 @@ class SelectionRepoSearchTest {
     }
 
     @Test
+    fun `virtual type with empty AMSAT list shows empty not everything`() = runTest {
+        // 根因2回归: AMSAT 清单未同步(空)时, 选虚拟类型应显示空列表, 而非全部卫星.
+        val repo = createRepo(items = sampleItems, amSatFm = emptySet())
+        repo.setTypes(listOf("AMSAT Live FM"))
+        assertTrue(repo.getEntriesFlow().first().isEmpty())
+    }
+
+    @Test
+    fun `virtual type combined with regular type unions both lists`() = runTest {
+        val repo = createRepo(
+            items = sampleItems,
+            amSatFm = setOf(25544),
+            amSatLinear = setOf(7530)
+        )
+        repo.setTypes(listOf("AMSAT Live FM", "AMSAT Live Linear"))
+        val results = repo.getEntriesFlow().first()
+        assertEquals(setOf(25544, 7530), results.map { it.catnum }.toSet())
+    }
+
+    @Test
     fun `types list has virtual transponder types first and keeps All`() {
         val repo = createRepo(sampleItems)
         val types = repo.getTypesList()
@@ -192,6 +212,7 @@ private class FakeLocalSourceForSearch(
     override suspend fun insertEntries(entries: List<OrbitalData>) = Unit
     override suspend fun deleteEntries() = Unit
     override suspend fun getIdsWithModes(modes: List<String>): List<Int> = sstvIds
+    override suspend fun getIdsWithModesAndUplink(modes: List<String>): List<Int> = sstvIds
     override suspend fun getRadiosTotal(): Int = 0
     override suspend fun getRadiosWithId(id: Int): List<SatRadio> = emptyList()
     override suspend fun insertRadios(radios: List<SatRadio>, isCustom: Boolean) = Unit

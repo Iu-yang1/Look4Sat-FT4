@@ -180,6 +180,7 @@ private class FakeLocalSource : ILocalSource {
     }
 
     override suspend fun getIdsWithModes(modes: List<String>): List<Int> = emptyList()
+    override suspend fun getIdsWithModesAndUplink(modes: List<String>): List<Int> = emptyList()
 
     override suspend fun getRadiosTotal(): Int = insertedRadios.size
 

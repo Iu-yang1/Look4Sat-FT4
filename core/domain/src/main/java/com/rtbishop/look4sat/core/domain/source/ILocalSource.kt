@@ -29,6 +29,7 @@ interface ILocalSource {
     suspend fun insertEntries(entries: List<OrbitalData>)
     suspend fun deleteEntries()
     suspend fun getIdsWithModes(modes: List<String>): List<Int>
+    suspend fun getIdsWithModesAndUplink(modes: List<String>): List<Int>
     suspend fun getRadiosTotal(): Int
     suspend fun getRadiosWithId(id: Int): List<SatRadio>
     suspend fun insertRadios(radios: List<SatRadio>, isCustom: Boolean = false)

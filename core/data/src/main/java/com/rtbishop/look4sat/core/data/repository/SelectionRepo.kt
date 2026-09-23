@@ -50,7 +50,7 @@ class SelectionRepo(
             null // null = no filtering
         } else {
             val ids = resolveTypeIds(types)
-            if (ids.isEmpty()) null else ids.toHashSet()
+            if (ids.isEmpty()) emptySet() else ids.toHashSet()
         }
         currentItems.map { items ->
             if (catnumSet == null) items else items.filter { it.catnum in catnumSet }
@@ -72,9 +72,9 @@ class SelectionRepo(
         val idsSet = mutableSetOf<Int>()
         types.forEach { type ->
             when (type) {
-                "AMSAT Live FM" -> idsSet.addAll(settingsRepo.getAmSatFmCatnums())
-                "AMSAT Live Linear" -> idsSet.addAll(settingsRepo.getAmSatLinearCatnums())
-                "Live SSTV" -> idsSet.addAll(localSource.getIdsWithModes(listOf("SSTV")))
+                Sources.virtualTypeNames[0] -> idsSet.addAll(settingsRepo.getAmSatFmCatnums())
+                Sources.virtualTypeNames[1] -> idsSet.addAll(settingsRepo.getAmSatLinearCatnums())
+                Sources.virtualTypeNames[2] -> idsSet.addAll(localSource.getIdsWithModes(listOf("SSTV")))
                 else -> idsSet.addAll(settingsRepo.getSatelliteTypesIds(listOf(type)))
             }
         }
@@ -83,7 +83,7 @@ class SelectionRepo(
 
     override fun getTypesList() = buildList {
         // 三个转发器/活动虚拟类型排在最前.
-        addAll(listOf("AMSAT Live FM", "AMSAT Live Linear", "Live SSTV"))
+        addAll(Sources.virtualTypeNames)
         addAll(Sources.satelliteDataUrls.keys.sorted().toMutableList().apply { removeAt(0) })
     }
 

@@ -48,6 +48,7 @@ class LocalSource(private val look4SatDao: Look4SatDao) : ILocalSource {
     override suspend fun deleteEntries() = look4SatDao.deleteEntries()
 
     override suspend fun getIdsWithModes(modes: List<String>) = look4SatDao.getIdsWithModes(modes)
+    override suspend fun getIdsWithModesAndUplink(modes: List<String>) = look4SatDao.getIdsWithModesAndUplink(modes)
 
     private fun FrameworkEntry.toDomain() = OrbitalData(
         this.name, this.epoch, this.meanmo, this.eccn, this.incl,

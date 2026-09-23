@@ -62,4 +62,10 @@ object Sources {
         "FM" to "https://www.amsat.org/live-fm-satellites/",
         "Linear" to "https://www.amsat.org/live-linear-satellites/"
     )
+
+    /** Virtual satellite-selection types: transponder/activity filters shown
+     *  at the top of the type picker. They resolve to live lists (AMSAT pages
+     *  or mode=SSTV radios) instead of persisted per-type IDs, and are
+     *  mutually exclusive with the regular TLE-source types in the picker. */
+    val virtualTypeNames = listOf("AMSAT Live FM", "AMSAT Live Linear", "Live SSTV")
 }

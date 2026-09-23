@@ -70,4 +70,9 @@ interface ISatelliteRepo {
      *  Empty modes -> empty result; used to filter the mutual-match satellite
      *  set to transponder satellites (FM voice / linear). */
     suspend fun getSatelliteIdsWithModes(modes: List<String>): List<Int>
+
+    /** Like [getSatelliteIdsWithModes] but only matches records with an uplink
+     *  (real transponders), excluding downlink-only beacons/telemetry that share
+     *  the same mode label. Used by the FM/Linear fallback filter. */
+    suspend fun getSatelliteIdsWithModesAndUplink(modes: List<String>): List<Int>
 }

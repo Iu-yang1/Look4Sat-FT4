@@ -45,6 +45,7 @@ class FakeSatelliteRepo(
     override suspend fun getRadios(sat: OrbitalObject, pos: GeoPos, radios: List<SatRadio>, time: Long): List<SatRadio> = TODO()
     override suspend fun getRadiosWithId(id: Int): List<SatRadio> = TODO()
     override suspend fun getSatelliteIdsWithModes(modes: List<String>): List<Int> = emptyList()
+    override suspend fun getSatelliteIdsWithModesAndUplink(modes: List<String>): List<Int> = emptyList()
 }
 
 /**

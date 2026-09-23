@@ -48,6 +48,12 @@ interface Look4SatDao {
     @Query("SELECT catnum FROM radios WHERE downlinkMode IN (:modes) AND isAlive = 1")
     suspend fun getIdsWithModes(modes: List<String>): List<Int>
 
+    /** Like [getIdsWithModes] but only matches transponder records with an uplink,
+     *  excluding downlink-only beacons/telemetry that share the same mode label
+     *  (e.g. CW beacons, FM voice-synthesis beacons) from FM/Linear filter fallback. */
+    @Query("SELECT catnum FROM radios WHERE downlinkMode IN (:modes) AND uplinkLow IS NOT NULL AND isAlive = 1")
+    suspend fun getIdsWithModesAndUplink(modes: List<String>): List<Int>
+
     @Query("SELECT COUNT(*) FROM radios")
     suspend fun getRadiosTotal(): Int
 

@@ -1,5 +1,6 @@
 package com.rtbishop.look4sat.core.data.repository
 
+import com.rtbishop.look4sat.core.domain.logbook.isSatellite
 import com.rtbishop.look4sat.core.domain.repository.LoTWResult
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -325,7 +326,10 @@ class LoTWRepositoryTest {
 
         assertEquals(2, result.downloaded)
         assertEquals(2, result.records.size)
-        assertTrue(result.records.first { it.theirCallsign == "K1ABC" }.lotwConfirmed)
+        val confirmedRecord = result.records.first { it.theirCallsign == "K1ABC" }
+        assertTrue(confirmedRecord.lotwConfirmed)
+        assertTrue(confirmedRecord.isSatellite)
+        assertEquals("FO-29", confirmedRecord.satelliteName)
         assertEquals(false, result.records.first { it.theirCallsign == "JH1AA" }.lotwConfirmed)
         assertEquals(setOf("FN31"), result.grids)
     }

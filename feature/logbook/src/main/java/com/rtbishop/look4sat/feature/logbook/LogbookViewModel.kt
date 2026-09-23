@@ -19,6 +19,7 @@ import com.rtbishop.look4sat.core.domain.logbook.QsoRecord
 import com.rtbishop.look4sat.core.domain.logbook.QsoStatus
 import com.rtbishop.look4sat.core.domain.logbook.displayMode
 import com.rtbishop.look4sat.core.domain.logbook.frequencyBand
+import com.rtbishop.look4sat.core.domain.logbook.isSatellite
 import com.rtbishop.look4sat.core.domain.model.LoTWSettings
 import com.rtbishop.look4sat.core.domain.repository.ILoTWRepository
 import com.rtbishop.look4sat.core.domain.repository.ILoTWUploadRepository
@@ -131,6 +132,8 @@ data class LogbookEditor(
 
 enum class LogbookFilter { ALL, CONFIRMED, UNCONFIRMED, DRAFTS }
 
+internal const val SATELLITE_MODE_FILTER = "__SATELLITE__"
+
 enum class LogbookError {
     CALLSIGN_REQUIRED,
     CALLSIGN_INVALID,
@@ -169,7 +172,7 @@ data class LogbookState(
     val importResult: AdifImportResult? = null,
     val error: LogbookError? = null,
     val query: String = "",
-    val modeFilter: String = "",
+    val modeFilter: String = SATELLITE_MODE_FILTER,
     val confirmationFilter: LogbookFilter = LogbookFilter.ALL,
     val groupByCallsign: Boolean = false,
     val isBusy: Boolean = false,
@@ -196,7 +199,11 @@ data class LogbookState(
     val filteredRecords: List<QsoRecord> get() = records.filter { record ->
         (query.isBlank() || listOf(record.theirCallsign, record.myCallsign, record.satelliteName, record.theirGrid, record.myGrid, record.comment)
             .any { it.contains(query.trim(), true) }) &&
-            (modeFilter.isBlank() || record.displayMode == modeFilter) &&
+            when (modeFilter) {
+                "" -> true
+                SATELLITE_MODE_FILTER -> record.isSatellite
+                else -> record.displayMode == modeFilter
+            } &&
             when (confirmationFilter) {
                 LogbookFilter.ALL -> true
                 LogbookFilter.CONFIRMED -> record.lotwConfirmed

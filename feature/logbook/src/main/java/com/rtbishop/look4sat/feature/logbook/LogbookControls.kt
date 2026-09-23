@@ -45,6 +45,18 @@ internal fun LogbookFilters(state: LogbookState, onAction: (LogbookAction) -> Un
                 onAction(LogbookAction.ModeFilter(""))
             }
         }
+        item {
+            itemFilter(
+                state.modeFilter == SATELLITE_MODE_FILTER,
+                stringResource(R.string.logbook_satellite_mode)
+            ) {
+                onAction(
+                    LogbookAction.ModeFilter(
+                        if (state.modeFilter == SATELLITE_MODE_FILTER) "" else SATELLITE_MODE_FILTER
+                    )
+                )
+            }
+        }
         items(state.records.map { it.displayMode }.filter(String::isNotBlank).distinct().sorted()) { mode ->
             itemFilter(state.modeFilter == mode, mode) {
                 onAction(LogbookAction.ModeFilter(if (state.modeFilter == mode) "" else mode))

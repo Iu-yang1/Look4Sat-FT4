@@ -21,6 +21,7 @@ import com.rtbishop.look4sat.core.domain.model.DatabaseState
 import com.rtbishop.look4sat.core.domain.model.DataSourcesSettings
 import com.rtbishop.look4sat.core.domain.model.GridQso
 import com.rtbishop.look4sat.core.domain.model.LoTWSettings
+import com.rtbishop.look4sat.core.domain.model.MarkedStation
 import com.rtbishop.look4sat.core.domain.model.OtherSettings
 import com.rtbishop.look4sat.core.domain.model.PassesSettings
 import com.rtbishop.look4sat.core.domain.model.RCSettings
@@ -261,6 +262,9 @@ class LoTWGridSyncTest {
         override fun setWorkedGridQsos(qsos: Map<String, List<GridQso>>) { workedGridQsos = qsos }
         override fun getRoamedGrids(): Set<String> = roamedGrids
         override fun setRoamedGrids(grids: Set<String>) { roamedGrids = grids }
+        private var markedGridStations: Map<String, MarkedStation> = emptyMap()
+        override fun getMarkedGridStations(): Map<String, MarkedStation> = markedGridStations
+        override fun setMarkedGridStations(stations: Map<String, MarkedStation>) { markedGridStations = stations }
         override fun getLastLotwSyncDate(): String = lastSyncDate
         override fun setLastLotwSyncDate(date: String) { lastSyncDate = date }
         override fun getLastLotwSyncCallsign(): String = lastSyncCallsign

@@ -269,6 +269,43 @@ class SettingsRepo(
         preferences.edit { putString(keyRoamedGrids, array.toString()) }
     }
 
+    // Marked stations in unworked gridsquares, persisted as a single JSON
+    // object: {"OL62":{"c":call,"t":epochMs}}. One mark per grid.
+    private val keyMarkedGridStations = "markedGridStations"
+
+    override fun getMarkedGridStations(): Map<String, com.rtbishop.look4sat.core.domain.model.MarkedStation> {
+        val json = preferences.getString(keyMarkedGridStations, null).orEmpty()
+        if (json.isBlank()) return emptyMap()
+        return try {
+            val root = org.json.JSONObject(json)
+            val result = mutableMapOf<String, com.rtbishop.look4sat.core.domain.model.MarkedStation>()
+            for (grid in root.keys()) {
+                val o = root.optJSONObject(grid) ?: continue
+                val call = o.optString("c").ifBlank { continue }
+                result[grid] = com.rtbishop.look4sat.core.domain.model.MarkedStation(
+                    call = call,
+                    epochMs = o.optLong("t")
+                )
+            }
+            result
+        } catch (_: Exception) {
+            emptyMap()
+        }
+    }
+
+    override fun setMarkedGridStations(stations: Map<String, com.rtbishop.look4sat.core.domain.model.MarkedStation>) {
+        val root = org.json.JSONObject()
+        for ((grid, station) in stations) {
+            root.put(
+                grid,
+                org.json.JSONObject()
+                    .put("c", station.call)
+                    .put("t", station.epochMs)
+            )
+        }
+        preferences.edit { putString(keyMarkedGridStations, root.toString()) }
+    }
+
     // LoTW credentials (stored locally on the device only)
     private val keyLoTWCall = "lotwCallsign"
     private val keyLoTWPass = "lotwPassword"

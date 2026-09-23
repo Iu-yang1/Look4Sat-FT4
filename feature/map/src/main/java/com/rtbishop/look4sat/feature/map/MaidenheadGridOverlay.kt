@@ -64,6 +64,11 @@ class MaidenheadGridOverlay : Overlay() {
         style = android.graphics.Paint.Style.FILL
         color = Color.argb(90, 76, 217, 100)
     }
+    // 标记(想通联)网格填充: 红色, 透明度与绿色 workedPaint 一致(alpha 90).
+    private val markedPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = android.graphics.Paint.Style.FILL
+        color = Color.argb(90, 255, 59, 48)
+    }
     private val roamStripePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
         strokeWidth = 14f
@@ -86,6 +91,11 @@ class MaidenheadGridOverlay : Overlay() {
 
     /** Worked gridsquares (4-char, uppercase) to highlight, e.g. {"OL62", "PM95"}. */
     var workedGrids: Set<String> = emptySet()
+
+    /** Marked gridsquares (4-char, uppercase) — unworked grids the user has
+     *  marked a station they want to contact in; drawn red, same alpha as the
+     *  green worked fill. Value carries the marked callsign for label mode. */
+    var markedGrids: Map<String, com.rtbishop.look4sat.core.domain.model.MarkedStation> = emptyMap()
 
     /** Grid-mode first-call labels: label worked (green) cells with the first
      *  callsign worked in that grid instead of the Maidenhead code; non-worked
@@ -189,6 +199,9 @@ class MaidenheadGridOverlay : Overlay() {
                         if (cellLabel(lat, lon, zoom) in workedGrids) {
                             canvas.drawRect(xLeft, yTop, xRight, yBottom, workedPaint)
                         }
+                        if (cellLabel(lat, lon, zoom) in markedGrids) {
+                            canvas.drawRect(xLeft, yTop, xRight, yBottom, markedPaint)
+                        }
                     }
                 }
             } else {
@@ -213,6 +226,22 @@ class MaidenheadGridOverlay : Overlay() {
                         if (xRight < 0f || xLeft > canvas.width) continue
                         if (yBottom < 0f || yTop > canvas.height) continue
                         canvas.drawRect(xLeft, yTop, xRight, yBottom, workedPaint)
+                    }
+                }
+                for (grid in markedGrids.keys) {
+                    val cell = gridCellBounds(grid) ?: continue
+                    for (turn in -colRepeats..colRepeats) {
+                        val dLon = turn * 360.0
+                        if (cell.lonRight + dLon <= leftLon || cell.lonLeft + dLon >= rightLon) continue
+                        val yTop = projectionToY(projection, cell.latTop) ?: continue
+                        val yBottom = projectionToY(projection, cell.latBottom) ?: continue
+                        val xLeftBase = projectionToX(projection, cell.lonLeft, centerLon, worldWidthPx) ?: continue
+                        val xRightBase = projectionToX(projection, cell.lonRight, centerLon, worldWidthPx) ?: continue
+                        val xLeft = xLeftBase + turn * worldWidthPx.toFloat()
+                        val xRight = xRightBase + turn * worldWidthPx.toFloat()
+                        if (xRight < 0f || xLeft > canvas.width) continue
+                        if (yBottom < 0f || yTop > canvas.height) continue
+                        canvas.drawRect(xLeft, yTop, xRight, yBottom, markedPaint)
                     }
                 }
             }
@@ -414,11 +443,14 @@ class MaidenheadGridOverlay : Overlay() {
                 if (xRight < 0f || xLeft > canvas.width) continue
                 val label = cellLabel(lat, lon, zoom)
                 if (showFirstCallLabels) {
-                    // 首通呼号模式: 只有绿格(worked)标注该格第一个通联的呼号,
-                    // 非绿格空着不写网格字符.
-                    if (label in workedGrids) {
-                        firstCallsByGrid[label]?.let { call ->
+                    // 首通呼号模式: 绿格(worked)标注该格第一个通联的呼号, 红格(marked)
+                    // 标注用户标记想通联的呼号, 均淡黄文字; 其它格空着不写网格字符.
+                    when {
+                        label in workedGrids -> firstCallsByGrid[label]?.let { call ->
                             canvas.drawText(call, (xLeft + xRight) / 2f, yCenter, firstCallPaint)
+                        }
+                        label in markedGrids -> markedGrids[label]?.let { station ->
+                            canvas.drawText(station.call, (xLeft + xRight) / 2f, yCenter, firstCallPaint)
                         }
                     }
                 } else {

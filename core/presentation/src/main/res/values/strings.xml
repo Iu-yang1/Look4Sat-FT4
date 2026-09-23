@@ -151,6 +151,12 @@
     <string name="grid_qso_first">First</string>
     <string name="grid_qso_no_sat">satellite unknown</string>
     <string name="grid_qso_match">Match</string>
+    <!-- Mark-a-station reminder in unworked grids -->
+    <string name="grid_mark_station">Mark a station you want to contact</string>
+    <string name="grid_mark_callsign">Callsign</string>
+    <string name="grid_mark_confirm">Mark</string>
+    <string name="grid_mark_label">Marked</string>
+    <string name="grid_mark_delete">Remove mark</string>
     <string name="map_visible">Visible</string>
 
     <!-- Settings screen -->

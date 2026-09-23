@@ -34,6 +34,8 @@ data class MapState(
     val workedGridQsos: Map<String, List<com.rtbishop.look4sat.core.domain.model.GridQso>> = emptyMap(),
     /** 4-char gridsquares the station operated from (LoTW MY_GRIDSQUARE) — blue stripes. */
     val roamedGrids: Set<String> = emptySet(),
+    /** Stations the user marked in unworked gridsquares (grid -> mark) — red fill. */
+    val markedGrids: Map<String, com.rtbishop.look4sat.core.domain.model.MarkedStation> = emptyMap(),
     val stationPosition: GeoPos? = null,
     val orbitalPass: OrbitalPass,
     val track: List<List<GeoPos>>? = null,
@@ -52,6 +54,8 @@ sealed interface MapAction {
     data class SelectDefaultItem(val catnum: Int) : MapAction
     data class ToggleGridMode(val value: Boolean) : MapAction
     data class ToggleFirstCallLabels(val value: Boolean) : MapAction
+    data class SetMarkedStation(val grid: String, val call: String) : MapAction
+    data class RemoveMarkedStation(val grid: String) : MapAction
     data class SetVisible(val isVisible: Boolean) : MapAction
 }
 

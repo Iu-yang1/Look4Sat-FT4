@@ -93,9 +93,10 @@ class MaidenheadGridOverlay : Overlay() {
     var workedGrids: Set<String> = emptySet()
 
     /** Marked gridsquares (4-char, uppercase) — unworked grids the user has
-     *  marked a station they want to contact in; drawn red, same alpha as the
-     *  green worked fill. Value carries the marked callsign for label mode. */
-    var markedGrids: Map<String, com.rtbishop.look4sat.core.domain.model.MarkedStation> = emptyMap()
+     *  marked stations they want to contact in; drawn red, same alpha as the
+     *  green worked fill. Value is the ordered mark list (first = pinned);
+     *  label mode shows the FIRST marked callsign. */
+    var markedGrids: Map<String, List<com.rtbishop.look4sat.core.domain.model.MarkedStation>> = emptyMap()
 
     /** Grid-mode first-call labels: label worked (green) cells with the first
      *  callsign worked in that grid instead of the Maidenhead code; non-worked
@@ -449,7 +450,7 @@ class MaidenheadGridOverlay : Overlay() {
                         label in workedGrids -> firstCallsByGrid[label]?.let { call ->
                             canvas.drawText(call, (xLeft + xRight) / 2f, yCenter, firstCallPaint)
                         }
-                        label in markedGrids -> markedGrids[label]?.let { station ->
+                        label in markedGrids -> markedGrids[label]?.firstOrNull()?.let { station ->
                             canvas.drawText(station.call, (xLeft + xRight) / 2f, yCenter, firstCallPaint)
                         }
                     }

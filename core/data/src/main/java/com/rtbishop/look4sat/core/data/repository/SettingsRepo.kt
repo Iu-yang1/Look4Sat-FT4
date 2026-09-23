@@ -282,22 +282,36 @@ class SettingsRepo(
     }
 
     // Marked stations in unworked gridsquares, persisted as a single JSON
-    // object: {"OL62":{"c":call,"t":epochMs}}. One mark per grid.
+    // object: {"OL62":[{"c":call,"t":epochMs}, ...]}. Each grid holds an
+    // ordered list (first = pinned/top). v14.1 stored a single object per
+    // grid; reads transparently migrate that old shape to a one-element list.
     private val keyMarkedGridStations = "markedGridStations"
 
-    override fun getMarkedGridStations(): Map<String, com.rtbishop.look4sat.core.domain.model.MarkedStation> {
+    override fun getMarkedGridStations(): Map<String, List<com.rtbishop.look4sat.core.domain.model.MarkedStation>> {
         val json = preferences.getString(keyMarkedGridStations, null).orEmpty()
         if (json.isBlank()) return emptyMap()
         return try {
             val root = org.json.JSONObject(json)
-            val result = mutableMapOf<String, com.rtbishop.look4sat.core.domain.model.MarkedStation>()
+            val result = mutableMapOf<String, List<com.rtbishop.look4sat.core.domain.model.MarkedStation>>()
             for (grid in root.keys()) {
-                val o = root.optJSONObject(grid) ?: continue
-                val call = o.optString("c").ifBlank { continue }
-                result[grid] = com.rtbishop.look4sat.core.domain.model.MarkedStation(
-                    call = call,
-                    epochMs = o.optLong("t")
-                )
+                val value = root.opt(grid)
+                val list = when (value) {
+                    // v14.2+ shape: JSON array of station objects.
+                    is org.json.JSONArray -> (0 until value.length()).mapNotNull { i ->
+                        val o = value.optJSONObject(i) ?: return@mapNotNull null
+                        val call = o.optString("c").ifBlank { return@mapNotNull null }
+                        com.rtbishop.look4sat.core.domain.model.MarkedStation(call = call, epochMs = o.optLong("t"))
+                    }
+                    // v14.1 legacy shape: a single station object per grid.
+                    is org.json.JSONObject -> {
+                        val call = value.optString("c").ifBlank { null }
+                        if (call == null) emptyList()
+                        else listOf(com.rtbishop.look4sat.core.domain.model.MarkedStation(call = call, epochMs = value.optLong("t")))
+                    }
+                    null -> emptyList()
+                    else -> emptyList()
+                }
+                if (list.isNotEmpty()) result[grid] = list
             }
             result
         } catch (_: Exception) {
@@ -305,15 +319,18 @@ class SettingsRepo(
         }
     }
 
-    override fun setMarkedGridStations(stations: Map<String, com.rtbishop.look4sat.core.domain.model.MarkedStation>) {
+    override fun setMarkedGridStations(stations: Map<String, List<com.rtbishop.look4sat.core.domain.model.MarkedStation>>) {
         val root = org.json.JSONObject()
-        for ((grid, station) in stations) {
-            root.put(
-                grid,
-                org.json.JSONObject()
-                    .put("c", station.call)
-                    .put("t", station.epochMs)
-            )
+        for ((grid, list) in stations) {
+            val array = org.json.JSONArray()
+            for (station in list) {
+                array.put(
+                    org.json.JSONObject()
+                        .put("c", station.call)
+                        .put("t", station.epochMs)
+                )
+            }
+            root.put(grid, array)
         }
         preferences.edit { putString(keyMarkedGridStations, root.toString()) }
     }

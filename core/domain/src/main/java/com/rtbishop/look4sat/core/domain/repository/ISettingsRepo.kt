@@ -112,10 +112,10 @@ interface ISettingsRepo {
     fun getRoamedGrids(): Set<String>
     fun setRoamedGrids(grids: Set<String>)
     /** Stations the user marked as "want to contact" in unworked gridsquares
-     *  (grid -> mark). One mark per grid; cleared automatically when the grid
-     *  becomes worked. */
-    fun getMarkedGridStations(): Map<String, com.rtbishop.look4sat.core.domain.model.MarkedStation>
-    fun setMarkedGridStations(stations: Map<String, com.rtbishop.look4sat.core.domain.model.MarkedStation>)
+     *  (grid -> ordered list of marks; the first is the pinned/top one). The
+     *  whole grid clears automatically once it becomes worked. */
+    fun getMarkedGridStations(): Map<String, List<com.rtbishop.look4sat.core.domain.model.MarkedStation>>
+    fun setMarkedGridStations(stations: Map<String, List<com.rtbishop.look4sat.core.domain.model.MarkedStation>>)
     //endregion
 
     //region # LoTW confirmed-grids settings

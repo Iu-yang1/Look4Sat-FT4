@@ -1,0 +1,20 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- 冖 (秃宝盖): 顶横 + 两侧短竖, 笔画型 -->
+    <path
+        android:pathData="M5,4 L19,4 M5,4 L5,8.5 M19,4 L19,8.5"
+        android:strokeColor="@android:color/white"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000" />
+    <!-- 笔画型向上箭头 ↑: 竖杆 + 两斜线箭头头 -->
+    <path
+        android:pathData="M12,9 L12,20 M12,9 L7.5,14 M12,9 L16.5,14"
+        android:strokeColor="@android:color/white"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000" />
+</vector>

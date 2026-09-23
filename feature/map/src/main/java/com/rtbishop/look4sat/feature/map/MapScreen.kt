@@ -444,13 +444,14 @@ private fun MapScreen(
         WorkedGridQsoDialog(
             grid = grid,
             qsos = uiState.workedGridQsos[grid].orEmpty().sortedBy { it.epochMs },
-            marked = uiState.markedGrids[grid],
+            marked = uiState.markedGrids[grid].orEmpty(),
             isUtc = uiState.isUtc,
             matchCalculating = matchCalculating,
             onDismiss = { selectedGrid = null },
             onMatch = { onMatchGrid(grid) },
             onMark = { call -> onAction(MapAction.SetMarkedStation(grid, call)) },
-            onRemoveMark = { onAction(MapAction.RemoveMarkedStation(grid)) }
+            onRemoveMark = { call -> onAction(MapAction.RemoveMarkedStation(grid, call)) },
+            onPinMark = { call -> onAction(MapAction.PinMarkedStation(grid, call)) }
         )
     }
 }
@@ -461,13 +462,14 @@ private fun MapScreen(
 private fun WorkedGridQsoDialog(
     grid: String,
     qsos: List<com.rtbishop.look4sat.core.domain.model.GridQso>,
-    marked: com.rtbishop.look4sat.core.domain.model.MarkedStation?,
+    marked: List<com.rtbishop.look4sat.core.domain.model.MarkedStation>,
     isUtc: Boolean,
     matchCalculating: Boolean,
     onDismiss: () -> Unit,
     onMatch: () -> Unit,
     onMark: (String) -> Unit,
-    onRemoveMark: () -> Unit
+    onRemoveMark: (String) -> Unit,
+    onPinMark: (String) -> Unit
 ) {
     var showMarkInput by remember { mutableStateOf(false) }
     var callInput by remember { mutableStateOf("") }
@@ -527,11 +529,20 @@ private fun WorkedGridQsoDialog(
                         .heightIn(max = 380.dp)
                         .verticalScroll(rememberScrollState())
                 ) {
-                    // A marked station shows first as a red reminder row: red
-                    // callsign, "标记" in the count column, the marking date in
-                    // the date column, and a small delete icon to remove it.
-                    if (marked != null) {
-                        MarkedStationRow(marked = marked, isUtc = isUtc, onRemoveMark = onRemoveMark)
+                    // Marked stations show first as red reminder rows: pale-yellow
+                    // callsign, "标记" in the count column, the marking date in the
+                    // date column, a small pin icon (first = pinned, grey; others
+                    // pale yellow) and a delete icon to remove the mark.
+                    val showPin = marked.size > 1
+                    marked.forEachIndexed { index, station ->
+                        MarkedStationRow(
+                            marked = station,
+                            isPinned = index == 0,
+                            showPin = showPin,
+                            isUtc = isUtc,
+                            onRemoveMark = { onRemoveMark(station.call) },
+                            onPinMark = { onPinMark(station.call) }
+                        )
                         androidx.compose.material3.HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
                     }
                     if (qsos.isNotEmpty()) {
@@ -550,7 +561,7 @@ private fun WorkedGridQsoDialog(
                     if (qsos.isEmpty()) {
                         TextButton(
                             onClick = {
-                                callInput = marked?.call.orEmpty()
+                                callInput = ""
                                 showMarkInput = true
                             },
                             modifier = Modifier.fillMaxWidth()
@@ -600,8 +611,11 @@ private fun WorkedGridQsoDialog(
 @Composable
 private fun MarkedStationRow(
     marked: com.rtbishop.look4sat.core.domain.model.MarkedStation,
+    isPinned: Boolean,
+    showPin: Boolean,
     isUtc: Boolean,
-    onRemoveMark: () -> Unit
+    onRemoveMark: () -> Unit,
+    onPinMark: () -> Unit
 ) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
@@ -611,18 +625,37 @@ private fun MarkedStationRow(
             text = marked.call,
             style = MaterialTheme.typography.titleMedium,
             fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
-            color = ComposeColor(0xFFFF3B30),
+            color = ComposeColor(0xFFFFE082),
             maxLines = 1,
             overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f)
         )
-        Text(
-            text = stringResource(R.string.grid_mark_label),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+        // "标记" column: pin icon (only when the grid has multiple marks) sits
+        // left of the label; pinned (first) row's icon is grey, others pale
+        // yellow — tapping moves that mark to the top.
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center,
             modifier = Modifier.weight(1f)
-        )
+        ) {
+            if (showPin) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_pin),
+                    contentDescription = stringResource(R.string.grid_mark_pin),
+                    tint = if (isPinned) ComposeColor(0xFF9E9E9E) else ComposeColor(0xFFFFE082),
+                    modifier = Modifier
+                        .size(18.dp)
+                        .clickable(onClick = onPinMark)
+                )
+                Spacer(Modifier.width(2.dp))
+            }
+            Text(
+                text = stringResource(R.string.grid_mark_label),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+            )
+        }
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.End,
@@ -1165,7 +1198,7 @@ private fun setGridMode(
     centerOnStation: Boolean = false,
     showFirstCallLabels: Boolean = false,
     firstCallsByGrid: Map<String, String> = emptyMap(),
-    markedGrids: Map<String, com.rtbishop.look4sat.core.domain.model.MarkedStation> = emptyMap()
+    markedGrids: Map<String, List<com.rtbishop.look4sat.core.domain.model.MarkedStation>> = emptyMap()
 ) {
     try {
         val gridOverlay = mapView.overlays[OVERLAY_GRID]

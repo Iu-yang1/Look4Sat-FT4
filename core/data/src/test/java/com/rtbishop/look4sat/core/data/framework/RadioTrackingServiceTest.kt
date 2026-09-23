@@ -1032,8 +1032,8 @@ private class FakeSettingsRepo(
     override fun getLastLotwSyncCallsign() = ""
     override fun setLastLotwSyncCallsign(callsign: String) = Unit
     override fun getMarkedGridStations() =
-        emptyMap<String, com.rtbishop.look4sat.core.domain.model.MarkedStation>()
+        emptyMap<String, List<com.rtbishop.look4sat.core.domain.model.MarkedStation>>()
     override fun setMarkedGridStations(
-        stations: Map<String, com.rtbishop.look4sat.core.domain.model.MarkedStation>
+        stations: Map<String, List<com.rtbishop.look4sat.core.domain.model.MarkedStation>>
     ) = Unit
 }

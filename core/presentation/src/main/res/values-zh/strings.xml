@@ -139,6 +139,7 @@
     <string name="grid_mark_confirm">标记</string>
     <string name="grid_mark_label">标记</string>
     <string name="grid_mark_delete">删除标记</string>
+    <string name="grid_mark_pin">置顶</string>
     <string name="map_visible">日照中</string>
 
     <!-- Settings screen -->

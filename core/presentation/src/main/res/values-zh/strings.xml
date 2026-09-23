@@ -275,6 +275,15 @@
     <string name="rc_usb_port_incompatible">此 CP2105 辅助端口无法提供 Yaesu CAT 所需的 8N2 串口格式。</string>
 
     <string name="prefs_other_title">其他设置</string>
+    <string name="prefs_map_title">地图设置</string>
+    <string name="prefs_map_configure">配置地图</string>
+    <string name="prefs_map_source_title">地图来源</string>
+    <string name="prefs_map_source_osm">离线 OSM 地图</string>
+    <string name="prefs_map_source_tianditu_vector">天地图（矢量）</string>
+    <string name="prefs_map_source_tianditu_image">天地图（影像）</string>
+    <string name="prefs_map_tianditu_key">天地图访问密钥</string>
+    <string name="prefs_map_tianditu_key_required">选择天地图需要填写访问密钥；保存密钥前将继续使用离线 OSM 地图。</string>
+    <string name="prefs_map_save">保存地图设置</string>
     <string name="prefs_ft4_title">FT4 与时间同步</string>
     <string name="prefs_ft4_callsign">本机呼号</string>
     <string name="prefs_ft4_grid">网格：%s</string>

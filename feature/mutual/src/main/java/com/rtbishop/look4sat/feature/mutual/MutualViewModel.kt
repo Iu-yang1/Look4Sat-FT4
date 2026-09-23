@@ -52,6 +52,9 @@ data class MutualUiState(
     val stationBGrid: String = "",
     val stationBMinElev: Double = 10.0,
     val hoursAhead: Int = 24,
+    /** 历史过境回看窗口(小时), 跟随主页面 Passes 设置; 匹配查询从
+     *  now-hoursBefore 开始, 使设置过历史回看时匹配页也包含历史过境. */
+    val hoursBefore: Int = 0,
     val mutualPasses: List<MutualPass> = emptyList(),
     val isCalculating: Boolean = false,
     val hasSearched: Boolean = false,
@@ -105,6 +108,12 @@ class MutualViewModel(
         viewModelScope.launch {
             settingsRepo.otherSettings.collectLatest { settings ->
                 _uiState.update { it.copy(isUtc = settings.stateOfUtc) }
+            }
+        }
+        // 历史过境回看窗口跟随主页面 Passes 设置 (设置里改小时数, 匹配页同步生效)
+        viewModelScope.launch {
+            settingsRepo.passesSettings.collectLatest { settings ->
+                _uiState.update { it.copy(hoursBefore = settings.hoursBefore) }
             }
         }
     }
@@ -262,14 +271,17 @@ class MutualViewModel(
         queryGeneration += 1
 
         viewModelScope.launch {
-            val time = System.currentTimeMillis()
+            val now = System.currentTimeMillis()
+            // 历史回看: 查询窗口起点 = now - hoursBefore (跟随主页面 Passes 设置),
+            // 终点 = now + hoursAhead 不变.
+            val time = now - state.hoursBefore * 60L * 60L * 1000L
             val minElevA = state.stationAMinElev
             val minElevB = state.stationBMinElev
             val hours = state.hoursAhead
 
             val results = try {
                 withContext(computeDispatcher) {
-                    findMutualPasses(satellites, posA, posB, minElevA, minElevB, time, hours)
+                    findMutualPasses(satellites, posA, posB, minElevA, minElevB, time, hours, state.hoursBefore)
                 }
             } catch (t: Throwable) {
                 // Never leave the query stuck in "calculating" (which would also
@@ -314,9 +326,11 @@ class MutualViewModel(
         satellites: List<OrbitalObject>,
         posA: GeoPos, posB: GeoPos,
         minElevADeg: Double, minElevBDeg: Double,
-        time: Long, hours: Int
+        time: Long, hours: Int, hoursBefore: Int
     ): List<MutualPass> {
-        val endTime = time + hours * 60L * 60L * 1000L
+        // 终点始终是 now + hoursAhead; 起点已由调用方下移 hoursBefore 小时,
+        // 因此这里的 endTime 要在起点之上补回 hoursBefore, 保证窗口 = [now-hb, now+h].
+        val endTime = time + (hoursBefore + hours) * 60L * 60L * 1000L
         val sampleInterval = 5_000L
 
         // Use the main page's pass list for AOS/LOS times, then sample the curves

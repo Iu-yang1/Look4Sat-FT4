@@ -576,7 +576,7 @@ private fun WorkedGridQsoDialog(
             text = {
                 androidx.compose.material3.OutlinedTextField(
                     value = callInput,
-                    onValueChange = { callInput = it },
+                    onValueChange = { callInput = it.uppercase() },
                     label = { Text(stringResource(R.string.grid_mark_callsign)) },
                     singleLine = true
                 )

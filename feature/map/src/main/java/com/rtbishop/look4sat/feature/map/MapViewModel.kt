@@ -121,18 +121,36 @@ class MapViewModel(
             is MapAction.ToggleGridMode -> settingsRepo.updateOtherSettings { it.copy(stateOfMapGrid = action.value) }
             is MapAction.ToggleFirstCallLabels -> settingsRepo.updateOtherSettings { it.copy(stateOfMapFirstCall = action.value) }
             is MapAction.SetMarkedStation -> {
-                val updated = settingsRepo.getMarkedGridStations() +
-                    (action.grid to com.rtbishop.look4sat.core.domain.model.MarkedStation(
-                        call = action.call.trim().uppercase(),
-                        epochMs = System.currentTimeMillis()
-                    ))
+                val call = action.call.trim().uppercase()
+                val existing = settingsRepo.getMarkedGridStations()
+                val current = existing[action.grid].orEmpty()
+                // 重复呼号忽略: 同一网格已标记过的呼号不再重复添加.
+                val updated = if (current.any { it.call == call }) existing
+                else existing + (action.grid to current + com.rtbishop.look4sat.core.domain.model.MarkedStation(
+                    call = call,
+                    epochMs = System.currentTimeMillis()
+                ))
                 settingsRepo.setMarkedGridStations(updated)
                 _uiState.update { it.copy(markedGrids = updated) }
             }
             is MapAction.RemoveMarkedStation -> {
-                val updated = settingsRepo.getMarkedGridStations() - action.grid
+                val existing = settingsRepo.getMarkedGridStations()
+                val current = existing[action.grid].orEmpty()
+                val remaining = current.filterNot { it.call == action.call }
+                val updated = if (remaining.isEmpty()) existing - action.grid
+                else existing + (action.grid to remaining)
                 settingsRepo.setMarkedGridStations(updated)
                 _uiState.update { it.copy(markedGrids = updated) }
+            }
+            is MapAction.PinMarkedStation -> {
+                val existing = settingsRepo.getMarkedGridStations()
+                val current = existing[action.grid].orEmpty()
+                val target = current.firstOrNull { it.call == action.call }
+                if (target != null) {
+                    val updated = existing + (action.grid to listOf(target) + current.filterNot { it.call == action.call })
+                    settingsRepo.setMarkedGridStations(updated)
+                    _uiState.update { it.copy(markedGrids = updated) }
+                }
             }
             is MapAction.SetVisible -> isScreenVisible.value = action.isVisible
         }

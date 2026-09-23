@@ -313,9 +313,9 @@ private class FakeSettingsRepo(dataSources: DataSourcesSettings = defaultDataSou
         roamedGrids.value = grids
     }
 
-    override fun getMarkedGridStations(): Map<String, com.rtbishop.look4sat.core.domain.model.MarkedStation> = emptyMap()
+    override fun getMarkedGridStations(): Map<String, List<com.rtbishop.look4sat.core.domain.model.MarkedStation>> = emptyMap()
 
-    override fun setMarkedGridStations(stations: Map<String, com.rtbishop.look4sat.core.domain.model.MarkedStation>) = Unit
+    override fun setMarkedGridStations(stations: Map<String, List<com.rtbishop.look4sat.core.domain.model.MarkedStation>>) = Unit
 }
 
 private fun defaultDataSourcesSettings(): DataSourcesSettings {

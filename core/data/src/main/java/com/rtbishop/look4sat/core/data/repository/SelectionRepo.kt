@@ -43,11 +43,13 @@ class SelectionRepo(
 
     // Resolve type IDs once when types change, then filter items reactively.
     // The HashSet gives O(1) catnum lookups instead of O(n) with a List.
+    // The three virtual types ("AMSAT Live FM", "AMSAT Live Linear", "Live SSTV")
+    // are resolved from live transponder data instead of SharedPreferences.
     private val itemsWithTypes = currentTypes.flatMapLatest { types: List<String> ->
         val catnumSet: Set<Int>? = if (types.isEmpty()) {
             null // null = no filtering
         } else {
-            val ids = settingsRepo.getSatelliteTypesIds(types)
+            val ids = resolveTypeIds(types)
             if (ids.isEmpty()) null else ids.toHashSet()
         }
         currentItems.map { items ->
@@ -61,8 +63,28 @@ class SelectionRepo(
 
     override fun getCurrentTypes() = currentTypes.value
 
-    override fun getTypesList() = Sources.satelliteDataUrls.keys.sorted().toMutableList().apply {
-        removeAt(0)
+    /**
+     * Resolves a list of type names to satellite catnums. The three virtual
+     * transponder/activity types are resolved from live data; all other types
+     * come from the per-type ID lists persisted by [ISettingsRepo].
+     */
+    private suspend fun resolveTypeIds(types: List<String>): List<Int> {
+        val idsSet = mutableSetOf<Int>()
+        types.forEach { type ->
+            when (type) {
+                "AMSAT Live FM" -> idsSet.addAll(settingsRepo.getAmSatFmCatnums())
+                "AMSAT Live Linear" -> idsSet.addAll(settingsRepo.getAmSatLinearCatnums())
+                "Live SSTV" -> idsSet.addAll(localSource.getIdsWithModes(listOf("SSTV")))
+                else -> idsSet.addAll(settingsRepo.getSatelliteTypesIds(listOf(type)))
+            }
+        }
+        return idsSet.toList()
+    }
+
+    override fun getTypesList() = buildList {
+        // 三个转发器/活动虚拟类型排在最前.
+        addAll(listOf("AMSAT Live FM", "AMSAT Live Linear", "Live SSTV"))
+        addAll(Sources.satelliteDataUrls.keys.sorted().toMutableList().apply { removeAt(0) })
     }
 
     override suspend fun getEntriesFlow() = withContext(dispatcher) {

@@ -177,6 +177,7 @@ private fun SatellitesScreen(
                 )
             }
         }
+        // 转发器/活动筛选已在"卫星类型"对话框前三个选项中体现(AMSAT Live FM/Linear, Live SSTV).
         ElevatedCard(modifier = Modifier.fillMaxSize()) {
             val emptyMessage = stringResource(R.string.sat_empty_list_message)
             when {

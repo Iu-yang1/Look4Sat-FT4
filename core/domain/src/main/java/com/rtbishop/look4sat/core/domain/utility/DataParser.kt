@@ -58,6 +58,82 @@ class DataParser(private val dispatcher: CoroutineDispatcher) {
         }.getOrDefault(emptyList())
     }
 
+    /**
+     * Parse an AMSAT "Live FM/Linear Satellites" page into satellite names.
+     * The page is an HTML table whose first column is the satellite name,
+     * sometimes written as an alias list ("AO-91(RadFxSat / Fox-1B)") or a
+     * range ("TEVEL2-1 thru TEVEL2-9"). Returns the distinct expanded names.
+     */
+    suspend fun parseAmSatLivePage(stream: InputStream): List<String> = withContext(dispatcher) {
+        runCatching {
+            val html = stream.bufferedReader().readText()
+            // Grab table rows, take the first cell of each row, keep rows that
+            // look like satellite names (start with letters/digits, not a header).
+            val rows = Regex("<tr[^>]*>(.*?)</tr>", RegexOption.IGNORE_CASE)
+                .findAll(html)
+                .mapNotNull { match ->
+                    val cells = Regex("<t[dh][^>]*>(.*?)</t[dh]>", RegexOption.IGNORE_CASE)
+                        .findAll(match.groupValues[1])
+                        .map { cell -> stripHtml(cell.groupValues[1]).trim() }
+                        .toList()
+                    cells.firstOrNull()?.takeIf { it.isNotBlank() && !it.equals("Satellite", ignoreCase = true) }
+                }
+                .toList()
+            rows.flatMap { expandNameRange(it) }.distinct()
+        }.getOrDefault(emptyList())
+    }
+
+    private fun stripHtml(raw: String): String =
+        raw.replace(Regex("<[^>]+>"), " ").replace(Regex("\\s+"), " ").trim()
+
+    /** Expand "NAME1 thru NAME9" ranges (e.g. TEVEL2-1 thru TEVEL2-9). */
+    private fun expandNameRange(name: String): List<String> {
+        val m = Regex("^(.*?)(\\d+)\\s+thru\\s+(.*?)(\\d+)$", RegexOption.IGNORE_CASE).find(name)
+        if (m == null) return listOf(name)
+        val prefix1 = m.groupValues[1].trim()
+        val startNum = m.groupValues[2].toIntOrNull() ?: return listOf(name)
+        val endNum = m.groupValues[4].toIntOrNull() ?: return listOf(name)
+        val prefix2 = m.groupValues[3].trim()
+        if (startNum > endNum) return listOf(name)
+        // Suffix after the end number, if any (e.g. "TEVEL2-1 thru TEVEL2-9 ").
+        val suffix = name.substringAfterLast(m.groupValues[4]).trim()
+        return (startNum..endNum).map { "$prefix1$it$suffix" }
+    }
+
+    /**
+     * Normalize a satellite name from the AMSAT live pages into lookup keys
+     * used to match against the local entries table:
+     *  - primary key: the leading designator ("AO-91" from "AO-91 (RadFxSat / Fox-1B)")
+     *  - alias keys: every bracketed alias, uppercased, digits preserved
+     * The local entry names are normalized the same way in [matchesAmSatName].
+     */
+    fun normalizeAmSatName(name: String): List<String> {
+        val keys = mutableListOf<String>()
+        // Primary: everything before the first '(' (or '['), then the first token.
+        val primary = name.substringBefore('(').substringBefore('[').trim()
+        primary.split(Regex("\\s+")).firstOrNull()?.takeIf { it.isNotBlank() }?.let {
+            keys += it.uppercase()
+        }
+        // Aliases inside parentheses / brackets: "RadFxSat / Fox-1B" -> two keys.
+        Regex("\\(([^)]*)\\)").findAll(name).forEach { m ->
+            m.groupValues[1].split('/', '|').forEach { alias ->
+                alias.trim().takeIf { it.isNotBlank() }?.let { keys += it.uppercase() }
+            }
+        }
+        Regex("\\[([^]]*)]").findAll(name).forEach { m ->
+            m.groupValues[1].split('/', '|').forEach { alias ->
+                alias.trim().takeIf { it.isNotBlank() }?.let { keys += it.uppercase() }
+            }
+        }
+        return keys.distinct()
+    }
+
+    /** True if a local entry name matches any of the AMSAT normalized keys. */
+    fun matchesAmSatName(localName: String, amSatKeys: List<String>): Boolean {
+        val localUpper = localName.uppercase()
+        return amSatKeys.any { key -> localUpper.contains(key) }
+    }
+
     private fun parseCSV(values: List<String>): OrbitalData? = runCatching {
         val name = values[0]
         val timestamp = values[2]

@@ -338,6 +338,9 @@
     <string name="mutual_grid_hint">Supports 4/6/8-char Maidenhead grid; or enter lat/lon directly</string>
     <string name="mutual_min_elevation">Min elevation: %d°</string>
     <string name="mutual_time_range">Time range</string>
+    <string name="mutual_filter_transponder">Transponders</string>
+    <string name="mutual_filter_fm">FM</string>
+    <string name="mutual_filter_linear">Linear</string>
     <string name="mutual_calculating">Calculating…</string>
     <string name="mutual_query">Query Match</string>
     <string name="mutual_elevation_you">You: %d°</string>

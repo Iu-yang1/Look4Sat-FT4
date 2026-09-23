@@ -55,6 +55,10 @@ data class MutualUiState(
     /** 历史过境回看窗口(小时), 跟随主页面 Passes 设置; 匹配查询从
      *  now-hoursBefore 开始, 使设置过历史回看时匹配页也包含历史过境. */
     val hoursBefore: Int = 0,
+    /** 转发器类型筛选: 只匹配搭载 FM 话音转发器的卫星. 默认开启. */
+    val filterFM: Boolean = true,
+    /** 转发器类型筛选: 只匹配搭载线性(USB/LSB/CW/SSB)转发器的卫星. 默认开启. */
+    val filterLinear: Boolean = true,
     val mutualPasses: List<MutualPass> = emptyList(),
     val isCalculating: Boolean = false,
     val hasSearched: Boolean = false,
@@ -201,6 +205,8 @@ class MutualViewModel(
         ) }
     }
     fun onHoursAhead(value: Int) = _uiState.update { it.copy(hoursAhead = value) }
+    fun onFilterFM(value: Boolean) = _uiState.update { it.copy(filterFM = value) }
+    fun onFilterLinear(value: Boolean) = _uiState.update { it.copy(filterLinear = value) }
     fun onSelectPass(index: Int) = _uiState.update { it.copy(selectedPassIndex = index) }
 
     /**
@@ -264,6 +270,17 @@ class MutualViewModel(
             return
         }
 
+        // 转发器类型筛选: 至少勾选一种(默认 FM + Linear 都开), 否则提示不查询.
+        // 防止用户选入大量无转发器卫星占用匹配页.
+        if (!state.filterFM && !state.filterLinear) {
+            _uiState.update { it.copy(errorMessage = "Select at least one transponder type (FM / Linear) to run the match.") }
+            return
+        }
+        // AMSAT Live 清单(同步自 AMSAT "Live FM/Linear Satellites" 页面)是本过滤的
+        // 权威来源: 只匹配当前在轨且话音/线性转发器实际工作的卫星. 清单为空
+        // (从未成功同步过)时回退到数据库 downlinkMode 过滤, 避免首启匹配页空结果.
+        // 过滤本身在下面的协程里执行 (getSatelliteIdsWithModes 是 suspend).
+
         _uiState.update {
             it.copy(
                 isCalculating = true,
@@ -286,6 +303,24 @@ class MutualViewModel(
 
         viewModelScope.launch {
             val now = System.currentTimeMillis()
+            // 转发器类型过滤(协程上下文): AMSAT Live 清单优先, 为空时回退数据库.
+            val amSatFm = settingsRepo.getAmSatFmCatnums()
+            val amSatLinear = settingsRepo.getAmSatLinearCatnums()
+            val filteredSatellites = if (amSatFm.isEmpty() && amSatLinear.isEmpty()) {
+                val filterModes = buildList {
+                    if (state.filterFM) add("FM")
+                    if (state.filterLinear) addAll(listOf("USB", "LSB", "CW", "SSB"))
+                }
+                val idsWithModes = satelliteRepo.getSatelliteIdsWithModes(filterModes)
+                if (idsWithModes.isEmpty()) satellites
+                else satellites.filter { it.data.catnum in idsWithModes }
+            } else {
+                val allowed = buildSet {
+                    if (state.filterFM) addAll(amSatFm)
+                    if (state.filterLinear) addAll(amSatLinear)
+                }
+                satellites.filter { it.data.catnum in allowed }
+            }
             // 历史回看: 查询窗口起点 = now - hoursBefore (跟随主页面 Passes 设置),
             // 终点 = now + hoursAhead 不变.
             val time = now - state.hoursBefore * 60L * 60L * 1000L
@@ -295,7 +330,7 @@ class MutualViewModel(
 
             val results = try {
                 withContext(computeDispatcher) {
-                    findMutualPasses(satellites, posA, posB, minElevA, minElevB, time, hours, state.hoursBefore)
+                    findMutualPasses(filteredSatellites, posA, posB, minElevA, minElevB, time, hours, state.hoursBefore)
                 }
             } catch (t: Throwable) {
                 // Never leave the query stuck in "calculating" (which would also
@@ -350,7 +385,10 @@ class MutualViewModel(
         // Use the main page's pass list for AOS/LOS times, then sample the curves
         // using the actual positions. The passes list is already computed by getLeoPass
         // and its AOS/LOS times match the Passes page exactly.
-        val existingPasses = satelliteRepo.passes.value
+        // The satellites argument may be a subset (transponder-type filter), so
+        // only passes belonging to the filtered satellites are reused.
+        val allowedCatnums = satellites.map { it.data.catnum }.toSet()
+        val existingPasses = satelliteRepo.passes.value.filter { it.catNum in allowedCatnums }
         val results = findMutualPassesFromList(existingPasses, satellites, posA, posB,
             minElevADeg, minElevBDeg, time, endTime, sampleInterval)
         if (results.isNotEmpty()) return results

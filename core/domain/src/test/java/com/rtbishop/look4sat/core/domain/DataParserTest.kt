@@ -239,4 +239,51 @@ class DataParserTest {
         // Matches the CSV test data epoch: 2021-11-16 → day 320
         assert(dataParser.getDayOfYear(2021, 11, 16) == 320)
     }
+
+    @Test
+    fun `AMSAT FM page parses satellite names and expands thru ranges`() = runTest(testDispatcher) {
+        val html = """
+            <html><body><table>
+            <tr><th>Satellite</th><th>Uplink</th><th>Downlink</th><th>Comment</th></tr>
+            <tr><td>AO-91(RadFxSat / Fox-1B)</td><td>435.250</td><td>145.960</td></tr>
+            <tr><td>SO-50(SaudiSat-1C)</td><td>145.850</td><td>436.795</td></tr>
+            <tr><td>TEVEL2-1 thru TEVEL2-9</td><td>145.970</td><td>436.400</td></tr>
+            </table></body></html>
+        """.trimIndent().byteInputStream()
+        val names = dataParser.parseAmSatLivePage(html)
+        assert(names.contains("AO-91(RadFxSat / Fox-1B)"))
+        assert(names.contains("SO-50(SaudiSat-1C)"))
+        assert(names.contains("TEVEL2-1"))
+        assert(names.contains("TEVEL2-9"))
+        assert(names.size == 11) // 2 singles + 9 expanded TEVEL2
+    }
+
+    @Test
+    fun `AMSAT linear page keeps mode-suffixed names`() = runTest(testDispatcher) {
+        val html = """
+            <table>
+            <tr><th>Satellite</th><th>Frequencies</th><th>Comment</th></tr>
+            <tr><td>AO-7 Mode B U/v Inverting Analog</td><td>Uplink LSB</td></tr>
+            <tr><td>FO-29 (JAS-2)V/u Inverting Analog</td><td>Uplink LSB</td></tr>
+            </table>
+        """.trimIndent().byteInputStream()
+        val names = dataParser.parseAmSatLivePage(html)
+        assert(names.contains("AO-7 Mode B U/v Inverting Analog"))
+        assert(names.contains("FO-29 (JAS-2)V/u Inverting Analog"))
+    }
+
+    @Test
+    fun `AMSAT name normalization produces primary and alias keys`() {
+        assert(dataParser.normalizeAmSatName("AO-91(RadFxSat / Fox-1B)") == listOf("AO-91", "RADFXSAT", "FOX-1B"))
+        assert(dataParser.normalizeAmSatName("QO-100 (Es'hail-2/P4A) S/x") == listOf("QO-100", "ES'HAIL-2", "P4A"))
+        assert(dataParser.normalizeAmSatName("ISS") == listOf("ISS"))
+        assert(dataParser.matchesAmSatName("AO-91 (RADFXSAT)", listOf("AO-91", "RADFXSAT")))
+        assert(!dataParser.matchesAmSatName("SO-50", listOf("AO-91")))
+    }
+
+    @Test
+    fun `AMSAT live page with no table returns empty`() = runTest(testDispatcher) {
+        val html = "<html><body>No data</body></html>".byteInputStream()
+        assert(dataParser.parseAmSatLivePage(html).isEmpty())
+    }
 }

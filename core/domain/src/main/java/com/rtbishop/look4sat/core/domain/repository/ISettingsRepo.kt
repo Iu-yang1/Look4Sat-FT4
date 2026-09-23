@@ -79,6 +79,14 @@ interface ISettingsRepo {
     fun updateDataSourcesStatus(status: Map<String, Int>)
     //endregion
 
+    //region # AMSAT live-transponder lists
+    /** Catalog numbers of satellites listed on AMSAT's "Live FM Satellites" page. */
+    fun getAmSatFmCatnums(): Set<Int>
+    /** Catalog numbers of satellites listed on AMSAT's "Live Linear Satellites" page. */
+    fun getAmSatLinearCatnums(): Set<Int>
+    fun setAmSatCatnums(fmCatnums: Set<Int>, linearCatnums: Set<Int>)
+    //endregion
+
     //region # Radio control settings
     val radioControlSettings: StateFlow<RadioControlSettings>
     fun updateRadioControlSettings(settings: RadioControlSettings)

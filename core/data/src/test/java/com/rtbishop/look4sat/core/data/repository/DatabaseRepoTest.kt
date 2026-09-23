@@ -269,6 +269,10 @@ private class FakeSettingsRepo(dataSources: DataSourcesSettings = defaultDataSou
         (dataSourcesStatus as? MutableStateFlow)?.value = status
     }
 
+    override fun getAmSatFmCatnums(): Set<Int> = emptySet()
+    override fun getAmSatLinearCatnums(): Set<Int> = emptySet()
+    override fun setAmSatCatnums(fmCatnums: Set<Int>, linearCatnums: Set<Int>) = Unit
+
     override fun updateRadioControlSettings(settings: RadioControlSettings) = Unit
 
     override fun getSatelliteOffset(catnum: Int): String = ""

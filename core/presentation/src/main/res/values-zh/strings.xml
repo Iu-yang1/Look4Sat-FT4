@@ -308,6 +308,9 @@
     <string name="mutual_grid_hint">支持 4/6/8 位 Maidenhead 网格；也可直接输入经纬度</string>
     <string name="mutual_min_elevation">最小仰角：%d°</string>
     <string name="mutual_time_range">时间范围</string>
+    <string name="mutual_filter_transponder">转发器</string>
+    <string name="mutual_filter_fm">FM</string>
+    <string name="mutual_filter_linear">线性</string>
     <string name="mutual_calculating">计算中…</string>
     <string name="mutual_query">查询匹配</string>
     <string name="mutual_elevation_you">你：%d°</string>

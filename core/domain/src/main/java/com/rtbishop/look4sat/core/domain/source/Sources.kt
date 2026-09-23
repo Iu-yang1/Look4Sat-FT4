@@ -55,4 +55,11 @@ object Sources {
         "SatNOGS" to "https://db.satnogs.org/api/transmitters/?format=json&status=active",
         "R4UAB" to "https://r4uab.ru/transmitters.json"
     )
+    /** AMSAT "Live FM/Linear Satellites" pages: human-maintained lists of
+     *  transponders currently on the air. Parsed into the mutual-match filter
+     *  (satellites that actually carry a working FM-voice / linear repeater). */
+    val amSatLiveUrls = mapOf(
+        "FM" to "https://www.amsat.org/live-fm-satellites/",
+        "Linear" to "https://www.amsat.org/live-linear-satellites/"
+    )
 }

@@ -115,12 +115,48 @@ class DatabaseRepo(
             localSource.insertRadios(importedRadios)
         }
         if (importedEntries.isNotEmpty()) localSource.insertEntries(importedEntries)
+        updateAmSatLiveLists()
         setUpdateSuccessful(System.currentTimeMillis())
+    }
+
+    /**
+     * Refresh the AMSAT Live FM/Linear satellite lists (transponders currently
+     * on the air). Best effort: any failure keeps the previous lists and never
+     * blocks the rest of the data update, so the mutual-match filter simply
+     * falls back to the last successful snapshot.
+     */
+    private suspend fun updateAmSatLiveLists() = withContext(dispatcher) {
+        runCatching {
+            val entries = localSource.getEntriesList() // catnum -> name
+            val jobs = Sources.amSatLiveUrls.map { (type, url) ->
+                async { type to remoteSource.getNetworkStream(url) }
+            }
+            val results = jobs.awaitAll()
+            val fmNames = results.firstOrNull { it.first == "FM" }?.second?.stream
+                ?.let { dataParser.parseAmSatLivePage(it) }.orEmpty()
+            val linearNames = results.firstOrNull { it.first == "Linear" }?.second?.stream
+                ?.let { dataParser.parseAmSatLivePage(it) }.orEmpty()
+            val nameToCatnum = entries.associate { it.name.uppercase() to it.catnum }
+            fun resolve(names: List<String>): Set<Int> = names.mapNotNull { name ->
+                val keys = dataParser.normalizeAmSatName(name)
+                nameToCatnum.entries.firstOrNull { (localName, _) ->
+                    keys.any { key -> localName.contains(key) }
+                }?.value
+            }.toSet()
+            val fmCatnums = resolve(fmNames)
+            val linearCatnums = resolve(linearNames)
+            settingsRepo.setAmSatCatnums(fmCatnums, linearCatnums)
+            println("AMSAT live lists updated: FM=${fmCatnums.size}, Linear=${linearCatnums.size}")
+        }.onFailure {
+            // Keep the previous lists; the mutual filter stays on the last good snapshot.
+            println("AMSAT live lists update failed: $it")
+        }
     }
 
     override suspend fun clearAllData() = withContext(dispatcher) {
         localSource.deleteEntries()
         localSource.deleteRadios()
+        settingsRepo.setAmSatCatnums(emptySet(), emptySet())
         setUpdateSuccessful(0L)
     }
 

@@ -45,7 +45,7 @@ interface Look4SatDao {
     @Query("DELETE FROM entries")
     suspend fun deleteEntries()
 
-    @Query("SELECT catnum FROM radios WHERE downlinkMode IN (:modes)")
+    @Query("SELECT catnum FROM radios WHERE downlinkMode IN (:modes) AND isAlive = 1")
     suspend fun getIdsWithModes(modes: List<String>): List<Int>
 
     @Query("SELECT COUNT(*) FROM radios")

@@ -65,4 +65,9 @@ interface ISatelliteRepo {
 
     /** Fetch radio transceivers for a satellite by its catalog number. */
     suspend fun getRadiosWithId(id: Int): List<SatRadio>
+
+    /** Satellite catnums whose radios carry any of the given downlink modes.
+     *  Empty modes -> empty result; used to filter the mutual-match satellite
+     *  set to transponder satellites (FM voice / linear). */
+    suspend fun getSatelliteIdsWithModes(modes: List<String>): List<Int>
 }

@@ -31,10 +31,12 @@ class MutualViewModelTest {
     private fun TestScope.createVm(
         satellites: List<OrbitalObject> = emptyList(),
         passes: List<OrbitalPass> = emptyList(),
-        position: GeoPos = TestOrbits.GUANGZHOU
+        position: GeoPos = TestOrbits.GUANGZHOU,
+        amSatFm: Set<Int> = emptySet(),
+        amSatLinear: Set<Int> = emptySet()
     ): MutualViewModel = MutualViewModel(
         satelliteRepo = FakeSatelliteRepo(satellites, passes),
-        settingsRepo = FakeSettingsRepo(position),
+        settingsRepo = FakeSettingsRepo(position, amSatFm, amSatLinear),
         computeDispatcher = StandardTestDispatcher(mainDispatcherRule.dispatcher.scheduler)
     )
 
@@ -319,5 +321,68 @@ class MutualViewModelTest {
         // Position intact after the query settled.
         assertEquals(4, vm.listScrollIndex)
         assertEquals(137, vm.listScrollOffset)
+    }
+
+    // --------------------------------------------- transponder filters (AMSAT)
+
+    @Test
+    fun `both filters off sets an error and does not search`() = runTest(mainDispatcherRule.dispatcher.scheduler) {
+        val windows = TestOrbits.findPassWindows()
+        val vm = createVm(satellites = listOf(TestOrbits.ISS), passes = windows)
+        vm.onStationBGrid("OL62")
+        vm.onFilterFM(false)
+        vm.onFilterLinear(false)
+
+        queryAndSettle(vm)
+
+        assertEquals(
+            "Select at least one transponder type (FM / Linear) to run the match.",
+            vm.uiState.value.errorMessage
+        )
+        assertFalse(vm.uiState.value.hasSearched)
+    }
+
+    @Test
+    fun `AMSAT filter restricts results to listed catnums`() = runTest(mainDispatcherRule.dispatcher.scheduler) {
+        val windows = TestOrbits.findPassWindows(hoursAhead = 24) +
+            TestOrbits.findPassWindows(sat = TestOrbits.ISS_VARIANT, hoursAhead = 24)
+        assertTrue("fixture must produce windows", windows.isNotEmpty())
+        // Only ISS (25544) is on the AMSAT live FM list; ISS_VARIANT (25545) is not.
+        val vm = createVm(
+            satellites = listOf(TestOrbits.ISS, TestOrbits.ISS_VARIANT),
+            passes = windows,
+            amSatFm = setOf(25544)
+        )
+        vm.onStationBGrid("OL62")
+        vm.onHoursAhead(24)
+
+        queryAndSettle(vm)
+
+        val state = vm.uiState.value
+        assertNull(state.errorMessage)
+        assertTrue(state.mutualPasses.isNotEmpty())
+        assertTrue("only AMSAT-listed satellites should appear", state.mutualPasses.all { it.catNum == 25544 })
+    }
+
+    @Test
+    fun `AMSAT filter off for one type excludes its satellites`() = runTest(mainDispatcherRule.dispatcher.scheduler) {
+        val windows = TestOrbits.findPassWindows(hoursAhead = 24) +
+            TestOrbits.findPassWindows(sat = TestOrbits.ISS_VARIANT, hoursAhead = 24)
+        // FM filter off, Linear on: neither sat is linear-listed -> nothing matches.
+        val vm = createVm(
+            satellites = listOf(TestOrbits.ISS, TestOrbits.ISS_VARIANT),
+            passes = windows,
+            amSatFm = setOf(25544),
+            amSatLinear = setOf(25545)
+        )
+        vm.onStationBGrid("OL62")
+        vm.onHoursAhead(24)
+        vm.onFilterFM(false)
+
+        queryAndSettle(vm)
+
+        val state = vm.uiState.value
+        assertNull(state.errorMessage)
+        assertTrue("only linear-listed satellites should appear", state.mutualPasses.all { it.catNum == 25545 })
     }
 }

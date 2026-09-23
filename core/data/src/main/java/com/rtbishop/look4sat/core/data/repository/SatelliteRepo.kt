@@ -65,6 +65,8 @@ class SatelliteRepo(
 
     override suspend fun getRadiosWithId(id: Int) = localStorage.getRadiosWithId(id)
 
+    override suspend fun getSatelliteIdsWithModes(modes: List<String>) = localStorage.getIdsWithModes(modes)
+
     override suspend fun initRepository() = withContext(dispatcher) {
         combine(
             settingsRepo.selectedIds,

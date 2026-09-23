@@ -88,7 +88,7 @@
     <!-- Map screen -->
     <string name="map_prev">Önceki</string>
     <string name="map_next">Sonraki</string>
-    <string name="map_copyright" translatable="false">© OpenStreetMap contributors</string>
+    <string name="map_copyright_osm" translatable="false">© OpenStreetMap contributors</string>
     <string name="map_azimuth">Azimut: %.1f°</string>
     <string name="map_elevation">Yükseklik açısı: %.1f°</string>
     <string name="map_altitude">İrtifa: %.0f km</string>

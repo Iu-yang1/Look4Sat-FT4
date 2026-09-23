@@ -26,6 +26,7 @@ import androidx.core.location.LocationManagerCompat
 import com.rtbishop.look4sat.core.domain.model.DataSourcesSettings
 import com.rtbishop.look4sat.core.domain.model.DatabaseState
 import com.rtbishop.look4sat.core.domain.model.Ft4Settings
+import com.rtbishop.look4sat.core.domain.model.MapSource
 import com.rtbishop.look4sat.core.domain.model.OtherSettings
 import com.rtbishop.look4sat.core.domain.model.PassesSettings
 import com.rtbishop.look4sat.core.domain.model.RCSettings
@@ -101,6 +102,8 @@ class SettingsRepo(
     private val keySstvMode = "sstvMode"
     private val keyLowElevation = "lowElevation"
     private val keyHighElevation = "highElevation"
+    private val keyMapSource = "mapSource"
+    private val keyTiandituKey = "tiandituKey"
     private val keyFt4OperatorCallsign = "ft4OperatorCallsign"
     private val keyFt4DecodeEnabled = "ft4DecodeEnabled"
     private val keyFt4DecodeDepth = "ft4DecodeDepth"
@@ -553,7 +556,12 @@ class SettingsRepo(
 
     override fun updateOtherSettings(transform: (OtherSettings) -> OtherSettings) {
         _otherSettings.update { current ->
-            val new = transform(current)
+            val new = transform(current).let {
+                it.copy(
+                    mapSource = MapSource.normalize(it.mapSource),
+                    tiandituKey = it.tiandituKey.trim()
+                )
+            }
             preferences.edit {
                 putBoolean(keyStateOfAutoUpdate, new.stateOfAutoUpdate)
                 putBoolean(keyStateOfAutoLotwSync, new.stateOfAutoLotwSync)
@@ -570,6 +578,8 @@ class SettingsRepo(
                 putString(keySstvMode, new.sstvMode)
                 putLong(keyLowElevation, new.lowElevation.toRawBits())
                 putLong(keyHighElevation, new.highElevation.toRawBits())
+                putString(keyMapSource, new.mapSource)
+                putString(keyTiandituKey, new.tiandituKey)
             }
             new
         }
@@ -590,7 +600,9 @@ class SettingsRepo(
         shouldSeeWhatsNew = preferences.getBoolean(keyShouldSeeWhatsNew, true),
         sstvMode = preferences.getString(keySstvMode, null) ?: "Auto",
         lowElevation = Double.fromBits(preferences.getLong(keyLowElevation, 15.0.toRawBits())),
-        highElevation = Double.fromBits(preferences.getLong(keyHighElevation, 45.0.toRawBits()))
+        highElevation = Double.fromBits(preferences.getLong(keyHighElevation, 45.0.toRawBits())),
+        mapSource = MapSource.normalize(preferences.getString(keyMapSource, null).orEmpty()),
+        tiandituKey = preferences.getString(keyTiandituKey, null).orEmpty().trim()
     )
     //endregion
 

@@ -62,6 +62,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -69,6 +70,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.rtbishop.look4sat.core.domain.model.DataSourcesSettings
+import com.rtbishop.look4sat.core.domain.model.MapSource
 import com.rtbishop.look4sat.core.domain.time.ClockSource
 import com.rtbishop.look4sat.core.domain.model.OtherSettings
 import com.rtbishop.look4sat.core.domain.model.RadioControlSettings
@@ -380,6 +382,7 @@ private fun SettingsScreen(uiState: SettingsState, onAction: (SettingsAction) ->
                     onAction = onAction
                 )
             }
+            item { MapSettingsCard(uiState.otherSettings, onAction) }
             item { CardCredits() }
             item(span = { GridItemSpan(maxLineSpan) }) {
                 CardButton(
@@ -701,6 +704,59 @@ private fun OtherCardPreview() = MainTheme {
         shouldSeeWhatsNew = false
     )
     OtherCard(settings = values, onCompassCalibration = {}, onAction = {})
+}
+
+@Composable
+private fun MapSettingsCard(settings: OtherSettings, onAction: (SettingsAction) -> Unit) {
+    val mapSource = MapSource.normalize(settings.mapSource)
+    ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)
+        ) {
+            Text(
+                text = stringResource(R.string.prefs_map_title),
+                color = MaterialTheme.colorScheme.primary
+            )
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                MapSourceChip(
+                    selected = mapSource == MapSource.OSM,
+                    label = stringResource(R.string.prefs_map_source_osm),
+                    onClick = { onAction(SettingsAction.SetMapSource(MapSource.OSM)) }
+                )
+                MapSourceChip(
+                    selected = mapSource == MapSource.TIANDITU_VECTOR,
+                    label = stringResource(R.string.prefs_map_source_tianditu_vector),
+                    onClick = { onAction(SettingsAction.SetMapSource(MapSource.TIANDITU_VECTOR)) }
+                )
+                MapSourceChip(
+                    selected = mapSource == MapSource.TIANDITU_IMAGE,
+                    label = stringResource(R.string.prefs_map_source_tianditu_image),
+                    onClick = { onAction(SettingsAction.SetMapSource(MapSource.TIANDITU_IMAGE)) }
+                )
+            }
+            OutlinedTextField(
+                value = settings.tiandituKey,
+                onValueChange = { onAction(SettingsAction.SetTiandituKey(it)) },
+                label = { Text(stringResource(R.string.prefs_map_tianditu_key)) },
+                visualTransformation = PasswordVisualTransformation(),
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
+            if (mapSource != MapSource.OSM && settings.tiandituKey.isBlank()) {
+                Text(
+                    text = stringResource(R.string.prefs_map_tianditu_key_required),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun MapSourceChip(selected: Boolean, label: String, onClick: () -> Unit) {
+    FilterChip(selected = selected, onClick = onClick, label = { Text(label) })
 }
 
 @Composable

@@ -241,6 +241,8 @@ class SettingsViewModel(
             }
             is SettingsAction.ToggleLightTheme -> settingsRepo.updateOtherSettings { it.copy(stateOfLightTheme = action.value) }
             is SettingsAction.ToggleNightMode -> settingsRepo.updateOtherSettings { it.copy(stateOfNightMode = action.value) }
+            is SettingsAction.SetMapSource -> settingsRepo.updateOtherSettings { it.copy(mapSource = action.value) }
+            is SettingsAction.SetTiandituKey -> settingsRepo.updateOtherSettings { it.copy(tiandituKey = action.value) }
             is SettingsAction.SetFt4Callsign -> settingsRepo.updateFt4Settings {
                 it.copy(operatorCallsign = action.value)
             }

@@ -85,6 +85,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.rtbishop.look4sat.core.domain.model.AwardCalculator
 import com.rtbishop.look4sat.core.domain.model.AwardProgress
 import com.rtbishop.look4sat.core.domain.model.AwardType
+import com.rtbishop.look4sat.core.domain.model.MapSource
 import com.rtbishop.look4sat.core.domain.predict.GeoPos
 import com.rtbishop.look4sat.core.domain.predict.OrbitalObject
 import com.rtbishop.look4sat.core.domain.predict.OrbitalPos
@@ -96,31 +97,40 @@ import com.rtbishop.look4sat.core.presentation.TimerRow
 import com.rtbishop.look4sat.core.presentation.TopBar
 import com.rtbishop.look4sat.core.presentation.isVerticalLayout
 import com.rtbishop.look4sat.core.presentation.layoutPadding
+import org.osmdroid.tileprovider.MapTileProviderBasic
+import org.osmdroid.tileprovider.tilesource.OnlineTileSourceBase
 import org.osmdroid.tileprovider.tilesource.XYTileSource
 import org.osmdroid.events.DelayedMapListener
 import org.osmdroid.events.MapListener
 import org.osmdroid.events.ScrollEvent
 import org.osmdroid.events.ZoomEvent
 import org.osmdroid.util.GeoPoint
+import org.osmdroid.util.MapTileIndex
 import org.osmdroid.views.CustomZoomButtonsController
 import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.FolderOverlay
 import org.osmdroid.views.overlay.Marker
 import org.osmdroid.views.overlay.Polyline
+import org.osmdroid.views.overlay.TilesOverlay
+import java.net.URLEncoder
 
 // Overlay indices
-private const val OVERLAY_GRID = 0
-private const val OVERLAY_STATION = 1
-private const val OVERLAY_TRACK = 2
-private const val OVERLAY_FOOTPRINT = 3
-private const val OVERLAY_POSITIONS = 4
-private const val OVERLAY_TERMINATOR = 5
-private const val OVERLAY_SUN = 6
-private const val OVERLAY_MOON = 7
-private const val OVERLAY_COUNT = 8
+private const val OVERLAY_TDT_LABELS = 0
+private const val OVERLAY_GRID = 1
+private const val OVERLAY_STATION = 2
+private const val OVERLAY_TRACK = 3
+private const val OVERLAY_FOOTPRINT = 4
+private const val OVERLAY_POSITIONS = 5
+private const val OVERLAY_TERMINATOR = 6
+private const val OVERLAY_SUN = 7
+private const val OVERLAY_MOON = 8
+private const val OVERLAY_COUNT = 9
 
 private val minLat = MapView.getTileSystem().minLatitude
 private val maxLat = MapView.getTileSystem().maxLatitude
+private val offlineTileSource = XYTileSource("tiles", 0, 6, 256, ".webp", emptyArray<String>())
+private const val OFFLINE_MAX_ZOOM = 7.0
+private const val TIANDITU_MAX_ZOOM = 18.0
 private val trackPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
     strokeWidth = 3f
     style = Paint.Style.STROKE
@@ -209,6 +219,8 @@ private fun MapScreen(
     val rotateMod = Modifier.rotate(180f)
     val timeString = uiState.mapData?.aosTime ?: "00:00:00"
     val isTimeAos = uiState.mapData?.isTimeAos ?: true
+    val usesTianditu = tiandituLayers(uiState.mapSource) != null && uiState.tiandituKey.isNotBlank()
+    val copyrightResId = if (usesTianditu) R.string.map_copyright_tianditu else R.string.map_copyright_osm
 
     // Tapped worked grid -> centered QSO dialog. Local UI state: the map is the
     // only consumer and it resets when leaving the page.
@@ -299,6 +311,9 @@ private fun MapScreen(
         val firstPos = uiState.track?.firstOrNull()?.firstOrNull() ?: return@LaunchedEffect
         mapView.controller.animateTo(GeoPoint(firstPos.latitude, firstPos.longitude))
     }
+    LaunchedEffect(uiState.mapSource, uiState.tiandituKey) {
+        configureTileSources(mapView, uiState.mapSource, uiState.tiandituKey)
+    }
     Column(modifier = Modifier.layoutPadding(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         val isVertical = isVerticalLayout()
         if (isGridMode) {
@@ -380,7 +395,8 @@ private fun MapScreen(
                 }
                 uiState.mapData?.let { mapData ->
                     if (!uiState.isGridMode) {
-                        if (isVertical) MapDataCard(mapData) else MapDataCards(mapData)
+                        if (isVertical) MapDataCard(mapData, copyrightResId)
+                        else MapDataCards(mapData, copyrightResId)
                     }
                 }
                 // Top-left: operated-grid selector for VUCC counting (grid mode only).
@@ -616,11 +632,11 @@ private fun formatTime(epochMs: Long, isUtc: Boolean): String {
 
 // region Map data composables
 @Composable
-private fun MapDataCard(data: MapData) {
+private fun MapDataCard(data: MapData, copyrightResId: Int) {
     val textColor = MaterialTheme.colorScheme.primary
     val cardColors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLowest)
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(text = stringResource(R.string.map_copyright), fontSize = 14.sp)
+        Text(text = stringResource(copyrightResId), fontSize = 14.sp)
         Card(colors = cardColors) {
             Column(modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) {
                 MapDataRow(
@@ -658,7 +674,7 @@ private fun MapDataRow(
 }
 
 @Composable
-private fun MapDataCards(data: MapData) {
+private fun MapDataCards(data: MapData, copyrightResId: Int) {
     val cardColors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLowest)
     val paddingMod = Modifier
         .padding(horizontal = 8.dp, vertical = 4.dp)
@@ -685,7 +701,7 @@ private fun MapDataCards(data: MapData) {
             }
         }
         Text(
-            text = stringResource(R.string.map_copyright),
+            text = stringResource(copyrightResId),
             fontSize = 14.sp,
             modifier = Modifier.align(Alignment.BottomCenter)
         )
@@ -898,6 +914,100 @@ private fun FirstCallToggle(
     }
 }
 
+// endregion
+
+// region Tile sources
+private var configuredTileMapView: MapView? = null
+private var configuredTileSource: String? = null
+
+private fun configureTileSources(mapView: MapView, mapSource: String, tiandituKey: String) {
+    val key = tiandituKey.trim()
+    val layers = tiandituLayers(mapSource)
+    val sourceKey = if (layers == null || key.isBlank()) MapSource.OSM else "${layers.base}:$key"
+    if (configuredTileMapView === mapView && configuredTileSource == sourceKey) return
+
+    configuredTileMapView = mapView
+    configuredTileSource = sourceKey
+    (mapView.overlays.getOrNull(OVERLAY_TDT_LABELS) as? TilesOverlay)?.onDetach(mapView)
+
+    if (layers == null || key.isBlank()) {
+        mapView.setUseDataConnection(false)
+        mapView.setTileSource(offlineTileSource)
+        mapView.maxZoomLevel = OFFLINE_MAX_ZOOM
+        mapView.overlayManager.tilesOverlay.applyTileOverlayDefaults(createColorFilter())
+        mapView.overlays[OVERLAY_TDT_LABELS] = FolderOverlay()
+        requestTileRefresh(mapView)
+        return
+    }
+
+    mapView.setUseDataConnection(true)
+    mapView.setTileSource(TiandituTileSource(layer = layers.base, key = key))
+    mapView.maxZoomLevel = TIANDITU_MAX_ZOOM
+    mapView.overlayManager.tilesOverlay.applyTileOverlayDefaults(null)
+    mapView.overlays[OVERLAY_TDT_LABELS] = TilesOverlay(
+        MapTileProviderBasic(mapView.context, TiandituTileSource(layer = layers.label, key = key)),
+        mapView.context
+    ).apply {
+        applyTileOverlayDefaults(null)
+        setUseDataConnection(true)
+    }
+    requestTileRefresh(mapView)
+}
+
+private data class TiandituLayers(val base: String, val label: String)
+
+private fun tiandituLayers(mapSource: String): TiandituLayers? = when (MapSource.normalize(mapSource)) {
+    MapSource.TIANDITU_VECTOR -> TiandituLayers(base = "vec", label = "cva")
+    MapSource.TIANDITU_IMAGE -> TiandituLayers(base = "img", label = "cia")
+    else -> null
+}
+
+private fun TilesOverlay.applyTileOverlayDefaults(colorFilter: ColorMatrixColorFilter?) {
+    setColorFilter(colorFilter)
+    setLoadingBackgroundColor(Color.TRANSPARENT)
+    setLoadingLineColor(Color.TRANSPARENT)
+}
+
+private fun requestTileRefresh(mapView: MapView) {
+    mapView.post {
+        mapView.requestLayout()
+        mapView.invalidate()
+    }
+}
+
+private fun buildTiandituWmtsUrl(
+    baseUrl: String,
+    layer: String,
+    zoom: Int,
+    row: Int,
+    col: Int,
+    encodedKey: String
+): String = "$baseUrl?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=$layer" +
+    "&STYLE=default&TILEMATRIXSET=w&FORMAT=tiles&TILEMATRIX=$zoom&TILEROW=$row&TILECOL=$col&tk=$encodedKey"
+
+private class TiandituTileSource(
+    private val layer: String,
+    key: String
+) : OnlineTileSourceBase(
+    "tianditu-wmts-https-$layer",
+    1,
+    TIANDITU_MAX_ZOOM.toInt(),
+    256,
+    ".png",
+    Array(8) { index -> "https://t$index.tianditu.gov.cn/${layer}_w/wmts" },
+    "Tianditu"
+) {
+    private val encodedKey = URLEncoder.encode(key, Charsets.UTF_8.name())
+
+    override fun getTileURLString(pMapTileIndex: Long): String = buildTiandituWmtsUrl(
+        baseUrl = getBaseUrl(),
+        layer = layer,
+        zoom = MapTileIndex.getZoom(pMapTileIndex),
+        row = MapTileIndex.getY(pMapTileIndex),
+        col = MapTileIndex.getX(pMapTileIndex),
+        encodedKey = encodedKey
+    )
+}
 // endregion
 
 // region Map overlay helpers
@@ -1315,7 +1425,6 @@ private fun rememberMapViewWithLifecycle(
     mapFilterViewModel: MapFilterViewModel,
     restoreViewport: Boolean
 ): MapView {
-    val tileSource = XYTileSource("tiles", 0, 6, 256, ".webp", emptyArray<String>())
     val context = LocalContext.current
     val isVertical = isVerticalLayout()
     val mapView = remember {
@@ -1327,9 +1436,9 @@ private fun rememberMapViewWithLifecycle(
             // draws a full-height artifact line whenever its X range crosses
             // the screen at low zoom. The map must never repeat vertically.
             setVerticalMapRepetitionEnabled(false)
-            setTileSource(tileSource)
+            setTileSource(offlineTileSource)
             minZoomLevel = getMinZoom(resources.displayMetrics.heightPixels, isVertical)
-            maxZoomLevel = 7.0
+            maxZoomLevel = OFFLINE_MAX_ZOOM
             // Restore the viewport the user left on the previous visit, but only
             // in grid mode: satellite mode intentionally keeps its original
             // behavior (default center, then follows the selected satellite).
@@ -1374,6 +1483,8 @@ private fun clearMapCaches() {
     lastPositions = null
     lastAction = null
     lastMapView = null
+    configuredTileMapView = null
+    configuredTileSource = null
 }
 
 @Composable

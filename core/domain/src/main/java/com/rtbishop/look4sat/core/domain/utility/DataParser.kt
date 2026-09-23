@@ -128,10 +128,18 @@ class DataParser(private val dispatcher: CoroutineDispatcher) {
         return keys.distinct()
     }
 
-    /** True if a local entry name matches any of the AMSAT normalized keys. */
+    /** True if a local entry name matches any of the AMSAT normalized keys.
+     *  Token-based exact match (split on spaces/brackets/slashes), so a key
+     *  like "ISS" does not substring-match "AISSAT-1" — the key must equal a
+     *  whole name token (case-insensitive). */
     fun matchesAmSatName(localName: String, amSatKeys: List<String>): Boolean {
-        val localUpper = localName.uppercase()
-        return amSatKeys.any { key -> localUpper.contains(key) }
+        val localTokens = localName.uppercase()
+            .split(Regex("[\\s()\\[\\]/]+"))
+            .filter { it.isNotBlank() }
+            .toSet()
+        return amSatKeys.any { key ->
+            key.uppercase() in localTokens
+        }
     }
 
     private fun parseCSV(values: List<String>): OrbitalData? = runCatching {

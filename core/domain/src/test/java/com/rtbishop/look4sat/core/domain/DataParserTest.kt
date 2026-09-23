@@ -279,6 +279,10 @@ class DataParserTest {
         assert(dataParser.normalizeAmSatName("ISS") == listOf("ISS"))
         assert(dataParser.matchesAmSatName("AO-91 (RADFXSAT)", listOf("AO-91", "RADFXSAT")))
         assert(!dataParser.matchesAmSatName("SO-50", listOf("AO-91")))
+        // Regression: "ISS" must not substring-match "AISSAT-1" (token match only).
+        assert(dataParser.matchesAmSatName("ISS (ZARYA)", listOf("ISS")))
+        assert(!dataParser.matchesAmSatName("AISSAT-1", listOf("ISS")))
+        assert(!dataParser.matchesAmSatName("TESS", listOf("ISS")))
     }
 
     @Test

@@ -74,7 +74,17 @@ class SelectionRepo(
             when (type) {
                 Sources.virtualTypeNames[0] -> idsSet.addAll(settingsRepo.getAmSatFmCatnums())
                 Sources.virtualTypeNames[1] -> idsSet.addAll(settingsRepo.getAmSatLinearCatnums())
-                Sources.virtualTypeNames[2] -> idsSet.addAll(localSource.getIdsWithModes(listOf("SSTV")))
+                // Live SSTV: mode=SSTV transponder records intersected with the
+                // currently-tracked (in-orbit, from the selected TLE sources)
+                // satellites. The raw mode query alone would include retired
+                // weather/experimental birds (e.g. TIROS catnum 1430 whose old
+                // TV downlink is labelled SSTV but is long gone from orbit).
+                Sources.virtualTypeNames[2] -> {
+                    val inOrbitIds = currentItems.value.map { it.catnum }.toHashSet()
+                    idsSet.addAll(
+                        localSource.getIdsWithModes(listOf("SSTV")).filter { it in inOrbitIds }
+                    )
+                }
                 else -> idsSet.addAll(settingsRepo.getSatelliteTypesIds(listOf(type)))
             }
         }

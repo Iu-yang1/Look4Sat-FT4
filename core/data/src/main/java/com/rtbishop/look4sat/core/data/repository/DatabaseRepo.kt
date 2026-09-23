@@ -140,7 +140,7 @@ class DatabaseRepo(
             fun resolve(names: List<String>): Set<Int> = names.mapNotNull { name ->
                 val keys = dataParser.normalizeAmSatName(name)
                 nameToCatnum.entries.firstOrNull { (localName, _) ->
-                    keys.any { key -> localName.contains(key) }
+                    dataParser.matchesAmSatName(localName, keys)
                 }?.value
             }.toSet()
             val fmCatnums = resolve(fmNames)

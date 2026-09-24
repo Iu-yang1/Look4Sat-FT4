@@ -283,6 +283,11 @@ class DataParserTest {
         assert(dataParser.matchesAmSatName("ISS (ZARYA)", listOf("ISS")))
         assert(!dataParser.matchesAmSatName("AISSAT-1", listOf("ISS")))
         assert(!dataParser.matchesAmSatName("TESS", listOf("ISS")))
+        // OSCAR designators match local names spelled "OSCAR N"/"AMSAT-OSCAR N".
+        assert(dataParser.matchesAmSatName("OSCAR 7", listOf("AO-7")))
+        assert(dataParser.matchesAmSatName("AMSAT-OSCAR 7", listOf("AO-7")))
+        assert(dataParser.matchesAmSatName("CATSAT", listOf("CATSAT")))
+        assert(dataParser.matchesAmSatName("RS-44 & BREEZE-KM R/B", listOf("RS-44")))
     }
 
     @Test

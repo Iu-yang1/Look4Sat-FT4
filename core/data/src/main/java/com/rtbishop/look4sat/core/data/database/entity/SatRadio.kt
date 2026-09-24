@@ -33,6 +33,10 @@ data class SatRadio(
     val uplinkMode: String?,
     val isInverted: Boolean,
     val catnum: Int?,
+    /** Service class from the transceiver source ("Amateur"/"Unknown" etc.).
+     *  Used to tell amateur satellites apart from debris / weather birds
+     *  (TIROS) / launcher stages (Ariane 6 R/B) in the SSTV virtual filter. */
+    val service: String? = null,
     /** Set for manually imported transceivers, which remote updates must not replace. */
     val isCustom: Boolean = false
 )

@@ -85,6 +85,10 @@ interface ISettingsRepo {
     /** Catalog numbers of satellites listed on AMSAT's "Live Linear Satellites" page. */
     fun getAmSatLinearCatnums(): Set<Int>
     fun setAmSatCatnums(fmCatnums: Set<Int>, linearCatnums: Set<Int>)
+    /** Catalog numbers of active *amateur* satellites from AMSAT's
+     *  active-transponder table (whitelist for the virtual type filters). */
+    fun getAmSatActiveCatnums(): Set<Int>
+    fun setAmSatActiveCatnums(catnums: Set<Int>)
     //endregion
 
     //region # Radio control settings

@@ -109,6 +109,7 @@ class SettingsRepo(
     private val keySatnogsTleSourceMigration = "satnogsTleSourceMigration"
     private val keyAmSatFmCatnums = "amSatFmCatnums"
     private val keyAmSatLinearCatnums = "amSatLinearCatnums"
+    private val keyAmSatActiveCatnums = "amSatActiveCatnums"
     private val separatorComma = ","
     private val separatorUrl = "\n"
     private val legacyCelestrakSatnogsUrl =
@@ -762,6 +763,17 @@ class SettingsRepo(
         preferences.edit {
             putString(keyAmSatFmCatnums, fmCatnums.sorted().joinToString(separatorComma))
             putString(keyAmSatLinearCatnums, linearCatnums.sorted().joinToString(separatorComma))
+        }
+    }
+
+    override fun getAmSatActiveCatnums(): Set<Int> {
+        val raw = preferences.getString(keyAmSatActiveCatnums, null) ?: return emptySet()
+        return raw.split(separatorComma).mapNotNull { it.toIntOrNull() }.toSet()
+    }
+
+    override fun setAmSatActiveCatnums(catnums: Set<Int>) {
+        preferences.edit {
+            putString(keyAmSatActiveCatnums, catnums.sorted().joinToString(separatorComma))
         }
     }
     //endregion

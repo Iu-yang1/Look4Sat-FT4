@@ -74,16 +74,19 @@ class SelectionRepo(
             when (type) {
                 Sources.virtualTypeNames[0] -> idsSet.addAll(settingsRepo.getAmSatFmCatnums())
                 Sources.virtualTypeNames[1] -> idsSet.addAll(settingsRepo.getAmSatLinearCatnums())
-                // Live SSTV: mode=SSTV transponder records intersected with the
-                // currently-tracked (in-orbit, from the selected TLE sources)
-                // satellites. The raw mode query alone would include retired
-                // weather/experimental birds (e.g. TIROS catnum 1430 whose old
-                // TV downlink is labelled SSTV but is long gone from orbit).
+                // Live SSTV: mode=SSTV transponder records whose service class
+                // is "Amateur", excluding launcher debris / rocket bodies
+                // (names ending in "R/B" or "DEB" — e.g. Ariane 6 R/B) that
+                // carry an amateur payload transponder but are not satellites.
                 Sources.virtualTypeNames[2] -> {
-                    val inOrbitIds = currentItems.value.map { it.catnum }.toHashSet()
-                    idsSet.addAll(
-                        localSource.getIdsWithModes(listOf("SSTV")).filter { it in inOrbitIds }
-                    )
+                    val sstvIds = localSource.getIdsWithModesAndAmateur(listOf("SSTV")).toSet()
+                    val inOrbitNames = currentItems.value.associate { it.catnum to it.name }
+                    val filtered = sstvIds.filter { catnum ->
+                        val name = inOrbitNames[catnum]?.uppercase().orEmpty()
+                        !name.endsWith(" R/B") && !name.endsWith(" DEB") &&
+                            !name.endsWith("R/B") && !name.endsWith("DEB")
+                    }
+                    idsSet.addAll(filtered)
                 }
                 else -> idsSet.addAll(settingsRepo.getSatelliteTypesIds(listOf(type)))
             }

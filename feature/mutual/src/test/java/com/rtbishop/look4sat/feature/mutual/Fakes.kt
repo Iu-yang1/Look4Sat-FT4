@@ -46,6 +46,7 @@ class FakeSatelliteRepo(
     override suspend fun getRadiosWithId(id: Int): List<SatRadio> = TODO()
     override suspend fun getSatelliteIdsWithModes(modes: List<String>): List<Int> = emptyList()
     override suspend fun getSatelliteIdsWithModesAndUplink(modes: List<String>): List<Int> = emptyList()
+    override suspend fun getSatelliteIdsWithModesAndAmateur(modes: List<String>): List<Int> = emptyList()
 }
 
 /**
@@ -112,6 +113,8 @@ class FakeSettingsRepo(
     override fun getAmSatFmCatnums(): Set<Int> = amSatFm
     override fun getAmSatLinearCatnums(): Set<Int> = amSatLinear
     override fun setAmSatCatnums(fmCatnums: Set<Int>, linearCatnums: Set<Int>) = TODO()
+    override fun getAmSatActiveCatnums(): Set<Int> = emptySet()
+    override fun setAmSatActiveCatnums(catnums: Set<Int>) = TODO()
 
     override fun updateRadioControlSettings(settings: RadioControlSettings) = TODO()
     override fun getSatelliteOffset(catnum: Int): String = ""

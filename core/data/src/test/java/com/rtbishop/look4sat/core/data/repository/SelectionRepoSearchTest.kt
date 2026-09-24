@@ -135,6 +135,35 @@ class SelectionRepoSearchTest {
     }
 
     @Test
+    fun `SSTV virtual type uses the amateur-only radio query`() = runTest {
+        // The repo delegates to getIdsWithModesAndAmateur: the fake returns
+        // only catnums the DAO would have filtered to Amateur service (43803).
+        val repo = createRepo(
+            items = sampleItems,
+            sstvIds = listOf(43803),
+            amSatActive = setOf(43803)
+        )
+        repo.setTypes(listOf("Live SSTV"))
+        val results = repo.getEntriesFlow().first()
+        assertEquals(listOf(43803), results.map { it.catnum })
+    }
+
+    @Test
+    fun `SSTV virtual type excludes rocket-body debris by name`() = runTest {
+        // 60239 is "ARIANE 6 R/B" (launcher debris carrying an amateur SSTV
+        // payload); it must be dropped even though its radio is Amateur.
+        val items = sampleItems + SatItem(catnum = 60239, name = "ARIANE 6 R/B")
+        val repo = createRepo(
+            items = items,
+            sstvIds = listOf(43803, 60239),
+            amSatActive = setOf(43803, 60239)
+        )
+        repo.setTypes(listOf("Live SSTV"))
+        val results = repo.getEntriesFlow().first()
+        assertEquals(listOf(43803), results.map { it.catnum })
+    }
+
+    @Test
     fun `multiple virtual types union their satellites`() = runTest {
         val repo = createRepo(
             items = sampleItems,
@@ -192,12 +221,13 @@ class SelectionRepoSearchTest {
         items: List<SatItem>,
         amSatFm: Set<Int> = emptySet(),
         amSatLinear: Set<Int> = emptySet(),
-        sstvIds: List<Int> = emptyList()
+        sstvIds: List<Int> = emptyList(),
+        amSatActive: Set<Int> = emptySet()
     ): ISelectionRepo {
         return SelectionRepo(
             dispatcher = Dispatchers.Unconfined,
             localSource = FakeLocalSourceForSearch(items, sstvIds),
-            settingsRepo = FakeSettingsRepoForSearch(amSatFm, amSatLinear)
+            settingsRepo = FakeSettingsRepoForSearch(amSatFm, amSatLinear, amSatActive)
         )
     }
 }
@@ -213,6 +243,7 @@ private class FakeLocalSourceForSearch(
     override suspend fun deleteEntries() = Unit
     override suspend fun getIdsWithModes(modes: List<String>): List<Int> = sstvIds
     override suspend fun getIdsWithModesAndUplink(modes: List<String>): List<Int> = sstvIds
+    override suspend fun getIdsWithModesAndAmateur(modes: List<String>): List<Int> = sstvIds
     override suspend fun getRadiosTotal(): Int = 0
     override suspend fun getRadiosWithId(id: Int): List<SatRadio> = emptyList()
     override suspend fun insertRadios(radios: List<SatRadio>, isCustom: Boolean) = Unit
@@ -222,7 +253,8 @@ private class FakeLocalSourceForSearch(
 
 private class FakeSettingsRepoForSearch(
     private val amSatFm: Set<Int> = emptySet(),
-    private val amSatLinear: Set<Int> = emptySet()
+    private val amSatLinear: Set<Int> = emptySet(),
+    private var amSatActive: Set<Int> = emptySet()
 ) : ISettingsRepo {
     override val appVersionName: String = "test"
     override val selectedIds: StateFlow<List<Int>> = MutableStateFlow(emptyList())
@@ -268,6 +300,8 @@ private class FakeSettingsRepoForSearch(
     override fun getAmSatFmCatnums(): Set<Int> = amSatFm
     override fun getAmSatLinearCatnums(): Set<Int> = amSatLinear
     override fun setAmSatCatnums(fmCatnums: Set<Int>, linearCatnums: Set<Int>) = Unit
+    override fun getAmSatActiveCatnums(): Set<Int> = amSatActive
+    override fun setAmSatActiveCatnums(catnums: Set<Int>) { amSatActive = catnums }
     override fun updateRadioControlSettings(settings: RadioControlSettings) = Unit
     override fun getSatelliteOffset(catnum: Int): String = ""
     override fun setSatelliteOffset(catnum: Int, offset: String) = Unit

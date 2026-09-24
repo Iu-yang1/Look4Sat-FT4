@@ -130,23 +130,34 @@ class DatabaseRepo(
             val entries = localSource.getEntriesList() // catnum -> name
             val jobs = Sources.amSatLiveUrls.map { (type, url) ->
                 async { type to remoteSource.getNetworkStream(url) }
-            }
+            } + async { "Active" to remoteSource.getNetworkStream(Sources.amSatActiveUrl) }
             val results = jobs.awaitAll()
             val fmNames = results.firstOrNull { it.first == "FM" }?.second?.stream
                 ?.let { dataParser.parseAmSatLivePage(it) }.orEmpty()
             val linearNames = results.firstOrNull { it.first == "Linear" }?.second?.stream
                 ?.let { dataParser.parseAmSatLivePage(it) }.orEmpty()
+            val activeCatnums = results.firstOrNull { it.first == "Active" }?.second?.stream
+                ?.let { dataParser.parseAmSatActiveCatnums(it) }.orEmpty()
+            settingsRepo.setAmSatActiveCatnums(activeCatnums)
             val nameToCatnum = entries.associate { it.name.uppercase() to it.catnum }
-            fun resolve(names: List<String>): Set<Int> = names.mapNotNull { name ->
+            // Resolve every matching local entry per AMSAT name. A single match
+            // is kept as-is (so satellites absent from the amateur whitelist,
+            // e.g. JO-97/TO-108, are never dropped). Only when several local
+            // entries share the name (ISS station modules ZARYA/UNITY/ZVEZDA/
+            // DESTINY/NAUKA) is the whitelist used to pick the primary one.
+            fun resolvePerName(name: String): Set<Int> {
                 val keys = dataParser.normalizeAmSatName(name)
-                nameToCatnum.entries.firstOrNull { (localName, _) ->
+                val all = nameToCatnum.filter { (localName, _) ->
                     dataParser.matchesAmSatName(localName, keys)
-                }?.value
-            }.toSet()
-            val fmCatnums = resolve(fmNames)
-            val linearCatnums = resolve(linearNames)
+                }.values.toSet()
+                if (all.size <= 1) return all
+                val preferred = all.intersect(activeCatnums)
+                return if (preferred.isNotEmpty()) preferred else all
+            }
+            val fmCatnums = fmNames.flatMap { resolvePerName(it) }.toSet()
+            val linearCatnums = linearNames.flatMap { resolvePerName(it) }.toSet()
             settingsRepo.setAmSatCatnums(fmCatnums, linearCatnums)
-            println("AMSAT live lists updated: FM=${fmCatnums.size}, Linear=${linearCatnums.size}")
+            println("AMSAT live lists updated: FM=${fmCatnums.size}, Linear=${linearCatnums.size}, Active=${activeCatnums.size}")
         }.onFailure {
             // Keep the previous lists; the mutual filter stays on the last good snapshot.
             println("AMSAT live lists update failed: $it")

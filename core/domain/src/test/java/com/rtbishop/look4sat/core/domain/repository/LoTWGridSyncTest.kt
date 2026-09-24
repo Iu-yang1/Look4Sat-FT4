@@ -286,6 +286,8 @@ class LoTWGridSyncTest {
         override fun getAmSatFmCatnums(): Set<Int> = emptySet()
         override fun getAmSatLinearCatnums(): Set<Int> = emptySet()
         override fun setAmSatCatnums(fmCatnums: Set<Int>, linearCatnums: Set<Int>) = Unit
+        override fun getAmSatActiveCatnums(): Set<Int> = emptySet()
+        override fun setAmSatActiveCatnums(catnums: Set<Int>) = Unit
         override fun updateRadioControlSettings(settings: RadioControlSettings) = TODO()
         override fun getSatelliteOffset(catnum: Int): String = ""
         override fun setSatelliteOffset(catnum: Int, offset: String) = TODO()

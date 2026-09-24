@@ -75,4 +75,9 @@ interface ISatelliteRepo {
      *  (real transponders), excluding downlink-only beacons/telemetry that share
      *  the same mode label. Used by the FM/Linear fallback filter. */
     suspend fun getSatelliteIdsWithModesAndUplink(modes: List<String>): List<Int>
+
+    /** Like [getSatelliteIdsWithModes] but only matches records whose service
+     *  class is "Amateur", so SSTV never matches weather birds (TIROS),
+     *  launcher debris or other non-amateur transmitters. */
+    suspend fun getSatelliteIdsWithModesAndAmateur(modes: List<String>): List<Int>
 }

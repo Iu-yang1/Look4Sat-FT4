@@ -181,6 +181,7 @@ private class FakeLocalSource : ILocalSource {
 
     override suspend fun getIdsWithModes(modes: List<String>): List<Int> = emptyList()
     override suspend fun getIdsWithModesAndUplink(modes: List<String>): List<Int> = emptyList()
+    override suspend fun getIdsWithModesAndAmateur(modes: List<String>): List<Int> = emptyList()
 
     override suspend fun getRadiosTotal(): Int = insertedRadios.size
 
@@ -273,6 +274,8 @@ private class FakeSettingsRepo(dataSources: DataSourcesSettings = defaultDataSou
     override fun getAmSatFmCatnums(): Set<Int> = emptySet()
     override fun getAmSatLinearCatnums(): Set<Int> = emptySet()
     override fun setAmSatCatnums(fmCatnums: Set<Int>, linearCatnums: Set<Int>) = Unit
+    override fun getAmSatActiveCatnums(): Set<Int> = emptySet()
+    override fun setAmSatActiveCatnums(catnums: Set<Int>) = Unit
 
     override fun updateRadioControlSettings(settings: RadioControlSettings) = Unit
 

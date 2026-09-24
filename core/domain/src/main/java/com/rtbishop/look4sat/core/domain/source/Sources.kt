@@ -63,6 +63,15 @@ object Sources {
         "Linear" to "https://www.amsat.org/live-linear-satellites/"
     )
 
+    /** Machine-readable AMSAT active-transponder table (palewire mirror of
+     *  amsat.org's active-frequency pages): one CSV row per active amateur
+     *  transponder with its NORAD catnum. Used as the authoritative whitelist
+     *  of *amateur* satellites, so the virtual filters never match
+     *  non-amateur debris (Ariane 6 R/B), retired weather sats (TIROS), or
+     *  ISS station-module aliases (ISS (DESTINY) etc.). */
+    const val amSatActiveUrl =
+        "https://raw.githubusercontent.com/palewire/amateur-satellite-database/main/data/amsat-active-frequencies.csv"
+
     /** Virtual satellite-selection types: transponder/activity filters shown
      *  at the top of the type picker. They resolve to live lists (AMSAT pages
      *  or mode=SSTV radios) instead of persisted per-type IDs, and are

@@ -40,6 +40,21 @@ class DataParser(private val dispatcher: CoroutineDispatcher) {
         }
     }
 
+    /** Parse AMSAT's active-transponder CSV (palewire mirror) and return the
+     *  set of NORAD catnums of active *amateur* satellites. Header row has a
+     *  norad_id column; some rows carry alphanumeric IDs (Bluebird A0241 etc.)
+     *  which are skipped. */
+    suspend fun parseAmSatActiveCatnums(stream: InputStream): Set<Int> = withContext(dispatcher) {
+        stream.bufferedReader().useLines { lines ->
+            val header = lines.firstOrNull() ?: return@useLines emptySet()
+            val noradIdx = header.split(",").indexOfFirst { it.trim().equals("norad_id", true) }
+            if (noradIdx < 0) return@useLines emptySet()
+            lines.mapNotNull { line ->
+                line.split(",").getOrNull(noradIdx)?.trim()?.toIntOrNull()
+            }.toSet()
+        }
+    }
+
     suspend fun parseTLEStream(stream: InputStream): List<OrbitalData> = withContext(dispatcher) {
         stream.bufferedReader().readLines()
             .chunked(3)
@@ -131,14 +146,25 @@ class DataParser(private val dispatcher: CoroutineDispatcher) {
     /** True if a local entry name matches any of the AMSAT normalized keys.
      *  Token-based exact match (split on spaces/brackets/slashes), so a key
      *  like "ISS" does not substring-match "AISSAT-1" — the key must equal a
-     *  whole name token (case-insensitive). */
+     *  whole name token (case-insensitive). OSCAR designators are expanded so
+     *  that "AO-7" also matches local names spelled "OSCAR 7" / "AMSAT-OSCAR 7"
+     *  (the form used by CelesTrak/SatNOGS TLE sources). */
     fun matchesAmSatName(localName: String, amSatKeys: List<String>): Boolean {
-        val localTokens = localName.uppercase()
+        val localUpper = localName.uppercase()
+        val localTokens = localUpper
             .split(Regex("[\\s()\\[\\]/]+"))
             .filter { it.isNotBlank() }
             .toSet()
         return amSatKeys.any { key ->
-            key.uppercase() in localTokens
+            val k = key.uppercase()
+            if (k in localTokens) return@any true
+            // "AO-7" -> also match local "OSCAR 7" or "AMSAT-OSCAR 7".
+            val oscar = Regex("^([A-Z]{1,3})-(\\d+)$").find(k)
+            if (oscar != null) {
+                val num = oscar.groupValues[2]
+                if ("OSCAR $num" in localUpper || "AMSAT-OSCAR $num" in localUpper) return@any true
+            }
+            false
         }
     }
 

@@ -24,7 +24,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 import com.rtbishop.look4sat.core.data.database.entity.SatEntry
 import com.rtbishop.look4sat.core.data.database.entity.SatRadio
 
-@Database(entities = [SatEntry::class, SatRadio::class], version = 2, exportSchema = false)
+@Database(entities = [SatEntry::class, SatRadio::class], version = 3, exportSchema = false)
 abstract class Look4SatDb : RoomDatabase() {
     abstract fun look4SatDao(): Look4SatDao
 }
@@ -35,5 +35,13 @@ val MIGRATION_1_2 = object : Migration(1, 2) {
     override fun migrate(db: SupportSQLiteDatabase) {
         db.execSQL("ALTER TABLE entries ADD COLUMN ndot REAL NOT NULL DEFAULT 0.0")
         db.execSQL("ALTER TABLE radios ADD COLUMN isCustom INTEGER NOT NULL DEFAULT 0")
+    }
+}
+
+/** Adds the transceiver service class ("Amateur" etc.), used by the SSTV virtual
+ * filter to tell amateur satellites apart from debris/weather/launcher stages. */
+val MIGRATION_2_3 = object : Migration(2, 3) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE radios ADD COLUMN service TEXT")
     }
 }

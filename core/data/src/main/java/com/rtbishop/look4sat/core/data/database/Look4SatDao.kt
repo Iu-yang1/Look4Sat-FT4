@@ -54,6 +54,13 @@ interface Look4SatDao {
     @Query("SELECT catnum FROM radios WHERE downlinkMode IN (:modes) AND uplinkLow IS NOT NULL AND isAlive = 1")
     suspend fun getIdsWithModesAndUplink(modes: List<String>): List<Int>
 
+    /** Like [getIdsWithModes] but only matches records whose service class is
+     *  "Amateur", so the SSTV filter never matches weather birds (TIROS),
+     *  launcher debris or other non-amateur transmitters that happen to carry
+     *  an SSTV-labelled downlink. */
+    @Query("SELECT catnum FROM radios WHERE downlinkMode IN (:modes) AND service = 'Amateur' AND isAlive = 1")
+    suspend fun getIdsWithModesAndAmateur(modes: List<String>): List<Int>
+
     @Query("SELECT COUNT(*) FROM radios")
     suspend fun getRadiosTotal(): Int
 

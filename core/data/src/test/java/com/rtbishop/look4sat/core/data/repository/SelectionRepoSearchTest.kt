@@ -217,6 +217,29 @@ class SelectionRepoSearchTest {
         assertTrue("All" in types)
     }
 
+    @Test
+    fun `amsat list version bump re-resolves FM filter after data sync`() = runTest {
+        // ISS module aliases: dirty pre-sync FM list contains both ZARYA and DESTINY.
+        val items = listOf(
+            SatItem(25544, "ISS (ZARYA)"),
+            SatItem(26700, "ISS (DESTINY)")
+        )
+        val fake = FakeSettingsRepoForSearch(amSatFm = setOf(25544, 26700))
+        val repo = SelectionRepo(
+            dispatcher = Dispatchers.Unconfined,
+            localSource = FakeLocalSourceForSearch(items),
+            settingsRepo = fake
+        )
+        repo.setTypes(listOf("AMSAT Live FM"))
+        assertEquals(setOf(25544, 26700), repo.getEntriesFlow().first().map { it.catnum }.toSet())
+
+        // Simulate a background data sync: lists rewritten + version bumped.
+        fake.setAmSatCatnums(fmCatnums = setOf(25544), linearCatnums = emptySet())
+
+        // The FM filter must reflect the new list WITHOUT a type toggle or restart.
+        assertEquals(listOf(25544), repo.getEntriesFlow().first().map { it.catnum })
+    }
+
     private fun createRepo(
         items: List<SatItem>,
         amSatFm: Set<Int> = emptySet(),
@@ -252,8 +275,8 @@ private class FakeLocalSourceForSearch(
 }
 
 private class FakeSettingsRepoForSearch(
-    private val amSatFm: Set<Int> = emptySet(),
-    private val amSatLinear: Set<Int> = emptySet(),
+    var amSatFm: Set<Int> = emptySet(),
+    var amSatLinear: Set<Int> = emptySet(),
     private var amSatActive: Set<Int> = emptySet()
 ) : ISettingsRepo {
     override val appVersionName: String = "test"
@@ -299,7 +322,12 @@ private class FakeSettingsRepoForSearch(
     override fun updateDataSourcesStatus(status: Map<String, Int>) = Unit
     override fun getAmSatFmCatnums(): Set<Int> = amSatFm
     override fun getAmSatLinearCatnums(): Set<Int> = amSatLinear
-    override fun setAmSatCatnums(fmCatnums: Set<Int>, linearCatnums: Set<Int>) = Unit
+    override val amSatListsVersion: StateFlow<Int> = MutableStateFlow(0)
+    override fun setAmSatCatnums(fmCatnums: Set<Int>, linearCatnums: Set<Int>) {
+        amSatFm = fmCatnums
+        amSatLinear = linearCatnums
+        (amSatListsVersion as MutableStateFlow<Int>).value++
+    }
     override fun getAmSatActiveCatnums(): Set<Int> = amSatActive
     override fun setAmSatActiveCatnums(catnums: Set<Int>) { amSatActive = catnums }
     override fun updateRadioControlSettings(settings: RadioControlSettings) = Unit

@@ -749,6 +749,9 @@ class SettingsRepo(
     //endregion
 
     //region # AMSAT live-transponder lists
+    private val _amSatListsVersion = MutableStateFlow(0)
+    override val amSatListsVersion: StateFlow<Int> = _amSatListsVersion
+
     override fun getAmSatFmCatnums(): Set<Int> {
         val raw = preferences.getString(keyAmSatFmCatnums, null) ?: return emptySet()
         return raw.split(separatorComma).mapNotNull { it.toIntOrNull() }.toSet()
@@ -764,6 +767,7 @@ class SettingsRepo(
             putString(keyAmSatFmCatnums, fmCatnums.sorted().joinToString(separatorComma))
             putString(keyAmSatLinearCatnums, linearCatnums.sorted().joinToString(separatorComma))
         }
+        _amSatListsVersion.update { it + 1 }
     }
 
     override fun getAmSatActiveCatnums(): Set<Int> {

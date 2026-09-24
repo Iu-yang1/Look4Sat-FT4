@@ -112,6 +112,7 @@ class FakeSettingsRepo(
 
     override fun getAmSatFmCatnums(): Set<Int> = amSatFm
     override fun getAmSatLinearCatnums(): Set<Int> = amSatLinear
+    override val amSatListsVersion: StateFlow<Int> = MutableStateFlow(0)
     override fun setAmSatCatnums(fmCatnums: Set<Int>, linearCatnums: Set<Int>) = TODO()
     override fun getAmSatActiveCatnums(): Set<Int> = emptySet()
     override fun setAmSatActiveCatnums(catnums: Set<Int>) = TODO()

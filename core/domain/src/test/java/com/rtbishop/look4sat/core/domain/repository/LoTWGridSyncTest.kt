@@ -285,6 +285,7 @@ class LoTWGridSyncTest {
         override fun updateDataSourcesStatus(status: Map<String, Int>) = TODO()
         override fun getAmSatFmCatnums(): Set<Int> = emptySet()
         override fun getAmSatLinearCatnums(): Set<Int> = emptySet()
+        override val amSatListsVersion: StateFlow<Int> = MutableStateFlow(0)
         override fun setAmSatCatnums(fmCatnums: Set<Int>, linearCatnums: Set<Int>) = Unit
         override fun getAmSatActiveCatnums(): Set<Int> = emptySet()
         override fun setAmSatActiveCatnums(catnums: Set<Int>) = Unit

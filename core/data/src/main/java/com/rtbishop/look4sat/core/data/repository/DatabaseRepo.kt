@@ -166,12 +166,19 @@ class DatabaseRepo(
                 // entries) instead of admitting every alias (DESTINY etc.).
                 return setOf(all.minOrNull() ?: all.first())
             }
-            // A failed FM/Linear page fetch yields an empty list here; keep the
-            // previous lists so a single network hiccup cannot wipe the filters.
+            // A failed FM/Linear page fetch yields an empty list here; do NOT
+            // keep the stale list verbatim (it may predate the whitelist and
+            // still contain ISS module aliases like DESTINY). Instead re-run
+            // the multi-match disambiguation on the previous catnums via their
+            // local names, so the whitelist / smallest-catnum rules clean it.
+            fun cleanStaleList(previous: Set<Int>): Set<Int> =
+                previous.mapNotNull { catnum ->
+                    nameToCatnum.entries.firstOrNull { it.value == catnum }?.key
+                }.flatMap { resolvePerName(it) }.toSet()
             val fmCatnums = fmNames.flatMap { resolvePerName(it) }.toSet()
-                .ifEmpty { settingsRepo.getAmSatFmCatnums() }
+                .ifEmpty { cleanStaleList(settingsRepo.getAmSatFmCatnums()) }
             val linearCatnums = linearNames.flatMap { resolvePerName(it) }.toSet()
-                .ifEmpty { settingsRepo.getAmSatLinearCatnums() }
+                .ifEmpty { cleanStaleList(settingsRepo.getAmSatLinearCatnums()) }
             settingsRepo.setAmSatCatnums(fmCatnums, linearCatnums)
             println("AMSAT live lists updated: FM=${fmCatnums.size}, Linear=${linearCatnums.size}, Active=${activeCatnums.size}")
         }.onFailure {

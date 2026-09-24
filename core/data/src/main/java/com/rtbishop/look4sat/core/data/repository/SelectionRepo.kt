@@ -25,6 +25,7 @@ import com.rtbishop.look4sat.core.domain.source.Sources
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
@@ -45,17 +46,21 @@ class SelectionRepo(
     // The HashSet gives O(1) catnum lookups instead of O(n) with a List.
     // The three virtual types ("AMSAT Live FM", "AMSAT Live Linear", "Live SSTV")
     // are resolved from live transponder data instead of SharedPreferences.
-    private val itemsWithTypes = currentTypes.flatMapLatest { types: List<String> ->
-        val catnumSet: Set<Int>? = if (types.isEmpty()) {
-            null // null = no filtering
-        } else {
-            val ids = resolveTypeIds(types)
-            if (ids.isEmpty()) emptySet() else ids.toHashSet()
+    // The AMSAT list version counter re-triggers resolution when a background
+    // data sync rewrites the FM/Linear lists, so the UI reflects the new list
+    // without a restart or type toggle.
+    private val itemsWithTypes = combine(currentTypes, settingsRepo.amSatListsVersion) { types, _ -> types }
+        .flatMapLatest { types: List<String> ->
+            val catnumSet: Set<Int>? = if (types.isEmpty()) {
+                null // null = no filtering
+            } else {
+                val ids = resolveTypeIds(types)
+                if (ids.isEmpty()) emptySet() else ids.toHashSet()
+            }
+            currentItems.map { items ->
+                if (catnumSet == null) items else items.filter { it.catnum in catnumSet }
+            }
         }
-        currentItems.map { items ->
-            if (catnumSet == null) items else items.filter { it.catnum in catnumSet }
-        }
-    }
 
     private val itemsWithQuery = currentQuery.flatMapLatest { query ->
         itemsWithTypes.map { items -> filterByQuery(items, query) }

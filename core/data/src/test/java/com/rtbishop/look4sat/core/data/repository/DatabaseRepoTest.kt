@@ -195,24 +195,30 @@ class DatabaseRepoTest {
     }
 
     @Test
-    fun `amsat fm list keeps previous list when fm page fetch fails`() = runTest(dispatcher) {
+    fun `amsat fm list cleans stale ISS module aliases when fm page fetch fails`() = runTest(dispatcher) {
         val satnogsUrl = Sources.satelliteDataUrls.getValue("SatNOGS")
         val localSource = FakeLocalSource()
         val remoteSource = FakeRemoteSource().apply {
-            networkStreams[satnogsUrl] = { jamxTleStream() }
-            // FM page NOT registered -> 404 -> empty parse -> previous list retained.
+            networkStreams[satnogsUrl] = { issModulesCsvStream() }
+            // FM page NOT registered -> 404 -> empty parse.
         }
         val settingsRepo = FakeSettingsRepo(
             dataSources = DataSourcesSettings(
                 satelliteUrls = listOf(satnogsUrl),
                 transceiversUrls = emptyList()
             )
-        ).apply { amSatFm = setOf(25544, 7530) } // list from an earlier good sync
+        ).apply {
+            // Pre-whitelist era stale list: ALL five ISS module entries.
+            amSatFm = setOf(25544, 25575, 26400, 26700, 49044)
+        }
         val repository = DatabaseRepo(dispatcher, dataParser, localSource, remoteSource, settingsRepo)
 
         repository.updateFromRemote()
 
-        assertEquals(setOf(25544, 7530), settingsRepo.amSatFm)
+        // The stale list is not kept verbatim: with the FM page down, the
+        // previous catnums are re-disambiguated via local names, collapsing
+        // the five ISS modules to the primary ZARYA (25544).
+        assertEquals(setOf(25544), settingsRepo.amSatFm)
     }
 
     private fun issModulesCsvStream(): InputStream = """
@@ -365,6 +371,7 @@ private class FakeSettingsRepo(dataSources: DataSourcesSettings = defaultDataSou
     var amSatFm: Set<Int> = emptySet()
     var amSatLinear: Set<Int> = emptySet()
     var amSatActive: Set<Int> = emptySet()
+    override val amSatListsVersion: StateFlow<Int> = MutableStateFlow(0)
 
     override fun getAmSatFmCatnums(): Set<Int> = amSatFm
     override fun getAmSatLinearCatnums(): Set<Int> = amSatLinear

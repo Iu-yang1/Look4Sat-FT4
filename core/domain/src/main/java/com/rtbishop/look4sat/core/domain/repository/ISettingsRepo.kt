@@ -89,6 +89,11 @@ interface ISettingsRepo {
      *  active-transponder table (whitelist for the virtual type filters). */
     fun getAmSatActiveCatnums(): Set<Int>
     fun setAmSatActiveCatnums(catnums: Set<Int>)
+    /** Monotonic version counter, incremented every time the AMSAT live
+     *  FM/Linear lists are rewritten. Consumers that resolve the virtual
+     *  types (SelectionRepo) should re-resolve on change so a background
+     *  data sync is reflected in the UI without a restart. */
+    val amSatListsVersion: StateFlow<Int>
     //endregion
 
     //region # Radio control settings

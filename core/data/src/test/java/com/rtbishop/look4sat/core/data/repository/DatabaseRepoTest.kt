@@ -244,6 +244,43 @@ class DatabaseRepoTest {
         assertEquals(setOf(25544), settingsRepo.amSatFm)
     }
 
+    @Test
+    fun `amsat fm list survives unknown satellite names and still disambiguates ISS`() = runTest(dispatcher) {
+        // Regression: AMSAT pages list satellites absent from the local TLE
+        // (TEVEL2-1..9, RS95S). resolvePerName used to crash on the empty
+        // match set (all.first()), aborting the WHOLE list update and keeping
+        // the stale pre-whitelist FM list with all five ISS modules.
+        val satnogsUrl = Sources.satelliteDataUrls.getValue("SatNOGS")
+        val localSource = FakeLocalSource()
+        val remoteSource = FakeRemoteSource().apply {
+            networkStreams[satnogsUrl] = { issModulesCsvStream() }
+            networkStreams[Sources.amSatLiveUrls.getValue("FM")] = { amsatFmPageWithUnknownStream() }
+        }
+        val settingsRepo = FakeSettingsRepo(
+            dataSources = DataSourcesSettings(
+                satelliteUrls = listOf(satnogsUrl),
+                transceiversUrls = emptyList()
+            )
+        ).apply { amSatActive = setOf(25544) }
+        val repository = DatabaseRepo(dispatcher, dataParser, localSource, remoteSource, settingsRepo)
+
+        repository.updateFromRemote()
+
+        // No crash; ISS still collapses to the primary ZARYA (25544).
+        assertEquals(setOf(25544), settingsRepo.amSatFm)
+    }
+
+    private fun amsatFmPageWithUnknownStream(): InputStream = """
+        <table>
+        <thead><tr><th>Satellite</th><th>Uplink</th><th>Downlink</th><th>Comment</th></tr></thead>
+        <tbody>
+        <tr><td>ISS</td><td>145.990 MHz</td><td>437.800 MHz</td><td></td></tr>
+        <tr><td>TEVEL2-1 thru TEVEL2-9</td><td>145.970 MHz</td><td>436.400 MHz</td><td></td></tr>
+        <tr><td>RS95S(QMR-KWT-2)</td><td>145.920 MHz</td><td>436.950 MHz</td><td></td></tr>
+        </tbody>
+        </table>
+    """.trimIndent().byteInputStream()
+
     private fun issModulesCsvStream(): InputStream = """
         OBJECT_NAME,OBJECT_ID,EPOCH,MEAN_MOTION,ECCENTRICITY,INCLINATION,RA_OF_ASC_NODE,ARG_OF_PERICENTER,MEAN_ANOMALY,EPHEMERIS_TYPE,CLASSIFICATION_TYPE,NORAD_CAT_ID,ELEMENT_SET_NO,REV_AT_EPOCH,BSTAR,MEAN_MOTION_DOT,MEAN_MOTION_DDOT
         ISS (ZARYA),1998-067A,2021-11-16T12:28:09.322176,15.48582035,.0004694,51.6447,309.4881,203.6966,299.8876,0,U,25544,999,31220,.31985E-4,.1288E-4,0

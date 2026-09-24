@@ -158,6 +158,12 @@ class DatabaseRepo(
                 val all = nameToCatnum.filter { (localName, _) ->
                     dataParser.matchesAmSatName(localName, keys)
                 }.values.toSet()
+                // No local entry matches this AMSAT name (e.g. a brand-new
+                // satellite not yet in the local TLE, like TEVEL2/RS95S):
+                // skip it. Returning empty is correct — crashing here (via
+                // all.first()) aborted the WHOLE list update and kept the
+                // stale pre-whitelist FM list with all five ISS modules.
+                if (all.isEmpty()) return emptySet()
                 if (all.size <= 1) return all
                 val preferred = all.intersect(activeCatnums)
                 if (preferred.isNotEmpty()) return preferred

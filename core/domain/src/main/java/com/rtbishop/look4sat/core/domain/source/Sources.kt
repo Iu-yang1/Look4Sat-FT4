@@ -57,11 +57,11 @@ object Sources {
     )
     /**
      * Hardcoded AMSAT Live FM satellites (NORAD catnums):
-     * SO-50 (27607), ISS ZARYA (25544), AO-123 Fox-1D (43137).
+     * SO-50 (27607), ISS ZARYA (25544), AO-123 ASRTU-1 (61781).
      * Replaces the AMSAT live-page fetch: stable on any network, no
      * sync-time dependency, no stale-list or timeout failure modes.
      */
-    val amSatFmCatnums = setOf(27607, 25544, 43137)
+    val amSatFmCatnums = setOf(27607, 25544, 61781)
 
     /**
      * Hardcoded AMSAT Live linear (SSB/CW) satellites:

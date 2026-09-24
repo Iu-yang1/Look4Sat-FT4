@@ -114,12 +114,13 @@ class SelectionRepoSearchTest {
 
     @Test
     fun `FM virtual type shows only hardcoded FM satellites`() = runTest {
-        val repo = createRepo(sampleItems)
+        // AO-123 ASRTU-1 (61781) is on the hardcoded FM list; a random
+        // satellite (99999) is not.
+        val items = sampleItems + SatItem(catnum = 61781, name = "ASRTU-1")
+        val repo = createRepo(items)
         repo.setTypes(listOf("AMSAT Live FM"))
         val results = repo.getEntriesFlow().first()
-        // Hardcoded FM list: SO-50 (27607), ISS ZARYA (25544), AO-123 (43137).
-        // Only ISS ZARYA is present in the sample DB.
-        assertEquals(listOf(25544), results.map { it.catnum })
+        assertEquals(setOf(25544, 61781), results.map { it.catnum }.toSet())
     }
 
     @Test
@@ -192,7 +193,7 @@ class SelectionRepoSearchTest {
 
     @Test
     fun `virtual type with no matching satellites shows empty not everything`() = runTest {
-        // 硬编码 FM 列表 (27607/25544/43137) 里没有样本库中的卫星时, 选虚拟
+        // 硬编码 FM 列表 (27607/25544/61781) 里没有样本库中的卫星时, 选虚拟
         // 类型应显示空列表, 而非全部卫星.
         val items = listOf(SatItem(catnum = 7530, name = "AO-7 (AMSAT-OSCAR 7)"))
         val repo = createRepo(items)

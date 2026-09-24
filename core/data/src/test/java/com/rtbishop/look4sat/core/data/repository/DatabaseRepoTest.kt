@@ -166,168 +166,6 @@ class DatabaseRepoTest {
         1 98248U          26237.16675926  .00015724  00000-0  97477-3 0 00013
         2 98248 097.5373 310.9694 0011309 278.1232 340.7230 15.09766181000012
     """.trimIndent().byteInputStream()
-
-    @Test
-    fun `amsat fm list disambiguates ISS modules via persisted whitelist when active csv fetch fails`() =
-        runTest(dispatcher) {
-            val satnogsUrl = Sources.satelliteDataUrls.getValue("SatNOGS")
-            val localSource = FakeLocalSource()
-            val remoteSource = FakeRemoteSource().apply {
-                networkStreams[satnogsUrl] = { issModulesCsvStream() }
-                networkStreams[Sources.amSatLiveUrls.getValue("FM")] = { amsatFmPageStream() }
-                // Amateur-whitelist URLs intentionally NOT registered -> fetch fails.
-            }
-            val settingsRepo = FakeSettingsRepo(
-                dataSources = DataSourcesSettings(
-                    satelliteUrls = listOf(satnogsUrl),
-                    transceiversUrls = emptyList()
-                )
-            ).apply { amSatActive = setOf(25544) } // whitelist persisted by an earlier good sync
-            val repository = DatabaseRepo(dispatcher, dataParser, localSource, remoteSource, settingsRepo)
-
-            repository.updateFromRemote()
-
-            // Whitelist fetch fails on both sources, but the persisted whitelist
-            // still disambiguates: only primary ISS (ZARYA) survives,
-            // ISS (DESTINY) = 26700 must NOT enter the FM list.
-            assertTrue(25544 in settingsRepo.amSatFm)
-            assertTrue(26700 !in settingsRepo.amSatFm)
-        }
-
-    @Test
-    fun `amsat fm list keeps only smallest catnum when whitelist never available`() = runTest(dispatcher) {
-        val satnogsUrl = Sources.satelliteDataUrls.getValue("SatNOGS")
-        val localSource = FakeLocalSource()
-        val remoteSource = FakeRemoteSource().apply {
-            networkStreams[satnogsUrl] = { issModulesCsvStream() }
-            networkStreams[Sources.amSatLiveUrls.getValue("FM")] = { amsatFmPageStream() }
-        }
-        val settingsRepo = FakeSettingsRepo(
-            dataSources = DataSourcesSettings(
-                satelliteUrls = listOf(satnogsUrl),
-                transceiversUrls = emptyList()
-            )
-        ) // no persisted whitelist at all
-        val repository = DatabaseRepo(dispatcher, dataParser, localSource, remoteSource, settingsRepo)
-
-        repository.updateFromRemote()
-
-        // Without any whitelist, the multi-match collapse keeps the primary
-        // entry (smallest catnum = ISS ZARYA 25544), never every module alias.
-        assertEquals(setOf(25544), settingsRepo.amSatFm)
-    }
-
-    @Test
-    fun `amsat fm list cleans stale ISS module aliases when fm page fetch fails`() = runTest(dispatcher) {
-        val satnogsUrl = Sources.satelliteDataUrls.getValue("SatNOGS")
-        val localSource = FakeLocalSource()
-        val remoteSource = FakeRemoteSource().apply {
-            networkStreams[satnogsUrl] = { issModulesCsvStream() }
-            // FM page NOT registered -> 404 -> empty parse.
-        }
-        val settingsRepo = FakeSettingsRepo(
-            dataSources = DataSourcesSettings(
-                satelliteUrls = listOf(satnogsUrl),
-                transceiversUrls = emptyList()
-            )
-        ).apply {
-            // Pre-whitelist era stale list: ALL five ISS module entries.
-            amSatFm = setOf(25544, 25575, 26400, 26700, 49044)
-        }
-        val repository = DatabaseRepo(dispatcher, dataParser, localSource, remoteSource, settingsRepo)
-
-        repository.updateFromRemote()
-
-        // The stale list is not kept verbatim: with the FM page down, the
-        // previous catnums are re-disambiguated via local names, collapsing
-        // the five ISS modules to the primary ZARYA (25544).
-        assertEquals(setOf(25544), settingsRepo.amSatFm)
-    }
-
-    @Test
-    fun `amsat fm list survives unknown satellite names and still disambiguates ISS`() = runTest(dispatcher) {
-        // Regression: AMSAT pages list satellites absent from the local TLE
-        // (TEVEL2-1..9, RS95S). resolvePerName used to crash on the empty
-        // match set (all.first()), aborting the WHOLE list update and keeping
-        // the stale pre-whitelist FM list with all five ISS modules.
-        val satnogsUrl = Sources.satelliteDataUrls.getValue("SatNOGS")
-        val localSource = FakeLocalSource()
-        val remoteSource = FakeRemoteSource().apply {
-            networkStreams[satnogsUrl] = { issModulesCsvStream() }
-            networkStreams[Sources.amSatLiveUrls.getValue("FM")] = { amsatFmPageWithUnknownStream() }
-        }
-        val settingsRepo = FakeSettingsRepo(
-            dataSources = DataSourcesSettings(
-                satelliteUrls = listOf(satnogsUrl),
-                transceiversUrls = emptyList()
-            )
-        ).apply { amSatActive = setOf(25544) }
-        val repository = DatabaseRepo(dispatcher, dataParser, localSource, remoteSource, settingsRepo)
-
-        repository.updateFromRemote()
-
-        // No crash; ISS still collapses to the primary ZARYA (25544).
-        assertEquals(setOf(25544), settingsRepo.amSatFm)
-    }
-
-    @Test
-    fun `amsat fm list falls back to local FM transceivers when page fails and no previous list`() =
-        runTest(dispatcher) {
-            // After clearing data, the previous FM list is empty AND the AMSAT
-            // page is down (timeout) -> the filter must fall back to local FM
-            // transceivers intersected with the whitelist, never stay empty.
-            val satnogsUrl = Sources.satelliteDataUrls.getValue("SatNOGS")
-            val localSource = FakeLocalSource().apply {
-                idsWithModes = listOf(25544, 26700, 39444) // local FM-transceiver sats
-            }
-            val remoteSource = FakeRemoteSource().apply {
-                networkStreams[satnogsUrl] = { issModulesCsvStream() }
-                // FM/Linear pages NOT registered -> 404 -> fetch fails.
-            }
-            val settingsRepo = FakeSettingsRepo(
-                dataSources = DataSourcesSettings(
-                    satelliteUrls = listOf(satnogsUrl),
-                    transceiversUrls = emptyList()
-                )
-            ).apply { amSatActive = setOf(25544) } // whitelist has only ZARYA
-            val repository = DatabaseRepo(dispatcher, dataParser, localSource, remoteSource, settingsRepo)
-
-            repository.updateFromRemote()
-
-            // Fallback = local FM ids ∩ whitelist = {25544}; ISS module aliases
-            // (26700) are excluded by the whitelist.
-            assertEquals(setOf(25544), settingsRepo.amSatFm)
-        }
-
-    private fun amsatFmPageWithUnknownStream(): InputStream = """
-        <table>
-        <thead><tr><th>Satellite</th><th>Uplink</th><th>Downlink</th><th>Comment</th></tr></thead>
-        <tbody>
-        <tr><td>ISS</td><td>145.990 MHz</td><td>437.800 MHz</td><td></td></tr>
-        <tr><td>TEVEL2-1 thru TEVEL2-9</td><td>145.970 MHz</td><td>436.400 MHz</td><td></td></tr>
-        <tr><td>RS95S(QMR-KWT-2)</td><td>145.920 MHz</td><td>436.950 MHz</td><td></td></tr>
-        </tbody>
-        </table>
-    """.trimIndent().byteInputStream()
-
-    private fun issModulesCsvStream(): InputStream = """
-        OBJECT_NAME,OBJECT_ID,EPOCH,MEAN_MOTION,ECCENTRICITY,INCLINATION,RA_OF_ASC_NODE,ARG_OF_PERICENTER,MEAN_ANOMALY,EPHEMERIS_TYPE,CLASSIFICATION_TYPE,NORAD_CAT_ID,ELEMENT_SET_NO,REV_AT_EPOCH,BSTAR,MEAN_MOTION_DOT,MEAN_MOTION_DDOT
-        ISS (ZARYA),1998-067A,2021-11-16T12:28:09.322176,15.48582035,.0004694,51.6447,309.4881,203.6966,299.8876,0,U,25544,999,31220,.31985E-4,.1288E-4,0
-        ISS (UNITY),1998-067B,2021-11-16T12:28:09.322176,15.48582035,.0004694,51.6447,309.4881,203.6966,299.8876,0,U,25575,999,31220,.31985E-4,.1288E-4,0
-        ISS (ZVEZDA),1998-067C,2021-11-16T12:28:09.322176,15.48582035,.0004694,51.6447,309.4881,203.6966,299.8876,0,U,26400,999,31220,.31985E-4,.1288E-4,0
-        ISS (DESTINY),1998-067D,2021-11-16T12:28:09.322176,15.48582035,.0004694,51.6447,309.4881,203.6966,299.8876,0,U,26700,999,31220,.31985E-4,.1288E-4,0
-        ISS (NAUKA),1998-067E,2021-11-16T12:28:09.322176,15.48582035,.0004694,51.6447,309.4881,203.6966,299.8876,0,U,49044,999,31220,.31985E-4,.1288E-4,0
-    """.trimIndent().byteInputStream()
-
-    private fun amsatFmPageStream(): InputStream = """
-        <table class="has-background">
-        <thead><tr><th>Satellite</th><th>Uplink</th><th>Downlink</th><th>Comment</th></tr></thead>
-        <tbody>
-        <tr><td>ISS</td><td>145.990 MHz</td><td>437.800 MHz</td><td></td></tr>
-        <tr><td>AO-91(RadFxSat / Fox-1B)</td><td>435.250 MHz</td><td>145.960 MHz</td><td></td></tr>
-        </tbody>
-        </table>
-    """.trimIndent().byteInputStream()
 }
 
 private class FakeRemoteSource : IRemoteSource {
@@ -349,7 +187,6 @@ private class FakeRemoteSource : IRemoteSource {
 private class FakeLocalSource : ILocalSource {
     val insertedEntries = mutableListOf<OrbitalData>()
     private val insertedRadios = mutableListOf<SatRadio>()
-    var idsWithModes: List<Int> = emptyList()
 
     override suspend fun getEntriesTotal(): Int = insertedEntries.size
 
@@ -366,8 +203,8 @@ private class FakeLocalSource : ILocalSource {
         insertedEntries.clear()
     }
 
-    override suspend fun getIdsWithModes(modes: List<String>): List<Int> = idsWithModes
-    override suspend fun getIdsWithModesAndUplink(modes: List<String>): List<Int> = idsWithModes
+    override suspend fun getIdsWithModes(modes: List<String>): List<Int> = emptyList()
+    override suspend fun getIdsWithModesAndUplink(modes: List<String>): List<Int> = emptyList()
     override suspend fun getIdsWithModesAndAmateur(modes: List<String>): List<Int> = emptyList()
 
     override suspend fun getRadiosTotal(): Int = insertedRadios.size
@@ -456,22 +293,6 @@ private class FakeSettingsRepo(dataSources: DataSourcesSettings = defaultDataSou
 
     override fun updateDataSourcesStatus(status: Map<String, Int>) {
         (dataSourcesStatus as? MutableStateFlow)?.value = status
-    }
-
-    var amSatFm: Set<Int> = emptySet()
-    var amSatLinear: Set<Int> = emptySet()
-    var amSatActive: Set<Int> = emptySet()
-    override val amSatListsVersion: StateFlow<Int> = MutableStateFlow(0)
-
-    override fun getAmSatFmCatnums(): Set<Int> = amSatFm
-    override fun getAmSatLinearCatnums(): Set<Int> = amSatLinear
-    override fun setAmSatCatnums(fmCatnums: Set<Int>, linearCatnums: Set<Int>) {
-        amSatFm = fmCatnums
-        amSatLinear = linearCatnums
-    }
-    override fun getAmSatActiveCatnums(): Set<Int> = amSatActive
-    override fun setAmSatActiveCatnums(catnums: Set<Int>) {
-        amSatActive = catnums
     }
 
     override fun updateRadioControlSettings(settings: RadioControlSettings) = Unit

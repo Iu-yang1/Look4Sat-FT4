@@ -55,31 +55,25 @@ object Sources {
         "SatNOGS" to "https://db.satnogs.org/api/transmitters/?format=json&status=active",
         "R4UAB" to "https://r4uab.ru/transmitters.json"
     )
-    /** AMSAT "Live FM/Linear Satellites" pages: human-maintained lists of
-     *  transponders currently on the air. Parsed into the mutual-match filter
-     *  (satellites that actually carry a working FM-voice / linear repeater). */
-    val amSatLiveUrls = mapOf(
-        "FM" to "https://www.amsat.org/live-fm-satellites/",
-        "Linear" to "https://www.amsat.org/live-linear-satellites/"
-    )
+    /**
+     * Hardcoded AMSAT Live FM satellites (NORAD catnums):
+     * SO-50 (27607), ISS ZARYA (25544), AO-123 Fox-1D (43137).
+     * Replaces the AMSAT live-page fetch: stable on any network, no
+     * sync-time dependency, no stale-list or timeout failure modes.
+     */
+    val amSatFmCatnums = setOf(27607, 25544, 43137)
 
-    /** Machine-readable AMSAT active-transponder table (palewire mirror of
-     *  amsat.org's active-frequency pages): one CSV row per active amateur
-     *  transponder with its NORAD catnum. Used as the authoritative whitelist
-     *  of *amateur* satellites, so the virtual filters never match
-     *  non-amateur debris (Ariane 6 R/B), retired weather sats (TIROS), or
-     *  ISS station-module aliases (ISS (DESTINY) etc.). Primary source plus
-     *  a jsDelivr CDN mirror: raw.githubusercontent.com is unreachable on
-     *  some networks (e.g. mainland China mobile), and a failed whitelist
-     *  fetch would silently disable the module disambiguation. */
-    val amSatActiveUrls = listOf(
-        "https://raw.githubusercontent.com/palewire/amateur-satellite-database/main/data/amsat-active-frequencies.csv",
-        "https://cdn.jsdelivr.net/gh/palewire/amateur-satellite-database@main/data/amsat-active-frequencies.csv"
-    )
+    /**
+     * Hardcoded AMSAT Live linear (SSB/CW) satellites:
+     * RS-44 (44909), FO-29 (24278), AO-7 (7530),
+     * AO-73 FUNcube-1 (39444), JO-97 JY1SAT (43803).
+     */
+    val amSatLinearCatnums = setOf(44909, 24278, 7530, 39444, 43803)
 
     /** Virtual satellite-selection types: transponder/activity filters shown
-     *  at the top of the type picker. They resolve to live lists (AMSAT pages
-     *  or mode=SSTV radios) instead of persisted per-type IDs, and are
-     *  mutually exclusive with the regular TLE-source types in the picker. */
+     *  at the top of the type picker. They resolve to live lists (hardcoded
+     *  FM/Linear catnum sets or mode=SSTV radios) instead of persisted
+     *  per-type IDs, and are mutually exclusive with the regular TLE-source
+     *  types in the picker. */
     val virtualTypeNames = listOf("AMSAT Live FM", "AMSAT Live Linear", "Live SSTV")
 }

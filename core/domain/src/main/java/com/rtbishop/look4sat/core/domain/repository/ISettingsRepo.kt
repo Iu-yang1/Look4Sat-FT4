@@ -79,23 +79,6 @@ interface ISettingsRepo {
     fun updateDataSourcesStatus(status: Map<String, Int>)
     //endregion
 
-    //region # AMSAT live-transponder lists
-    /** Catalog numbers of satellites listed on AMSAT's "Live FM Satellites" page. */
-    fun getAmSatFmCatnums(): Set<Int>
-    /** Catalog numbers of satellites listed on AMSAT's "Live Linear Satellites" page. */
-    fun getAmSatLinearCatnums(): Set<Int>
-    fun setAmSatCatnums(fmCatnums: Set<Int>, linearCatnums: Set<Int>)
-    /** Catalog numbers of active *amateur* satellites from AMSAT's
-     *  active-transponder table (whitelist for the virtual type filters). */
-    fun getAmSatActiveCatnums(): Set<Int>
-    fun setAmSatActiveCatnums(catnums: Set<Int>)
-    /** Monotonic version counter, incremented every time the AMSAT live
-     *  FM/Linear lists are rewritten. Consumers that resolve the virtual
-     *  types (SelectionRepo) should re-resolve on change so a background
-     *  data sync is reflected in the UI without a restart. */
-    val amSatListsVersion: StateFlow<Int>
-    //endregion
-
     //region # Radio control settings
     val radioControlSettings: StateFlow<RadioControlSettings>
     fun updateRadioControlSettings(settings: RadioControlSettings)

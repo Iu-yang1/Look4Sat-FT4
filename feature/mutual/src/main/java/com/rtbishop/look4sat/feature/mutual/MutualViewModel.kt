@@ -26,6 +26,7 @@ import com.rtbishop.look4sat.core.domain.predict.OrbitalPass
 import com.rtbishop.look4sat.core.domain.repository.IMainContainer
 import com.rtbishop.look4sat.core.domain.repository.ISatelliteRepo
 import com.rtbishop.look4sat.core.domain.repository.ISettingsRepo
+import com.rtbishop.look4sat.core.domain.source.Sources
 import com.rtbishop.look4sat.core.domain.utility.positionToQth
 import com.rtbishop.look4sat.core.domain.utility.qthToPosition
 import kotlinx.coroutines.CoroutineDispatcher
@@ -303,27 +304,15 @@ class MutualViewModel(
 
         viewModelScope.launch {
             val now = System.currentTimeMillis()
-            // 转发器类型过滤(协程上下文): AMSAT Live 清单优先, 为空时回退数据库.
-            val amSatFm = settingsRepo.getAmSatFmCatnums()
-            val amSatLinear = settingsRepo.getAmSatLinearCatnums()
-            val filteredSatellites = if (amSatFm.isEmpty() && amSatLinear.isEmpty()) {
-                // 回退到数据库模式过滤: 只用带上行频率的转发器记录, 排除纯下行
-                // 信标/遥测(如 CW 信标、FM 语音合成信标), 避免 ISS/IO-86/FO-29 等
-                // 因共享模式标签(CW/FM)被误判进错误类别.
-                val filterModes = buildList {
-                    if (state.filterFM) add("FM")
-                    if (state.filterLinear) addAll(listOf("USB", "LSB", "CW", "SSB"))
-                }
-                val idsWithModes = satelliteRepo.getSatelliteIdsWithModesAndUplink(filterModes)
-                if (idsWithModes.isEmpty()) satellites
-                else satellites.filter { it.data.catnum in idsWithModes }
-            } else {
-                val allowed = buildSet {
-                    if (state.filterFM) addAll(amSatFm)
-                    if (state.filterLinear) addAll(amSatLinear)
-                }
-                satellites.filter { it.data.catnum in allowed }
+            // 转发器类型筛选: 使用硬编码 AMSAT Live 清单 (见 Sources):
+            // FM = {SO-50, ISS ZARYA, AO-123}, Linear = {RS-44, FO-29,
+            // AO-7, AO-73, JO-97}. 不再依赖 AMSAT 网页同步: 任何网络下都
+            // 稳定, 没有旧脏列表/超时/同步失败清空等问题.
+            val allowed = buildSet {
+                if (state.filterFM) addAll(Sources.amSatFmCatnums)
+                if (state.filterLinear) addAll(Sources.amSatLinearCatnums)
             }
+            val filteredSatellites = satellites.filter { it.data.catnum in allowed }
             // 历史回看: 查询窗口起点 = now - hoursBefore (跟随主页面 Passes 设置),
             // 终点 = now + hoursAhead 不变.
             val time = now - state.hoursBefore * 60L * 60L * 1000L

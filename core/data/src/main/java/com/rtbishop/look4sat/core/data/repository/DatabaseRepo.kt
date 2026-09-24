@@ -116,107 +116,12 @@ class DatabaseRepo(
             localSource.insertRadios(importedRadios)
         }
         if (importedEntries.isNotEmpty()) localSource.insertEntries(importedEntries)
-        updateAmSatLiveLists()
         setUpdateSuccessful(System.currentTimeMillis())
-    }
-
-    /**
-     * Refresh the AMSAT Live FM/Linear satellite lists (transponders currently
-     * on the air). Best effort: any failure keeps the previous lists and never
-     * blocks the rest of the data update, so the mutual-match filter simply
-     * falls back to the last successful snapshot.
-     */
-    private suspend fun updateAmSatLiveLists() = withContext(dispatcher) {
-        runCatching {
-            val entries = localSource.getEntriesList() // catnum -> name
-            val jobs = Sources.amSatLiveUrls.map { (type, url) ->
-                async { type to remoteSource.getNetworkStream(url) }
-            } + async { "Active" to fetchAmSatActiveStream() }
-            val results = jobs.awaitAll()
-            val fmNames = results.firstOrNull { it.first == "FM" }?.second?.stream
-                ?.let { dataParser.parseAmSatLivePage(it) }.orEmpty()
-            val linearNames = results.firstOrNull { it.first == "Linear" }?.second?.stream
-                ?.let { dataParser.parseAmSatLivePage(it) }.orEmpty()
-            // Amateur whitelist: a failed fetch yields an empty result, which
-            // must NOT wipe out the last good snapshot. Fall back to the
-            // persisted whitelist, and only persist when this fetch actually
-            // returned a stream.
-            val activeStream = results.firstOrNull { it.first == "Active" }?.second?.stream
-            val activeCatnums = activeStream
-                ?.let { dataParser.parseAmSatActiveCatnums(it) }
-                .orEmpty()
-                .ifEmpty { settingsRepo.getAmSatActiveCatnums() }
-            if (activeStream != null) settingsRepo.setAmSatActiveCatnums(activeCatnums)
-            val nameToCatnum = entries.associate { it.name.uppercase() to it.catnum }
-            // Resolve every matching local entry per AMSAT name. A single match
-            // is kept as-is (so satellites absent from the amateur whitelist,
-            // e.g. JO-97/TO-108, are never dropped). Only when several local
-            // entries share the name (ISS station modules ZARYA/UNITY/ZVEZDA/
-            // DESTINY/NAUKA) is the whitelist used to pick the primary one.
-            fun resolvePerName(name: String): Set<Int> {
-                val keys = dataParser.normalizeAmSatName(name)
-                val all = nameToCatnum.filter { (localName, _) ->
-                    dataParser.matchesAmSatName(localName, keys)
-                }.values.toSet()
-                // No local entry matches this AMSAT name (e.g. a brand-new
-                // satellite not yet in the local TLE, like TEVEL2/RS95S):
-                // skip it. Returning empty is correct — crashing here (via
-                // all.first()) aborted the WHOLE list update and kept the
-                // stale pre-whitelist FM list with all five ISS modules.
-                if (all.isEmpty()) return emptySet()
-                if (all.size <= 1) return all
-                val preferred = all.intersect(activeCatnums)
-                if (preferred.isNotEmpty()) return preferred
-                // Whitelist unavailable: keep only the primary entry (smallest
-                // catnum — ISS ZARYA=25544 is the smallest of its five module
-                // entries) instead of admitting every alias (DESTINY etc.).
-                return setOf(all.minOrNull() ?: all.first())
-            }
-            // A failed FM/Linear page fetch yields an empty list here; do NOT
-            // keep the stale list verbatim (it may predate the whitelist and
-            // still contain ISS module aliases like DESTINY). Instead re-run
-            // the multi-match disambiguation on the previous catnums via their
-            // local names, so the whitelist / smallest-catnum rules clean it.
-            fun cleanStaleList(previous: Set<Int>): Set<Int> =
-                previous.mapNotNull { catnum ->
-                    nameToCatnum.entries.firstOrNull { it.value == catnum }?.key
-                }.flatMap { resolvePerName(it) }.toSet()
-            // Last-resort fallback when the AMSAT page is down AND there is no
-            // previous list to clean (e.g. right after clearing data): derive
-            // the FM/Linear sets from the local transceivers intersected with
-            // the amateur whitelist, so a network timeout never wipes the
-            // filters to empty.
-            val fmFallback = localSource.getIdsWithModes(listOf("FM")).toSet().intersect(activeCatnums)
-            val linearFallback = localSource
-                .getIdsWithModes(listOf("SSB", "CW", "USB", "LSB")).toSet().intersect(activeCatnums)
-            val fmCatnums = fmNames.flatMap { resolvePerName(it) }.toSet()
-                .ifEmpty { cleanStaleList(settingsRepo.getAmSatFmCatnums()) }
-                .ifEmpty { fmFallback }
-            val linearCatnums = linearNames.flatMap { resolvePerName(it) }.toSet()
-                .ifEmpty { cleanStaleList(settingsRepo.getAmSatLinearCatnums()) }
-                .ifEmpty { linearFallback }
-            settingsRepo.setAmSatCatnums(fmCatnums, linearCatnums)
-            println("AMSAT live lists updated: FM=${fmCatnums.size}, Linear=${linearCatnums.size}, Active=${activeCatnums.size}")
-        }.onFailure {
-            // Keep the previous lists; the mutual filter stays on the last good snapshot.
-            println("AMSAT live lists update failed: $it")
-        }
-    }
-
-    /** Try the amateur-whitelist sources in order and return the first
-     *  NetworkResult that carried a stream (or null if all failed). */
-    private suspend fun fetchAmSatActiveStream(): NetworkResult? {
-        for (url in Sources.amSatActiveUrls) {
-            val result = remoteSource.getNetworkStream(url)
-            if (result.stream != null) return result
-        }
-        return null
     }
 
     override suspend fun clearAllData() = withContext(dispatcher) {
         localSource.deleteEntries()
         localSource.deleteRadios()
-        settingsRepo.setAmSatCatnums(emptySet(), emptySet())
         setUpdateSuccessful(0L)
     }
 

@@ -31,12 +31,10 @@ class MutualViewModelTest {
     private fun TestScope.createVm(
         satellites: List<OrbitalObject> = emptyList(),
         passes: List<OrbitalPass> = emptyList(),
-        position: GeoPos = TestOrbits.GUANGZHOU,
-        amSatFm: Set<Int> = emptySet(),
-        amSatLinear: Set<Int> = emptySet()
+        position: GeoPos = TestOrbits.GUANGZHOU
     ): MutualViewModel = MutualViewModel(
         satelliteRepo = FakeSatelliteRepo(satellites, passes),
-        settingsRepo = FakeSettingsRepo(position, amSatFm, amSatLinear),
+        settingsRepo = FakeSettingsRepo(position),
         computeDispatcher = StandardTestDispatcher(mainDispatcherRule.dispatcher.scheduler)
     )
 
@@ -343,15 +341,15 @@ class MutualViewModelTest {
     }
 
     @Test
-    fun `AMSAT filter restricts results to listed catnums`() = runTest(mainDispatcherRule.dispatcher.scheduler) {
+    fun `hardcoded AMSAT filter restricts results to listed catnums`() = runTest(mainDispatcherRule.dispatcher.scheduler) {
         val windows = TestOrbits.findPassWindows(hoursAhead = 24) +
             TestOrbits.findPassWindows(sat = TestOrbits.ISS_VARIANT, hoursAhead = 24)
         assertTrue("fixture must produce windows", windows.isNotEmpty())
-        // Only ISS (25544) is on the AMSAT live FM list; ISS_VARIANT (25545) is not.
+        // ISS (25544) is on the hardcoded FM list (Sources.amSatFmCatnums);
+        // ISS_VARIANT (25545) is not.
         val vm = createVm(
             satellites = listOf(TestOrbits.ISS, TestOrbits.ISS_VARIANT),
-            passes = windows,
-            amSatFm = setOf(25544)
+            passes = windows
         )
         vm.onStationBGrid("OL62")
         vm.onHoursAhead(24)
@@ -361,19 +359,18 @@ class MutualViewModelTest {
         val state = vm.uiState.value
         assertNull(state.errorMessage)
         assertTrue(state.mutualPasses.isNotEmpty())
-        assertTrue("only AMSAT-listed satellites should appear", state.mutualPasses.all { it.catNum == 25544 })
+        assertTrue("only hardcoded FM-listed satellites should appear", state.mutualPasses.all { it.catNum == 25544 })
     }
 
     @Test
-    fun `AMSAT filter off for one type excludes its satellites`() = runTest(mainDispatcherRule.dispatcher.scheduler) {
+    fun `turning FM off excludes FM-listed satellites under Linear filter`() = runTest(mainDispatcherRule.dispatcher.scheduler) {
         val windows = TestOrbits.findPassWindows(hoursAhead = 24) +
             TestOrbits.findPassWindows(sat = TestOrbits.ISS_VARIANT, hoursAhead = 24)
-        // FM filter off, Linear on: neither sat is linear-listed -> nothing matches.
+        // ISS (25544) is on the hardcoded FM list but NOT on the hardcoded
+        // Linear list; with FM off and Linear on, no satellite passes.
         val vm = createVm(
             satellites = listOf(TestOrbits.ISS, TestOrbits.ISS_VARIANT),
-            passes = windows,
-            amSatFm = setOf(25544),
-            amSatLinear = setOf(25545)
+            passes = windows
         )
         vm.onStationBGrid("OL62")
         vm.onHoursAhead(24)
@@ -382,7 +379,7 @@ class MutualViewModelTest {
         queryAndSettle(vm)
 
         val state = vm.uiState.value
-        assertNull(state.errorMessage)
-        assertTrue("only linear-listed satellites should appear", state.mutualPasses.all { it.catNum == 25545 })
+        // 空结果会设置 "No mutual passes found" 提示, 这是正常行为而非筛选错误.
+        assertTrue(state.mutualPasses.isEmpty())
     }
 }

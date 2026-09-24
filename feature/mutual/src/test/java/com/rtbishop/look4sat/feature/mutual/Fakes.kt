@@ -54,9 +54,7 @@ class FakeSatelliteRepo(
  * state; everything else the ViewModel never touches fails loudly.
  */
 class FakeSettingsRepo(
-    initialPosition: GeoPos = GeoPos(23.13, 113.26),
-    val amSatFm: Set<Int> = emptySet(),
-    val amSatLinear: Set<Int> = emptySet()
+    initialPosition: GeoPos = GeoPos(23.13, 113.26)
 ) : ISettingsRepo {
 
     override val stationPosition = MutableStateFlow(initialPosition)
@@ -109,13 +107,6 @@ class FakeSettingsRepo(
     override val dataSourcesStatus: StateFlow<Map<String, Int>> = MutableStateFlow(emptyMap())
 
     override fun updateDataSourcesStatus(status: Map<String, Int>) = TODO()
-
-    override fun getAmSatFmCatnums(): Set<Int> = amSatFm
-    override fun getAmSatLinearCatnums(): Set<Int> = amSatLinear
-    override val amSatListsVersion: StateFlow<Int> = MutableStateFlow(0)
-    override fun setAmSatCatnums(fmCatnums: Set<Int>, linearCatnums: Set<Int>) = TODO()
-    override fun getAmSatActiveCatnums(): Set<Int> = emptySet()
-    override fun setAmSatActiveCatnums(catnums: Set<Int>) = TODO()
 
     override fun updateRadioControlSettings(settings: RadioControlSettings) = TODO()
     override fun getSatelliteOffset(catnum: Int): String = ""

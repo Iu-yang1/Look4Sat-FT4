@@ -25,7 +25,6 @@ import com.rtbishop.look4sat.core.domain.source.Sources
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
@@ -45,22 +44,19 @@ class SelectionRepo(
     // Resolve type IDs once when types change, then filter items reactively.
     // The HashSet gives O(1) catnum lookups instead of O(n) with a List.
     // The three virtual types ("AMSAT Live FM", "AMSAT Live Linear", "Live SSTV")
-    // are resolved from live transponder data instead of SharedPreferences.
-    // The AMSAT list version counter re-triggers resolution when a background
-    // data sync rewrites the FM/Linear lists, so the UI reflects the new list
-    // without a restart or type toggle.
-    private val itemsWithTypes = combine(currentTypes, settingsRepo.amSatListsVersion) { types, _ -> types }
-        .flatMapLatest { types: List<String> ->
-            val catnumSet: Set<Int>? = if (types.isEmpty()) {
-                null // null = no filtering
-            } else {
-                val ids = resolveTypeIds(types)
-                if (ids.isEmpty()) emptySet() else ids.toHashSet()
-            }
-            currentItems.map { items ->
-                if (catnumSet == null) items else items.filter { it.catnum in catnumSet }
-            }
+    // are resolved from hardcoded FM/Linear catnum sets (Sources) or live
+    // SSTV transponder data instead of SharedPreferences.
+    private val itemsWithTypes = currentTypes.flatMapLatest { types: List<String> ->
+        val catnumSet: Set<Int>? = if (types.isEmpty()) {
+            null // null = no filtering
+        } else {
+            val ids = resolveTypeIds(types)
+            if (ids.isEmpty()) emptySet() else ids.toHashSet()
         }
+        currentItems.map { items ->
+            if (catnumSet == null) items else items.filter { it.catnum in catnumSet }
+        }
+    }
 
     private val itemsWithQuery = currentQuery.flatMapLatest { query ->
         itemsWithTypes.map { items -> filterByQuery(items, query) }
@@ -70,15 +66,17 @@ class SelectionRepo(
 
     /**
      * Resolves a list of type names to satellite catnums. The three virtual
-     * transponder/activity types are resolved from live data; all other types
-     * come from the per-type ID lists persisted by [ISettingsRepo].
+     * transponder/activity types are resolved from hardcoded FM/Linear lists
+     * (Sources.amSatFmCatnums / amSatLinearCatnums) or local SSTV transponder
+     * data; all other types come from the per-type ID lists persisted by
+     * [ISettingsRepo].
      */
     private suspend fun resolveTypeIds(types: List<String>): List<Int> {
         val idsSet = mutableSetOf<Int>()
         types.forEach { type ->
             when (type) {
-                Sources.virtualTypeNames[0] -> idsSet.addAll(settingsRepo.getAmSatFmCatnums())
-                Sources.virtualTypeNames[1] -> idsSet.addAll(settingsRepo.getAmSatLinearCatnums())
+                Sources.virtualTypeNames[0] -> idsSet.addAll(Sources.amSatFmCatnums)
+                Sources.virtualTypeNames[1] -> idsSet.addAll(Sources.amSatLinearCatnums)
                 // Live SSTV: mode=SSTV transponder records whose service class
                 // is "Amateur", excluding launcher debris / rocket bodies
                 // (names ending in "R/B" or "DEB" — e.g. Ariane 6 R/B) that

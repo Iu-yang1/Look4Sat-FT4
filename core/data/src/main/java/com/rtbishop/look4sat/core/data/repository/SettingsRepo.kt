@@ -107,9 +107,6 @@ class SettingsRepo(
     private val keySatelliteEnabled = "satelliteEnabled"
     private val keyTransceiversEnabled = "transceiversEnabled"
     private val keySatnogsTleSourceMigration = "satnogsTleSourceMigration"
-    private val keyAmSatFmCatnums = "amSatFmCatnums"
-    private val keyAmSatLinearCatnums = "amSatLinearCatnums"
-    private val keyAmSatActiveCatnums = "amSatActiveCatnums"
     private val separatorComma = ","
     private val separatorUrl = "\n"
     private val legacyCelestrakSatnogsUrl =
@@ -747,40 +744,6 @@ class SettingsRepo(
 
     override fun updateDataSourcesStatus(status: Map<String, Int>) {
         _dataSourcesStatus.value = status
-    }
-    //endregion
-
-    //region # AMSAT live-transponder lists
-    private val _amSatListsVersion = MutableStateFlow(0)
-    override val amSatListsVersion: StateFlow<Int> = _amSatListsVersion
-
-    override fun getAmSatFmCatnums(): Set<Int> {
-        val raw = preferences.getString(keyAmSatFmCatnums, null) ?: return emptySet()
-        return raw.split(separatorComma).mapNotNull { it.toIntOrNull() }.toSet()
-    }
-
-    override fun getAmSatLinearCatnums(): Set<Int> {
-        val raw = preferences.getString(keyAmSatLinearCatnums, null) ?: return emptySet()
-        return raw.split(separatorComma).mapNotNull { it.toIntOrNull() }.toSet()
-    }
-
-    override fun setAmSatCatnums(fmCatnums: Set<Int>, linearCatnums: Set<Int>) {
-        preferences.edit {
-            putString(keyAmSatFmCatnums, fmCatnums.sorted().joinToString(separatorComma))
-            putString(keyAmSatLinearCatnums, linearCatnums.sorted().joinToString(separatorComma))
-        }
-        _amSatListsVersion.update { it + 1 }
-    }
-
-    override fun getAmSatActiveCatnums(): Set<Int> {
-        val raw = preferences.getString(keyAmSatActiveCatnums, null) ?: return emptySet()
-        return raw.split(separatorComma).mapNotNull { it.toIntOrNull() }.toSet()
-    }
-
-    override fun setAmSatActiveCatnums(catnums: Set<Int>) {
-        preferences.edit {
-            putString(keyAmSatActiveCatnums, catnums.sorted().joinToString(separatorComma))
-        }
     }
     //endregion
 

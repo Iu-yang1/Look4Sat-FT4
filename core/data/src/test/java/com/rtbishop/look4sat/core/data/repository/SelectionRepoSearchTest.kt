@@ -218,6 +218,45 @@ class SelectionRepoSearchTest {
     }
 
     @Test
+    fun `All type resolves to persisted CelesTrak active ids`() = runTest {
+        // Regression: "All" is a real TLE source type (CelesTrak active). Its
+        // ids are persisted on sync like any other type; selecting it must
+        // show the synced satellites, NOT an empty list.
+        val fake = FakeSettingsRepoForSearch()
+        fake.setSatelliteTypeIds("All", sampleItems.map { it.catnum })
+        val repo = SelectionRepo(
+            dispatcher = Dispatchers.Unconfined,
+            localSource = FakeLocalSourceForSearch(sampleItems),
+            settingsRepo = fake
+        )
+        repo.setTypes(listOf("All"))
+        val results = repo.getEntriesFlow().first()
+        assertEquals(sampleItems.map { it.catnum }.toSet(), results.map { it.catnum }.toSet())
+    }
+
+    @Test
+    fun `getTypesList excludes only the Other placeholder`() = runTest {
+        val repo = createRepo(sampleItems)
+        val types = repo.getTypesList()
+        // All real TLE source types must be selectable, including "All"
+        // (CelesTrak active) and "ARISS" (removed by the old removeAt(0)).
+        assertTrue("All" in types)
+        assertTrue("ARISS" in types)
+        assertTrue("R4UAB" in types)
+        assertTrue("SatNOGS" in types)
+        assertTrue("Other" !in types)
+    }
+
+    @Test
+    fun `all types shows all items`() = runTest {
+        val repo = createRepo(sampleItems)
+        repo.setTypes(emptyList()) // "All" = no type filtering
+        val results = repo.getEntriesFlow().first()
+        assertEquals(sampleItems.size, results.size)
+        assertEquals(sampleItems.map { it.catnum }.toSet(), results.map { it.catnum }.toSet())
+    }
+
+    @Test
     fun `amsat list version bump re-resolves FM filter after data sync`() = runTest {
         // ISS module aliases: dirty pre-sync FM list contains both ZARYA and DESTINY.
         val items = listOf(
@@ -279,6 +318,7 @@ private class FakeSettingsRepoForSearch(
     var amSatLinear: Set<Int> = emptySet(),
     private var amSatActive: Set<Int> = emptySet()
 ) : ISettingsRepo {
+    private val typeIds = mutableMapOf<String, List<Int>>()
     override val appVersionName: String = "test"
     override val selectedIds: StateFlow<List<Int>> = MutableStateFlow(emptyList())
     override val selectedTypes: StateFlow<List<String>> = MutableStateFlow(emptyList())
@@ -313,8 +353,12 @@ private class FakeSettingsRepoForSearch(
     override fun setStationPosition(latitude: Double, longitude: Double, altitude: Double): Boolean = true
     override fun setStationPosition(): Boolean = true
     override fun setStationPosition(locator: String): Boolean = true
-    override fun getSatelliteTypesIds(types: List<String>): List<Int> = emptyList()
-    override fun setSatelliteTypeIds(type: String, ids: List<Int>) = Unit
+    override fun getSatelliteTypesIds(types: List<String>): List<Int> =
+        types.flatMap { typeIds[it].orEmpty() }.distinct()
+
+    override fun setSatelliteTypeIds(type: String, ids: List<Int>) {
+        typeIds[type] = ids
+    }
     override fun updateDatabaseState(state: DatabaseState) = Unit
     override fun updateRCSettings(settings: RCSettings) = Unit
     override fun updateOtherSettings(transform: (OtherSettings) -> OtherSettings) = Unit

@@ -127,6 +127,29 @@ class DatabaseRepoTest {
         assertEquals(listOf(98248), settingsRepo.satelliteTypeIdsByType["SatNOGS"])
     }
 
+    @Test
+    fun `remote update persists All source type ids`() = runTest(dispatcher) {
+        // Regression: "All" (CelesTrak active) is a real TLE source type whose
+        // ids must be persisted on sync — the old `if (type == "All") return`
+        // silently dropped them, making the "All" filter resolve to nothing.
+        val allUrl = Sources.satelliteDataUrls.getValue("All")
+        val localSource = FakeLocalSource()
+        val remoteSource = FakeRemoteSource().apply {
+            networkStreams[allUrl] = { validCsvStream() }
+        }
+        val settingsRepo = FakeSettingsRepo(
+            dataSources = DataSourcesSettings(
+                satelliteUrls = listOf(allUrl),
+                transceiversUrls = emptyList()
+            )
+        )
+        val repository = DatabaseRepo(dispatcher, dataParser, localSource, remoteSource, settingsRepo)
+
+        repository.updateFromRemote()
+
+        assertEquals(listOf(25544), settingsRepo.satelliteTypeIdsByType["All"])
+    }
+
     private fun validCsvStream(): InputStream = """
         OBJECT_NAME,OBJECT_ID,EPOCH,MEAN_MOTION,ECCENTRICITY,INCLINATION,RA_OF_ASC_NODE,ARG_OF_PERICENTER,MEAN_ANOMALY,EPHEMERIS_TYPE,CLASSIFICATION_TYPE,NORAD_CAT_ID,ELEMENT_SET_NO,REV_AT_EPOCH,BSTAR,MEAN_MOTION_DOT,MEAN_MOTION_DDOT
         ISS (ZARYA),1998-067A,2021-11-16T12:28:09.322176,15.48582035,.0004694,51.6447,309.4881,203.6966,299.8876,0,U,25544,999,31220,.31985E-4,.1288E-4,0

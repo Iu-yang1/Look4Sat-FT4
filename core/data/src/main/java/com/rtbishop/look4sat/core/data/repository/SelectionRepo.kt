@@ -102,7 +102,10 @@ class SelectionRepo(
     override fun getTypesList() = buildList {
         // 三个转发器/活动虚拟类型排在最前.
         addAll(Sources.virtualTypeNames)
-        addAll(Sources.satelliteDataUrls.keys.sorted().toMutableList().apply { removeAt(0) })
+        // 所有真实 TLE 源类型均可选（含 "All" = CelesTrak active）；只排除
+        // "Other"（空 URL 占位，无数据）。不要用 removeAt(0) —— 字母序第一个
+        // 是 "All"/"ARISS" 这类真实源，删掉会让用户勾不到它们。
+        addAll(Sources.satelliteDataUrls.keys.sorted().filterNot { it == "Other" })
     }
 
     override suspend fun getEntriesFlow() = withContext(dispatcher) {

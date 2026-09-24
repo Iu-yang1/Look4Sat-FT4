@@ -498,7 +498,9 @@ class SettingsRepo(
     }
 
     override fun setSatelliteTypeIds(type: String, ids: List<Int>) {
-        if (type == "All") return
+        // "All" is a real TLE source type (CelesTrak active group) whose ids
+        // must be persisted like any other type — skipping it made the "All"
+        // filter resolve to an empty set and show nothing.
         val typesString = ids.joinToString(separatorComma)
         preferences.edit { putString("type$type", typesString) }
     }

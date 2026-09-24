@@ -74,6 +74,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import okhttp3.OkHttpClient
+import java.util.concurrent.TimeUnit
 
 class MainContainer(private val context: Context) : IMainContainer {
 
@@ -177,7 +178,16 @@ class MainContainer(private val context: Context) : IMainContainer {
     }
 
     private fun provideRemoteSource(): IRemoteSource {
-        return RemoteSource(Dispatchers.IO, context.contentResolver, OkHttpClient.Builder().build())
+        // amsat.org live pages are slow (7-10s+ from some networks); the
+        // OkHttp defaults (10s read timeout) made every AMSAT Live update
+        // time out, silently keeping stale FM/Linear lists forever.
+        val client = OkHttpClient.Builder()
+            .connectTimeout(20, TimeUnit.SECONDS)
+            .readTimeout(30, TimeUnit.SECONDS)
+            .writeTimeout(30, TimeUnit.SECONDS)
+            .callTimeout(60, TimeUnit.SECONDS)
+            .build()
+        return RemoteSource(Dispatchers.IO, context.contentResolver, client)
     }
 
     private fun provideSatelliteRepo(): ISatelliteRepo {

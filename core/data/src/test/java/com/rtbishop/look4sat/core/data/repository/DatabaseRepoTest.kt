@@ -270,6 +270,35 @@ class DatabaseRepoTest {
         assertEquals(setOf(25544), settingsRepo.amSatFm)
     }
 
+    @Test
+    fun `amsat fm list falls back to local FM transceivers when page fails and no previous list`() =
+        runTest(dispatcher) {
+            // After clearing data, the previous FM list is empty AND the AMSAT
+            // page is down (timeout) -> the filter must fall back to local FM
+            // transceivers intersected with the whitelist, never stay empty.
+            val satnogsUrl = Sources.satelliteDataUrls.getValue("SatNOGS")
+            val localSource = FakeLocalSource().apply {
+                idsWithModes = listOf(25544, 26700, 39444) // local FM-transceiver sats
+            }
+            val remoteSource = FakeRemoteSource().apply {
+                networkStreams[satnogsUrl] = { issModulesCsvStream() }
+                // FM/Linear pages NOT registered -> 404 -> fetch fails.
+            }
+            val settingsRepo = FakeSettingsRepo(
+                dataSources = DataSourcesSettings(
+                    satelliteUrls = listOf(satnogsUrl),
+                    transceiversUrls = emptyList()
+                )
+            ).apply { amSatActive = setOf(25544) } // whitelist has only ZARYA
+            val repository = DatabaseRepo(dispatcher, dataParser, localSource, remoteSource, settingsRepo)
+
+            repository.updateFromRemote()
+
+            // Fallback = local FM ids ∩ whitelist = {25544}; ISS module aliases
+            // (26700) are excluded by the whitelist.
+            assertEquals(setOf(25544), settingsRepo.amSatFm)
+        }
+
     private fun amsatFmPageWithUnknownStream(): InputStream = """
         <table>
         <thead><tr><th>Satellite</th><th>Uplink</th><th>Downlink</th><th>Comment</th></tr></thead>
@@ -320,6 +349,7 @@ private class FakeRemoteSource : IRemoteSource {
 private class FakeLocalSource : ILocalSource {
     val insertedEntries = mutableListOf<OrbitalData>()
     private val insertedRadios = mutableListOf<SatRadio>()
+    var idsWithModes: List<Int> = emptyList()
 
     override suspend fun getEntriesTotal(): Int = insertedEntries.size
 
@@ -336,8 +366,8 @@ private class FakeLocalSource : ILocalSource {
         insertedEntries.clear()
     }
 
-    override suspend fun getIdsWithModes(modes: List<String>): List<Int> = emptyList()
-    override suspend fun getIdsWithModesAndUplink(modes: List<String>): List<Int> = emptyList()
+    override suspend fun getIdsWithModes(modes: List<String>): List<Int> = idsWithModes
+    override suspend fun getIdsWithModesAndUplink(modes: List<String>): List<Int> = idsWithModes
     override suspend fun getIdsWithModesAndAmateur(modes: List<String>): List<Int> = emptyList()
 
     override suspend fun getRadiosTotal(): Int = insertedRadios.size

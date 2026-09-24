@@ -181,10 +181,20 @@ class DatabaseRepo(
                 previous.mapNotNull { catnum ->
                     nameToCatnum.entries.firstOrNull { it.value == catnum }?.key
                 }.flatMap { resolvePerName(it) }.toSet()
+            // Last-resort fallback when the AMSAT page is down AND there is no
+            // previous list to clean (e.g. right after clearing data): derive
+            // the FM/Linear sets from the local transceivers intersected with
+            // the amateur whitelist, so a network timeout never wipes the
+            // filters to empty.
+            val fmFallback = localSource.getIdsWithModes(listOf("FM")).toSet().intersect(activeCatnums)
+            val linearFallback = localSource
+                .getIdsWithModes(listOf("SSB", "CW", "USB", "LSB")).toSet().intersect(activeCatnums)
             val fmCatnums = fmNames.flatMap { resolvePerName(it) }.toSet()
                 .ifEmpty { cleanStaleList(settingsRepo.getAmSatFmCatnums()) }
+                .ifEmpty { fmFallback }
             val linearCatnums = linearNames.flatMap { resolvePerName(it) }.toSet()
                 .ifEmpty { cleanStaleList(settingsRepo.getAmSatLinearCatnums()) }
+                .ifEmpty { linearFallback }
             settingsRepo.setAmSatCatnums(fmCatnums, linearCatnums)
             println("AMSAT live lists updated: FM=${fmCatnums.size}, Linear=${linearCatnums.size}, Active=${activeCatnums.size}")
         }.onFailure {

@@ -68,9 +68,14 @@ object Sources {
      *  transponder with its NORAD catnum. Used as the authoritative whitelist
      *  of *amateur* satellites, so the virtual filters never match
      *  non-amateur debris (Ariane 6 R/B), retired weather sats (TIROS), or
-     *  ISS station-module aliases (ISS (DESTINY) etc.). */
-    const val amSatActiveUrl =
-        "https://raw.githubusercontent.com/palewire/amateur-satellite-database/main/data/amsat-active-frequencies.csv"
+     *  ISS station-module aliases (ISS (DESTINY) etc.). Primary source plus
+     *  a jsDelivr CDN mirror: raw.githubusercontent.com is unreachable on
+     *  some networks (e.g. mainland China mobile), and a failed whitelist
+     *  fetch would silently disable the module disambiguation. */
+    val amSatActiveUrls = listOf(
+        "https://raw.githubusercontent.com/palewire/amateur-satellite-database/main/data/amsat-active-frequencies.csv",
+        "https://cdn.jsdelivr.net/gh/palewire/amateur-satellite-database@main/data/amsat-active-frequencies.csv"
+    )
 
     /** Virtual satellite-selection types: transponder/activity filters shown
      *  at the top of the type picker. They resolve to live lists (AMSAT pages

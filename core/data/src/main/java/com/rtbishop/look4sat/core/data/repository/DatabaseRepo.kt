@@ -23,6 +23,7 @@ import com.rtbishop.look4sat.core.domain.repository.IDatabaseRepo
 import com.rtbishop.look4sat.core.domain.repository.ISettingsRepo
 import com.rtbishop.look4sat.core.domain.source.ILocalSource
 import com.rtbishop.look4sat.core.domain.source.IRemoteSource
+import com.rtbishop.look4sat.core.domain.source.NetworkResult
 import com.rtbishop.look4sat.core.domain.source.Sources
 import com.rtbishop.look4sat.core.domain.utility.DataParser
 import kotlinx.coroutines.CoroutineDispatcher
@@ -130,15 +131,22 @@ class DatabaseRepo(
             val entries = localSource.getEntriesList() // catnum -> name
             val jobs = Sources.amSatLiveUrls.map { (type, url) ->
                 async { type to remoteSource.getNetworkStream(url) }
-            } + async { "Active" to remoteSource.getNetworkStream(Sources.amSatActiveUrl) }
+            } + async { "Active" to fetchAmSatActiveStream() }
             val results = jobs.awaitAll()
             val fmNames = results.firstOrNull { it.first == "FM" }?.second?.stream
                 ?.let { dataParser.parseAmSatLivePage(it) }.orEmpty()
             val linearNames = results.firstOrNull { it.first == "Linear" }?.second?.stream
                 ?.let { dataParser.parseAmSatLivePage(it) }.orEmpty()
-            val activeCatnums = results.firstOrNull { it.first == "Active" }?.second?.stream
-                ?.let { dataParser.parseAmSatActiveCatnums(it) }.orEmpty()
-            settingsRepo.setAmSatActiveCatnums(activeCatnums)
+            // Amateur whitelist: a failed fetch yields an empty result, which
+            // must NOT wipe out the last good snapshot. Fall back to the
+            // persisted whitelist, and only persist when this fetch actually
+            // returned a stream.
+            val activeStream = results.firstOrNull { it.first == "Active" }?.second?.stream
+            val activeCatnums = activeStream
+                ?.let { dataParser.parseAmSatActiveCatnums(it) }
+                .orEmpty()
+                .ifEmpty { settingsRepo.getAmSatActiveCatnums() }
+            if (activeStream != null) settingsRepo.setAmSatActiveCatnums(activeCatnums)
             val nameToCatnum = entries.associate { it.name.uppercase() to it.catnum }
             // Resolve every matching local entry per AMSAT name. A single match
             // is kept as-is (so satellites absent from the amateur whitelist,
@@ -152,16 +160,34 @@ class DatabaseRepo(
                 }.values.toSet()
                 if (all.size <= 1) return all
                 val preferred = all.intersect(activeCatnums)
-                return if (preferred.isNotEmpty()) preferred else all
+                if (preferred.isNotEmpty()) return preferred
+                // Whitelist unavailable: keep only the primary entry (smallest
+                // catnum — ISS ZARYA=25544 is the smallest of its five module
+                // entries) instead of admitting every alias (DESTINY etc.).
+                return setOf(all.minOrNull() ?: all.first())
             }
+            // A failed FM/Linear page fetch yields an empty list here; keep the
+            // previous lists so a single network hiccup cannot wipe the filters.
             val fmCatnums = fmNames.flatMap { resolvePerName(it) }.toSet()
+                .ifEmpty { settingsRepo.getAmSatFmCatnums() }
             val linearCatnums = linearNames.flatMap { resolvePerName(it) }.toSet()
+                .ifEmpty { settingsRepo.getAmSatLinearCatnums() }
             settingsRepo.setAmSatCatnums(fmCatnums, linearCatnums)
             println("AMSAT live lists updated: FM=${fmCatnums.size}, Linear=${linearCatnums.size}, Active=${activeCatnums.size}")
         }.onFailure {
             // Keep the previous lists; the mutual filter stays on the last good snapshot.
             println("AMSAT live lists update failed: $it")
         }
+    }
+
+    /** Try the amateur-whitelist sources in order and return the first
+     *  NetworkResult that carried a stream (or null if all failed). */
+    private suspend fun fetchAmSatActiveStream(): NetworkResult? {
+        for (url in Sources.amSatActiveUrls) {
+            val result = remoteSource.getNetworkStream(url)
+            if (result.stream != null) return result
+        }
+        return null
     }
 
     override suspend fun clearAllData() = withContext(dispatcher) {

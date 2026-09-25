@@ -21,6 +21,8 @@ object Sources {
     val satelliteDataUrls = mapOf(
         "LAPAN-A2" to "https://www.kaggle.com/api/v1/datasets/download/muazamnugroho/lapan-a2-satellite-two-line-element-tle-dataset/LAPAN-A2_TLE_latest.txt",
         "R4UAB" to "https://r4uab.ru/satonline.txt",
+        "BI4PYM AutoTLE (GitHub)" to "https://raw.githubusercontent.com/BI4PYM/AutoTLE/refs/heads/master/AutoTLE.txt",
+        "BI4PYM AutoTLE (Mirror)" to "https://autotle.bi4pym.cn/AutoTLE.txt",
         "All" to "https://celestrak.org/NORAD/elements/gp.php?GROUP=active&FORMAT=csv",
         "SatNOGS" to "https://db.satnogs.org/api/tle/?format=3le",
         "Amateur" to "https://celestrak.org/NORAD/elements/gp.php?GROUP=amateur&FORMAT=csv",

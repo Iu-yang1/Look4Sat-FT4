@@ -43,12 +43,15 @@ class SelectionRepo(
 
     // Resolve type IDs once when types change, then filter items reactively.
     // The HashSet gives O(1) catnum lookups instead of O(n) with a List.
+    // The three virtual types ("AMSAT Live FM", "AMSAT Live Linear", "Live SSTV")
+    // are resolved from hardcoded FM/Linear catnum sets (Sources) or live
+    // SSTV transponder data instead of SharedPreferences.
     private val itemsWithTypes = currentTypes.flatMapLatest { types: List<String> ->
         val catnumSet: Set<Int>? = if (types.isEmpty()) {
             null // null = no filtering
         } else {
-            val ids = settingsRepo.getSatelliteTypesIds(types)
-            if (ids.isEmpty()) null else ids.toHashSet()
+            val ids = resolveTypeIds(types)
+            if (ids.isEmpty()) emptySet() else ids.toHashSet()
         }
         currentItems.map { items ->
             if (catnumSet == null) items else items.filter { it.catnum in catnumSet }
@@ -61,8 +64,46 @@ class SelectionRepo(
 
     override fun getCurrentTypes() = currentTypes.value
 
-    override fun getTypesList() = Sources.satelliteDataUrls.keys.sorted().toMutableList().apply {
-        removeAt(0)
+    /**
+     * Resolves a list of type names to satellite catnums. The three virtual
+     * transponder/activity types are resolved from hardcoded FM/Linear lists
+     * (Sources.amSatFmCatnums / amSatLinearCatnums) or local SSTV transponder
+     * data; all other types come from the per-type ID lists persisted by
+     * [ISettingsRepo].
+     */
+    private suspend fun resolveTypeIds(types: List<String>): List<Int> {
+        val idsSet = mutableSetOf<Int>()
+        types.forEach { type ->
+            when (type) {
+                Sources.virtualTypeNames[0] -> idsSet.addAll(Sources.amSatFmCatnums)
+                Sources.virtualTypeNames[1] -> idsSet.addAll(Sources.amSatLinearCatnums)
+                // Live SSTV: mode=SSTV transponder records whose service class
+                // is "Amateur", excluding launcher debris / rocket bodies
+                // (names ending in "R/B" or "DEB" — e.g. Ariane 6 R/B) that
+                // carry an amateur payload transponder but are not satellites.
+                Sources.virtualTypeNames[2] -> {
+                    val sstvIds = localSource.getIdsWithModesAndAmateur(listOf("SSTV")).toSet()
+                    val inOrbitNames = currentItems.value.associate { it.catnum to it.name }
+                    val filtered = sstvIds.filter { catnum ->
+                        val name = inOrbitNames[catnum]?.uppercase().orEmpty()
+                        !name.endsWith(" R/B") && !name.endsWith(" DEB") &&
+                            !name.endsWith("R/B") && !name.endsWith("DEB")
+                    }
+                    idsSet.addAll(filtered)
+                }
+                else -> idsSet.addAll(settingsRepo.getSatelliteTypesIds(listOf(type)))
+            }
+        }
+        return idsSet.toList()
+    }
+
+    override fun getTypesList() = buildList {
+        // 三个转发器/活动虚拟类型排在最前.
+        addAll(Sources.virtualTypeNames)
+        // 所有真实 TLE 源类型均可选（含 "All" = CelesTrak active）；只排除
+        // "Other"（空 URL 占位，无数据）。不要用 removeAt(0) —— 字母序第一个
+        // 是 "All"/"ARISS" 这类真实源，删掉会让用户勾不到它们。
+        addAll(Sources.satelliteDataUrls.keys.sorted().filterNot { it == "Other" })
     }
 
     override suspend fun getEntriesFlow() = withContext(dispatcher) {

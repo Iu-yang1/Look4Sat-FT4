@@ -45,13 +45,18 @@ class FakeSatelliteRepo(
     override suspend fun getTrack(sat: OrbitalObject, pos: GeoPos, start: Long, end: Long): List<OrbitalPos> = TODO()
     override suspend fun getRadios(sat: OrbitalObject, pos: GeoPos, radios: List<SatRadio>, time: Long): List<SatRadio> = TODO()
     override suspend fun getRadiosWithId(id: Int): List<SatRadio> = TODO()
+    override suspend fun getSatelliteIdsWithModes(modes: List<String>): List<Int> = emptyList()
+    override suspend fun getSatelliteIdsWithModesAndUplink(modes: List<String>): List<Int> = emptyList()
+    override suspend fun getSatelliteIdsWithModesAndAmateur(modes: List<String>): List<Int> = emptyList()
 }
 
 /**
  * Test fake for ISettingsRepo. Only [stationPosition] is backed by mutable
  * state; everything else the ViewModel never touches fails loudly.
  */
-class FakeSettingsRepo(initialPosition: GeoPos = GeoPos(23.13, 113.26)) : ISettingsRepo {
+class FakeSettingsRepo(
+    initialPosition: GeoPos = GeoPos(23.13, 113.26)
+) : ISettingsRepo {
 
     override val stationPosition = MutableStateFlow(initialPosition)
 

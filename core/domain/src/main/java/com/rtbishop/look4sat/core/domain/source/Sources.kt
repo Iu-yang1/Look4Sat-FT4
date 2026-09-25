@@ -55,4 +55,25 @@ object Sources {
         "SatNOGS" to "https://db.satnogs.org/api/transmitters/?format=json&status=active",
         "R4UAB" to "https://r4uab.ru/transmitters.json"
     )
+    /**
+     * Hardcoded AMSAT Live FM satellites (NORAD catnums):
+     * SO-50 (27607), ISS ZARYA (25544), AO-123 ASRTU-1 (61781).
+     * Replaces the AMSAT live-page fetch: stable on any network, no
+     * sync-time dependency, no stale-list or timeout failure modes.
+     */
+    val amSatFmCatnums = setOf(27607, 25544, 61781)
+
+    /**
+     * Hardcoded AMSAT Live linear (SSB/CW) satellites:
+     * RS-44 (44909), FO-29 (24278), AO-7 (7530),
+     * AO-73 FUNcube-1 (39444), JO-97 JY1SAT (43803).
+     */
+    val amSatLinearCatnums = setOf(44909, 24278, 7530, 39444, 43803)
+
+    /** Virtual satellite-selection types: transponder/activity filters shown
+     *  at the top of the type picker. They resolve to live lists (hardcoded
+     *  FM/Linear catnum sets or mode=SSTV radios) instead of persisted
+     *  per-type IDs, and are mutually exclusive with the regular TLE-source
+     *  types in the picker. */
+    val virtualTypeNames = listOf("AMSAT Live FM", "AMSAT Live Linear", "Live SSTV")
 }

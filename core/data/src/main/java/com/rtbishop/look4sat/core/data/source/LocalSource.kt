@@ -48,6 +48,8 @@ class LocalSource(private val look4SatDao: Look4SatDao) : ILocalSource {
     override suspend fun deleteEntries() = look4SatDao.deleteEntries()
 
     override suspend fun getIdsWithModes(modes: List<String>) = look4SatDao.getIdsWithModes(modes)
+    override suspend fun getIdsWithModesAndUplink(modes: List<String>) = look4SatDao.getIdsWithModesAndUplink(modes)
+    override suspend fun getIdsWithModesAndAmateur(modes: List<String>) = look4SatDao.getIdsWithModesAndAmateur(modes)
 
     private fun FrameworkEntry.toDomain() = OrbitalData(
         this.name, this.epoch, this.meanmo, this.eccn, this.incl,
@@ -83,12 +85,14 @@ class LocalSource(private val look4SatDao: Look4SatDao) : ILocalSource {
 
     private fun DomainRadio.toFramework() = FrameworkRadio(
         this.uuid, this.info, this.isAlive, this.downlinkLow, this.downlinkHigh, this.downlinkMode,
-        this.uplinkLow, this.uplinkHigh, this.uplinkMode, this.isInverted, this.catnum, this.isCustom
+        this.uplinkLow, this.uplinkHigh, this.uplinkMode, this.isInverted, this.catnum,
+        this.service, this.isCustom
     )
 
     private fun FrameworkRadio.toDomain() = DomainRadio(
         this.uuid, this.info, this.isAlive, this.downlinkLow, this.downlinkHigh, this.downlinkMode,
-        this.uplinkLow, this.uplinkHigh, this.uplinkMode, this.isInverted, this.catnum, this.isCustom
+        this.uplinkLow, this.uplinkHigh, this.uplinkMode, this.isInverted, this.catnum,
+        this.service, this.isCustom
     )
 
     private fun List<DomainRadio>.toFrameworkRadios() = this.map { radio -> radio.toFramework() }

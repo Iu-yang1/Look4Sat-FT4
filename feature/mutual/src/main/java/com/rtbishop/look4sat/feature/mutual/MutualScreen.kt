@@ -173,6 +173,8 @@ fun MutualScreen(
             onStationBMinElev = viewModel::onStationBMinElev,
             onUseCurrentPosition = viewModel::onUseCurrentPosition,
             onHoursAhead = viewModel::onHoursAhead,
+            onFilterFM = viewModel::onFilterFM,
+            onFilterLinear = viewModel::onFilterLinear,
             onClearError = viewModel::clearError
         )
     }
@@ -196,6 +198,8 @@ private fun MutualContent(
     onStationBMinElev: (Double) -> Unit,
     onUseCurrentPosition: () -> Unit,
     onHoursAhead: (Int) -> Unit,
+    onFilterFM: (Boolean) -> Unit,
+    onFilterLinear: (Boolean) -> Unit,
     onClearError: () -> Unit
 ) {
     val timeFormat = remember(state.isUtc) {
@@ -349,6 +353,10 @@ private fun MutualContent(
             MatchSearchCard(
                 hoursAhead = state.hoursAhead,
                 isCalculating = state.isCalculating,
+                filterFM = state.filterFM,
+                filterLinear = state.filterLinear,
+                onFilterFM = onFilterFM,
+                onFilterLinear = onFilterLinear,
                 onHoursAhead = onHoursAhead,
                 onQuery = onQuery
             )
@@ -555,6 +563,10 @@ private fun StationInputCard(
 private fun MatchSearchCard(
     hoursAhead: Int,
     isCalculating: Boolean,
+    filterFM: Boolean,
+    filterLinear: Boolean,
+    onFilterFM: (Boolean) -> Unit,
+    onFilterLinear: (Boolean) -> Unit,
     onHoursAhead: (Int) -> Unit,
     onQuery: () -> Unit,
     modifier: Modifier = Modifier
@@ -580,6 +592,28 @@ private fun MatchSearchCard(
                         label = { Text("${hours}h") }
                     )
                 }
+            }
+            // 转发器类型筛选: 只匹配 AMSAT Live 清单里的 FM 话音 / 线性转发器卫星,
+            // 防止选入大量无转发器卫星占用匹配页.
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = stringResource(R.string.mutual_filter_transponder),
+                    style = MaterialTheme.typography.labelLarge
+                )
+                FilterChip(
+                    selected = filterFM,
+                    onClick = { onFilterFM(!filterFM) },
+                    label = { Text(stringResource(R.string.mutual_filter_fm)) }
+                )
+                FilterChip(
+                    selected = filterLinear,
+                    onClick = { onFilterLinear(!filterLinear) },
+                    label = { Text(stringResource(R.string.mutual_filter_linear)) }
+                )
             }
             Button(
                 onClick = onQuery,

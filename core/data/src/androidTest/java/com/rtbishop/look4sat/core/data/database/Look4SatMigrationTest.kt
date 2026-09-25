@@ -22,7 +22,7 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class Look4SatMigrationTest {
     @Test
-    fun migrationOneThroughThreePreservesRowsAndAddsColumns() {
+    fun migrationOneThroughFourPreservesRowsAndAddsColumns() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         context.deleteDatabase(TEST_DATABASE)
         val helper = FrameworkSQLiteOpenHelperFactory().create(
@@ -52,6 +52,7 @@ class Look4SatMigrationTest {
 
             MIGRATION_1_2.migrate(database)
             MIGRATION_2_3.migrate(database)
+            MIGRATION_3_4.migrate(database)
 
             database.query("PRAGMA table_info(entries)").use { cursor ->
                 val names = buildList {
@@ -64,10 +65,11 @@ class Look4SatMigrationTest {
                 assertEquals(12_345, cursor.getInt(0))
                 assertEquals(0.0, cursor.getDouble(1), 0.0)
             }
-            database.query("SELECT uuid, isCustom FROM radios").use { cursor ->
+            database.query("SELECT uuid, isCustom, service FROM radios").use { cursor ->
                 assertTrue(cursor.moveToFirst())
                 assertEquals("radio-1", cursor.getString(0))
                 assertEquals(0, cursor.getInt(1))
+                assertTrue(cursor.isNull(2))
             }
         } finally {
             helper.close()
@@ -99,19 +101,24 @@ class Look4SatMigrationTest {
             )
 
             MIGRATION_2_3.migrate(database)
+            MIGRATION_3_4.migrate(database)
 
-            database.query("SELECT uuid, isCustom FROM radios").use { cursor ->
+            database.query("SELECT uuid, isCustom, service FROM radios").use { cursor ->
                 assertTrue(cursor.moveToFirst())
                 assertEquals("custom-1", cursor.getString(0))
                 assertEquals(1, cursor.getInt(1))
+                assertTrue(cursor.isNull(2))
             }
             database.query("PRAGMA table_info(radios)").use { cursor ->
                 val nameIndex = cursor.getColumnIndexOrThrow("name")
                 var isCustomCount = 0
+                var serviceCount = 0
                 while (cursor.moveToNext()) {
                     if (cursor.getString(nameIndex) == "isCustom") isCustomCount += 1
+                    if (cursor.getString(nameIndex) == "service") serviceCount += 1
                 }
                 assertEquals(1, isCustomCount)
+                assertEquals(1, serviceCount)
             }
         } finally {
             helper.close()

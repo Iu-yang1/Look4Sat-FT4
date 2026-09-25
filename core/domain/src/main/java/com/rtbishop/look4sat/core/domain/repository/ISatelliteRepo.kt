@@ -65,4 +65,19 @@ interface ISatelliteRepo {
 
     /** Fetch radio transceivers for a satellite by its catalog number. */
     suspend fun getRadiosWithId(id: Int): List<SatRadio>
+
+    /** Satellite catnums whose radios carry any of the given downlink modes.
+     *  Empty modes -> empty result; used to filter the mutual-match satellite
+     *  set to transponder satellites (FM voice / linear). */
+    suspend fun getSatelliteIdsWithModes(modes: List<String>): List<Int>
+
+    /** Like [getSatelliteIdsWithModes] but only matches records with an uplink
+     *  (real transponders), excluding downlink-only beacons/telemetry that share
+     *  the same mode label. Used by the FM/Linear fallback filter. */
+    suspend fun getSatelliteIdsWithModesAndUplink(modes: List<String>): List<Int>
+
+    /** Like [getSatelliteIdsWithModes] but only matches records whose service
+     *  class is "Amateur", so SSTV never matches weather birds (TIROS),
+     *  launcher debris or other non-amateur transmitters. */
+    suspend fun getSatelliteIdsWithModesAndAmateur(modes: List<String>): List<Int>
 }

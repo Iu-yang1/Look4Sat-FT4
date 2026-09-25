@@ -937,6 +937,9 @@ private class FakeSatelliteRepo(private val position: OrbitalPos) : ISatelliteRe
         time: Long
     ) = radios
     override suspend fun getRadiosWithId(id: Int) = emptyList<SatRadio>()
+    override suspend fun getSatelliteIdsWithModes(modes: List<String>) = emptyList<Int>()
+    override suspend fun getSatelliteIdsWithModesAndUplink(modes: List<String>) = emptyList<Int>()
+    override suspend fun getSatelliteIdsWithModesAndAmateur(modes: List<String>) = emptyList<Int>()
 }
 
 private class FakeSettingsRepo(

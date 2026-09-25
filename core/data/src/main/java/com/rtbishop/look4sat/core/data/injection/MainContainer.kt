@@ -26,6 +26,7 @@ import androidx.room.Room
 import com.rtbishop.look4sat.core.data.database.Look4SatDb
 import com.rtbishop.look4sat.core.data.database.MIGRATION_1_2
 import com.rtbishop.look4sat.core.data.database.MIGRATION_2_3
+import com.rtbishop.look4sat.core.data.database.MIGRATION_3_4
 import com.rtbishop.look4sat.core.data.database.QsoDatabase
 import com.rtbishop.look4sat.core.data.database.QSO_MIGRATION_1_2
 import com.rtbishop.look4sat.core.data.database.QSO_MIGRATION_2_3
@@ -88,6 +89,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import okhttp3.OkHttpClient
+import java.util.concurrent.TimeUnit
 
 class MainContainer(private val context: Context) : IMainContainer {
 
@@ -196,12 +198,24 @@ class MainContainer(private val context: Context) : IMainContainer {
 
     private fun provideLocalSource(): ILocalSource {
         val builder = Room.databaseBuilder(context, Look4SatDb::class.java, "Look4SatDBv400")
-        val database = builder.addMigrations(MIGRATION_1_2, MIGRATION_2_3).build()
+        val database = builder
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+            .fallbackToDestructiveMigration(false)
+            .build()
         return LocalSource(database.look4SatDao())
     }
 
     private fun provideRemoteSource(): IRemoteSource {
-        return RemoteSource(Dispatchers.IO, context.contentResolver, OkHttpClient.Builder().build())
+        // amsat.org live pages are slow (7-10s+ from some networks); the
+        // OkHttp defaults (10s read timeout) made every AMSAT Live update
+        // time out, silently keeping stale FM/Linear lists forever.
+        val client = OkHttpClient.Builder()
+            .connectTimeout(20, TimeUnit.SECONDS)
+            .readTimeout(30, TimeUnit.SECONDS)
+            .writeTimeout(30, TimeUnit.SECONDS)
+            .callTimeout(60, TimeUnit.SECONDS)
+            .build()
+        return RemoteSource(Dispatchers.IO, context.contentResolver, client)
     }
 
     private fun provideSatelliteRepo(): ISatelliteRepo {

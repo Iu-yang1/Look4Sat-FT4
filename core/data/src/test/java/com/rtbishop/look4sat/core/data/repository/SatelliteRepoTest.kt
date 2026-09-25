@@ -126,6 +126,8 @@ private class TestLocalSource(
     override suspend fun insertEntries(entries: List<OrbitalData>) = Unit
     override suspend fun deleteEntries() = Unit
     override suspend fun getIdsWithModes(modes: List<String>) = this.modes(modes)
+    override suspend fun getIdsWithModesAndUplink(modes: List<String>) = this.modes(modes)
+    override suspend fun getIdsWithModesAndAmateur(modes: List<String>) = this.modes(modes)
     override suspend fun getRadiosTotal() = 0
     override suspend fun getRadiosWithId(id: Int) = emptyList<SatRadio>()
     override suspend fun insertRadios(radios: List<SatRadio>, isCustom: Boolean) = Unit

@@ -113,22 +113,181 @@ class SelectionRepoSearchTest {
         assertTrue(repo.getEntriesFlow().first().isEmpty())
     }
 
-    private fun createRepo(items: List<SatItem>): ISelectionRepo {
+    @Test
+    fun `FM virtual type shows only hardcoded FM satellites`() = runTest {
+        // AO-123 ASRTU-1 (61781) is on the hardcoded FM list; a random
+        // satellite (99999) is not.
+        val items = sampleItems + SatItem(catnum = 61781, name = "ASRTU-1")
+        val repo = createRepo(items)
+        repo.setTypes(listOf("AMSAT Live FM"))
+        val results = repo.getEntriesFlow().first()
+        assertEquals(setOf(25544, 61781), results.map { it.catnum }.toSet())
+    }
+
+    @Test
+    fun `Linear virtual type shows only hardcoded linear satellites`() = runTest {
+        val repo = createRepo(sampleItems)
+        repo.setTypes(listOf("AMSAT Live Linear"))
+        val results = repo.getEntriesFlow().first()
+        // Hardcoded linear list: RS-44 (44909), FO-29 (24278), AO-7 (7530),
+        // AO-73 (39444), JO-97 (43803). Present in the sample DB: 7530, 39444, 43803.
+        assertEquals(setOf(7530, 39444, 43803), results.map { it.catnum }.toSet())
+    }
+
+    @Test
+    fun `SSTV virtual type shows only satellites with SSTV radios`() = runTest {
+        val repo = createRepo(
+            items = sampleItems,
+            sstvIds = listOf(43803)
+        )
+        repo.setTypes(listOf("Live SSTV"))
+        val results = repo.getEntriesFlow().first()
+        assertEquals(listOf(43803), results.map { it.catnum })
+    }
+
+    @Test
+    fun `SSTV virtual type uses the amateur-only radio query`() = runTest {
+        // The repo delegates to getIdsWithModesAndAmateur: the fake returns
+        // only catnums the DAO would have filtered to Amateur service (43803).
+        val repo = createRepo(
+            items = sampleItems,
+            sstvIds = listOf(43803)
+        )
+        repo.setTypes(listOf("Live SSTV"))
+        val results = repo.getEntriesFlow().first()
+        assertEquals(listOf(43803), results.map { it.catnum })
+    }
+
+    @Test
+    fun `SSTV virtual type excludes rocket-body debris by name`() = runTest {
+        // 60239 is "ARIANE 6 R/B" (launcher debris carrying an amateur SSTV
+        // payload); it must be dropped even though its radio is Amateur.
+        val items = sampleItems + SatItem(catnum = 60239, name = "ARIANE 6 R/B")
+        val repo = createRepo(
+            items = items,
+            sstvIds = listOf(43803, 60239)
+        )
+        repo.setTypes(listOf("Live SSTV"))
+        val results = repo.getEntriesFlow().first()
+        assertEquals(listOf(43803), results.map { it.catnum })
+    }
+
+    @Test
+    fun `multiple virtual types union their satellites`() = runTest {
+        val repo = createRepo(
+            items = sampleItems,
+            sstvIds = listOf(43803)
+        )
+        repo.setTypes(listOf("AMSAT Live FM", "Live SSTV"))
+        val results = repo.getEntriesFlow().first()
+        assertEquals(setOf(25544, 43803), results.map { it.catnum }.toSet())
+    }
+
+    @Test
+    fun `clearing types restores full list`() = runTest {
+        val repo = createRepo(sampleItems)
+        repo.setTypes(listOf("AMSAT Live FM"))
+        assertTrue(repo.getEntriesFlow().first().isNotEmpty())
+        repo.setTypes(emptyList())
+        assertEquals(sampleItems.size, repo.getEntriesFlow().first().size)
+    }
+
+    @Test
+    fun `virtual type with no matching satellites shows empty not everything`() = runTest {
+        // 硬编码 FM 列表 (27607/25544/61781) 里没有样本库中的卫星时, 选虚拟
+        // 类型应显示空列表, 而非全部卫星.
+        val items = listOf(SatItem(catnum = 7530, name = "AO-7 (AMSAT-OSCAR 7)"))
+        val repo = createRepo(items)
+        repo.setTypes(listOf("AMSAT Live FM"))
+        assertTrue(repo.getEntriesFlow().first().isEmpty())
+    }
+
+    @Test
+    fun `virtual type combined with regular type unions both lists`() = runTest {
+        val repo = createRepo(items = sampleItems)
+        repo.setTypes(listOf("AMSAT Live FM", "AMSAT Live Linear"))
+        val results = repo.getEntriesFlow().first()
+        assertEquals(
+            setOf(25544, 7530, 39444, 43803),
+            results.map { it.catnum }.toSet()
+        )
+    }
+
+    @Test
+    fun `types list has virtual transponder types first and keeps All`() {
+        val repo = createRepo(sampleItems)
+        val types = repo.getTypesList()
+        assertTrue(types.size >= 4)
+        assertEquals("AMSAT Live FM", types[0])
+        assertEquals("AMSAT Live Linear", types[1])
+        assertEquals("Live SSTV", types[2])
+        // "All" must be kept in the list (first original type shown after virtual ones).
+        assertTrue("All" in types)
+    }
+
+    @Test
+    fun `All type resolves to persisted CelesTrak active ids`() = runTest {
+        // Regression: "All" is a real TLE source type (CelesTrak active). Its
+        // ids are persisted on sync like any other type; selecting it must
+        // show the synced satellites, NOT an empty list.
+        val fake = FakeSettingsRepoForSearch()
+        fake.setSatelliteTypeIds("All", sampleItems.map { it.catnum })
+        val repo = SelectionRepo(
+            dispatcher = Dispatchers.Unconfined,
+            localSource = FakeLocalSourceForSearch(sampleItems),
+            settingsRepo = fake
+        )
+        repo.setTypes(listOf("All"))
+        val results = repo.getEntriesFlow().first()
+        assertEquals(sampleItems.map { it.catnum }.toSet(), results.map { it.catnum }.toSet())
+    }
+
+    @Test
+    fun `getTypesList excludes only the Other placeholder`() = runTest {
+        val repo = createRepo(sampleItems)
+        val types = repo.getTypesList()
+        // All real TLE source types must be selectable, including "All"
+        // (CelesTrak active) and "ARISS" (removed by the old removeAt(0)).
+        assertTrue("All" in types)
+        assertTrue("ARISS" in types)
+        assertTrue("R4UAB" in types)
+        assertTrue("SatNOGS" in types)
+        assertTrue("Other" !in types)
+    }
+
+    @Test
+    fun `all types shows all items`() = runTest {
+        val repo = createRepo(sampleItems)
+        repo.setTypes(emptyList()) // "All" = no type filtering
+        val results = repo.getEntriesFlow().first()
+        assertEquals(sampleItems.size, results.size)
+        assertEquals(sampleItems.map { it.catnum }.toSet(), results.map { it.catnum }.toSet())
+    }
+
+    private fun createRepo(
+        items: List<SatItem>,
+        sstvIds: List<Int> = emptyList()
+    ): ISelectionRepo {
         return SelectionRepo(
             dispatcher = Dispatchers.Unconfined,
-            localSource = FakeLocalSourceForSearch(items),
+            localSource = FakeLocalSourceForSearch(items, sstvIds),
             settingsRepo = FakeSettingsRepoForSearch()
         )
     }
 }
 
-private class FakeLocalSourceForSearch(private val items: List<SatItem>) : ILocalSource {
+private class FakeLocalSourceForSearch(
+    private val items: List<SatItem>,
+    private val sstvIds: List<Int> = emptyList()
+) : ILocalSource {
     override suspend fun getEntriesTotal(): Int = items.size
     override suspend fun getEntriesList(): List<SatItem> = items
     override suspend fun getEntriesWithIds(ids: List<Int>): List<OrbitalObject> = emptyList()
     override suspend fun insertEntries(entries: List<OrbitalData>) = Unit
     override suspend fun deleteEntries() = Unit
-    override suspend fun getIdsWithModes(modes: List<String>): List<Int> = emptyList()
+    override suspend fun getIdsWithModes(modes: List<String>): List<Int> = sstvIds
+    override suspend fun getIdsWithModesAndUplink(modes: List<String>): List<Int> = sstvIds
+    override suspend fun getIdsWithModesAndAmateur(modes: List<String>): List<Int> = sstvIds
     override suspend fun getRadiosTotal(): Int = 0
     override suspend fun getRadiosWithId(id: Int): List<SatRadio> = emptyList()
     override suspend fun insertRadios(radios: List<SatRadio>, isCustom: Boolean) = Unit
@@ -137,6 +296,7 @@ private class FakeLocalSourceForSearch(private val items: List<SatItem>) : ILoca
 }
 
 private class FakeSettingsRepoForSearch : ISettingsRepo {
+    private val typeIds = mutableMapOf<String, List<Int>>()
     override val appVersionName: String = "test"
     override val selectedIds: StateFlow<List<Int>> = MutableStateFlow(emptyList())
     override val selectedTypes: StateFlow<List<String>> = MutableStateFlow(emptyList())
@@ -172,8 +332,12 @@ private class FakeSettingsRepoForSearch : ISettingsRepo {
     override fun setStationPosition(latitude: Double, longitude: Double, altitude: Double): Boolean = true
     override fun setStationPosition(): Boolean = true
     override fun setStationPosition(locator: String): Boolean = true
-    override fun getSatelliteTypesIds(types: List<String>): List<Int> = emptyList()
-    override fun setSatelliteTypeIds(type: String, ids: List<Int>) = Unit
+    override fun getSatelliteTypesIds(types: List<String>): List<Int> =
+        types.flatMap { typeIds[it].orEmpty() }.distinct()
+
+    override fun setSatelliteTypeIds(type: String, ids: List<Int>) {
+        typeIds[type] = ids
+    }
     override fun updateDatabaseState(state: DatabaseState) = Unit
     override fun updateRCSettings(settings: RCSettings) = Unit
     override fun updateOtherSettings(transform: (OtherSettings) -> OtherSettings) = Unit

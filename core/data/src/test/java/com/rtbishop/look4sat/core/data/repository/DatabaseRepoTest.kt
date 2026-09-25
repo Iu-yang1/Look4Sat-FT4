@@ -158,6 +158,29 @@ class DatabaseRepoTest {
     }
 
     @Test
+    fun `remote update persists All source type ids`() = runTest(dispatcher) {
+        // Regression: "All" (CelesTrak active) is a real TLE source type whose
+        // ids must be persisted on sync — the old `if (type == "All") return`
+        // silently dropped them, making the "All" filter resolve to nothing.
+        val allUrl = Sources.satelliteDataUrls.getValue("All")
+        val localSource = FakeLocalSource()
+        val remoteSource = FakeRemoteSource().apply {
+            networkStreams[allUrl] = { validCsvStream() }
+        }
+        val settingsRepo = FakeSettingsRepo(
+            dataSources = DataSourcesSettings(
+                satelliteUrls = listOf(allUrl),
+                transceiversUrls = emptyList()
+            )
+        )
+        val repository = DatabaseRepo(dispatcher, dataParser, localSource, remoteSource, settingsRepo)
+
+        repository.updateFromRemote()
+
+        assertEquals(listOf(25544), settingsRepo.satelliteTypeIdsByType["All"])
+    }
+
+    @Test
     fun `radios only update preserves ephemeris timestamp and publishes new content version`() = runTest(dispatcher) {
         val radioUrl = "https://example.com/transmitters.json"
         val localSource = FakeLocalSource()
@@ -226,7 +249,8 @@ private class FakeLocalSource : ILocalSource {
 
     override suspend fun getEntriesTotal(): Int = insertedEntries.size
 
-    override suspend fun getEntriesList(): List<SatItem> = emptyList()
+    override suspend fun getEntriesList(): List<SatItem> =
+        insertedEntries.map { SatItem(it.catnum, it.name) }
 
     override suspend fun getEntriesWithIds(ids: List<Int>): List<OrbitalObject> = emptyList()
 
@@ -239,6 +263,8 @@ private class FakeLocalSource : ILocalSource {
     }
 
     override suspend fun getIdsWithModes(modes: List<String>): List<Int> = emptyList()
+    override suspend fun getIdsWithModesAndUplink(modes: List<String>): List<Int> = emptyList()
+    override suspend fun getIdsWithModesAndAmateur(modes: List<String>): List<Int> = emptyList()
 
     override suspend fun getRadiosTotal(): Int = insertedRadios.size
 

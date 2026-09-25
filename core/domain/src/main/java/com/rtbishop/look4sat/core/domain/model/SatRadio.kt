@@ -33,6 +33,10 @@ data class SatRadio(
     @SerialName("uplink_mode") val uplinkMode: String?,
     @SerialName("invert") val isInverted: Boolean,
     @SerialName("norad_cat_id") val catnum: Int?,
+    /** Service class from the transceiver source ("Amateur"/"Unknown" etc.).
+     *  Used by the SSTV virtual filter to tell amateur satellites apart from
+     *  debris / weather birds (TIROS) / launcher stages (Ariane 6 R/B). */
+    @SerialName("service") val service: String? = null,
     /** Set for manually imported transceivers, which remote updates must not replace. */
     val isCustom: Boolean = false
 )

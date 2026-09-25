@@ -42,6 +42,7 @@ import androidx.compose.ui.unit.dp
 import com.rtbishop.look4sat.core.presentation.MainTheme
 import com.rtbishop.look4sat.core.presentation.R
 import com.rtbishop.look4sat.core.presentation.SharedDialog
+import com.rtbishop.look4sat.core.domain.source.Sources
 
 @Preview(showBackground = true)
 @Composable
@@ -54,9 +55,20 @@ private fun MultiTypesDialogPreview() {
 internal fun MultiTypesDialog(
     allTypes: List<String>, types: List<String>, cancel: () -> Unit, accept: (List<String>) -> Unit
 ) {
+    // 虚拟类型(转发器/活动筛选)与普通 TLE 源类型互斥: 勾虚拟类型时取消普通类型,
+    // 勾普通类型时取消虚拟类型. 虚拟类型之间可多选组合.
+    val virtualTypes = Sources.virtualTypeNames
     val selected = remember { mutableStateOf(types.toSet()) }
     val toggle = { type: String ->
-        selected.value = if (type in selected.value) selected.value - type else selected.value + type
+        selected.value = if (type in selected.value) {
+            selected.value - type
+        } else if (type in virtualTypes) {
+            // 勾选虚拟类型: 移除所有普通类型, 保留已勾的虚拟类型.
+            (selected.value.filterTo(mutableSetOf()) { it in virtualTypes }) + type
+        } else {
+            // 勾选普通类型: 移除所有虚拟类型, 保留已勾的普通类型.
+            (selected.value.filterTo(mutableSetOf()) { it !in virtualTypes }) + type
+        }
     }
     val onAccept = { accept(selected.value.toList()) }
     SharedDialog(title = stringResource(R.string.sat_type_title), onCancel = cancel, onAccept = onAccept) {

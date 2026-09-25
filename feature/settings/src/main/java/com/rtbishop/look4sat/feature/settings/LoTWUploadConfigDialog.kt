@@ -9,6 +9,8 @@
  */
 package com.rtbishop.look4sat.feature.settings
 
+import android.net.Uri
+import android.provider.OpenableColumns
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
@@ -39,6 +41,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.rtbishop.look4sat.core.domain.repository.LoTWCertificate
@@ -82,23 +85,23 @@ fun LoTWUploadConfigDialog(
     onSaveStation: (LoTWStation) -> Unit
 ) {
     var password by remember { mutableStateOf("") }
+    var selectedFile by remember { mutableStateOf<Uri?>(null) }
     var grid by remember { mutableStateOf(station?.grid.orEmpty()) }
     var cqZone by remember { mutableStateOf(station?.cqZone.orEmpty()) }
     var ituZone by remember { mutableStateOf(station?.ituZone.orEmpty()) }
     var iota by remember { mutableStateOf(station?.iota.orEmpty()) }
     val context = LocalContext.current
 
+    // Pick the file first, then ask for the password — matches normal usage.
     val filePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri != null && password.isNotBlank()) {
-            val bytes = runCatching {
-                context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
-            }.getOrNull()
-            if (bytes != null && bytes.isNotEmpty()) {
-                onImport(bytes, password.toCharArray())
-                password = ""
-            }
-        }
+        if (uri != null) selectedFile = uri
     }
+
+    fun displayName(uri: Uri): String = runCatching {
+        context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+            if (cursor.moveToFirst()) cursor.getString(0) else null
+        }
+    }.getOrNull() ?: uri.lastPathSegment.orEmpty()
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -113,19 +116,42 @@ fun LoTWUploadConfigDialog(
                 }
                 if (certificate == null) {
                     Text(stringResource(R.string.prefs_lotw_upload_cert_hint), fontSize = 13.sp)
-                    OutlinedTextField(
-                        value = password,
-                        onValueChange = { password = it },
-                        label = { Text(stringResource(R.string.prefs_lotw_upload_password), fontSize = 13.sp) },
-                        singleLine = true,
-                        visualTransformation = PasswordVisualTransformation(),
-                        modifier = Modifier.fillMaxWidth()
-                    )
                     Button(
                         onClick = { filePicker.launch(arrayOf("*/*")) },
-                        enabled = password.isNotBlank() && !busy,
+                        enabled = !busy,
                         modifier = Modifier.fillMaxWidth()
                     ) { Text(stringResource(R.string.prefs_lotw_upload_import), fontSize = 13.sp) }
+                    selectedFile?.let { uri ->
+                        Text(
+                            text = displayName(uri),
+                            fontSize = 12.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        OutlinedTextField(
+                            value = password,
+                            onValueChange = { password = it },
+                            label = { Text(stringResource(R.string.prefs_lotw_upload_password), fontSize = 13.sp) },
+                            singleLine = true,
+                            visualTransformation = PasswordVisualTransformation(),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Button(
+                            onClick = {
+                                val bytes = runCatching {
+                                    context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                                }.getOrNull()
+                                if (bytes != null && bytes.isNotEmpty()) {
+                                    onImport(bytes, password.toCharArray())
+                                    password = ""
+                                    selectedFile = null
+                                }
+                            },
+                            enabled = password.isNotBlank() && !busy,
+                            modifier = Modifier.fillMaxWidth()
+                        ) { Text(stringResource(R.string.prefs_lotw_upload_import_confirm), fontSize = 13.sp) }
+                    }
                 } else {
                     Text(stringResource(R.string.prefs_lotw_upload_cert_info, certificate.callsign, certificate.dxcc, certificate.expires), fontSize = 13.sp)
                     OutlinedButton(onClick = onRemove, enabled = !busy) {

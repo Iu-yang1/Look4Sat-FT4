@@ -202,6 +202,7 @@
     <string name="prefs_lotw_upload_cert_hint">导入你的 TrustedQSL .p12 证书（与 TQSL 同款）用于签名上传通联。密码仅加密保存在手机本地。</string>
     <string name="prefs_lotw_upload_password">证书密码</string>
     <string name="prefs_lotw_upload_import">选择 .p12 文件</string>
+    <string name="prefs_lotw_upload_import_confirm">导入</string>
     <string name="prefs_lotw_upload_cert_info">%1$s · DXCC %2$d · 有效期至 %3$s</string>
     <string name="prefs_lotw_upload_remove">移除证书</string>
     <string name="prefs_lotw_upload_station_title">台址</string>

@@ -68,6 +68,13 @@ data class SettingsState(
     val lotwError: LoTWError? = null,
     /** Epoch ms of the last successful LoTW sync (0 = never) — shown like the ephemeris update time. */
     val lotwLastSyncEpochMs: Long = 0L,
+    /** Logbook (QSO records + LoTW confirmations), newest first. */
+    val logbookRecords: List<com.rtbishop.look4sat.core.domain.logbook.QsoRecord> = emptyList(),
+    /** Imported LoTW upload certificate (null when none). */
+    val lotwCertificate: com.rtbishop.look4sat.core.domain.repository.LoTWCertificate? = null,
+    /** LoTW upload station location (null when unset). */
+    val lotwStation: com.rtbishop.look4sat.core.domain.repository.LoTWStation? = null,
+    val lotwUploadBusy: Boolean = false,
     /** 指南针校准精度等级 (校准对话框进度条). */
     val compassAccuracy: CompassAccuracy = CompassAccuracy.UNRELIABLE,
     /** 校正后航向(度, 含磁偏角+手动偏置), 校准对话框实时显示. */
@@ -129,6 +136,16 @@ sealed interface SettingsAction {
     ) : SettingsAction
     /** Abort an in-flight LoTW sync (wrong button / changed mind). */
     data object CancelLoTWSync : SettingsAction
+
+    // Logbook (QSO records + LoTW confirmations)
+    data object RefreshLogbook : SettingsAction
+    data class DeleteLogbookRecord(val id: Long) : SettingsAction
+
+    // LoTW upload configuration (certificate + station)
+    data object LoadLoTWUploadStatus : SettingsAction
+    data class ImportLoTWCertificate(val bytes: ByteArray, val password: CharArray) : SettingsAction
+    data object RemoveLoTWCertificate : SettingsAction
+    data class SaveLoTWStation(val station: com.rtbishop.look4sat.core.domain.repository.LoTWStation) : SettingsAction
 
     // Update checker
     data object CheckForUpdate : SettingsAction

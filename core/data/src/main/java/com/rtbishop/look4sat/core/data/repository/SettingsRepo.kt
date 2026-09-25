@@ -877,6 +877,31 @@ class SettingsRepo(
     }
     //endregion
 
+    //region # Per-satellite logbook mode preset settings
+    private val keySatelliteModes = "satelliteModes"
+
+    override fun getSatelliteMode(catnum: Int): String {
+        val json = preferences.getString(keySatelliteModes, "{}") ?: "{}"
+        return try {
+            JSONObject(json).optString(catnum.toString(), "")
+        } catch (_: Exception) {
+            ""
+        }
+    }
+
+    override fun setSatelliteMode(catnum: Int, mode: String) {
+        val json = preferences.getString(keySatelliteModes, "{}") ?: "{}"
+        val updated = try {
+            val obj = JSONObject(json)
+            if (mode.isBlank()) obj.remove(catnum.toString()) else obj.put(catnum.toString(), mode.uppercase())
+            obj.toString()
+        } catch (_: Exception) {
+            if (mode.isBlank()) "{}" else """{"$catnum": "${mode.uppercase()}"}"""
+        }
+        preferences.edit { putString(keySatelliteModes, updated) }
+    }
+    //endregion
+
     //region # AMSAT status report settings
     private val keyAmSatCallsign = "amSatCallsign"
 

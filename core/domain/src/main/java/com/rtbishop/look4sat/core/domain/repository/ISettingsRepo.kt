@@ -89,6 +89,12 @@ interface ISettingsRepo {
     fun setSatelliteOffset(catnum: Int, offset: String)
     //endregion
 
+    //region # Per-satellite logbook mode preset settings
+    /** Last selected logbook mode (CW/SSB/FT4) for a satellite; empty when unset. */
+    fun getSatelliteMode(catnum: Int): String
+    fun setSatelliteMode(catnum: Int, mode: String)
+    //endregion
+
     //region # AMSAT status report settings
     fun getAmSatCallsign(): String
     fun setAmSatCallsign(callsign: String)

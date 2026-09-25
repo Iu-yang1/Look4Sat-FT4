@@ -191,6 +191,24 @@
     <string name="lotw_sync_progress_qso">本次同步 %1$d 条 QSO，预计还需 %2$d 秒</string>
     <string name="prefs_locator_text">使用梅登黑德网格设置站点位置</string>
 
+    <string name="prefs_logbook_title">日志本</string>
+    <string name="prefs_logbook_count">%1$d 条记录 — 本地通联与 LoTW 确认</string>
+    <string name="prefs_logbook_empty">暂无记录 — 在雷达页 Log 标签记录通联</string>
+    <string name="prefs_logbook_close">关闭</string>
+    <string name="prefs_lotw_upload_title">LoTW 上传</string>
+    <string name="prefs_lotw_upload_configured">证书已导入 · 台址网格 %1$s</string>
+    <string name="prefs_lotw_upload_not_configured">未配置 — 导入 TrustedQSL 证书后即可上传通联</string>
+    <string name="prefs_lotw_upload_busy">处理中…</string>
+    <string name="prefs_lotw_upload_cert_hint">导入你的 TrustedQSL .p12 证书（与 TQSL 同款）用于签名上传通联。密码仅加密保存在手机本地。</string>
+    <string name="prefs_lotw_upload_password">证书密码</string>
+    <string name="prefs_lotw_upload_import">选择 .p12 文件</string>
+    <string name="prefs_lotw_upload_cert_info">%1$s · DXCC %2$d · 有效期至 %3$s</string>
+    <string name="prefs_lotw_upload_remove">移除证书</string>
+    <string name="prefs_lotw_upload_station_title">台址</string>
+    <string name="prefs_lotw_upload_grid">网格（逗号分隔，可多格）</string>
+    <string name="prefs_lotw_upload_save">保存</string>
+    <string name="prefs_lotw_upload_close">关闭</string>
+
     <string name="prefs_data_title">卫星数据更新</string>
     <string name="prefs_data_entries">卫星：%s</string>
     <string name="prefs_data_radios">收发器：%s</string>

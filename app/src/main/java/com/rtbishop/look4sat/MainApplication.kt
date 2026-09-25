@@ -26,6 +26,7 @@ import com.rtbishop.look4sat.core.domain.repository.IContainerProvider
 import com.rtbishop.look4sat.core.domain.repository.IMainContainer
 import com.rtbishop.look4sat.core.domain.repository.LoTWSyncMode
 import com.rtbishop.look4sat.core.domain.repository.LoTWResult
+import com.rtbishop.look4sat.core.domain.logbook.toConfirmedRecord
 import com.rtbishop.look4sat.core.domain.repository.applyLoTWGridResult
 import com.rtbishop.look4sat.core.domain.repository.lotwCursorApi
 import com.rtbishop.look4sat.core.domain.repository.lotwSyncToday
@@ -116,6 +117,11 @@ class MainApplication : Application(), IContainerProvider {
         val result = container.lotwRepo.fetchConfirmedGridQsos(callsign, lotwSettings.password, since)
         if (result is LoTWResult.Success) {
             val count = applyLoTWGridResult(settingsRepo, result, mode, callsign, timeNow)
+            // Feed the logbook so confirmations appear and local uploads get matched.
+            runCatching {
+                val confirmed = result.qsos.values.flatten().map { it.toConfirmedRecord(callsign) }
+                container.qsoRepository.mergeLoTW(confirmed)
+            }
             println("Periodic LoTW grid sync finished: $count worked grids")
         } else {
             println("Periodic LoTW grid sync skipped (${result::class.simpleName})")

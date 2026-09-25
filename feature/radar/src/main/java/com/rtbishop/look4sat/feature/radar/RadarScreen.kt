@@ -83,6 +83,7 @@ import kotlin.math.PI
 private enum class RadarPage(val title: String) {
     Transceivers("Transceivers"),
     Calculator("Calculator"),
+    Log("Log"),
     Sstv("SSTV")
 }
 
@@ -91,6 +92,7 @@ fun RadarDestination(navigateUp: () -> Unit) {
     val context = LocalContext.current
     val container = (context.applicationContext as IContainerProvider).getMainContainer()
     val viewModel: RadarViewModel = viewModel(factory = RadarViewModel.factory(container))
+    val logViewModel: LogViewModel = viewModel(factory = LogViewModel.factory(container))
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val mutualData by container.mutualPassData.collectAsStateWithLifecycle()
     val navigateUpAndClearMutual = {
@@ -127,7 +129,7 @@ fun RadarDestination(navigateUp: () -> Unit) {
         viewModel.onAction(RadarAction.SstvPermissionResult(granted))
         viewModel.onAction(RadarAction.CwPermissionResult(granted))
     }
-    RadarScreen(uiState, viewModel::onAction, navigateUpAndClearMutual, mutualData, requestMicPermission = {
+    RadarScreen(uiState, viewModel::onAction, navigateUpAndClearMutual, mutualData, logViewModel, requestMicPermission = {
         permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
     })
 }
@@ -138,6 +140,7 @@ private fun RadarScreen(
     onAction: (RadarAction) -> Unit,
     navigateUp: () -> Unit,
     mutualData: MutualPassData,
+    logViewModel: LogViewModel,
     requestMicPermission: () -> Unit
 ) {
     val upcomingPass = uiState.currentPass ?: getDefaultPass()
@@ -194,11 +197,11 @@ private fun RadarScreen(
         }
         if (isVertical) {
             RadarCard(uiState, trackB, trackBPosition, Modifier.weight(1f))
-            PagerCard(uiState, onAction, requestMicPermission, Modifier.weight(1f))
+            PagerCard(uiState, onAction, logViewModel, requestMicPermission, Modifier.weight(1f))
         } else {
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 RadarCard(uiState, trackB, trackBPosition, Modifier.weight(1f))
-                PagerCard(uiState, onAction, requestMicPermission, Modifier.weight(1f))
+                PagerCard(uiState, onAction, logViewModel, requestMicPermission, Modifier.weight(1f))
             }
         }
     }
@@ -208,6 +211,7 @@ private fun RadarScreen(
 private fun PagerCard(
     uiState: RadarState,
     onAction: (RadarAction) -> Unit,
+    logViewModel: LogViewModel,
     requestMicPermission: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -218,6 +222,7 @@ private fun PagerCard(
         buildList {
             add(RadarPage.Transceivers)
             if (hasCalculatorPage) add(RadarPage.Calculator)
+            add(RadarPage.Log)
             add(RadarPage.Sstv)
         }
     }
@@ -260,6 +265,10 @@ private fun PagerCard(
                         calculatorOffsetKHz = uiState.calculatorOffsetKHz,
                         onAction = onAction,
                         requestMicPermission = requestMicPermission
+                    )
+                    RadarPage.Log -> LogPage(
+                        uiState = uiState,
+                        logViewModel = logViewModel
                     )
                     RadarPage.Sstv -> SstvPage(
                         sstv = uiState.sstv,

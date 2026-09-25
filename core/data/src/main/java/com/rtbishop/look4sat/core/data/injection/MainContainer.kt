@@ -26,13 +26,16 @@ import androidx.room.Room
 import com.rtbishop.look4sat.core.data.database.Look4SatDb
 import com.rtbishop.look4sat.core.data.database.MIGRATION_1_2
 import com.rtbishop.look4sat.core.data.database.MIGRATION_2_3
+import com.rtbishop.look4sat.core.data.database.QsoDatabase
 import com.rtbishop.look4sat.core.data.framework.BluetoothReporter
 import com.rtbishop.look4sat.core.data.framework.Ft817Controller
 import com.rtbishop.look4sat.core.data.framework.Ic705Controller
 import com.rtbishop.look4sat.core.data.framework.NetworkReporter
 import com.rtbishop.look4sat.core.data.framework.RadioTrackingService
+import com.rtbishop.look4sat.core.data.lotw.LoTWUploadRepository
 import com.rtbishop.look4sat.core.data.repository.AmSatRepository
 import com.rtbishop.look4sat.core.data.repository.DatabaseRepo
+import com.rtbishop.look4sat.core.data.repository.QsoRepository
 import com.rtbishop.look4sat.core.data.repository.SatelliteRepo
 import com.rtbishop.look4sat.core.data.repository.SelectionRepo
 import com.rtbishop.look4sat.core.data.repository.SensorsRepo
@@ -46,8 +49,10 @@ import com.rtbishop.look4sat.core.data.usecase.AddToCalendar
 import com.rtbishop.look4sat.core.data.usecase.AudioCapture
 import com.rtbishop.look4sat.core.data.usecase.SaveImage
 import com.rtbishop.look4sat.core.data.usecase.ShowToast
+import com.rtbishop.look4sat.core.domain.logbook.IQsoRepository
 import com.rtbishop.look4sat.core.domain.model.RadioControlSettings
 import com.rtbishop.look4sat.core.domain.repository.IDatabaseRepo
+import com.rtbishop.look4sat.core.domain.repository.ILoTWUploadRepository
 import com.rtbishop.look4sat.core.domain.repository.IMainContainer
 import com.rtbishop.look4sat.core.domain.repository.IRadioController
 import com.rtbishop.look4sat.core.domain.repository.IRadioTrackingService
@@ -90,6 +95,11 @@ class MainContainer(private val context: Context) : IMainContainer {
     override val updateRepo by lazy { UpdateRepository(remoteSource) }
     override val wavelogRepo: IWavelogRepository by lazy { WavelogRepository() }
     override val lotwRepo: ILoTWRepository by lazy { LoTWRepository() }
+    override val qsoRepository: IQsoRepository by lazy {
+        val database = Room.databaseBuilder(context, QsoDatabase::class.java, "Look4SatQsoDB").build()
+        QsoRepository(database.qsoDao(), Dispatchers.IO)
+    }
+    override val lotwUploadRepository: ILoTWUploadRepository by lazy { LoTWUploadRepository(context) }
     override val radioTrackingService: IRadioTrackingService by lazy {
         val manager = context.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
         RadioTrackingService(appScope, manager, satelliteRepo, settingsRepo)

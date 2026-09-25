@@ -222,6 +222,24 @@
     <string name="lotw_sync_progress_qso">Syncing %1$d QSOs, ~%2$d s remaining</string>
     <string name="prefs_locator_text">Set station\'s position using locator</string>
 
+    <string name="prefs_logbook_title">Logbook</string>
+    <string name="prefs_logbook_count">%1$d records — local QSOs and LoTW confirmations</string>
+    <string name="prefs_logbook_empty">No records yet — record QSOs from the Radar Log tab</string>
+    <string name="prefs_logbook_close">Close</string>
+    <string name="prefs_lotw_upload_title">LoTW upload</string>
+    <string name="prefs_lotw_upload_configured">Certificate imported · station grid %1$s</string>
+    <string name="prefs_lotw_upload_not_configured">Not configured — import your TrustedQSL certificate to upload QSOs</string>
+    <string name="prefs_lotw_upload_busy">Working…</string>
+    <string name="prefs_lotw_upload_cert_hint">Import your TrustedQSL .p12 certificate (same one you use in TQSL) to sign and upload QSOs. The password is stored encrypted on this device only.</string>
+    <string name="prefs_lotw_upload_password">Certificate password</string>
+    <string name="prefs_lotw_upload_import">Choose .p12 file</string>
+    <string name="prefs_lotw_upload_cert_info">%1$s · DXCC %2$d · expires %3$s</string>
+    <string name="prefs_lotw_upload_remove">Remove certificate</string>
+    <string name="prefs_lotw_upload_station_title">Station location</string>
+    <string name="prefs_lotw_upload_grid">Grid(s), comma-separated</string>
+    <string name="prefs_lotw_upload_save">Save</string>
+    <string name="prefs_lotw_upload_close">Close</string>
+
     <string name="prefs_data_title">Satellite data</string>
     <string name="prefs_data_entries">Satellites: %s</string>
     <string name="prefs_data_radios">Transceivers: %s</string>

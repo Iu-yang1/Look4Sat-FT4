@@ -108,6 +108,7 @@ sealed interface SettingsAction {
     data class SetCompassOffset(val degrees: Float) : SettingsAction
     data class ToggleLightTheme(val value: Boolean) : SettingsAction
     data class ToggleNightMode(val value: Boolean) : SettingsAction
+    data class UpdateMapSettings(val mapSource: String, val tiandituKey: String) : SettingsAction
 
     // Remote control
     data class UpdateRC(val settings: RCSettings) : SettingsAction

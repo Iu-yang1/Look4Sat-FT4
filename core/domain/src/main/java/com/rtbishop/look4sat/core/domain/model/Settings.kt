@@ -75,9 +75,23 @@ data class OtherSettings(
      *  ephemeris auto-update; only effective after at least one manual sync). */
     val stateOfAutoLotwSync: Boolean = true,
     /** 指南针手动航向偏置(度, -180..180): 雷达方位 = 传感器方位 + 磁偏角 + 该偏置. */
-    val compassOffsetDegrees: Float = 0f
+    val compassOffsetDegrees: Float = 0f,
+    val mapSource: String = MapSource.OSM,
+    val tiandituKey: String = ""
 )
 
+object MapSource {
+    const val OSM = "osm"
+    const val TIANDITU_VECTOR = "tianditu_vector"
+    const val TIANDITU_IMAGE = "tianditu_image"
+    private const val LEGACY_TIANDITU = "tianditu"
+
+    fun normalize(source: String): String = when (source) {
+        OSM, TIANDITU_VECTOR, TIANDITU_IMAGE -> source
+        LEGACY_TIANDITU -> TIANDITU_VECTOR
+        else -> OSM
+    }
+}
 data class DataSourcesSettings(
     val satelliteUrls: List<String>,
     val transceiversUrls: List<String>,

@@ -63,6 +63,8 @@ class MapViewModel(
         MapState(
             isLightUi = settingsRepo.otherSettings.value.stateOfLightTheme,
             isUtc = settingsRepo.otherSettings.value.stateOfUtc,
+            mapSource = settingsRepo.otherSettings.value.mapSource,
+            tiandituKey = settingsRepo.otherSettings.value.tiandituKey,
             orbitalPass = defaultPass
         )
     )
@@ -82,6 +84,8 @@ class MapViewModel(
                 _uiState.update {
                     it.copy(
                         isUtc = settings.stateOfUtc,
+                        mapSource = settings.mapSource,
+                        tiandituKey = settings.tiandituKey,
                         isGridMode = settings.stateOfMapGrid,
                         showFirstCallLabels = settings.stateOfMapFirstCall
                     )

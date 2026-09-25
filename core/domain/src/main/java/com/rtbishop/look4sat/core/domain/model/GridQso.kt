@@ -49,8 +49,27 @@ data class GridQso(
     val country: String? = null,
     val cqz: Int? = null,
     val state: String? = null,
-    /** 4-char grid the station itself operated from (ADIF MY_GRIDSQUARE). */
-    val myGrid: String? = null
+    /** 4-char grid the station itself operated from (ADIF MY_GRIDSQUARE).
+     *  Kept as the first entry of [myGrids] for backward compatibility with
+     *  consumers that predate multi-grid station locations. */
+    val myGrid: String? = null,
+    /** Every 4-char grid the station operated from for this QSO — ADIF
+     *  <MY_GRIDSQUARE> plus every field of <MY_VUCC_GRIDS> (a comma-separated
+     *  list LoTW emits when one station location roams across several grid
+     *  squares; MY_GRIDSQUARE may be absent on those records). A station
+     *  location (台址) can legitimately span multiple grids, and the map's
+     *  stripes and the operated-grid selector must show all of them. */
+    val myGrids: Set<String> = emptySet(),
+    /** Callsign of the station location this QSO was logged under (ADIF
+     *  <STATION_CALLSIGN>; e.g. "BH6RJD", "BH6RJD/P"). NOT the 台址 identity
+     *  on its own — one callsign can have several station locations. */
+    val myCallsign: String? = null,
+    /** Stable key of the station location (台址) this QSO was logged under,
+     *  derived from the MY_* station fields (STATION_CALLSIGN + MY_DXCC +
+     *  MY_STATE + MY_CQ_ZONE + MY_ITU_ZONE + MY_IOTA + MY_COUNTRY), so the
+     *  operated-grid selector can group QSOs per 台址 and show each 台址 with
+     *  its full grid set. Null for data synced before this field existed. */
+    val stationKey: String? = null
 ) {
     /** Short uplink/downlink band label ("U/V", "V/A"), or "" when unknown. */
     val bandLabel: String

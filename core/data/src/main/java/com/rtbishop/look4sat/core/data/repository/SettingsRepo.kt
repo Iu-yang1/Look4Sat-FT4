@@ -210,7 +210,20 @@ class SettingsRepo(
                         cqz = o.optInt("cq", 0).takeIf { it > 0 },
                         state = o.optString("st").ifBlank { null },
                         // Own-grid field: absent in pre-myGrid data -> null.
-                        myGrid = o.optString("mg").ifBlank { null }
+                        myGrid = o.optString("mg").ifBlank { null },
+                        // Multi-grid 台址 fields (v4.4.7-ba7opf.16+): "mgs" is
+                        // the full grid set (MY_GRIDSQUARE + MY_VUCC_GRIDS);
+                        // pre-multi-grid data has only "mg" and falls back to a
+                        // single-element set so every consumer sees myGrids.
+                        myGrids = o.optJSONArray("mgs")?.let { arr ->
+                            (0 until arr.length()).mapNotNull { i ->
+                                arr.optString(i).takeIf { it.isNotBlank() }
+                            }.toSet()
+                        }?.takeIf { it.isNotEmpty() }
+                            ?: o.optString("mg").ifBlank { null }?.let { setOf(it) }
+                            ?: emptySet(),
+                        myCallsign = o.optString("mc").ifBlank { null },
+                        stationKey = o.optString("sk").ifBlank { null }
                     )
                 }
                 if (list.isNotEmpty()) result[grid] = list
@@ -239,6 +252,9 @@ class SettingsRepo(
                         .put("cq", q.cqz ?: 0)
                         .put("st", q.state ?: "")
                         .put("mg", q.myGrid ?: "")
+                        .put("mgs", org.json.JSONArray(q.myGrids.sorted()))
+                        .put("mc", q.myCallsign ?: "")
+                        .put("sk", q.stationKey ?: "")
                 )
             }
             root.put(grid, array)

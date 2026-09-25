@@ -21,15 +21,12 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -46,7 +43,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.rtbishop.look4sat.core.domain.repository.LoTWCertificate
 import com.rtbishop.look4sat.core.domain.repository.LoTWStation
+import com.rtbishop.look4sat.core.presentation.CardButton
 import com.rtbishop.look4sat.core.presentation.R
+import com.rtbishop.look4sat.core.presentation.SharedDialog
 
 @Composable
 fun LoTWUploadCard(
@@ -103,102 +102,102 @@ fun LoTWUploadConfigDialog(
         }
     }.getOrNull() ?: uri.lastPathSegment.orEmpty()
 
-    AlertDialog(
+    SharedDialog(
+        title = stringResource(R.string.prefs_lotw_upload_title),
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.prefs_lotw_upload_title)) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                if (busy) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        CircularProgressIndicator(modifier = Modifier.height(20.dp), strokeWidth = 2.dp)
-                        Text(stringResource(R.string.prefs_lotw_upload_busy), fontSize = 13.sp)
-                    }
-                }
-                if (certificate == null) {
-                    Text(stringResource(R.string.prefs_lotw_upload_cert_hint), fontSize = 13.sp)
-                    Button(
-                        onClick = { filePicker.launch(arrayOf("*/*")) },
-                        enabled = !busy,
-                        modifier = Modifier.fillMaxWidth()
-                    ) { Text(stringResource(R.string.prefs_lotw_upload_import), fontSize = 13.sp) }
-                    selectedFile?.let { uri ->
-                        Text(
-                            text = displayName(uri),
-                            fontSize = 12.sp,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                        OutlinedTextField(
-                            value = password,
-                            onValueChange = { password = it },
-                            label = { Text(stringResource(R.string.prefs_lotw_upload_password), fontSize = 13.sp) },
-                            singleLine = true,
-                            visualTransformation = PasswordVisualTransformation(),
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        Button(
-                            onClick = {
-                                val bytes = runCatching {
-                                    context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
-                                }.getOrNull()
-                                if (bytes != null && bytes.isNotEmpty()) {
-                                    onImport(bytes, password.toCharArray())
-                                    password = ""
-                                    selectedFile = null
-                                }
-                            },
-                            enabled = password.isNotBlank() && !busy,
-                            modifier = Modifier.fillMaxWidth()
-                        ) { Text(stringResource(R.string.prefs_lotw_upload_import_confirm), fontSize = 13.sp) }
-                    }
-                } else {
-                    Text(stringResource(R.string.prefs_lotw_upload_cert_info, certificate.callsign, certificate.dxcc, certificate.expires), fontSize = 13.sp)
-                    OutlinedButton(onClick = onRemove, enabled = !busy) {
-                        Text(stringResource(R.string.prefs_lotw_upload_remove), fontSize = 13.sp)
-                    }
-                }
-                Text(stringResource(R.string.prefs_lotw_upload_station_title), style = MaterialTheme.typography.titleSmall)
-                // Grid field accepts a comma-separated multi-grid set (e.g. "OL62,OL72").
+        onCancel = onDismiss,
+        onAccept = null
+    ) {
+        if (busy) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                CircularProgressIndicator(modifier = Modifier.height(20.dp), strokeWidth = 2.dp)
+                Text(stringResource(R.string.prefs_lotw_upload_busy), fontSize = 13.sp)
+            }
+        }
+        if (certificate == null) {
+            Text(stringResource(R.string.prefs_lotw_upload_cert_hint), fontSize = 13.sp)
+            CardButton(
+                onClick = { filePicker.launch(arrayOf("*/*")) },
+                text = stringResource(R.string.prefs_lotw_upload_import),
+                isEnabled = !busy,
+                modifier = Modifier.fillMaxWidth()
+            )
+            selectedFile?.let { uri ->
+                Text(
+                    text = displayName(uri),
+                    fontSize = 12.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    color = MaterialTheme.colorScheme.primary
+                )
                 OutlinedTextField(
-                    value = grid,
-                    onValueChange = { grid = it.uppercase() },
-                    label = { Text(stringResource(R.string.prefs_lotw_upload_grid), fontSize = 13.sp) },
+                    value = password,
+                    onValueChange = { password = it },
+                    label = { Text(stringResource(R.string.prefs_lotw_upload_password), fontSize = 13.sp) },
                     singleLine = true,
-                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(capitalization = KeyboardCapitalization.Characters),
+                    visualTransformation = PasswordVisualTransformation(),
                     modifier = Modifier.fillMaxWidth()
                 )
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    OutlinedTextField(
-                        value = cqZone,
-                        onValueChange = { cqZone = it },
-                        label = { Text("CQZ", fontSize = 12.sp) },
-                        singleLine = true,
-                        modifier = Modifier.weight(1f)
-                    )
-                    OutlinedTextField(
-                        value = ituZone,
-                        onValueChange = { ituZone = it },
-                        label = { Text("ITUZ", fontSize = 12.sp) },
-                        singleLine = true,
-                        modifier = Modifier.weight(1f)
-                    )
-                    OutlinedTextField(
-                        value = iota,
-                        onValueChange = { iota = it.uppercase() },
-                        label = { Text("IOTA", fontSize = 12.sp) },
-                        singleLine = true,
-                        modifier = Modifier.weight(1f)
-                    )
-                }
+                CardButton(
+                    onClick = {
+                        val bytes = runCatching {
+                            context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                        }.getOrNull()
+                        if (bytes != null && bytes.isNotEmpty()) {
+                            onImport(bytes, password.toCharArray())
+                            password = ""
+                            selectedFile = null
+                        }
+                    },
+                    text = stringResource(R.string.prefs_lotw_upload_import_confirm),
+                    isEnabled = password.isNotBlank() && !busy,
+                    modifier = Modifier.fillMaxWidth()
+                )
             }
-        },
-        confirmButton = {
-            TextButton(
-                onClick = { onSaveStation(LoTWStation(grid, cqZone, ituZone, "", "", iota)) },
-                enabled = grid.isNotBlank() && !busy
-            ) { Text(stringResource(R.string.prefs_lotw_upload_save)) }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.prefs_lotw_upload_close)) } }
-    )
+        } else {
+            Text(stringResource(R.string.prefs_lotw_upload_cert_info, certificate.callsign, certificate.dxcc, certificate.expires), fontSize = 13.sp)
+            OutlinedButton(onClick = onRemove, enabled = !busy) {
+                Text(stringResource(R.string.prefs_lotw_upload_remove), fontSize = 13.sp)
+            }
+        }
+        Text(stringResource(R.string.prefs_lotw_upload_station_title), style = MaterialTheme.typography.titleSmall)
+        // Grid field accepts a comma-separated multi-grid set (e.g. "OL62,OL72").
+        OutlinedTextField(
+            value = grid,
+            onValueChange = { grid = it.uppercase() },
+            label = { Text(stringResource(R.string.prefs_lotw_upload_grid), fontSize = 13.sp) },
+            singleLine = true,
+            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(capitalization = KeyboardCapitalization.Characters),
+            modifier = Modifier.fillMaxWidth()
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            OutlinedTextField(
+                value = cqZone,
+                onValueChange = { cqZone = it },
+                label = { Text("CQZ", fontSize = 12.sp) },
+                singleLine = true,
+                modifier = Modifier.weight(1f)
+            )
+            OutlinedTextField(
+                value = ituZone,
+                onValueChange = { ituZone = it },
+                label = { Text("ITUZ", fontSize = 12.sp) },
+                singleLine = true,
+                modifier = Modifier.weight(1f)
+            )
+            OutlinedTextField(
+                value = iota,
+                onValueChange = { iota = it.uppercase() },
+                label = { Text("IOTA", fontSize = 12.sp) },
+                singleLine = true,
+                modifier = Modifier.weight(1f)
+            )
+        }
+        CardButton(
+            onClick = { onSaveStation(LoTWStation(grid, cqZone, ituZone, "", "", iota)) },
+            text = stringResource(R.string.prefs_lotw_upload_save),
+            isEnabled = grid.isNotBlank() && !busy,
+            modifier = Modifier.fillMaxWidth()
+        )
+    }
 }

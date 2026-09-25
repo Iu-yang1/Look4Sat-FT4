@@ -14,6 +14,9 @@ fun GridQso.toConfirmedRecord(accountCallsign: String): QsoRecord = QsoRecord(
     band = bandUp,
     rxBand = bandDown,
     mode = mode,
+    // On satellites, MODE=MFSK means FT4 (ADIF pairing); keep the sub-mode so
+    // confirmations match local FT4 records (mode=MFSK, submode=FT4).
+    submode = if (mode.equals("MFSK", true)) "FT4" else "",
     satelliteName = satName,
     propagationMode = "SAT",
     status = QsoStatus.COMPLETE,

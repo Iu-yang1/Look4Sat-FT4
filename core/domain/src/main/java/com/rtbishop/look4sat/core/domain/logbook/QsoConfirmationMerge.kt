@@ -44,7 +44,12 @@ fun QsoRecord.withConfirmation(confirmed: QsoRecord): QsoRecord = copy(
 )
 
 val QsoRecord.displayMode: String
-    get() = submode.ifBlank { mode }.trim().uppercase(Locale.US)
+    get() {
+        // Satellite FT4 is MODE=MFSK + SUBMODE=FT4; any other mode keeps its own
+        // label even when a stale submode default ("FT4") was persisted.
+        val label = if (mode.equals("MFSK", true) && submode.isNotBlank()) submode else mode
+        return label.trim().uppercase(Locale.US)
+    }
 
 val QsoRecord.isSatellite: Boolean
     get() = propagationMode.equals("SAT", true) || (propagationMode.isBlank() && satelliteName.isNotBlank())

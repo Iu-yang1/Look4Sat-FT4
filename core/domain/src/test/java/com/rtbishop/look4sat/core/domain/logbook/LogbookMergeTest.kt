@@ -123,4 +123,14 @@ class LogbookMergeTest {
         assertEquals("FT4", ft4.displayMode)
         assertEquals("FM", local.displayMode)
     }
+
+    @Test
+    fun displayMode_ignoresStaleSubmodeForOtherModes() {
+        // Regression: records persisted with the old default submode="FT4" must not
+        // show FT4 when the actual mode is FM/CW/SSB.
+        val staleFm = QsoRecord(startUtcMillis = 0, theirCallsign = "x", myCallsign = "y", mode = "FM", submode = "FT4")
+        val staleCw = QsoRecord(startUtcMillis = 0, theirCallsign = "x", myCallsign = "y", mode = "CW", submode = "FT4")
+        assertEquals("FM", staleFm.displayMode)
+        assertEquals("CW", staleCw.displayMode)
+    }
 }

@@ -21,11 +21,14 @@ import com.rtbishop.look4sat.core.domain.predict.GeoPos
 import com.rtbishop.look4sat.core.domain.predict.OrbitalObject
 import com.rtbishop.look4sat.core.domain.predict.OrbitalPass
 import com.rtbishop.look4sat.core.domain.predict.OrbitalPos
+import com.rtbishop.look4sat.core.domain.model.MapSource
 
 data class MapState(
     val mapData: MapData? = null,
     val isLightUi: Boolean = false,
     val isUtc: Boolean = false,
+    val mapSource: String = MapSource.OSM,
+    val tiandituKey: String = "",
     val isGridMode: Boolean = false,
     /** Grid mode: label worked (green) cells with the first callsign worked in
      *  that grid instead of the grid code; non-worked cells get no label. */

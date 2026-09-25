@@ -99,6 +99,7 @@ fun SettingsDestination() {
 @Composable
 private fun SettingsScreen(uiState: SettingsState, onAction: (SettingsAction) -> Unit) {
     var showUpdateChecker by rememberSaveable { mutableStateOf(false) }
+    var showMapSettings by rememberSaveable { mutableStateOf(false) }
     if (showUpdateChecker) {
         UpdateCheckerScreen(
             currentVersion = uiState.appVersionName,
@@ -128,6 +129,17 @@ private fun SettingsScreen(uiState: SettingsState, onAction: (SettingsAction) ->
             pendingCustomSourcesDeny.value = null
         }
     )
+
+    if (showMapSettings) {
+        MapSettingsDialog(
+            settings = uiState.otherSettings,
+            onDismiss = { showMapSettings = false },
+            onSave = { mapSource, tiandituKey ->
+                onAction(SettingsAction.UpdateMapSettings(mapSource, tiandituKey))
+                showMapSettings = false
+            }
+        )
+    }
 
     // Dialogs
     if (dialogs.position) {
@@ -368,6 +380,7 @@ private fun SettingsScreen(uiState: SettingsState, onAction: (SettingsAction) ->
                     onAction = onAction
                 )
             }
+            item { MapSettingsCard(onClick = { showMapSettings = true }) }
             item { CardCredits() }
             item(span = { GridItemSpan(maxLineSpan) }) {
                 CardButton(
@@ -556,6 +569,24 @@ private fun OtherCardPreview() = MainTheme {
         shouldSeeWhatsNew = false
     )
     OtherCard(settings = values, onCompassCalibration = {}, onAction = {})
+}
+
+@Composable
+private fun MapSettingsCard(onClick: () -> Unit) {
+    ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)) {
+            Text(
+                text = stringResource(R.string.prefs_map_title),
+                color = MaterialTheme.colorScheme.primary
+            )
+            Spacer(modifier = Modifier.height(6.dp))
+            CardButton(
+                onClick = onClick,
+                text = stringResource(R.string.prefs_map_configure),
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+    }
 }
 
 @Composable

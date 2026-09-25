@@ -25,6 +25,7 @@ import androidx.core.location.LocationListenerCompat
 import androidx.core.location.LocationManagerCompat
 import com.rtbishop.look4sat.core.domain.model.DataSourcesSettings
 import com.rtbishop.look4sat.core.domain.model.DatabaseState
+import com.rtbishop.look4sat.core.domain.model.MapSource
 import com.rtbishop.look4sat.core.domain.model.OtherSettings
 import com.rtbishop.look4sat.core.domain.model.PassesSettings
 import com.rtbishop.look4sat.core.domain.model.RCSettings
@@ -98,6 +99,8 @@ class SettingsRepo(
     private val keySstvMode = "sstvMode"
     private val keyLowElevation = "lowElevation"
     private val keyHighElevation = "highElevation"
+    private val keyMapSource = "mapSource"
+    private val keyTiandituKey = "tiandituKey"
     private val keyUseCustomTle = "useCustomTle"
     private val keyUseCustomTransceivers = "useCustomTransceivers"
     private val keyTleUrl = "tleUrl"
@@ -107,6 +110,7 @@ class SettingsRepo(
     private val keySatelliteEnabled = "satelliteEnabled"
     private val keyTransceiversEnabled = "transceiversEnabled"
     private val keySatnogsTleSourceMigration = "satnogsTleSourceMigration"
+    private val keyAutoTleSourceMigration = "autoTleSourceMigration"
     private val separatorComma = ","
     private val separatorUrl = "\n"
     private val legacyCelestrakSatnogsUrl =
@@ -613,7 +617,12 @@ class SettingsRepo(
 
     override fun updateOtherSettings(transform: (OtherSettings) -> OtherSettings) {
         _otherSettings.update { current ->
-            val new = transform(current)
+            val new = transform(current).let {
+                it.copy(
+                    mapSource = MapSource.normalize(it.mapSource),
+                    tiandituKey = it.tiandituKey.trim()
+                )
+            }
             preferences.edit {
                 putBoolean(keyStateOfAutoUpdate, new.stateOfAutoUpdate)
                 putBoolean(keyStateOfAutoLotwSync, new.stateOfAutoLotwSync)
@@ -630,6 +639,8 @@ class SettingsRepo(
                 putString(keySstvMode, new.sstvMode)
                 putLong(keyLowElevation, new.lowElevation.toRawBits())
                 putLong(keyHighElevation, new.highElevation.toRawBits())
+                putString(keyMapSource, new.mapSource)
+                putString(keyTiandituKey, new.tiandituKey)
             }
             new
         }
@@ -650,7 +661,9 @@ class SettingsRepo(
         shouldSeeWhatsNew = preferences.getBoolean(keyShouldSeeWhatsNew, true),
         sstvMode = preferences.getString(keySstvMode, null) ?: "Auto",
         lowElevation = Double.fromBits(preferences.getLong(keyLowElevation, 15.0.toRawBits())),
-        highElevation = Double.fromBits(preferences.getLong(keyHighElevation, 45.0.toRawBits()))
+        highElevation = Double.fromBits(preferences.getLong(keyHighElevation, 45.0.toRawBits())),
+        mapSource = MapSource.normalize(preferences.getString(keyMapSource, null).orEmpty()),
+        tiandituKey = preferences.getString(keyTiandituKey, null).orEmpty().trim()
     )
     //endregion
 
@@ -672,6 +685,7 @@ class SettingsRepo(
             putString(keySatelliteEnabled, normalized.satelliteEnabled.joinToString(separatorComma))
             putString(keyTransceiversEnabled, normalized.transceiversEnabled.joinToString(separatorComma))
             putBoolean(keySatnogsTleSourceMigration, true)
+            putBoolean(keyAutoTleSourceMigration, true)
         }
         _dataSourcesSettings.value = normalized
     }
@@ -682,7 +696,7 @@ class SettingsRepo(
             defaultUrls = Sources.satelliteDataUrls.values.filter { it.isNotBlank() },
             legacyEnabledKey = keyUseCustomTle,
             legacyUrlKey = keyTleUrl
-        ).migrateSatnogsTleSource(),
+        ).migrateSatnogsTleSource().migrateAutoTleSources(),
         transceiversUrls = getDataSourceUrls(
             key = keyTransceiversUrls,
             defaultUrls = Sources.transceiversDataUrls.values.filter { it.isNotBlank() },
@@ -739,6 +753,28 @@ class SettingsRepo(
         preferences.edit {
             putString(keySatelliteUrls, migrated.joinToString(separatorUrl))
             putBoolean(keySatnogsTleSourceMigration, true)
+        }
+        return migrated
+    }
+
+    private fun List<String>.migrateAutoTleSources(): List<String> {
+        if (preferences.getBoolean(keyAutoTleSourceMigration, false)) return this
+        val autoTleUrls = listOfNotNull(
+            Sources.satelliteDataUrls["BI4PYM AutoTLE (GitHub)"],
+            Sources.satelliteDataUrls["BI4PYM AutoTLE (Mirror)"]
+        ).filter { it.isNotBlank() }
+        val missingUrls = autoTleUrls.filterNot { containsSourceUrl(it) }
+        if (missingUrls.isEmpty()) {
+            preferences.edit { putBoolean(keyAutoTleSourceMigration, true) }
+            return this
+        }
+
+        val migrated = this + missingUrls
+        val enabled = alignFlags(migrated, readEnabledFlags(keySatelliteEnabled))
+        preferences.edit {
+            putString(keySatelliteUrls, migrated.joinToString(separatorUrl))
+            putString(keySatelliteEnabled, enabled.joinToString(separatorComma))
+            putBoolean(keyAutoTleSourceMigration, true)
         }
         return migrated
     }

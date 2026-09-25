@@ -88,7 +88,7 @@
     <!-- Map screen -->
     <string name="map_prev">Önceki</string>
     <string name="map_next">Sonraki</string>
-    <string name="map_copyright" translatable="false">© OpenStreetMap contributors</string>
+    <string name="map_copyright_osm" translatable="false">© OpenStreetMap contributors</string>
     <string name="map_azimuth">Azimut: %.1f°</string>
     <string name="map_elevation">Yükseklik açısı: %.1f°</string>
     <string name="map_altitude">İrtifa: %.0f km</string>
@@ -209,7 +209,8 @@
         \n• Alexandru Csete (Gpredict)
         \n• Dr T.S. Kelso (Celestrak)
         \n• Libre Space Foundation (SatNOGS)
-        \n• BG7NTA BG5JSU (CW decoding feature)</string>
+        \n• BG7NTA BG5JSU (CW decoding feature)
+        \n• BH2VSQ BG5JSU (TianDiTu rendering support)</string>
     <string name="prefs_outro_license">Bu uygulama herhangi bir garanti sunmaz</string>
 
 </resources>

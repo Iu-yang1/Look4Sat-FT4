@@ -75,6 +75,8 @@ data class SettingsState(
     /** LoTW upload station location (null when unset). */
     val lotwStation: com.rtbishop.look4sat.core.domain.repository.LoTWStation? = null,
     val lotwUploadBusy: Boolean = false,
+    /** Last certificate import outcome; shown inside the upload config dialog. */
+    val lotwUploadError: LoTWUploadError? = null,
     /** 指南针校准精度等级 (校准对话框进度条). */
     val compassAccuracy: CompassAccuracy = CompassAccuracy.UNRELIABLE,
     /** 校正后航向(度, 含磁偏角+手动偏置), 校准对话框实时显示. */
@@ -90,6 +92,8 @@ sealed interface LoTWError {
     data object Timeout : LoTWError
     data class Network(val detail: String) : LoTWError
 }
+
+enum class LoTWUploadError { PASSWORD, INVALID_FILE, EXPIRED, UNKNOWN }
 
 sealed interface SettingsAction {
     // Position

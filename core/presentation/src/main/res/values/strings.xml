@@ -234,6 +234,10 @@
     <string name="prefs_lotw_upload_password">Certificate password</string>
     <string name="prefs_lotw_upload_import">Choose .p12 file</string>
     <string name="prefs_lotw_upload_import_confirm">Import</string>
+    <string name="prefs_lotw_upload_error_password">Incorrect certificate password. Check the password you set when exporting the .p12 from TQSL.</string>
+    <string name="prefs_lotw_upload_error_expired">Certificate is expired or not yet valid.</string>
+    <string name="prefs_lotw_upload_error_invalid">Not a valid LoTW certificate file.</string>
+    <string name="prefs_lotw_upload_error_unknown">Import failed. Try again.</string>
     <string name="prefs_lotw_upload_cert_info">%1$s · DXCC %2$d · expires %3$s</string>
     <string name="prefs_lotw_upload_remove">Remove certificate</string>
     <string name="prefs_lotw_upload_station_title">Station location</string>

@@ -354,12 +354,19 @@ class SettingsViewModel(
 
     private fun importLoTWCertificate(bytes: ByteArray, password: CharArray) {
         viewModelScope.launch {
-            _uiState.update { it.copy(lotwUploadBusy = true) }
+            _uiState.update { it.copy(lotwUploadBusy = true, lotwUploadError = null) }
             try {
                 val cert = lotwUploadRepository.importCertificate(bytes, password)
-                _uiState.update { it.copy(lotwCertificate = cert, lotwUploadBusy = false) }
+                _uiState.update { it.copy(lotwCertificate = cert, lotwUploadBusy = false, lotwUploadError = null) }
+            } catch (e: com.rtbishop.look4sat.core.domain.repository.LoTWOperationException) {
+                val error = when (e.reason) {
+                    com.rtbishop.look4sat.core.domain.repository.LoTWProblem.CERTIFICATE_PASSWORD -> LoTWUploadError.PASSWORD
+                    com.rtbishop.look4sat.core.domain.repository.LoTWProblem.CERTIFICATE_EXPIRED -> LoTWUploadError.EXPIRED
+                    else -> LoTWUploadError.INVALID_FILE
+                }
+                _uiState.update { it.copy(lotwUploadBusy = false, lotwUploadError = error) }
             } catch (_: Exception) {
-                _uiState.update { it.copy(lotwUploadBusy = false) }
+                _uiState.update { it.copy(lotwUploadBusy = false, lotwUploadError = LoTWUploadError.UNKNOWN) }
             }
         }
     }

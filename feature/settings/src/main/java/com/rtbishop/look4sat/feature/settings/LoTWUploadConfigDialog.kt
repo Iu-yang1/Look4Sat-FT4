@@ -78,6 +78,7 @@ fun LoTWUploadConfigDialog(
     certificate: LoTWCertificate?,
     station: LoTWStation?,
     busy: Boolean,
+    error: LoTWUploadError?,
     onDismiss: () -> Unit,
     onImport: (ByteArray, CharArray) -> Unit,
     onRemove: () -> Unit,
@@ -122,6 +123,20 @@ fun LoTWUploadConfigDialog(
                 isEnabled = !busy,
                 modifier = Modifier.fillMaxWidth()
             )
+            error?.let {
+                Text(
+                    text = stringResource(
+                        when (it) {
+                            LoTWUploadError.PASSWORD -> R.string.prefs_lotw_upload_error_password
+                            LoTWUploadError.EXPIRED -> R.string.prefs_lotw_upload_error_expired
+                            LoTWUploadError.INVALID_FILE -> R.string.prefs_lotw_upload_error_invalid
+                            LoTWUploadError.UNKNOWN -> R.string.prefs_lotw_upload_error_unknown
+                        }
+                    ),
+                    color = MaterialTheme.colorScheme.error,
+                    fontSize = 12.sp
+                )
+            }
             selectedFile?.let { uri ->
                 Text(
                     text = displayName(uri),

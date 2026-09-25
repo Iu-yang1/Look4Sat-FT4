@@ -203,6 +203,10 @@
     <string name="prefs_lotw_upload_password">证书密码</string>
     <string name="prefs_lotw_upload_import">选择 .p12 文件</string>
     <string name="prefs_lotw_upload_import_confirm">导入</string>
+    <string name="prefs_lotw_upload_error_password">证书密码错误，请检查 TQSL 导出 .p12 时设置的密码</string>
+    <string name="prefs_lotw_upload_error_expired">证书已过期或尚未生效</string>
+    <string name="prefs_lotw_upload_error_invalid">不是有效的 LoTW 证书文件</string>
+    <string name="prefs_lotw_upload_error_unknown">导入失败，请重试</string>
     <string name="prefs_lotw_upload_cert_info">%1$s · DXCC %2$d · 有效期至 %3$s</string>
     <string name="prefs_lotw_upload_remove">移除证书</string>
     <string name="prefs_lotw_upload_station_title">台址</string>

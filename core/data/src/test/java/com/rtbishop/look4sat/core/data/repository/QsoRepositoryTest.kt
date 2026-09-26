@@ -150,6 +150,12 @@ private class FakeQsoDao : QsoDao {
 
     override suspend fun importRecords(records: List<QsoEntity>): List<Long> = records.map { save(it) }
 
+    override suspend fun markUploaded(ids: List<Long>) {
+        records.value = records.value.map { record ->
+            if (record.id in ids) record.copy(lotwUploaded = true) else record
+        }
+    }
+
     override suspend fun delete(id: Long) {
         records.value = records.value.filterNot { it.id == id }
     }

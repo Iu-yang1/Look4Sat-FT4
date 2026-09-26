@@ -29,6 +29,8 @@ class AdifCodecTest {
             rxFrequencyHz = 435_810_000L,
             band = "2m",
             rxBand = "70cm",
+            mode = "MFSK",
+            submode = "FT4",
             satelliteName = "AO-123",
             transponderName = "U/V",
             satelliteMode = "U/V",

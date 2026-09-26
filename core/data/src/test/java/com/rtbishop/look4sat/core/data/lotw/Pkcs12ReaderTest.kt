@@ -18,7 +18,10 @@
 
 package com.rtbishop.look4sat.core.data.lotw
 
+import com.rtbishop.look4sat.core.domain.repository.LoTWOperationException
+import com.rtbishop.look4sat.core.domain.repository.LoTWProblem
 import java.security.Signature
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertThrows
@@ -27,14 +30,14 @@ import org.junit.Test
 
 /**
  * Verifies the PBES2/AES-256-CBC PKCS12 reader against a fixture generated with
- * `openssl pkcs12 -export -certpbe NONE` — same layout as modern TQSL exports
- * (plain certificate bags + PBES2-shrouded private key), which Android's legacy
- * Bouncy Castle parser cannot read.
+ * `openssl pkcs12 -export -certpbe NONE` (plain certificate bags plus a
+ * PBES2-shrouded private key), which Android's legacy Bouncy Castle parser
+ * cannot read.
  */
 class Pkcs12ReaderTest {
 
-    private fun fixture(): ByteArray =
-        javaClass.classLoader!!.getResourceAsStream("test_pbes2.p12")!!.use { it.readBytes() }
+    private fun fixture(name: String = "test_pbes2.p12"): ByteArray =
+        javaClass.classLoader!!.getResourceAsStream(name)!!.use { it.readBytes() }
 
     @Test
     fun readsPbes2KeyAndCertificate() {
@@ -58,6 +61,16 @@ class Pkcs12ReaderTest {
     }
 
     @Test
+    fun readsEncryptedCertificateSafeContents() {
+        val (key, cert) = Pkcs12Reader.read(
+            fixture("test_pbes2_encrypted.p12"),
+            "testpass123".toCharArray()
+        )
+        assertEquals("RSA", key.algorithm)
+        assertEquals("RSA", cert.publicKey.algorithm)
+    }
+
+    @Test
     fun wrongPasswordThrows() {
         assertThrows(Exception::class.java) {
             Pkcs12Reader.read(fixture(), "wrongpass".toCharArray())
@@ -65,9 +78,27 @@ class Pkcs12ReaderTest {
     }
 
     @Test
+    fun wrongPbes2PasswordIsReportedAsPasswordProblem() {
+        val error = assertThrows(LoTWOperationException::class.java) {
+            LoTWKeyMaterial.read(fixture(), "wrongpass".toCharArray(), TEST_NOW)
+        }
+        assertEquals(LoTWProblem.CERTIFICATE_PASSWORD, error.reason)
+    }
+
+    @Test
     fun garbageBytesThrows() {
         assertThrows(Exception::class.java) {
             Pkcs12Reader.read("not a p12 file at all".toByteArray(), "x".toCharArray())
         }
+    }
+
+    @Test
+    fun android7Sha256FallbackMatchesKnownVector() {
+        val expected = "120fb6cffcf8b32c43e7225256c4f837a86548c92ccc35480805987cb70be17b"
+            .chunked(2).map { it.toInt(16).toByte() }.toByteArray()
+        assertArrayEquals(
+            expected,
+            pbkdf2HmacSha256("password".toByteArray(), "salt".toByteArray(), 1, 32)
+        )
     }
 }

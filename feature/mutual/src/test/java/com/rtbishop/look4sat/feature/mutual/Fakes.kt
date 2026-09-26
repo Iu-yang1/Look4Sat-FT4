@@ -114,6 +114,8 @@ class FakeSettingsRepo(
     override fun updateRadioControlSettings(settings: RadioControlSettings) = TODO()
     override fun getSatelliteOffset(catnum: Int): String = ""
     override fun setSatelliteOffset(catnum: Int, offset: String) = TODO()
+    override fun getSatelliteMode(catnum: Int): String = ""
+    override fun setSatelliteMode(catnum: Int, mode: String) = TODO()
     override fun getAmSatCallsign(): String = ""
     override fun setAmSatCallsign(callsign: String) = TODO()
     override fun updateWavelogSettings(settings: WavelogSettings) = TODO()

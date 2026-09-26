@@ -1018,6 +1018,8 @@ private class FakeSettingsRepo(
     private val offsets = mutableMapOf<Int, String>()
     override fun getSatelliteOffset(catnum: Int) = offsets[catnum].orEmpty()
     override fun setSatelliteOffset(catnum: Int, offset: String) { offsets[catnum] = offset }
+    override fun getSatelliteMode(catnum: Int) = ""
+    override fun setSatelliteMode(catnum: Int, mode: String) = Unit
     override fun getAmSatCallsign() = ""
     override fun setAmSatCallsign(callsign: String) = Unit
     override val wavelogSettings = MutableStateFlow(WavelogSettings())

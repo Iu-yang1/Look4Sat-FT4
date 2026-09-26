@@ -12,6 +12,7 @@ import java.util.Collections
 import java.util.Date
 import java.util.Locale
 import java.util.TimeZone
+import javax.crypto.BadPaddingException
 
 internal data class LoTWKeyMaterial(val key: PrivateKey, val certificate: X509Certificate, val info: LoTWCertificate) {
     companion object {
@@ -29,8 +30,10 @@ internal data class LoTWKeyMaterial(val key: PrivateKey, val certificate: X509Ce
                     try {
                         val parsed = Pkcs12Reader.read(bytes, password)
                         parsed.first to parsed.second
+                    } catch (_: BadPaddingException) {
+                        fail(LoTWProblem.CERTIFICATE_PASSWORD)
                     } catch (_: Exception) {
-                        fail(if (password.isNotEmpty()) LoTWProblem.CERTIFICATE_FORMAT else LoTWProblem.CERTIFICATE_PASSWORD)
+                        fail(LoTWProblem.CERTIFICATE_FORMAT)
                     }
                 } else {
                     fail(LoTWProblem.CERTIFICATE_PASSWORD)

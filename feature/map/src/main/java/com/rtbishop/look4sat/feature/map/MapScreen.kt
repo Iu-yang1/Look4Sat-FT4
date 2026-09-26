@@ -706,7 +706,7 @@ private fun WorkedGridCallRow(
                 text = call,
                 style = MaterialTheme.typography.titleMedium,
                 fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
-                color = MaterialTheme.colorScheme.tertiary,
+                color = ComposeColor(0xFFFFE082),
                 maxLines = 1,
                 overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f)

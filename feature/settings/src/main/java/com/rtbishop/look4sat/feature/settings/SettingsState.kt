@@ -74,9 +74,16 @@ data class SettingsState(
     val lotwCertificate: com.rtbishop.look4sat.core.domain.repository.LoTWCertificate? = null,
     /** LoTW upload station location (null when unset). */
     val lotwStation: com.rtbishop.look4sat.core.domain.repository.LoTWStation? = null,
+    /** Region-field options and national zonemap for the certificate's DXCC entity. */
+    val lotwStationMeta: com.rtbishop.look4sat.core.domain.repository.LoTWStationMeta? = null,
     val lotwUploadBusy: Boolean = false,
     /** Last certificate import outcome; shown inside the upload config dialog. */
     val lotwUploadError: LoTWUploadError? = null,
+    /** One-click logbook upload: prepared preview awaiting confirmation. */
+    val logbookPreview: com.rtbishop.look4sat.core.domain.repository.LoTWUploadPreview? = null,
+    val logbookUploadBusy: Boolean = false,
+    /** User-facing upload message shown inside the logbook dialog ("" = none). */
+    val logbookUploadMessage: String = "",
     /** 指南针校准精度等级 (校准对话框进度条). */
     val compassAccuracy: CompassAccuracy = CompassAccuracy.UNRELIABLE,
     /** 校正后航向(度, 含磁偏角+手动偏置), 校准对话框实时显示. */
@@ -93,7 +100,7 @@ sealed interface LoTWError {
     data class Network(val detail: String) : LoTWError
 }
 
-enum class LoTWUploadError { PASSWORD, INVALID_FILE, EXPIRED, UNKNOWN }
+enum class LoTWUploadError { PASSWORD, INVALID_FILE, EXPIRED, FORMAT, UNKNOWN }
 
 sealed interface SettingsAction {
     // Position
@@ -144,6 +151,10 @@ sealed interface SettingsAction {
     // Logbook (QSO records + LoTW confirmations)
     data object RefreshLogbook : SettingsAction
     data class DeleteLogbookRecord(val id: Long) : SettingsAction
+    data object PrepareLogbookUpload : SettingsAction
+    data object ConfirmLogbookUpload : SettingsAction
+    data object DismissLogbookPreview : SettingsAction
+    data object ClearLogbookMessage : SettingsAction
 
     // LoTW upload configuration (certificate + station)
     data object LoadLoTWUploadStatus : SettingsAction

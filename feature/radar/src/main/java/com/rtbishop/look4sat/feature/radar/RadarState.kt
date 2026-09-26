@@ -70,7 +70,11 @@ data class RadarState(
     val mutualMaxElev: Double = 10.0,
     val mutualLabelA: String = "你",
     val mutualLabelB: String = "友台",
-    val calculatorOffsetKHz: String = ""
+    val calculatorOffsetKHz: String = "",
+    /** Current calculator TX/RX frequencies (linear transponder), synced from the
+     *  Calculator tab so the Log tab records at the same frequencies. */
+    val calculatorTxHz: Long? = null,
+    val calculatorRxHz: Long? = null
 )
 
 enum class SstvStatus { Idle, Recording }
@@ -128,4 +132,5 @@ sealed interface RadarAction {
 
     // Calculator actions
     data class ChangeCalculatorOffset(val offsetKHz: String) : RadarAction
+    data class UpdateCalculatorFrequency(val txHz: Long?, val rxHz: Long?) : RadarAction
 }

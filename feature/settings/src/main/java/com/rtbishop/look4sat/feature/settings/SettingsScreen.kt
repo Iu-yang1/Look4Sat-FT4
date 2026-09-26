@@ -264,14 +264,22 @@ private fun SettingsScreen(uiState: SettingsState, onAction: (SettingsAction) ->
     if (dialogs.logbook) {
         LogbookDialog(
             records = uiState.logbookRecords,
+            uploadBusy = uiState.logbookUploadBusy,
+            uploadMessage = uiState.logbookUploadMessage,
+            preview = uiState.logbookPreview,
             onDismiss = { dialogs.logbook = false },
-            onDelete = { onAction(SettingsAction.DeleteLogbookRecord(it)) }
+            onDelete = { onAction(SettingsAction.DeleteLogbookRecord(it)) },
+            onUpload = { onAction(SettingsAction.PrepareLogbookUpload) },
+            onConfirmUpload = { onAction(SettingsAction.ConfirmLogbookUpload) },
+            onDismissPreview = { onAction(SettingsAction.DismissLogbookPreview) },
+            onDismissMessage = { onAction(SettingsAction.ClearLogbookMessage) }
         )
     }
     if (dialogs.lotwUpload) {
         LoTWUploadConfigDialog(
             certificate = uiState.lotwCertificate,
             station = uiState.lotwStation,
+            stationMeta = uiState.lotwStationMeta,
             busy = uiState.lotwUploadBusy,
             error = uiState.lotwUploadError,
             onDismiss = { dialogs.lotwUpload = false },

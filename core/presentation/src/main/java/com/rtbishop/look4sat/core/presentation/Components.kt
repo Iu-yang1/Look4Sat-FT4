@@ -17,9 +17,15 @@
  */
 package com.rtbishop.look4sat.core.presentation
 
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animate
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.MarqueeSpacing
+import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -29,7 +35,9 @@ import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -49,16 +57,28 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.adaptive.currentWindowAdaptiveInfo
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.compositionLocalOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.hideFromAccessibility
@@ -82,6 +102,8 @@ import com.rtbishop.look4sat.core.domain.predict.OrbitalData
 import com.rtbishop.look4sat.core.domain.predict.OrbitalPass
 import java.text.SimpleDateFormat
 import java.util.Date
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
 import java.util.Locale
 import java.util.TimeZone
 
@@ -446,6 +468,134 @@ fun isVerticalLayout(): Boolean = !hasEnoughWidth()
 @Composable
 fun Modifier.infiniteMarquee(): Modifier =
     basicMarquee(iterations = Int.MAX_VALUE, spacing = MarqueeSpacing(16.dp))
+
+/** 共享的滑动行展开状态：同一列表内同时只允许一行展开（短信式联动）。 */
+class SwipeController {
+    var openKey by mutableStateOf<String?>(null)
+        private set
+    fun open(key: String) {
+        openKey = key
+    }
+    fun close() {
+        openKey = null
+    }
+}
+
+@Composable
+fun rememberSwipeController(): SwipeController = remember { SwipeController() }
+
+/** 短信式滑动行：右划露出 [revealButton]（默认红底垃圾桶+文字），点击按钮触发 [revealAction]。
+ *  通过 [controller] 联动：滑开新行时其他行自动收回；点按已展开的行内容也可收回（无涟漪）。 */
+@Composable
+fun SwipeRevealRow(
+    key: String,
+    controller: SwipeController,
+    modifier: Modifier = Modifier,
+    revealWidth: Dp = 64.dp,
+    revealAction: () -> Unit,
+    revealButton: @Composable () -> Unit = {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.error),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                painter = painterResource(R.drawable.ic_delete),
+                contentDescription = null,
+                tint = Color.White,
+                modifier = Modifier.size(24.dp)
+            )
+        }
+    },
+    content: @Composable () -> Unit
+) {
+    val density = LocalDensity.current
+    val revealPx = with(density) { revealWidth.toPx() }
+    var offsetX by remember { mutableFloatStateOf(0f) }
+    var settleJob by remember { mutableStateOf<Job?>(null) }
+    val scope = rememberCoroutineScope()
+    val haptics = LocalHapticFeedback.current
+    val isOpen = controller.openKey == key
+
+    fun settle(target: Float) {
+        settleJob?.cancel()
+        settleJob = scope.launch {
+            animate(offsetX, target, animationSpec = tween(durationMillis = 200, easing = FastOutSlowInEasing)) { value, _ ->
+                offsetX = value
+            }
+        }
+    }
+
+    // 另一行展开（或全部收回）时，本行随之收回。
+    LaunchedEffect(controller.openKey) {
+        if (!isOpen && offsetX < 0f) settle(0f)
+    }
+
+    Box(modifier.fillMaxWidth().clipToBounds()) {
+        // 背景删除按钮：初始位于内容右侧屏幕外，与内容同步平移（跟手滑入）。
+        // 父 Box clipToBounds 裁剪容器外部分——即便外层 item 带 padding、按钮
+        // 左缘落在容器外的屏幕内，也因裁剪而不可见、不可点。
+        Box(
+            modifier = Modifier
+                .align(Alignment.CenterEnd)
+                .fillMaxHeight()
+                .width(revealWidth)
+                .offset(x = revealWidth)
+                .graphicsLayer { translationX = offsetX }
+                .clickable {
+                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                    controller.close()
+                    settle(0f)
+                    revealAction()
+                }
+        ) { revealButton() }
+        // 前景内容：右划平移露出按钮
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .graphicsLayer { translationX = offsetX }
+                .pointerInput(revealPx) {
+                    detectHorizontalDragGestures(
+                        onDragStart = { settleJob?.cancel() },
+                        onHorizontalDrag = { change, dragAmount ->
+                            change.consume()
+                            offsetX = (offsetX + dragAmount).coerceIn(-revealPx, 0f)
+                        },
+                        onDragEnd = {
+                            if (offsetX < -revealPx / 2) {
+                                controller.open(key)
+                                haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                                settle(-revealPx)
+                            } else {
+                                controller.close()
+                                settle(0f)
+                            }
+                        },
+                        onDragCancel = {
+                            if (offsetX < -revealPx / 2) {
+                                controller.open(key)
+                                settle(-revealPx)
+                            } else {
+                                controller.close()
+                                settle(0f)
+                            }
+                        }
+                    )
+                }
+                // 已展开的行，点按内容直接收回（无涟漪，避免整行出现点击反馈）
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null
+                ) {
+                    if (isOpen) {
+                        controller.close()
+                        settle(0f)
+                    }
+                }
+        ) { content() }
+    }
+}
 
 @Composable
 fun Modifier.layoutPadding(): Modifier {

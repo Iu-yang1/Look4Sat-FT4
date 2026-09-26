@@ -212,6 +212,10 @@ class SettingsViewModel(
             // Logbook
             SettingsAction.RefreshLogbook -> refreshLogbook()
             is SettingsAction.DeleteLogbookRecord -> viewModelScope.launch { qsoRepository.delete(action.id) }
+            SettingsAction.PrepareLogbookUpload -> prepareLogbookUpload()
+            SettingsAction.ConfirmLogbookUpload -> confirmLogbookUpload()
+            SettingsAction.DismissLogbookPreview -> dismissLogbookPreview()
+            SettingsAction.ClearLogbookMessage -> clearLogbookMessage()
             // LoTW upload configuration
             SettingsAction.LoadLoTWUploadStatus -> loadLoTWUploadStatus()
             is SettingsAction.ImportLoTWCertificate -> importLoTWCertificate(action.bytes, action.password)
@@ -344,11 +348,65 @@ class SettingsViewModel(
         }
     }
 
+    // Record ids submitted in the most recent logbook prepare → upload cycle, so a
+    // successful POST can mark them "uploaded" (distinct from "confirmed").
+    private var lastLogbookUploadIds: List<Long> = emptyList()
+
+    private fun prepareLogbookUpload() {
+        if (_uiState.value.logbookUploadBusy) return
+        viewModelScope.launch {
+            _uiState.update { it.copy(logbookUploadBusy = true, logbookUploadMessage = "") }
+            try {
+                val all = qsoRepository.records.first()
+                // Only local (non-confirmed) records are candidates for upload;
+                // LoTW-imported confirmations are the feedback side.
+                val pending = all.filter { !it.lotwConfirmed && it.status == com.rtbishop.look4sat.core.domain.logbook.QsoStatus.COMPLETE }
+                val audit = lotwUploadRepository.audit(pending)
+                if (audit.pending == 0) {
+                    _uiState.update { it.copy(logbookUploadBusy = false, logbookUploadMessage = "No pending QSOs to upload") }
+                    return@launch
+                }
+                val preview = lotwUploadRepository.prepare(pending, false)
+                lastLogbookUploadIds = pending.map { it.id }
+                _uiState.update { it.copy(logbookUploadBusy = false, logbookPreview = preview) }
+            } catch (e: com.rtbishop.look4sat.core.domain.repository.LoTWOperationException) {
+                _uiState.update { it.copy(logbookUploadBusy = false, logbookUploadMessage = "Upload unavailable: ${e.reason}") }
+            } catch (_: Exception) {
+                _uiState.update { it.copy(logbookUploadBusy = false, logbookUploadMessage = "Upload failed") }
+            }
+        }
+    }
+
+    private fun confirmLogbookUpload() {
+        val preview = _uiState.value.logbookPreview ?: return
+        viewModelScope.launch {
+            _uiState.update { it.copy(logbookUploadBusy = true) }
+            val result = lotwUploadRepository.upload(preview.id)
+            if (result is com.rtbishop.look4sat.core.domain.repository.LoTWUploadResult.Accepted && lastLogbookUploadIds.isNotEmpty()) {
+                qsoRepository.markUploaded(lastLogbookUploadIds)
+                lastLogbookUploadIds = emptyList()
+            }
+            val msg = when (result) {
+                is com.rtbishop.look4sat.core.domain.repository.LoTWUploadResult.Accepted -> "Uploaded ${result.count} QSO(s) — accepted by LoTW"
+                is com.rtbishop.look4sat.core.domain.repository.LoTWUploadResult.Rejected -> "Rejected: ${result.message}"
+                com.rtbishop.look4sat.core.domain.repository.LoTWUploadResult.Unknown -> "Unknown result — will not auto-retry"
+                com.rtbishop.look4sat.core.domain.repository.LoTWUploadResult.ExpiredPreview -> "Preview expired — tap upload again"
+            }
+            _uiState.update { it.copy(logbookUploadBusy = false, logbookPreview = null, logbookUploadMessage = msg) }
+        }
+    }
+
+    private fun dismissLogbookPreview() = _uiState.update { it.copy(logbookPreview = null) }
+
+    private fun clearLogbookMessage() = _uiState.update { it.copy(logbookUploadMessage = "") }
+
     private fun loadLoTWUploadStatus() {
         viewModelScope.launch {
             val cert = lotwUploadRepository.certificate()
             val station = lotwUploadRepository.station()
-            _uiState.update { it.copy(lotwCertificate = cert, lotwStation = station, lotwUploadBusy = false) }
+            // Config parsing failure must never crash the dialog — degrade to no meta.
+            val meta = cert?.let { runCatching { lotwUploadRepository.stationMeta(it.dxcc) }.getOrNull() }
+            _uiState.update { it.copy(lotwCertificate = cert, lotwStation = station, lotwStationMeta = meta, lotwUploadBusy = false) }
         }
     }
 
@@ -362,6 +420,7 @@ class SettingsViewModel(
                 val error = when (e.reason) {
                     com.rtbishop.look4sat.core.domain.repository.LoTWProblem.CERTIFICATE_PASSWORD -> LoTWUploadError.PASSWORD
                     com.rtbishop.look4sat.core.domain.repository.LoTWProblem.CERTIFICATE_EXPIRED -> LoTWUploadError.EXPIRED
+                    com.rtbishop.look4sat.core.domain.repository.LoTWProblem.CERTIFICATE_FORMAT -> LoTWUploadError.FORMAT
                     else -> LoTWUploadError.INVALID_FILE
                 }
                 _uiState.update { it.copy(lotwUploadBusy = false, lotwUploadError = error) }
@@ -374,7 +433,7 @@ class SettingsViewModel(
     private fun removeLoTWCertificate() {
         viewModelScope.launch {
             lotwUploadRepository.removeCertificate()
-            _uiState.update { it.copy(lotwCertificate = null, lotwStation = null) }
+            _uiState.update { it.copy(lotwCertificate = null, lotwStation = null, lotwStationMeta = null) }
         }
     }
 

@@ -20,21 +20,30 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.rtbishop.look4sat.core.domain.logbook.QsoRecord
 import com.rtbishop.look4sat.core.domain.logbook.displayMode
+import com.rtbishop.look4sat.core.domain.logbook.frequencyBand
+import com.rtbishop.look4sat.core.presentation.LocalSpacing
 import com.rtbishop.look4sat.core.presentation.R
 import com.rtbishop.look4sat.core.presentation.SharedDialog
+import com.rtbishop.look4sat.core.presentation.SwipeController
+import com.rtbishop.look4sat.core.presentation.SwipeRevealRow
+import com.rtbishop.look4sat.core.presentation.rememberSwipeController
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -61,56 +70,142 @@ fun LogbookCard(recordCount: Int, showLogbookDialog: () -> Unit) {
 @Composable
 fun LogbookDialog(
     records: List<QsoRecord>,
+    uploadBusy: Boolean,
+    uploadMessage: String,
+    preview: com.rtbishop.look4sat.core.domain.repository.LoTWUploadPreview?,
     onDismiss: () -> Unit,
-    onDelete: (Long) -> Unit
+    onDelete: (Long) -> Unit,
+    onUpload: () -> Unit,
+    onConfirmUpload: () -> Unit,
+    onDismissPreview: () -> Unit,
+    onDismissMessage: () -> Unit
 ) {
+    val swipeController = rememberSwipeController()
     SharedDialog(
         title = stringResource(R.string.prefs_logbook_title),
         onDismissRequest = onDismiss,
         onCancel = onDismiss,
-        onAccept = null
+        onAccept = onUpload,
+        acceptText = stringResource(R.string.prefs_logbook_upload),
+        acceptEnabled = !uploadBusy
     ) {
-        if (records.isEmpty()) {
-            Text(stringResource(R.string.prefs_logbook_empty), fontSize = 14.sp)
-        } else {
-            LazyColumn(
-                modifier = Modifier.fillMaxWidth().heightIn(max = 420.dp),
-                verticalArrangement = Arrangement.spacedBy(2.dp)
-            ) {
-                items(records, key = { it.id }) { record ->
-                    LogbookRow(record, onDelete = { onDelete(record.id) })
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = LocalSpacing.current.large),
+            verticalArrangement = Arrangement.spacedBy(2.dp)
+        ) {
+            if (records.isEmpty()) {
+                Text(stringResource(R.string.prefs_logbook_empty), fontSize = 14.sp)
+            } else {
+                LazyColumn(
+                    modifier = Modifier.fillMaxWidth().heightIn(max = 420.dp),
+                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                ) {
+                    items(records, key = { it.id }) { record ->
+                        LogbookRow(record, swipeController, onDelete = { onDelete(record.id) })
+                    }
                 }
             }
         }
     }
+
+    if (preview != null) {
+        LogbookUploadPreviewDialog(
+            preview = preview,
+            busy = uploadBusy,
+            onConfirm = onConfirmUpload,
+            onDismiss = onDismissPreview
+        )
+    }
+    if (uploadMessage.isNotBlank()) {
+        AlertDialog(
+            onDismissRequest = onDismissMessage,
+            title = { Text("LoTW Upload") },
+            text = { Text(uploadMessage) },
+            confirmButton = {
+                TextButton(onClick = onDismissMessage) { Text("OK") }
+            }
+        )
+    }
 }
 
 @Composable
-private fun LogbookRow(record: QsoRecord, onDelete: () -> Unit) {
+private fun LogbookUploadPreviewDialog(
+    preview: com.rtbishop.look4sat.core.domain.repository.LoTWUploadPreview,
+    busy: Boolean,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.prefs_logbook_upload_title)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text("${preview.callsign}  DXCC ${preview.dxcc}  Grid ${preview.grid}", fontSize = 13.sp)
+                Text(
+                    "${preview.count} QSO(s) · ${preview.firstUtc} – ${preview.lastUtc}",
+                    fontSize = 13.sp
+                )
+                Text(preview.contacts.joinToString("\n") { it }, fontSize = 12.sp, maxLines = 8)
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onConfirm, enabled = !busy) {
+                Text(stringResource(R.string.prefs_logbook_upload_confirm))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.btn_cancel)) }
+        }
+    )
+}
+
+@Composable
+private fun LogbookRow(record: QsoRecord, swipeController: SwipeController, onDelete: () -> Unit) {
     val time = remember(record.startUtcMillis) {
         SimpleDateFormat("MM-dd HH:mm'Z'", Locale.US).apply {
             timeZone = TimeZone.getTimeZone("UTC")
         }.format(Date(record.startUtcMillis))
     }
     val satShort = record.satelliteName.substringBefore('(').trim()
-    Row(
-        modifier = Modifier.fillMaxWidth().clickable { onDelete() }.padding(horizontal = 4.dp, vertical = 2.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
+    val band = record.band.ifBlank { frequencyBand(record.txFrequencyHz) }
+    // 右划露出删除按钮（短信式）；整行点击不再删除。
+    SwipeRevealRow(
+        key = record.id.toString(),
+        controller = swipeController,
+        revealAction = onDelete,
+        modifier = Modifier.fillMaxWidth()
     ) {
-        Column(modifier = Modifier.weight(1f)) {
+        // Row style mirrors the worked-grid QSO details on the map: callsign in
+        // monospace titleMedium, summary line in bodySmall with " · " separators.
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 4.dp, vertical = 8.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    text = record.theirCallsign,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontFamily = FontFamily.Monospace,
+                    color = Color(0xFFFFE082),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f)
+                )
+                if (record.lotwConfirmed) {
+                    Text(text = "QSL", fontSize = 13.sp, color = Color(0xFFFFE082), fontFamily = FontFamily.Monospace)
+                } else if (record.lotwUploaded) {
+                    Text(text = "UP", fontSize = 13.sp, color = Color(0xFFFFE082), fontFamily = FontFamily.Monospace)
+                }
+            }
             Text(
-                text = "$time  ${record.theirCallsign}  ${record.displayMode}",
-                fontSize = 13.sp,
+                text = listOf(satShort, record.displayMode, band, time).filter { it.isNotBlank() }.joinToString(" · "),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
-                overflow = TextOverflow.Ellipsis
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(top = 3.dp)
             )
-            Text(text = satShort, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
         }
-        Text(
-            text = if (record.lotwConfirmed) "✓" else "",
-            fontSize = 14.sp,
-            color = MaterialTheme.colorScheme.primary
-        )
     }
 }

@@ -34,6 +34,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
@@ -44,6 +46,9 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.rtbishop.look4sat.core.domain.logbook.QsoRecord
 import com.rtbishop.look4sat.core.domain.logbook.displayMode
+import com.rtbishop.look4sat.core.presentation.SwipeController
+import com.rtbishop.look4sat.core.presentation.SwipeRevealRow
+import com.rtbishop.look4sat.core.presentation.rememberSwipeController
 import com.rtbishop.look4sat.core.domain.utility.DopplerFrequencyCalculator
 import com.rtbishop.look4sat.core.presentation.EmptyListCard
 
@@ -57,12 +62,15 @@ fun LogPage(
 ) {
     val logUiState by logViewModel.uiState.collectAsStateWithLifecycle()
     val records by logViewModel.records.collectAsStateWithLifecycle(initialValue = emptyList())
+    val swipeController = rememberSwipeController()
 
     val selectedRadio = remember(uiState.transceivers.transmitters, uiState.transceivers.selectedUuid) {
         uiState.transceivers.transmitters.firstOrNull { it.uuid == uiState.transceivers.selectedUuid }
     }
-    val isLinear = selectedRadio != null &&
-        DopplerFrequencyCalculator.isNamedLinearTransponder(selectedRadio)
+    // Linear if the satellite carries ANY named linear transponder — same test
+    // that gates the Calculator tab (RadarScreen), so the mode selector and the
+    // calculator always appear together regardless of which entry is selected.
+    val isLinear = uiState.transceivers.transmitters.any(DopplerFrequencyCalculator::isNamedLinearTransponder)
     val catnum = uiState.currentPass?.catNum ?: selectedRadio?.catnum ?: 0
     val satName = uiState.currentPass?.name?.trim().orEmpty()
 
@@ -70,12 +78,12 @@ fun LogPage(
         if (catnum != 0) logViewModel.selectSatellite(catnum)
     }
 
-    val txHz = remember(selectedRadio) {
+    val txHz = uiState.calculatorTxHz ?: remember(selectedRadio) {
         selectedRadio?.uplinkLow?.let { low ->
             selectedRadio.uplinkHigh?.let { high -> (low + high) / 2 } ?: low
         }
     }
-    val rxHz = remember(selectedRadio) {
+    val rxHz = uiState.calculatorRxHz ?: remember(selectedRadio) {
         selectedRadio?.downlinkLow?.let { low ->
             selectedRadio.downlinkHigh?.let { high -> (low + high) / 2 } ?: low
         }
@@ -127,7 +135,7 @@ fun LogPage(
         } else {
             LazyColumn(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 items(recent, key = { it.id }) { record ->
-                    LogRecordRow(record, onDelete = { logViewModel.delete(record.id) })
+                    LogRecordRow(record, swipeController, onDelete = { logViewModel.delete(record.id) })
                 }
             }
         }
@@ -195,23 +203,41 @@ fun LogPage(
 }
 
 @Composable
-private fun LogRecordRow(record: QsoRecord, onDelete: () -> Unit) {
+private fun LogRecordRow(record: QsoRecord, swipeController: SwipeController, onDelete: () -> Unit) {
     val time = remember(record.startUtcMillis) {
         java.text.SimpleDateFormat("HH:mm'Z'", java.util.Locale.US).apply {
             timeZone = java.util.TimeZone.getTimeZone("UTC")
         }.format(java.util.Date(record.startUtcMillis))
     }
-    Row(
-        modifier = Modifier.fillMaxWidth().clickable { onDelete() }.padding(horizontal = 4.dp, vertical = 2.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
+    // 右划露出删除按钮（短信式）；整行点击不再删除。
+    SwipeRevealRow(
+        key = record.id.toString(),
+        controller = swipeController,
+        revealAction = onDelete,
+        modifier = Modifier.fillMaxWidth()
     ) {
-        Text(
-            text = "$time ${record.theirCallsign}  ${record.displayMode}",
-            fontSize = 14.sp,
-            maxLines = 1
-        )
-        Text(text = if (record.lotwConfirmed) "✓" else "", fontSize = 13.sp, color = MaterialTheme.colorScheme.primary)
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 2.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(text = "$time ", fontSize = 14.sp, maxLines = 1)
+                Text(
+                    text = record.theirCallsign,
+                    fontSize = 14.sp,
+                    fontFamily = FontFamily.Monospace,
+                    color = Color(0xFFFFE082),
+                    maxLines = 1
+                )
+                Text(text = "  ${record.displayMode}", fontSize = 14.sp, maxLines = 1)
+            }
+            when {
+                record.lotwConfirmed -> Text("QSL", fontSize = 12.sp, color = Color(0xFFFFE082), fontFamily = FontFamily.Monospace)
+                record.lotwUploaded -> Text("UP", fontSize = 12.sp, color = Color(0xFFFFE082), fontFamily = FontFamily.Monospace)
+                else -> Text("", fontSize = 12.sp)
+            }
+        }
     }
 }
 

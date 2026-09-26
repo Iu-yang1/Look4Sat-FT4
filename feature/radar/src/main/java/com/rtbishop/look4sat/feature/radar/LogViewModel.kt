@@ -61,6 +61,10 @@ class LogViewModel(
     private val _uiState = MutableStateFlow(LogUiState())
     val uiState: StateFlow<LogUiState> = _uiState
 
+    // Record ids submitted in the most recent prepare → upload cycle, so a
+    // successful POST can mark them "uploaded" (distinct from "confirmed").
+    private var lastUploadedIds: List<Long> = emptyList()
+
     init {
         viewModelScope.launch {
             val cert = lotwUploadRepository.certificate()
@@ -160,6 +164,7 @@ class LogViewModel(
                     return@launch
                 }
                 val preview = lotwUploadRepository.prepare(pending, false)
+                lastUploadedIds = pending.map { it.id }
                 _uiState.update { it.copy(busy = false, preview = preview) }
             } catch (e: LoTWOperationException) {
                 _uiState.update { it.copy(busy = false, message = "Upload unavailable: ${e.reason}") }
@@ -174,6 +179,11 @@ class LogViewModel(
         viewModelScope.launch {
             _uiState.update { it.copy(busy = true) }
             val result = lotwUploadRepository.upload(preview.id)
+            if (result is LoTWUploadResult.Accepted && lastUploadedIds.isNotEmpty()) {
+                // Mark the submitted QSOs as uploaded (distinct from confirmed).
+                qsoRepository.markUploaded(lastUploadedIds)
+                lastUploadedIds = emptyList()
+            }
             val msg = when (result) {
                 is LoTWUploadResult.Accepted -> "Uploaded ${result.count} QSO(s) — accepted by LoTW"
                 is LoTWUploadResult.Rejected -> "Rejected: ${result.message}"

@@ -423,9 +423,9 @@ class SettingsViewModel(
                     com.rtbishop.look4sat.core.domain.repository.LoTWProblem.CERTIFICATE_FORMAT -> LoTWUploadError.FORMAT
                     else -> LoTWUploadError.INVALID_FILE
                 }
-                _uiState.update { it.copy(lotwUploadBusy = false, lotwUploadError = error) }
+                _uiState.update { it.copy(lotwUploadBusy = false, lotwUploadError = error, lotwUploadErrorDetail = e.detail) }
             } catch (_: Exception) {
-                _uiState.update { it.copy(lotwUploadBusy = false, lotwUploadError = LoTWUploadError.UNKNOWN) }
+                _uiState.update { it.copy(lotwUploadBusy = false, lotwUploadError = LoTWUploadError.UNKNOWN, lotwUploadErrorDetail = "") }
             }
         }
     }

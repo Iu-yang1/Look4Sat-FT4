@@ -51,9 +51,15 @@ internal object Pkcs12Reader {
     private val OID_CERT_BAG = byteArrayOf(0x2a, 0x86.toByte(), 0x48, 0x86.toByte(), 0xf7.toByte(), 0x0d, 0x01, 0x0c, 0x0a, 0x01, 0x03)
     private val OID_X509_CERT = byteArrayOf(0x2a, 0x86.toByte(), 0x48, 0x86.toByte(), 0xf7.toByte(), 0x0d, 0x01, 0x09, 0x16, 0x01)
     private val OID_PBES2 = byteArrayOf(0x2a, 0x86.toByte(), 0x48, 0x86.toByte(), 0xf7.toByte(), 0x0d, 0x01, 0x05, 0x0d)
+    private val OID_PBKDF2 = byteArrayOf(0x2a, 0x86.toByte(), 0x48, 0x86.toByte(), 0xf7.toByte(), 0x0d, 0x01, 0x05, 0x0c)
     private val OID_HMAC_SHA1 = byteArrayOf(0x2a, 0x86.toByte(), 0x48, 0x86.toByte(), 0xf7.toByte(), 0x0d, 0x02, 0x07)
+    private val OID_HMAC_SHA256 = byteArrayOf(0x2a, 0x86.toByte(), 0x48, 0x86.toByte(), 0xf7.toByte(), 0x0d, 0x02, 0x09)
+    private val OID_HMAC_SHA384 = byteArrayOf(0x2a, 0x86.toByte(), 0x48, 0x86.toByte(), 0xf7.toByte(), 0x0d, 0x02, 0x0a)
+    private val OID_HMAC_SHA512 = byteArrayOf(0x2a, 0x86.toByte(), 0x48, 0x86.toByte(), 0xf7.toByte(), 0x0d, 0x02, 0x0b)
     private val OID_AES_256_CBC = byteArrayOf(0x60, 0x86.toByte(), 0x48, 0x01, 0x65, 0x03, 0x04, 0x01, 0x2a)
+    private val OID_AES_192_CBC = byteArrayOf(0x60, 0x86.toByte(), 0x48, 0x01, 0x65, 0x03, 0x04, 0x01, 0x16)
     private val OID_AES_128_CBC = byteArrayOf(0x60, 0x86.toByte(), 0x48, 0x01, 0x65, 0x03, 0x04, 0x01, 0x02)
+    private val OID_DES_EDE3_CBC = byteArrayOf(0x2a, 0x86.toByte(), 0x48, 0x86.toByte(), 0xf7.toByte(), 0x0d, 0x03, 0x07)
 
     fun read(bytes: ByteArray, password: CharArray): Pair<PrivateKey, X509Certificate> {
         val pfx = DerReader.read(bytes)
@@ -123,6 +129,11 @@ internal object Pkcs12Reader {
         // PBES2-params ::= SEQUENCE { kdf AlgorithmIdentifier, enc AlgorithmIdentifier }
         val pbes2 = DerReader.children(algParts[1].content)
         val kdf = DerReader.children(pbes2[0].content)
+        // KDF must be PBKDF2 (OpenSSL 3 also supports scrypt — not available on the
+        // platform JCE, so report it by name instead of a generic failure).
+        if (kdf.isEmpty() || !kdf[0].content.contentEquals(OID_PBKDF2)) {
+            error(oidName(kdf.firstOrNull()?.content))
+        }
         val kdfParams = DerReader.children(kdf[1].content)
         val salt = kdfParams[0].content
         val iterations = readInt(kdfParams[1].content)
@@ -130,7 +141,7 @@ internal object Pkcs12Reader {
         // Optional PBKDF2-params elements: keyLength (INTEGER) and/or prf (SEQUENCE),
         // in either order. Distinguish by DER tag — mistaking prf for keyLength yields
         // an absurd key size and a PBKDF2 that runs for hours.
-        var keyBits = 256
+        var keyBits = -1 // -1 = not written; defaulted below from the cipher
         var prfName = "PBKDF2WithHmacSHA1"
         for (i in 2 until kdfParams.size) {
             val param = kdfParams[i]
@@ -138,24 +149,59 @@ internal object Pkcs12Reader {
                 0x02 -> keyBits = readInt(param.content) * 8
                 0x30 -> {
                     val prf = DerReader.children(param.content)
-                    prfName = if (prf.isNotEmpty() && prf[0].content.contentEquals(OID_HMAC_SHA1))
-                        "PBKDF2WithHmacSHA1" else "PBKDF2WithHmacSHA256"
+                    prfName = when {
+                        prf.isEmpty() || prf[0].content.contentEquals(OID_HMAC_SHA1) -> "PBKDF2WithHmacSHA1"
+                        prf[0].content.contentEquals(OID_HMAC_SHA256) -> "PBKDF2WithHmacSHA256"
+                        prf[0].content.contentEquals(OID_HMAC_SHA384) -> "PBKDF2WithHmacSHA384"
+                        prf[0].content.contentEquals(OID_HMAC_SHA512) -> "PBKDF2WithHmacSHA512"
+                        else -> error(oidName(prf[0].content))
+                    }
                 }
             }
         }
-        require(keyBits in 128..512) { "implausible PBKDF2 key size" }
         val enc = DerReader.children(pbes2[1].content)
         val encOid = enc[0].content
         val iv = enc[1].content
-        require(encOid.contentEquals(OID_AES_256_CBC) || encOid.contentEquals(OID_AES_128_CBC)) { "unsupported cipher" }
+        val (cipherName, aesKeyBits) = when {
+            encOid.contentEquals(OID_AES_256_CBC) -> "AES/CBC/PKCS5Padding" to 256
+            encOid.contentEquals(OID_AES_192_CBC) -> "AES/CBC/PKCS5Padding" to 192
+            encOid.contentEquals(OID_AES_128_CBC) -> "AES/CBC/PKCS5Padding" to 128
+            encOid.contentEquals(OID_DES_EDE3_CBC) -> "DESede/CBC/PKCS5Padding" to 192
+            else -> error(oidName(encOid))
+        }
+        val finalKeyBits = if (keyBits > 0) keyBits else aesKeyBits
+        require(finalKeyBits in 128..512) { "implausible PBKDF2 key size" }
 
-        val spec = PBEKeySpec(password, salt, iterations, keyBits)
-        val secretKey = SecretKeyFactory.getInstance(prfName).generateSecret(spec)
-        // PBKDF2 factories return a PBE key; wrap the raw bytes as an AES key.
-        val aesKey = SecretKeySpec(secretKey.encoded, "AES")
-        val cipher = Cipher.getInstance("AES/CBC/PKCS5Padding")
-        cipher.init(Cipher.DECRYPT_MODE, aesKey, IvParameterSpec(iv))
+        val spec = PBEKeySpec(password, salt, iterations, finalKeyBits)
+        val secretKey = try {
+            SecretKeyFactory.getInstance(prfName).generateSecret(spec)
+        } catch (e: java.security.NoSuchAlgorithmException) {
+            // e.g. PBKDF2WithHmacSHA512 needs API 26+; surface the real reason.
+            error(prfName.replace("PBKDF2WithHmac", "PBKDF2-HMAC-") + " (needs Android 8.0+)")
+        }
+        val cipher = Cipher.getInstance(cipherName)
+        cipher.init(
+            Cipher.DECRYPT_MODE,
+            if (cipherName == "AES/CBC/PKCS5Padding") SecretKeySpec(secretKey.encoded, "AES")
+            else SecretKeySpec(secretKey.encoded, "DESede"),
+            IvParameterSpec(iv)
+        )
         return cipher.doFinal(encrypted)
+    }
+
+    /** Human-readable name for a known algorithm OID. */
+    private fun oidName(oid: ByteArray?): String = when {
+        oid == null -> "unknown algorithm"
+        oid.contentEquals(OID_PBKDF2) -> "PBKDF2"
+        oid.contentEquals(OID_HMAC_SHA1) -> "PBKDF2-HMAC-SHA1"
+        oid.contentEquals(OID_HMAC_SHA256) -> "PBKDF2-HMAC-SHA256"
+        oid.contentEquals(OID_HMAC_SHA384) -> "PBKDF2-HMAC-SHA384"
+        oid.contentEquals(OID_HMAC_SHA512) -> "PBKDF2-HMAC-SHA512"
+        oid.contentEquals(OID_AES_256_CBC) -> "AES-256-CBC"
+        oid.contentEquals(OID_AES_192_CBC) -> "AES-192-CBC"
+        oid.contentEquals(OID_AES_128_CBC) -> "AES-128-CBC"
+        oid.contentEquals(OID_DES_EDE3_CBC) -> "DES-EDE3-CBC"
+        else -> "unknown algorithm"
     }
 
     private fun parseSafeBags(

@@ -92,6 +92,7 @@ fun LoTWUploadConfigDialog(
     stationMeta: LoTWStationMeta?,
     busy: Boolean,
     error: LoTWUploadError?,
+    errorDetail: String = "",
     onDismiss: () -> Unit,
     onImport: (ByteArray, CharArray) -> Unit,
     onRemove: () -> Unit,
@@ -162,15 +163,20 @@ fun LoTWUploadConfigDialog(
             )
             error?.let {
                 Text(
-                    text = stringResource(
-                        when (it) {
-                            LoTWUploadError.PASSWORD -> R.string.prefs_lotw_upload_error_password
-                            LoTWUploadError.EXPIRED -> R.string.prefs_lotw_upload_error_expired
-                            LoTWUploadError.INVALID_FILE -> R.string.prefs_lotw_upload_error_invalid
-                            LoTWUploadError.FORMAT -> R.string.prefs_lotw_upload_error_format
-                            LoTWUploadError.UNKNOWN -> R.string.prefs_lotw_upload_error_unknown
-                        }
-                    ),
+                    text = when {
+                        it == LoTWUploadError.FORMAT && errorDetail.isNotBlank() ->
+                            stringResource(R.string.prefs_lotw_upload_error_format_alg, errorDetail)
+                        it == LoTWUploadError.FORMAT -> stringResource(R.string.prefs_lotw_upload_error_format)
+                        else -> stringResource(
+                            when (it) {
+                                LoTWUploadError.PASSWORD -> R.string.prefs_lotw_upload_error_password
+                                LoTWUploadError.EXPIRED -> R.string.prefs_lotw_upload_error_expired
+                                LoTWUploadError.INVALID_FILE -> R.string.prefs_lotw_upload_error_invalid
+                                LoTWUploadError.UNKNOWN -> R.string.prefs_lotw_upload_error_unknown
+                                LoTWUploadError.FORMAT -> R.string.prefs_lotw_upload_error_format
+                            }
+                        )
+                    },
                     color = MaterialTheme.colorScheme.error,
                     fontSize = 12.sp
                 )

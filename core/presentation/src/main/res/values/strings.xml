@@ -241,7 +241,8 @@
     <string name="prefs_lotw_upload_error_password">Incorrect certificate password. Check the password you set when exporting the .p12 from TQSL.</string>
     <string name="prefs_lotw_upload_error_expired">Certificate is expired or not yet valid.</string>
     <string name="prefs_lotw_upload_error_invalid">Not a valid LoTW certificate file.</string>
-    <string name="prefs_lotw_upload_error_format">This .p12 uses the new PBES2/AES-256 format (OpenSSL 3 / recent TQSL), which Android cannot read directly. Re-export it as a legacy format (TQSL "export with legacy encryption" or an OpenSSL -legacy conversion), then import again.</string>
+    <string name="prefs_lotw_upload_error_format">Unsupported .p12 encryption. Re-export from TQSL and try again.</string>
+    <string name="prefs_lotw_upload_error_format_alg">Unsupported .p12 encryption (%1$s). Re-export from TQSL and try again.</string>
     <string name="prefs_lotw_upload_error_unknown">Import failed. Try again.</string>
     <string name="prefs_lotw_upload_cert_info">%1$s · DXCC %2$d · expires %3$s</string>
     <string name="prefs_lotw_upload_remove">Remove certificate</string>

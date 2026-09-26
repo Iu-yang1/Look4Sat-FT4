@@ -79,6 +79,8 @@ data class SettingsState(
     val lotwUploadBusy: Boolean = false,
     /** Last certificate import outcome; shown inside the upload config dialog. */
     val lotwUploadError: LoTWUploadError? = null,
+    /** Parser detail for FORMAT errors (e.g. the unsupported algorithm name). */
+    val lotwUploadErrorDetail: String = "",
     /** One-click logbook upload: prepared preview awaiting confirmation. */
     val logbookPreview: com.rtbishop.look4sat.core.domain.repository.LoTWUploadPreview? = null,
     val logbookUploadBusy: Boolean = false,

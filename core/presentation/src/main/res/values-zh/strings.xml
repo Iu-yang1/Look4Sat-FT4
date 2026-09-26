@@ -210,7 +210,8 @@
     <string name="prefs_lotw_upload_error_password">证书密码错误，请检查 TQSL 导出 .p12 时设置的密码</string>
     <string name="prefs_lotw_upload_error_expired">证书已过期或尚未生效</string>
     <string name="prefs_lotw_upload_error_invalid">不是有效的 LoTW 证书文件</string>
-    <string name="prefs_lotw_upload_error_format">该 .p12 是新版 PBES2/AES-256 格式（OpenSSL 3 / 新版 TQSL 导出），Android 无法直接读取。请用旧格式重新导出（TQSL 旧加密导出或 OpenSSL -legacy 转换）后再导入</string>
+    <string name="prefs_lotw_upload_error_format">不支持的 .p12 加密，请用 TQSL 默认加密重新导出后再试</string>
+    <string name="prefs_lotw_upload_error_format_alg">不支持的 .p12 加密（%1$s），请用 TQSL 默认加密重新导出后再试</string>
     <string name="prefs_lotw_upload_error_unknown">导入失败，请重试</string>
     <string name="prefs_lotw_upload_cert_info">%1$s · DXCC %2$d · 有效期至 %3$s</string>
     <string name="prefs_lotw_upload_remove">移除证书</string>

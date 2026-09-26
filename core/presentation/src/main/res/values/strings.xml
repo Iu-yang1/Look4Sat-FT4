@@ -225,34 +225,6 @@
     <string name="prefs_locator_text">Set station\'s position using locator</string>
 
     <string name="btn_delete">Delete</string>
-    <string name="prefs_logbook_title">Logbook</string>
-    <string name="prefs_logbook_count">%1$d records — local QSOs and LoTW confirmations</string>
-    <string name="prefs_logbook_empty">No records yet — record QSOs from the Radar Log tab</string>
-    <string name="prefs_logbook_close">Close</string>
-    <string name="prefs_logbook_upload">Upload</string>
-    <string name="prefs_logbook_upload_title">Upload to LoTW</string>
-    <string name="prefs_logbook_upload_confirm">Upload</string>
-    <string name="prefs_lotw_upload_title">LoTW upload certificate</string>
-    <string name="prefs_lotw_upload_configured">Certificate imported · station grid %1$s</string>
-    <string name="prefs_lotw_upload_not_configured">Not configured — import your TrustedQSL certificate to upload QSOs</string>
-    <string name="prefs_lotw_upload_busy">Working…</string>
-    <string name="prefs_lotw_upload_cert_hint">Import your TrustedQSL .p12 certificate (same one you use in TQSL) to sign and upload QSOs. The password is stored encrypted on this device only.</string>
-    <string name="prefs_lotw_upload_password">Certificate password</string>
-    <string name="prefs_lotw_upload_import">Choose .p12 file</string>
-    <string name="prefs_lotw_upload_import_confirm">Import</string>
-    <string name="prefs_lotw_upload_error_password">Incorrect certificate password. Check the password you set when exporting the .p12 from TQSL.</string>
-    <string name="prefs_lotw_upload_error_expired">Certificate is expired or not yet valid.</string>
-    <string name="prefs_lotw_upload_error_invalid">Not a valid LoTW certificate file.</string>
-    <string name="prefs_lotw_upload_error_format">Unsupported .p12 encryption. Re-export from TQSL and try again.</string>
-    <string name="prefs_lotw_upload_error_format_alg">Unsupported .p12 encryption (%1$s). Re-export from TQSL and try again.</string>
-    <string name="prefs_lotw_upload_error_unknown">Import failed. Try again.</string>
-    <string name="prefs_lotw_upload_cert_info">%1$s · DXCC %2$d · expires %3$s</string>
-    <string name="prefs_lotw_upload_remove">Remove certificate</string>
-    <string name="prefs_lotw_upload_station_title">Station location</string>
-    <string name="prefs_lotw_upload_region_hint">Not selected</string>
-    <string name="prefs_lotw_upload_grid">Grid(s), comma-separated</string>
-    <string name="prefs_lotw_upload_save">Save</string>
-    <string name="prefs_lotw_upload_close">Close</string>
 
     <string name="prefs_data_title">Satellite data</string>
     <string name="prefs_data_entries">Satellites: %s</string>
@@ -655,21 +627,8 @@
     <string name="nav_logbook">Logbook</string>
     <string name="radar_tab_transceivers">Transceivers</string>
     <string name="radar_tab_calculator">Calculator</string>
-    <string name="radar_tab_live_log">Live log</string>
     <string name="radar_tab_sstv" translatable="false">SSTV</string>
     <string name="radar_tab_logs">Logs</string>
-    <string name="quicklog_no_satellite">No satellite in the current tracking context.</string>
-    <string name="quicklog_mode">Mode</string>
-    <string name="quicklog_callsign">Their callsign</string>
-    <string name="quicklog_grid">Their grid</string>
-    <string name="quicklog_sent">Sent report</string>
-    <string name="quicklog_received">Received report</string>
-    <string name="quicklog_save">Save</string>
-    <string name="quicklog_invalid_callsign">Enter a valid callsign.</string>
-    <string name="quicklog_invalid_grid">Enter a valid 4, 6 or 8 character Maidenhead grid.</string>
-    <string name="quicklog_invalid_report">Use RS for voice, RST for CW/RTTY, or a signed dB report for FT4/FT8.</string>
-    <string name="quicklog_save_failed">Could not save. Your input has been kept; retry.</string>
-    <string name="quicklog_saved">%1$s saved</string>
     <string name="map_grid_empty">Sync LoTW in Logbook to see confirmed grids and award progress.</string>
     <string name="map_boundaries_loading">Loading boundaries…</string>
 </resources>

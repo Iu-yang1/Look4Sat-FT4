@@ -81,7 +81,6 @@ import com.rtbishop.look4sat.core.presentation.formatFrequency
 import com.rtbishop.look4sat.core.presentation.getDefaultPass
 import com.rtbishop.look4sat.core.presentation.isVerticalLayout
 import com.rtbishop.look4sat.core.presentation.layoutPadding
-import com.rtbishop.look4sat.feature.radar.logs.LogsPage
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
 import kotlin.math.PI
@@ -89,7 +88,6 @@ import kotlin.math.PI
 private enum class RadarPage(@StringRes val titleRes: Int) {
     Transceivers(R.string.radar_tab_transceivers),
     Calculator(R.string.radar_tab_calculator),
-    LiveLog(R.string.radar_tab_live_log),
     Sstv(R.string.radar_tab_sstv),
     Logs(R.string.radar_tab_logs)
 }
@@ -164,14 +162,6 @@ fun RadarDestination(navigateUp: () -> Unit, navigateToMap: () -> Unit) {
         container.audioHub,
         connectRadios,
         logViewModel,
-        logsPage = {
-            LogsPage(
-                container = container,
-                pass = uiState.currentPass,
-                transponders = uiState.transceivers.transmitters,
-                selectedTransponderUuid = uiState.transceivers.selectedUuid
-            )
-        },
         requestMicPermission = {
         permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
     })
@@ -187,8 +177,7 @@ private fun RadarScreen(
     audioHub: IAudioHub,
     connectRadios: () -> Unit,
     logViewModel: LogViewModel,
-    requestMicPermission: () -> Unit,
-    logsPage: @Composable () -> Unit
+    requestMicPermission: () -> Unit
 ) {
     val upcomingPass = uiState.currentPass ?: getDefaultPass()
     // 日程功能: 把当前过境写入系统日历(原仓库的 addToCalendar, ic_calendar 按钮)
@@ -253,7 +242,6 @@ private fun RadarScreen(
                 connectRadios,
                 logViewModel,
                 requestMicPermission,
-                logsPage,
                 Modifier.weight(1f)
             )
         } else {
@@ -266,7 +254,6 @@ private fun RadarScreen(
                     connectRadios,
                     logViewModel,
                     requestMicPermission,
-                    logsPage,
                     Modifier.weight(1f)
                 )
             }
@@ -282,7 +269,6 @@ private fun PagerCard(
     connectRadios: () -> Unit,
     logViewModel: LogViewModel,
     requestMicPermission: () -> Unit,
-    logsPage: @Composable () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val hasCalculatorPage = remember(uiState.transceivers.transmitters) {
@@ -292,7 +278,6 @@ private fun PagerCard(
         buildList {
             add(RadarPage.Transceivers)
             if (hasCalculatorPage) add(RadarPage.Calculator)
-            add(RadarPage.LiveLog)
             add(RadarPage.Sstv)
             add(RadarPage.Logs)
         }
@@ -345,7 +330,7 @@ private fun PagerCard(
                         onAction = onAction,
                         requestMicPermission = requestMicPermission
                     )
-                    RadarPage.LiveLog -> LogPage(
+                    RadarPage.Logs -> LogPage(
                         uiState = uiState,
                         logViewModel = logViewModel
                     )
@@ -355,7 +340,6 @@ private fun PagerCard(
                         onAction = onAction,
                         requestMicPermission = requestMicPermission
                     )
-                    RadarPage.Logs -> logsPage()
                 }
             }
         }

@@ -12,7 +12,6 @@ import java.util.Collections
 import java.util.Date
 import java.util.Locale
 import java.util.TimeZone
-import javax.crypto.BadPaddingException
 
 internal data class LoTWKeyMaterial(val key: PrivateKey, val certificate: X509Certificate, val info: LoTWCertificate) {
     companion object {
@@ -30,10 +29,20 @@ internal data class LoTWKeyMaterial(val key: PrivateKey, val certificate: X509Ce
                     try {
                         val parsed = Pkcs12Reader.read(bytes, password)
                         parsed.first to parsed.second
-                    } catch (_: BadPaddingException) {
-                        fail(LoTWProblem.CERTIFICATE_PASSWORD)
-                    } catch (_: Exception) {
-                        fail(LoTWProblem.CERTIFICATE_FORMAT)
+                    } catch (e: Exception) {
+                        // Classify by exception type so the user sees the right message:
+                        //  - BadPadding (BAD_DECRYPT)          -> wrong password
+                        //  - IllegalStateException (error())    -> unsupported algorithm,
+                        //    message is the algorithm name
+                        //  - IllegalArgumentException (require()) -> structurally invalid file
+                        fail(
+                            when {
+                                e is javax.crypto.BadPaddingException -> LoTWProblem.CERTIFICATE_PASSWORD
+                                e is IllegalStateException && password.isNotEmpty() -> LoTWProblem.CERTIFICATE_FORMAT
+                                else -> LoTWProblem.CERTIFICATE_INVALID
+                            },
+                            if (e is IllegalStateException) (e.message ?: "") else ""
+                        )
                     }
                 } else {
                     fail(LoTWProblem.CERTIFICATE_PASSWORD)

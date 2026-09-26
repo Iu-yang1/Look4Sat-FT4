@@ -40,6 +40,64 @@ class Pkcs12ReaderTest {
         javaClass.classLoader!!.getResourceAsStream(name)!!.use { it.readBytes() }
 
     @Test
+    fun readsAes192Variant() {
+        val (key, cert) = Pkcs12Reader.read(fixture("test_pbes2_aes192.p12"), "testpass123".toCharArray())
+        assertEquals("RSA", key.algorithm)
+        assertEquals("RSA", cert.publicKey.algorithm)
+        assertTrue("key/cert pair", keyMatches(key, cert))
+    }
+
+    @Test
+    fun readsDesEde3CbcVariant() {
+        val (key, cert) = Pkcs12Reader.read(fixture("test_pbes2_desede3.p12"), "testpass123".toCharArray())
+        assertEquals("RSA", key.algorithm)
+        assertEquals("RSA", cert.publicKey.algorithm)
+        assertTrue("key/cert pair", keyMatches(key, cert))
+    }
+
+    @Test
+    fun unsupportedCipherNamesTheAlgorithm() {
+        // A valid PBES2 file re-encrypted with an unsupported cipher must report the
+        // algorithm name (so the user can see exactly what to re-export with).
+        val fixtureBytes = fixture("test_pbes2.p12")
+        val e = assertThrows(IllegalStateException::class.java) {
+            // Simulate: patch the AES-256-CBC OID inside the file to an unknown OID.
+            val bogus = ByteArray(fixtureBytes.size) { fixtureBytes[it] }
+            // find AES-256-CBC OID bytes 0x60 86 48 01 65 03 04 01 2a
+            val oid = byteArrayOf(0x60, 0x86.toByte(), 0x48, 0x01, 0x65, 0x03, 0x04, 0x01, 0x2a)
+            var idx = -1
+            outer@ for (i in 0..bogus.size - oid.size) {
+                for (j in oid.indices) if (bogus[i + j] != oid[j]) continue@outer
+                idx = i; break
+            }
+            require(idx >= 0) { "AES-256-CBC OID not found in fixture" }
+            bogus[idx] = 0x7f.toByte() // corrupt the OID tag byte → unknown cipher
+            Pkcs12Reader.read(bogus, "testpass123".toCharArray())
+        }
+        assertTrue("mentions algorithm", e.message.orEmpty().contains("algorithm"))
+    }
+
+    private fun keyMatches(key: java.security.PrivateKey, cert: java.security.cert.X509Certificate): Boolean {
+        val challenge = "Look4Sat LoTW certificate key check".toByteArray(Charsets.US_ASCII)
+        val signed = Signature.getInstance("SHA1withRSA").run {
+            initSign(key); update(challenge); sign()
+        }
+        return Signature.getInstance("SHA1withRSA").run {
+            initVerify(cert); update(challenge); verify(signed)
+        }
+    }
+
+    @Test
+    fun wrongPasswordFailsWithBadPadding() {
+        // A wrong password must surface as a decryption failure (BadPadding), which
+        // LoTWKeyMaterial maps to CERTIFICATE_PASSWORD — not a format error.
+        val e = assertThrows(Exception::class.java) {
+            Pkcs12Reader.read(fixture(), "definitely-wrong-password".toCharArray())
+        }
+        assertTrue("BadPadding", e is javax.crypto.BadPaddingException)
+    }
+
+    @Test
     fun readsPbes2KeyAndCertificate() {
         val (key, cert) = Pkcs12Reader.read(fixture(), "testpass123".toCharArray())
         assertEquals("RSA", key.algorithm)

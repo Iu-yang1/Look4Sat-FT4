@@ -286,6 +286,7 @@ private fun SettingsScreen(uiState: SettingsState, onAction: (SettingsAction) ->
             stationMeta = uiState.lotwStationMeta,
             busy = uiState.lotwUploadBusy,
             error = uiState.lotwUploadError,
+            errorDetail = uiState.lotwUploadErrorDetail,
             onDismiss = { dialogs.lotwUpload = false },
             onImport = { bytes, password -> onAction(SettingsAction.ImportLoTWCertificate(bytes, password)) },
             onRemove = { onAction(SettingsAction.RemoveLoTWCertificate) },

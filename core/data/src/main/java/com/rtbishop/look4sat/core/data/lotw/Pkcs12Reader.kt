@@ -20,7 +20,6 @@ package com.rtbishop.look4sat.core.data.lotw
 
 import java.io.ByteArrayInputStream
 import java.security.KeyFactory
-import java.security.NoSuchAlgorithmException
 import java.security.PrivateKey
 import java.security.cert.CertificateFactory
 import java.security.cert.X509Certificate
@@ -37,7 +36,7 @@ import javax.crypto.spec.SecretKeySpec
  * TQSL produce by default. Android's legacy bundled Bouncy Castle PKCS12 parser
  * cannot handle PBES2, so we parse the DER structure ourselves and decrypt with
  * the platform JCE. Android 7 does not expose PBKDF2WithHmacSHA256 through
- * SecretKeyFactory, so that primitive has an HMAC-based compatibility fallback.
+ * SecretKeyFactory, so that common primitive has an HMAC-based fallback.
  *
  * Handles both layouts:
  *  - OpenSSL `-certpbe NONE`: plaintext certificate bags + a PBES2-shrouded key
@@ -57,18 +56,25 @@ internal object Pkcs12Reader {
     private val OID_PBKDF2 = byteArrayOf(0x2a, 0x86.toByte(), 0x48, 0x86.toByte(), 0xf7.toByte(), 0x0d, 0x01, 0x05, 0x0c)
     private val OID_HMAC_SHA1 = byteArrayOf(0x2a, 0x86.toByte(), 0x48, 0x86.toByte(), 0xf7.toByte(), 0x0d, 0x02, 0x07)
     private val OID_HMAC_SHA256 = byteArrayOf(0x2a, 0x86.toByte(), 0x48, 0x86.toByte(), 0xf7.toByte(), 0x0d, 0x02, 0x09)
+    private val OID_HMAC_SHA384 = byteArrayOf(0x2a, 0x86.toByte(), 0x48, 0x86.toByte(), 0xf7.toByte(), 0x0d, 0x02, 0x0a)
+    private val OID_HMAC_SHA512 = byteArrayOf(0x2a, 0x86.toByte(), 0x48, 0x86.toByte(), 0xf7.toByte(), 0x0d, 0x02, 0x0b)
     private val OID_AES_256_CBC = byteArrayOf(0x60, 0x86.toByte(), 0x48, 0x01, 0x65, 0x03, 0x04, 0x01, 0x2a)
+    private val OID_AES_192_CBC = byteArrayOf(0x60, 0x86.toByte(), 0x48, 0x01, 0x65, 0x03, 0x04, 0x01, 0x16)
     private val OID_AES_128_CBC = byteArrayOf(0x60, 0x86.toByte(), 0x48, 0x01, 0x65, 0x03, 0x04, 0x01, 0x02)
+    private val OID_DES_EDE3_CBC = byteArrayOf(0x2a, 0x86.toByte(), 0x48, 0x86.toByte(), 0xf7.toByte(), 0x0d, 0x03, 0x07)
 
     fun read(bytes: ByteArray, password: CharArray): Pair<PrivateKey, X509Certificate> {
         val pfx = DerReader.read(bytes)
         require(pfx.tag == 0x30) { "not a PFX" }
         val pfxChildren = DerReader.children(pfx.content)
         require(pfxChildren.size >= 2) { "PFX too small" }
+        // authSafe ContentInfo
         val authSafeCi = DerReader.children(pfxChildren[1].content)
         require(authSafeCi.size >= 2) { "authSafe malformed" }
+        // content: [0] EXPLICIT OCTET STRING -> AuthenticatedSafe
         val explicit = DerReader.children(authSafeCi[1].content).first()
         val octet = DerReader.read(explicit.content)
+        // octet.content is the AuthenticatedSafe body: a sequence of ContentInfo.
         var privateKey: PrivateKey? = null
         val certs = mutableListOf<X509Certificate>()
         for (info in DerReader.children(octet.content)) {
@@ -86,6 +92,7 @@ internal object Pkcs12Reader {
         return key to certs[0]
     }
 
+    /** A plaintext ContentInfo: [0] EXPLICIT OCTET STRING -> full SafeContents DER. */
     private fun parseSafeContentsContent(
         parts: List<Der>,
         password: CharArray,
@@ -96,85 +103,122 @@ internal object Pkcs12Reader {
         parseSafeBags(explicit.content, password, certs, onKey)
     }
 
+    /** EncryptedData ContentInfo: version, EncryptedContentInfo{ oid, PBES2 alg, [0] IMPLICIT OCTET }. */
     private fun parseEncryptedData(
         parts: List<Der>,
         password: CharArray,
         certs: MutableList<X509Certificate>
     ) {
+        // parts[0] = encryptedData OID; parts[1] = [0] EXPLICIT EncryptedData SEQ
         val explicit = DerReader.children(parts[1].content).first()
-        val encryptedDataParts = DerReader.children(explicit.content)
-        require(encryptedDataParts.size >= 2) { "EncryptedData malformed" }
-        val encryptedContentInfo = DerReader.children(encryptedDataParts[1].content)
-        require(encryptedContentInfo.size >= 3) { "EncryptedContentInfo malformed" }
-        val safeContents = decryptPbes2(encryptedContentInfo[1], encryptedContentInfo[2].content, password)
+        val eciParts = DerReader.children(explicit.content)
+        // eciParts = [version INT, EncryptedContentInfo SEQ]
+        require(eciParts.size >= 2) { "EncryptedData malformed" }
+        val eci = DerReader.children(eciParts[1].content)
+        // eci = [contentType OID, contentEncryptionAlgorithm, [0] IMPLICIT OCTET STRING]
+        require(eci.size >= 3) { "EncryptedContentInfo malformed" }
+        val alg = eci[1]
+        val ciphertext = eci[2].content // [0] IMPLICIT OCTET STRING -> raw bytes
+        val safeContents = decryptPbes2(alg, ciphertext, password)
+        // The decrypted SafeContents holds certificate bags.
         parseSafeBags(safeContents, password, certs) {}
     }
 
+    /** Decrypt a PBES2-encrypted blob given its AlgorithmIdentifier. */
     private fun decryptPbes2(algorithm: Der, encrypted: ByteArray, password: CharArray): ByteArray {
-        val algorithmParts = DerReader.children(algorithm.content)
-        require(algorithmParts.size >= 2 && algorithmParts[0].content.contentEquals(OID_PBES2)) { "not PBES2" }
-        val pbes2 = DerReader.children(algorithmParts[1].content)
-        require(pbes2.size == 2) { "PBES2 parameters malformed" }
+        val algParts = DerReader.children(algorithm.content)
+        require(algParts.size >= 2 && algParts[0].content.contentEquals(OID_PBES2)) { "not PBES2" }
+        // PBES2-params ::= SEQUENCE { kdf AlgorithmIdentifier, enc AlgorithmIdentifier }
+        val pbes2 = DerReader.children(algParts[1].content)
         val kdf = DerReader.children(pbes2[0].content)
-        require(kdf.size == 2 && kdf[0].content.contentEquals(OID_PBKDF2)) { "unsupported KDF" }
+        // KDF must be PBKDF2 (OpenSSL 3 also supports scrypt — not available on the
+        // platform JCE, so report it by name instead of a generic failure).
+        if (kdf.isEmpty() || !kdf[0].content.contentEquals(OID_PBKDF2)) {
+            error(oidName(kdf.firstOrNull()?.content))
+        }
         val kdfParams = DerReader.children(kdf[1].content)
-        require(kdfParams.size >= 2) { "PBKDF2 parameters malformed" }
         val salt = kdfParams[0].content
         val iterations = readInt(kdfParams[1].content)
         require(iterations in 1..10_000_000) { "implausible PBKDF2 iteration count" }
-
-        var keyLengthBytes: Int? = null
+        // Optional PBKDF2-params elements: keyLength (INTEGER) and/or prf (SEQUENCE),
+        // in either order. Distinguish by DER tag — mistaking prf for keyLength yields
+        // an absurd key size and a PBKDF2 that runs for hours.
+        var keyBits = -1 // -1 = not written; defaulted below from the cipher
         var prfName = "PBKDF2WithHmacSHA1"
-        for (parameter in kdfParams.drop(2)) {
-            when (parameter.tag) {
-                0x02 -> keyLengthBytes = readInt(parameter.content)
+        for (i in 2 until kdfParams.size) {
+            val param = kdfParams[i]
+            when (param.tag) {
+                0x02 -> keyBits = readInt(param.content) * 8
                 0x30 -> {
-                    val prf = DerReader.children(parameter.content)
+                    val prf = DerReader.children(param.content)
                     prfName = when {
-                        prf.isNotEmpty() && prf[0].content.contentEquals(OID_HMAC_SHA1) -> "PBKDF2WithHmacSHA1"
-                        prf.isNotEmpty() && prf[0].content.contentEquals(OID_HMAC_SHA256) -> "PBKDF2WithHmacSHA256"
-                        else -> error("unsupported PBKDF2 PRF")
+                        prf.isEmpty() || prf[0].content.contentEquals(OID_HMAC_SHA1) -> "PBKDF2WithHmacSHA1"
+                        prf[0].content.contentEquals(OID_HMAC_SHA256) -> "PBKDF2WithHmacSHA256"
+                        prf[0].content.contentEquals(OID_HMAC_SHA384) -> "PBKDF2WithHmacSHA384"
+                        prf[0].content.contentEquals(OID_HMAC_SHA512) -> "PBKDF2WithHmacSHA512"
+                        else -> error(oidName(prf[0].content))
                     }
                 }
-                else -> error("unsupported PBKDF2 parameter")
             }
         }
-
-        val encryption = DerReader.children(pbes2[1].content)
-        require(encryption.size >= 2) { "encryption scheme malformed" }
-        val keyBytes = when {
-            encryption[0].content.contentEquals(OID_AES_256_CBC) -> 32
-            encryption[0].content.contentEquals(OID_AES_128_CBC) -> 16
-            else -> error("unsupported cipher")
+        val enc = DerReader.children(pbes2[1].content)
+        val encOid = enc[0].content
+        val iv = enc[1].content
+        val (cipherName, aesKeyBits) = when {
+            encOid.contentEquals(OID_AES_256_CBC) -> "AES/CBC/PKCS5Padding" to 256
+            encOid.contentEquals(OID_AES_192_CBC) -> "AES/CBC/PKCS5Padding" to 192
+            encOid.contentEquals(OID_AES_128_CBC) -> "AES/CBC/PKCS5Padding" to 128
+            encOid.contentEquals(OID_DES_EDE3_CBC) -> "DESede/CBC/PKCS5Padding" to 192
+            else -> error(oidName(encOid))
         }
-        require(keyLengthBytes == null || keyLengthBytes == keyBytes) { "PBKDF2 key size does not match cipher" }
-        val derived = deriveKey(password, salt, iterations, keyBytes, prfName)
-        val cipher = Cipher.getInstance("AES/CBC/PKCS5Padding")
-        cipher.init(Cipher.DECRYPT_MODE, SecretKeySpec(derived, "AES"), IvParameterSpec(encryption[1].content))
-        return cipher.doFinal(encrypted)
-    }
+        val finalKeyBits = if (keyBits > 0) keyBits else aesKeyBits
+        require(finalKeyBits in 128..512) { "implausible PBKDF2 key size" }
 
-    private fun deriveKey(
-        password: CharArray,
-        salt: ByteArray,
-        iterations: Int,
-        keyLengthBytes: Int,
-        prfName: String
-    ): ByteArray {
-        val spec = PBEKeySpec(password, salt, iterations, keyLengthBytes * 8)
-        return try {
-            SecretKeyFactory.getInstance(prfName).generateSecret(spec).encoded
-        } catch (error: NoSuchAlgorithmException) {
-            if (prfName != "PBKDF2WithHmacSHA256") throw error
-            val passwordBytes = password.concatToString().toByteArray(Charsets.UTF_8)
+        val spec = PBEKeySpec(password, salt, iterations, finalKeyBits)
+        val keyBytes = try {
             try {
-                pbkdf2HmacSha256(passwordBytes, salt, iterations, keyLengthBytes)
-            } finally {
-                passwordBytes.fill(0)
+                SecretKeyFactory.getInstance(prfName).generateSecret(spec).encoded
+            } catch (e: java.security.NoSuchAlgorithmException) {
+                if (prfName != "PBKDF2WithHmacSHA256") {
+                    error(prfName.replace("PBKDF2WithHmac", "PBKDF2-HMAC-") + " (needs Android 8.0+)")
+                }
+                val passwordBytes = password.concatToString().toByteArray(Charsets.UTF_8)
+                try {
+                    pbkdf2HmacSha256(passwordBytes, salt, iterations, finalKeyBits / 8)
+                } finally {
+                    passwordBytes.fill(0)
+                }
             }
         } finally {
             spec.clearPassword()
         }
+        return try {
+            val cipher = Cipher.getInstance(cipherName)
+            cipher.init(
+                Cipher.DECRYPT_MODE,
+                if (cipherName == "AES/CBC/PKCS5Padding") SecretKeySpec(keyBytes, "AES")
+                else SecretKeySpec(keyBytes, "DESede"),
+                IvParameterSpec(iv)
+            )
+            cipher.doFinal(encrypted)
+        } finally {
+            keyBytes.fill(0)
+        }
+    }
+
+    /** Human-readable name for a known algorithm OID. */
+    private fun oidName(oid: ByteArray?): String = when {
+        oid == null -> "unknown algorithm"
+        oid.contentEquals(OID_PBKDF2) -> "PBKDF2"
+        oid.contentEquals(OID_HMAC_SHA1) -> "PBKDF2-HMAC-SHA1"
+        oid.contentEquals(OID_HMAC_SHA256) -> "PBKDF2-HMAC-SHA256"
+        oid.contentEquals(OID_HMAC_SHA384) -> "PBKDF2-HMAC-SHA384"
+        oid.contentEquals(OID_HMAC_SHA512) -> "PBKDF2-HMAC-SHA512"
+        oid.contentEquals(OID_AES_256_CBC) -> "AES-256-CBC"
+        oid.contentEquals(OID_AES_192_CBC) -> "AES-192-CBC"
+        oid.contentEquals(OID_AES_128_CBC) -> "AES-128-CBC"
+        oid.contentEquals(OID_DES_EDE3_CBC) -> "DES-EDE3-CBC"
+        else -> "unknown algorithm"
     }
 
     private fun parseSafeBags(
@@ -199,6 +243,8 @@ internal object Pkcs12Reader {
     }
 
     private fun decryptShroudedKeyBag(bagValue: Der, password: CharArray): PrivateKey {
+        // bagValue = the SafeBag value SEQ (EncryptedPrivateKeyInfo): children are
+        // [AlgorithmIdentifier, encryptedData OCTET STRING].
         val parts = DerReader.children(bagValue.content)
         require(parts.size == 2) { "EncryptedPrivateKeyInfo malformed" }
         val pkcs8 = decryptPbes2(parts[0], parts[1].content, password)
@@ -206,61 +252,67 @@ internal object Pkcs12Reader {
     }
 
     private fun parseCertBag(bagValue: Der, certs: MutableList<X509Certificate>) {
+        // bagValue = the SafeBag value SEQ (CertBag): children are
+        // [certType OID, [0] EXPLICIT OCTET STRING (full X.509 DER)].
         val parts = DerReader.children(bagValue.content)
-        if (parts.size < 2 || !parts[0].content.contentEquals(OID_X509_CERT)) return
+        if (parts.size < 2) return
+        if (!parts[0].content.contentEquals(OID_X509_CERT)) return
+        // [0] EXPLICIT -> OCTET STRING -> full X.509 certificate DER.
         val explicit = DerReader.children(parts[1].content).first()
+        val certDer = explicit.content
         val factory = CertificateFactory.getInstance("X.509")
-        certs.add(factory.generateCertificate(ByteArrayInputStream(explicit.content)) as X509Certificate)
+        certs.add(factory.generateCertificate(ByteArrayInputStream(certDer)) as X509Certificate)
     }
 
     private fun readInt(bytes: ByteArray): Int {
         var value = 0
         var start = 0
-        if (bytes.size > 1 && bytes[0].toInt() == 0x00) start = 1
-        for (index in start until bytes.size) value = (value shl 8) or (bytes[index].toInt() and 0xff)
+        if (bytes.size > 1 && bytes[0].toInt() == 0x00) start = 1 // strip leading zero for positive
+        for (i in start until bytes.size) value = (value shl 8) or (bytes[i].toInt() and 0xff)
         return value
     }
 
+    /** Minimal DER element parser. */
     private data class Der(val tag: Int, val content: ByteArray)
 
     private object DerReader {
         fun read(der: ByteArray, offset: Int = 0): Der {
             require(offset < der.size) { "DER truncated" }
             val tag = der[offset].toInt() and 0xff
-            var index = offset + 1
-            var length = der[index].toInt() and 0xff
-            index++
-            if (length and 0x80 != 0) {
-                val byteCount = length and 0x7f
-                length = 0
-                repeat(byteCount) {
-                    length = (length shl 8) or (der[index].toInt() and 0xff)
-                    index++
+            var i = offset + 1
+            var len = der[i].toInt() and 0xff
+            i++
+            if (len and 0x80 != 0) {
+                val numBytes = len and 0x7f
+                len = 0
+                repeat(numBytes) {
+                    len = (len shl 8) or (der[i].toInt() and 0xff)
+                    i++
                 }
             }
-            require(index + length <= der.size) { "DER length overflow" }
-            return Der(tag, der.copyOfRange(index, index + length))
+            require(i + len <= der.size) { "DER length overflow" }
+            return Der(tag, der.copyOfRange(i, i + len))
         }
 
         fun children(content: ByteArray): List<Der> {
-            val result = mutableListOf<Der>()
-            var offset = 0
-            while (offset < content.size) {
-                val value = read(content, offset)
-                result.add(value)
-                val step = headerSize(content, offset) + value.content.size
-                if (step <= 0) break
-                offset += step
+            val out = mutableListOf<Der>()
+            var off = 0
+            while (off < content.size) {
+                val d = read(content, off)
+                out.add(d)
+                val step = headerSize(content, off) + d.content.size
+                if (step <= 0) break // defensive: never spin on malformed input
+                off += step
             }
-            return result
+            return out
         }
 
         private fun headerSize(der: ByteArray, offset: Int): Int {
-            var index = offset + 1
-            val length = der[index].toInt() and 0xff
-            index++
-            if (length and 0x80 != 0) index += length and 0x7f
-            return index - offset
+            var i = offset + 1
+            var len = der[i].toInt() and 0xff
+            i++
+            if (len and 0x80 != 0) i += len and 0x7f
+            return i - offset
         }
     }
 }
@@ -274,8 +326,8 @@ internal fun pbkdf2HmacSha256(
 ): ByteArray {
     require(iterations > 0 && keyLengthBytes > 0)
     val mac = Mac.getInstance("HmacSHA256")
-    // Some providers reject an empty SecretKeySpec. A single zero byte produces
-    // the same zero-padded HMAC key block as an empty password.
+    // Some providers reject an empty SecretKeySpec. One zero byte has the same
+    // zero-padded HMAC key block as an empty password.
     mac.init(SecretKeySpec(password.takeUnless(ByteArray::isEmpty) ?: byteArrayOf(0), "HmacSHA256"))
     val output = ByteArray(keyLengthBytes)
     val input = ByteArray(salt.size + 4)

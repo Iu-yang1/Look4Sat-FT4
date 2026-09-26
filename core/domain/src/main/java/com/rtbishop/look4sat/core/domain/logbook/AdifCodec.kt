@@ -14,7 +14,7 @@ import java.util.Date
 import java.util.Locale
 import java.util.TimeZone
 
-/** ADIF 3.1.7 的小型 ADI 编解码器，仅处理日志本实际使用的字段。 */
+/** Small ADI codec for the logbook's actual field set (ADIF 3.1.7). */
 object AdifCodec {
     private val utc = TimeZone.getTimeZone("UTC")
 

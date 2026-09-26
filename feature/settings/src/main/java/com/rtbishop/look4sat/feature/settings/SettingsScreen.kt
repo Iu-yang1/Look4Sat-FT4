@@ -265,6 +265,33 @@ private fun SettingsScreen(uiState: SettingsState, onAction: (SettingsAction) ->
             onSyncIncremental = { onAction(SettingsAction.SyncLoTWGrids(it, LoTWSyncMode.Incremental)) }
         )
     }
+    if (dialogs.logbook) {
+        LogbookDialog(
+            records = uiState.logbookRecords,
+            uploadBusy = uiState.logbookUploadBusy,
+            uploadMessage = uiState.logbookUploadMessage,
+            preview = uiState.logbookPreview,
+            onDismiss = { dialogs.logbook = false },
+            onDelete = { onAction(SettingsAction.DeleteLogbookRecord(it)) },
+            onUpload = { onAction(SettingsAction.PrepareLogbookUpload) },
+            onConfirmUpload = { onAction(SettingsAction.ConfirmLogbookUpload) },
+            onDismissPreview = { onAction(SettingsAction.DismissLogbookPreview) },
+            onDismissMessage = { onAction(SettingsAction.ClearLogbookMessage) }
+        )
+    }
+    if (dialogs.lotwUpload) {
+        LoTWUploadConfigDialog(
+            certificate = uiState.lotwCertificate,
+            station = uiState.lotwStation,
+            stationMeta = uiState.lotwStationMeta,
+            busy = uiState.lotwUploadBusy,
+            error = uiState.lotwUploadError,
+            onDismiss = { dialogs.lotwUpload = false },
+            onImport = { bytes, password -> onAction(SettingsAction.ImportLoTWCertificate(bytes, password)) },
+            onRemove = { onAction(SettingsAction.RemoveLoTWCertificate) },
+            onSaveStation = { onAction(SettingsAction.SaveLoTWStation(it)) }
+        )
+    }
 
     // URLs for top bar
     val uriHandler = LocalUriHandler.current
@@ -375,6 +402,19 @@ private fun SettingsScreen(uiState: SettingsState, onAction: (SettingsAction) ->
                     editGrid = { dialogs.locator = true },
                     enableGnss = permissions.launchGnss,
                     onAction = onAction
+                )
+            }
+            item {
+                LogbookCard(
+                    recordCount = uiState.logbookRecords.size,
+                    showLogbookDialog = { dialogs.logbook = true }
+                )
+            }
+            item {
+                LoTWUploadCard(
+                    hasCertificate = uiState.lotwCertificate != null,
+                    stationGrid = uiState.lotwStation?.grid.orEmpty(),
+                    showUploadConfigDialog = { onAction(SettingsAction.LoadLoTWUploadStatus); dialogs.lotwUpload = true }
                 )
             }
             item {
@@ -1042,6 +1082,8 @@ private class DialogVisibility {
     var compassCalibration by mutableStateOf(false)
     var wavelog by mutableStateOf(false)
     var lotw by mutableStateOf(false)
+    var logbook by mutableStateOf(false)
+    var lotwUpload by mutableStateOf(false)
 }
 
 @Composable
@@ -1051,7 +1093,8 @@ private fun rememberDialogVisibility(): DialogVisibility {
             save = {
                 listOf(
                     it.position, it.locator, it.dataSources, it.network, it.bluetooth,
-                    it.radioControl, it.wavelog, it.lotw, it.compassCalibration
+                    it.radioControl, it.wavelog, it.lotw, it.compassCalibration,
+                    it.logbook, it.lotwUpload
                 )
             },
             restore = {
@@ -1060,6 +1103,8 @@ private fun rememberDialogVisibility(): DialogVisibility {
                     network = it[3]; bluetooth = it[4]; radioControl = it[5]; wavelog = it[6]
                     lotw = it.getOrElse(7) { false }
                     compassCalibration = it.getOrElse(8) { false }
+                    logbook = it.getOrElse(9) { false }
+                    lotwUpload = it.getOrElse(10) { false }
                 }
             }
         )

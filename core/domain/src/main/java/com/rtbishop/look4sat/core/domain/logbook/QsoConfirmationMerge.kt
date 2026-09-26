@@ -3,18 +3,22 @@ package com.rtbishop.look4sat.core.domain.logbook
 import java.util.Locale
 import kotlin.math.abs
 
+/** LoTW official name vs SatNOGS name ("SO-50 (SaudiOSCAR 50)"): compare the
+ *  parenthetical-free prefix so local records and downloaded confirmations match. */
+fun satMatchKey(name: String): String = name.substringBefore('(').trim().uppercase(Locale.US)
+
 /** LoTW omits frequency and may round time to a minute. Only merge an unambiguous contact. */
 fun sameConfirmedContact(local: QsoRecord, remote: QsoRecord): Boolean =
     local.theirCallsign.trim().equals(remote.theirCallsign.trim(), true) &&
         (local.myCallsign.isBlank() || remote.myCallsign.isBlank() || local.myCallsign.equals(remote.myCallsign, true)) &&
-        local.satelliteName.trim().equals(remote.satelliteName.trim(), true) &&
+        satMatchKey(local.satelliteName) == satMatchKey(remote.satelliteName) &&
         local.isSatellite == remote.isSatellite &&
         local.displayMode == remote.displayMode &&
         (local.band.isBlank() || remote.band.isBlank() || local.band.equals(remote.band, true)) &&
         abs(local.startUtcMillis - remote.startUtcMillis) < 60_000L
 
 fun QsoRecord.confirmationLookupKey(): String = listOf(
-    theirCallsign.trim().uppercase(Locale.US), satelliteName.trim().uppercase(Locale.US), displayMode
+    theirCallsign.trim().uppercase(Locale.US), satMatchKey(satelliteName), displayMode
 ).joinToString("|")
 
 fun QsoRecord.withConfirmation(confirmed: QsoRecord): QsoRecord = copy(
@@ -40,7 +44,12 @@ fun QsoRecord.withConfirmation(confirmed: QsoRecord): QsoRecord = copy(
 )
 
 val QsoRecord.displayMode: String
-    get() = submode.ifBlank { mode }.trim().uppercase(Locale.US)
+    get() {
+        // Satellite FT4 is MODE=MFSK + SUBMODE=FT4; any other mode keeps its own
+        // label even when a stale submode default ("FT4") was persisted.
+        val label = if (mode.equals("MFSK", true) && submode.isNotBlank()) submode else mode
+        return label.trim().uppercase(Locale.US)
+    }
 
 val QsoRecord.isSatellite: Boolean
     get() = propagationMode.equals("SAT", true) || (propagationMode.isBlank() && satelliteName.isNotBlank())

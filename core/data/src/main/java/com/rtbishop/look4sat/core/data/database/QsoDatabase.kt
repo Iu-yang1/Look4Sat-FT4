@@ -15,7 +15,12 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.rtbishop.look4sat.core.data.database.entity.QsoEntity
 
-@Database(entities = [QsoEntity::class], version = 4, exportSchema = false)
+/**
+ * Separate database for the logbook (QSO records, LoTW confirmations and
+ * upload receipts). Kept apart from [Look4SatDb] so existing installations
+ * never need a migration of the satellite database.
+ */
+@Database(entities = [QsoEntity::class], version = 5, exportSchema = false)
 abstract class QsoDatabase : RoomDatabase() {
     abstract fun qsoDao(): QsoDao
 }
@@ -53,5 +58,12 @@ val QSO_MIGRATION_2_3 = object : Migration(2, 3) {
         db.execSQL("ALTER TABLE qso_records ADD COLUMN dxcc INTEGER")
         db.execSQL("ALTER TABLE qso_records ADD COLUMN cqZone INTEGER")
         db.execSQL("UPDATE qso_records SET propagationMode = 'SAT' WHERE TRIM(satelliteName) != ''")
+    }
+}
+
+/** v4 -> v5: distinguish a submitted QSO from a confirmed QSO. */
+val QSO_MIGRATION_4_5 = object : Migration(4, 5) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE qso_records ADD COLUMN lotwUploaded INTEGER NOT NULL DEFAULT 0")
     }
 }

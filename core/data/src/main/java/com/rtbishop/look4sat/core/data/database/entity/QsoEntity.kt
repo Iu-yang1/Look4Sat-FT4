@@ -47,6 +47,7 @@ data class QsoEntity(
     @ColumnInfo(defaultValue = "'[]'") val messageEvents: String,
     @ColumnInfo(defaultValue = "''") val propagationMode: String = "",
     @ColumnInfo(defaultValue = "0") val lotwConfirmed: Boolean = false,
+    @ColumnInfo(defaultValue = "0") val lotwUploaded: Boolean = false,
     @ColumnInfo(defaultValue = "0") val lotwReceived: Boolean = false,
     @ColumnInfo(defaultValue = "''") val lotwQslDate: String = "",
     @ColumnInfo(defaultValue = "''") val vuccGrids: String = "",

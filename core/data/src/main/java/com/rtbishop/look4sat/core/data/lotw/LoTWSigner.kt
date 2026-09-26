@@ -24,7 +24,10 @@ internal class LoTWSigner(private val config: LoTWConfig) {
         if (date < key.info.firstQsoDate || (key.info.lastQsoDate.isNotBlank() && date > key.info.lastQsoDate) || record.startUtcMillis > now) {
             fail(LoTWProblem.QSO_DATE, call)
         }
-        val grids = station.getValue("GRIDSQUARE").split(',')
+        val grids = buildList {
+            addAll(station.getValue("GRIDSQUARE").split(',').map(String::trim))
+            station["MY_VUCC_GRIDS"]?.split(',')?.map(String::trim)?.let(::addAll)
+        }.filter(String::isNotBlank)
         if (record.myGrid.isNotBlank() && grids.none { grid ->
             val local = record.myGrid.trim().uppercase(Locale.US)
             grid.startsWith(local) || local.startsWith(grid)

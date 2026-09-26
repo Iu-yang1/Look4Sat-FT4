@@ -311,17 +311,40 @@ class LoTWRepository : ILoTWRepository {
         var country: String? = null
         var cqz: Int? = null
         var state: String? = null
-        var myGrid: String? = null
+        // Own-station (台址) fields: MY_GRIDSQUARE + MY_VUCC_GRIDS give the
+        // full grid set of the station location; the remaining MY_* fields
+        // together identify the station location (one callsign can own
+        // several locations, and one location can span several grids).
+        var myGrids = mutableSetOf<String>()
+        var myCallsign: String? = null
+        var myDxcc: String? = null
+        var myState: String? = null
+        var myCq: String? = null
+        var myItu: String? = null
+        var myIota: String? = null
+        var myCountry: String? = null
         val gridsInRecord = mutableListOf<String>()
 
         fun emitRecord() {
             if (propMode != "SAT" || gridsInRecord.isEmpty()) return
             val epochMs = adifTimestampToEpoch(qsoDate, timeOn)
+            val stationKey = buildString {
+                append(myCallsign ?: "")
+                append('|').append(myDxcc ?: "")
+                append('|').append(myState ?: "")
+                append('|').append(myCq ?: "")
+                append('|').append(myItu ?: "")
+                append('|').append(myIota ?: "")
+                append('|').append(myCountry ?: "")
+            }.ifBlank { null }
             val qso = com.rtbishop.look4sat.core.domain.model.GridQso(
                 call = call, epochMs = epochMs, satName = satName,
                 mode = mode, bandUp = bandUp, bandDown = bandDown,
                 dxcc = dxcc, country = country, cqz = cqz, state = state,
-                myGrid = myGrid
+                myGrid = myGrids.firstOrNull(),
+                myGrids = myGrids,
+                myCallsign = myCallsign,
+                stationKey = stationKey
             )
             for (grid in gridsInRecord) {
                 result.getOrPut(grid) { mutableListOf() }.add(qso)
@@ -332,7 +355,9 @@ class LoTWRepository : ILoTWRepository {
             propMode = null; call = ""; qsoDate = ""; timeOn = ""
             satName = ""; mode = ""; bandUp = ""; bandDown = ""
             dxcc = null; country = null; cqz = null; state = null
-            myGrid = null
+            myGrids = mutableSetOf()
+            myCallsign = null; myDxcc = null; myState = null
+            myCq = null; myItu = null; myIota = null; myCountry = null
             gridsInRecord.clear()
         }
 
@@ -370,10 +395,40 @@ class LoTWRepository : ILoTWRepository {
                 line.startsWith("<MY_GRIDSQUARE:") -> {
                     // Own-station grid (must not be confused with GRIDSQUARE —
                     // the opposite station's grid). Recorded per QSO so awards
-                    // can be counted per operated grid.
+                    // can be counted per operated grid. A station location may
+                    // also carry MY_VUCC_GRIDS (below) for multi-grid roaming.
                     val value = adifValue(line)
-                    if (value.length >= 4) myGrid = value.take(4).uppercase()
+                    if (value.length >= 4) myGrids.add(value.take(4).uppercase())
                 }
+                line.startsWith("<MY_VUCC_GRIDS:") -> {
+                    // Own-station VUCC grids: a comma-separated list LoTW emits
+                    // when one station location spans several grid squares
+                    // (e.g. "OM60,OM50" with MY_GRIDSQUARE absent). Without
+                    // this field the extra grids of a multi-grid 台址 silently
+                    // vanished from both the blue stripes and the per-台址 VUCC
+                    // count. Same split/truncate as VUCC_GRIDS below.
+                    adifValue(line).split(',').forEach { grid ->
+                        val field = grid.trim().uppercase()
+                        if (field.length >= 4) myGrids.add(field.take(4))
+                    }
+                }
+                // Remaining MY_* fields identify the station location (台址):
+                // grouped together they form the stationKey used by the map's
+                // operated-grid selector. One callsign can own several 台址.
+                line.startsWith("<STATION_CALLSIGN:") ->
+                    myCallsign = adifValue(line).trim().uppercase().ifBlank { null }
+                line.startsWith("<MY_DXCC:") ->
+                    myDxcc = adifValue(line).trim().ifBlank { null }
+                line.startsWith("<MY_STATE:") ->
+                    myState = adifValue(line).trim().ifBlank { null }?.let { normalizeState(it) }
+                line.startsWith("<MY_CQ_ZONE:") ->
+                    myCq = adifValue(line).trim().ifBlank { null }
+                line.startsWith("<MY_ITU_ZONE:") ->
+                    myItu = adifValue(line).trim().ifBlank { null }
+                line.startsWith("<MY_IOTA:") ->
+                    myIota = adifValue(line).trim().uppercase().ifBlank { null }
+                line.startsWith("<MY_COUNTRY:") ->
+                    myCountry = adifValue(line).trim().ifBlank { null }
                 line.startsWith("<GRIDSQUARE:") || line.startsWith("<VUCC_GRIDS:") -> {
                     // VUCC_GRIDS holds a comma-separated list of grids
                     // ("EN52en,EN53fa"), up to four for contacts spanning
@@ -479,23 +534,30 @@ class LoTWRepository : ILoTWRepository {
         // would silently drop every own grid on real reports; buffer the record
         // and decide at <EOR> instead.
         var propMode: String? = null
-        var myGrid: String? = null
+        var myGrids = mutableSetOf<String>()
         for (raw in body.lineSequence()) {
             val line = raw.trim()
             when {
                 line.equals("<EOR>", ignoreCase = true) -> {
-                    if (propMode == "SAT" && myGrid != null) grids.add(myGrid)
+                    if (propMode == "SAT" && myGrids.isNotEmpty()) grids.addAll(myGrids)
                     propMode = null
-                    myGrid = null
+                    myGrids = mutableSetOf()
                 }
                 line.startsWith("<PROP_MODE:") -> {
                     propMode = adifValue(line).uppercase()
                 }
                 line.startsWith("<MY_GRIDSQUARE:") -> {
-                    // MY_GRIDSQUARE must not be mistaken for GRIDSQUARE (the
-                    // opposite station's grid) — only own-station grids count.
                     val value = adifValue(line)
-                    if (value.length >= 4) myGrid = value.take(4)
+                    if (value.length >= 4) myGrids.add(value.take(4).uppercase())
+                }
+                line.startsWith("<MY_VUCC_GRIDS:") -> {
+                    // Multi-grid 台址: each field of MY_VUCC_GRIDS is a grid the
+                    // station location covered; without this the extra grids
+                    // never reached the blue stripes.
+                    adifValue(line).split(',').forEach { grid ->
+                        val field = grid.trim().uppercase()
+                        if (field.length >= 4) myGrids.add(field.take(4))
+                    }
                 }
             }
         }

@@ -170,6 +170,53 @@ class LoTWRepositoryTest {
         assertTrue(repo.parseConfirmedGridQsos(report(qso1, ground))!!.values.all { it.all { q -> q.myGrid == "OL62" } })
     }
 
+    @Test
+    fun parseQsosCapturesMyVuccGridsMultiGridStation() {
+        // A station location (台址) can span several grids: LoTW emits
+        // <MY_VUCC_GRIDS> (comma-separated) with MY_GRIDSQUARE absent. Both
+        // grids must land in myGrids, and myGrid (back-compat) = the first.
+        val qso = "<CALL:5>A50QO\n<QSO_DATE:8>20260820\n<TIME_ON:4>1130\n" +
+            "<PROP_MODE:3>SAT\n<SAT_NAME:5>RS-44\n<MODE:2>CW\n" +
+            "<MY_VUCC_GRIDS:11>OM60,OM50\n<GRIDSQUARE:4>NL47\n<EOR>\n"
+        val result = repo.parseConfirmedGridQsos(report(qso))!!
+        val parsed = result["NL47"]!!.first()
+        assertEquals(setOf("OM60", "OM50"), parsed.myGrids)
+        assertEquals("OM60", parsed.myGrid)
+        // 6-char fields are truncated to 4 like every other grid path.
+        val six = "<PROP_MODE:3>SAT\n<SAT_NAME:5>RS-44\n" +
+            "<MY_VUCC_GRIDS:17>OM60IL70,OM50MA20\n<GRIDSQUARE:4>OK48\n<EOR>\n"
+        assertEquals(setOf("OM60", "OM50"), repo.parseConfirmedGridQsos(report(six))!!["OK48"]!!.first().myGrids)
+    }
+
+    @Test
+    fun parseQsosBuildsStationKeyFromMyFields() {
+        // 台址 identity = the MY_* station snapshot (callsign + dxcc + state +
+        // CQ/ITU + IOTA + country). A record with the full snapshot yields the
+        // stable key the operated-grid selector groups by.
+        val qso = "<CALL:5>A50QO\n<QSO_DATE:8>20260820\n<TIME_ON:4>1130\n" +
+            "<PROP_MODE:3>SAT\n<SAT_NAME:5>RS-44\n" +
+            "<STATION_CALLSIGN:6>BH6RJD\n<MY_DXCC:3>318\n<MY_STATE:11>JS // Jiangsu\n" +
+            "<MY_CQ_ZONE:2>24\n<MY_ITU_ZONE:2>44\n<MY_COUNTRY:5>CHINA\n" +
+            "<GRIDSQUARE:4>NL47\n<EOR>\n"
+        val parsed = repo.parseConfirmedGridQsos(report(qso))!!["NL47"]!!.first()
+        assertEquals("BH6RJD", parsed.myCallsign)
+        assertEquals("BH6RJD|318|JS|24|44||CHINA", parsed.stationKey)
+    }
+
+    @Test
+    fun parseQsosStationKeyDistinguishesLocationsUnderSameCallsign() {
+        // One callsign can own several 台址 (e.g. BH6RJD with a Hubei location
+        // and a Zhejiang location); different MY_STATE -> different stationKey.
+        val hb = "<CALL:5>A50QO\n<QSO_DATE:8>20260820\n<TIME_ON:4>1130\n" +
+            "<PROP_MODE:3>SAT\n<SAT_NAME:5>RS-44\n" +
+            "<STATION_CALLSIGN:6>BH6RJD\n<MY_STATE:11>HB // Hubei\n<GRIDSQUARE:4>NL47\n<EOR>\n"
+        val zj = "<CALL:5>BG7ZFK\n<QSO_DATE:8>20260819\n<TIME_ON:4>1130\n" +
+            "<PROP_MODE:3>SAT\n<SAT_NAME:5>SO-50\n" +
+            "<STATION_CALLSIGN:6>BH6RJD\n<MY_STATE:11>ZJ // Zhejiang\n<GRIDSQUARE:4>OK48\n<EOR>\n"
+        val result = repo.parseConfirmedGridQsos(report(hb, zj))!!
+        assertTrue(result["NL47"]!!.first().stationKey != result["OK48"]!!.first().stationKey)
+    }
+
     // endregion
 
     // region parseRoamedGrids (MY_GRIDSQUARE = grids the account operated from)
@@ -223,6 +270,30 @@ class LoTWRepositoryTest {
     @Test
     fun parseRoamedGridsRejectsBodyWithoutEoh() {
         assertNull(repo.parseRoamedGrids("<HTML>Username/password incorrect</HTML>"))
+    }
+
+    @Test
+    fun parseRoamedGridsCollectsMyVuccGrids() {
+        // Multi-grid 台址: MY_VUCC_GRIDS carries the extra grids (MY_GRIDSQUARE
+        // may be absent); every field must reach the roamed set for the stripes.
+        val qso = "<PROP_MODE:3>SAT\n<SAT_NAME:5>RS-44\n" +
+            "<MY_VUCC_GRIDS:11>OM60,OM50\n<GRIDSQUARE:4>NL47\n<EOR>\n"
+        assertEquals(setOf("OM60", "OM50"), repo.parseRoamedGrids(report(qso)))
+        // Combined with MY_GRIDSQUARE the union is kept.
+        val both = "<PROP_MODE:3>SAT\n<SAT_NAME:5>RS-44\n" +
+            "<MY_GRIDSQUARE:4>OL62\n<MY_VUCC_GRIDS:11>OM60,OM50\n<GRIDSQUARE:4>NL47\n<EOR>\n"
+        assertEquals(setOf("OL62", "OM60", "OM50"), repo.parseRoamedGrids(report(both)))
+    }
+
+    @Test
+    fun parseRoamedGridsUppercasesLowercaseMyGrid() {
+        // LoTW emits the <eor> tag lowercase, so field CASE is not guaranteed:
+        // a lowercase MY_GRIDSQUARE must still match the overlay's uppercase
+        // labels (regression: take(4) without .uppercase() silently dropped
+        // stripes for lowercase grids).
+        val qso = "<PROP_MODE:3>SAT\n<SAT_NAME:5>IO-86\n" +
+            "<MY_GRIDSQUARE:4>ol62\n<GRIDSQUARE:4>PM95\n<EOR>\n"
+        assertEquals(setOf("OL62"), repo.parseRoamedGrids(report(qso)))
     }
 
     // endregion

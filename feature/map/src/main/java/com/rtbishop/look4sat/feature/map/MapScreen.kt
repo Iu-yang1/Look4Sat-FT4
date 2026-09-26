@@ -228,19 +228,6 @@ private fun MapScreen(
     // Selected award filter. Lives in an Activity-scoped ViewModel so it
     // survives page switches; defaults to VUCC only once per process (cold start).
     var selectedAward by mapFilterViewModel.selectedAward
-    // Six-award progress derived from the confirmed QSO store; recomputed when
-    // the store changes (LoTW/Wavelog sync).
-    // Per operated-grid VUCC breakdown: myGrid -> set of worked grids worked from it.
-    val vuccByMyGrid: Map<String, Set<String>> = remember(uiState.workedGridQsos) {
-        val m = mutableMapOf<String, MutableSet<String>>()
-        for ((grid, qsos) in uiState.workedGridQsos) {
-            for (q in qsos) {
-                val mg = q.myGrid ?: continue
-                m.getOrPut(mg) { mutableSetOf() }.add(grid)
-            }
-        }
-        m
-    }
     // First callsign worked in each grid (earliest QSO by time), used by the
     // "首通呼号" label mode — derived from the same QSO store as the worked fills.
     val firstCallsByGrid: Map<String, String> = remember(uiState.workedGridQsos) {
@@ -248,25 +235,47 @@ private fun MapScreen(
             qsos.minByOrNull { it.epochMs }?.let { grid to it.call }
         }.toMap()
     }
-    // Selected operated grid for VUCC counting; defaults to the grid with the
-    // most worked grids. Null when the store carries no per-QSO myGrid data
-    // (requires a LoTW resync) — then VUCC falls back to the global count.
-    var selectedMyGrid by remember(vuccByMyGrid) {
-        mutableStateOf(vuccByMyGrid.maxByOrNull { it.value.size }?.key)
+    // 台址名单: QSOs grouped by the 台址's GRID SET. A station location (台址)
+    // can span several grids (MY_GRIDSQUARE + MY_VUCC_GRIDS), and QSOs whose
+    // location covers the same grid set belong to the same 台址; groups with an
+    // identical grid set merge (they are VUCC-equivalent — the MY_* snapshot
+    // can differ between records of the same physical 台址 when LoTW omits
+    // optional fields). Data synced before multi-grid support falls back to
+    // one group per grid, preserving the old selector exactly.
+    val stationGroups: List<StationGroup> = remember(uiState.workedGridQsos) {
+        val byGridSet = LinkedHashMap<String, Pair<Set<String>, MutableSet<String>>>()
+        for ((grid, qsos) in uiState.workedGridQsos) {
+            for (q in qsos) {
+                val gs = q.myGrids.ifEmpty { q.myGrid?.let { setOf(it) }.orEmpty() }
+                if (gs.isEmpty()) continue
+                val key = gs.sorted().joinToString(",")
+                byGridSet.getOrPut(key) { gs to mutableSetOf() }.second.add(grid)
+            }
+        }
+        byGridSet.map { (key, v) -> StationGroup(id = key, grids = v.first, worked = v.second) }
+            .sortedByDescending { it.workedCount }
     }
-    val awardProgress: List<AwardProgress> = remember(uiState.workedGridQsos, vuccByMyGrid, selectedMyGrid) {
-        val vuccGrids = selectedMyGrid?.let { vuccByMyGrid[it].orEmpty() }
+    // Selected 台址 for VUCC counting; defaults to the group with the most
+    // worked grids. Null = "All" (every 台址 combined). Empty when the store
+    // carries no per-QSO myGrid data (requires a LoTW resync) — the selector
+    // is hidden then and VUCC falls back to the global count.
+    var selectedStationId by remember(stationGroups) {
+        mutableStateOf(stationGroups.maxByOrNull { it.workedCount }?.id)
+    }
+    val awardProgress: List<AwardProgress> = remember(uiState.workedGridQsos, stationGroups, selectedStationId) {
         val base = AwardCalculator.calculate(uiState.workedGridQsos)
-        if (vuccGrids == null) base
+        val worked = stationGroups.firstOrNull { it.id == selectedStationId }?.worked
+        if (worked == null) base
         else base.map { p ->
-            if (p.type == AwardType.VUCC) p.copy(workedKeys = vuccGrids, count = vuccGrids.size) else p
+            if (p.type == AwardType.VUCC) p.copy(workedKeys = worked, count = worked.size) else p
         }
     }
-    // Worked grids drawn on the map: filtered by the selected operated grid
-    // (null = all operated grids). Switching the selector changes which cells are green.
-    val workedGrids = remember(uiState.workedGrids, vuccByMyGrid, selectedMyGrid) {
-        if (selectedMyGrid == null) uiState.workedGrids
-        else vuccByMyGrid[selectedMyGrid] ?: emptySet()
+    // Worked grids drawn on the map: filtered by the selected 台址 (null = all).
+    // Drives both the green fills and the tap listener below, so switching the
+    // selector changes which cells are green.
+    val workedGrids = remember(uiState.workedGrids, stationGroups, selectedStationId) {
+        if (selectedStationId == null) uiState.workedGrids
+        else stationGroups.firstOrNull { it.id == selectedStationId }?.worked ?: emptySet()
     }
     val isGridMode = uiState.isGridMode
     // True when this composition restored a saved viewport. Only grid mode
@@ -400,14 +409,14 @@ private fun MapScreen(
                         else MapDataCards(mapData, copyrightResId)
                     }
                 }
-                // Top-left: operated-grid selector for VUCC counting (grid mode only).
+                // Top-left: 台址 selector for VUCC counting (grid mode only).
                 // Shown whenever per-grid QSO data exists; "All" (null) is available.
-                if (uiState.isGridMode && selectedAward == AwardType.VUCC && vuccByMyGrid.isNotEmpty()) {
+                if (uiState.isGridMode && selectedAward == AwardType.VUCC && stationGroups.isNotEmpty()) {
                     VuccGridSelector(
-                        options = vuccByMyGrid,
+                        stations = stationGroups,
                         allCount = uiState.workedGrids.size,
-                        selected = selectedMyGrid,
-                        onSelect = { selectedMyGrid = it },
+                        selected = selectedStationId,
+                        onSelect = { selectedStationId = it },
                         modifier = Modifier
                             .align(Alignment.TopStart)
                             .padding(8.dp)
@@ -697,7 +706,7 @@ private fun WorkedGridCallRow(
                 text = call,
                 style = MaterialTheme.typography.titleMedium,
                 fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
-                color = MaterialTheme.colorScheme.tertiary,
+                color = ComposeColor(0xFFFFE082),
                 maxLines = 1,
                 overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f)
@@ -896,22 +905,42 @@ private fun AwardChipsRow(
 }
 
 /**
- * Compact pill toggle for switching between satellite view and grid mode,
+ * One 台址 shown by the operated-grid selector. A 台址 is a station location
+ * and can span SEVERAL grids (MY_GRIDSQUARE + MY_VUCC_GRIDS); groups are keyed
+ * by the 台址's full grid set, so a multi-grid 台址 is one entry listing all
+ * its grids. Data synced before multi-grid support falls back to one group
+ * per grid.
+ */
+private data class StationGroup(
+    /** Grid-set key (sorted 4-char grids joined by ","). */
+    val id: String,
+    /** Full grid set of this 台址 (1..n 4-char grids). */
+    val grids: Set<String>,
+    /** Distinct worked grids worked under this 台址 (any of its grids). */
+    val worked: Set<String>
+) {
+    val workedCount: Int get() = worked.size
+    /** Selector label: the grids themselves — "OL62" for a single-grid 台址,
+     *  "OM60,PM01" for a multi-grid one (matches how 台址 are described). */
+    val label: String get() = grids.sorted().joinToString(",")
+}
+
+/** Compact pill toggle for switching between satellite view and grid mode,
  * floated over the map's top-right corner. The label reflects the active
  * mode ("Grid mode" when ON, "Satellite mode" when OFF). Semi-transparent
- * background keeps the map readable underneath.
- */
+ * background keeps the map readable underneath. */
 @Composable
 private fun VuccGridSelector(
-    options: Map<String, Set<String>>,
+    stations: List<StationGroup>,
     allCount: Int,
     selected: String?,
     onSelect: (String?) -> Unit,
     modifier: Modifier = Modifier
 ) {
     var expanded by remember { mutableStateOf(false) }
-    // Most-worked grid first; selection is made on tap. "All" sits last.
-    val sorted = remember(options) { options.entries.sortedByDescending { it.value.size } }
+    // Most-worked 台址 first; selection is made on tap. "All" sits last.
+    val sorted = remember(stations) { stations.sortedByDescending { it.workedCount } }
+    val selectedLabel = stations.firstOrNull { it.id == selected }?.label
     Surface(
         color = ComposeColor.Black.copy(alpha = 0.45f),
         shape = RoundedCornerShape(8.dp),
@@ -929,8 +958,8 @@ private fun VuccGridSelector(
                     .padding(start = 10.dp, end = 6.dp, top = 4.dp, bottom = 4.dp)
             ) {
                 Text(
-                    text = if (selected == null) "All ($allCount)"
-                    else "$selected (${options[selected]?.size ?: 0})",
+                    text = if (selectedLabel == null) "All ($allCount)"
+                    else "$selectedLabel (${stations.firstOrNull { it.id == selected }?.workedCount ?: 0})",
                     color = ComposeColor.White,
                     fontSize = 12.sp,
                     fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
@@ -944,20 +973,20 @@ private fun VuccGridSelector(
             }
             if (expanded) {
                 androidx.compose.material3.HorizontalDivider(color = ComposeColor.White.copy(alpha = 0.2f))
-                sorted.forEach { (grid, grids) ->
+                sorted.forEach { station ->
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier
                             .fillMaxWidth()
                             .clickable {
-                                onSelect(grid)
+                                onSelect(station.id)
                                 expanded = false
                             }
                             .padding(horizontal = 10.dp, vertical = 3.dp)
                     ) {
                         Text(
-                            text = "$grid (${grids.size})",
-                            color = if (grid == selected) MaterialTheme.colorScheme.primary else ComposeColor.White,
+                            text = "${station.label} (${station.workedCount})",
+                            color = if (station.id == selected) MaterialTheme.colorScheme.primary else ComposeColor.White,
                             fontSize = 12.sp,
                             fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
                         )

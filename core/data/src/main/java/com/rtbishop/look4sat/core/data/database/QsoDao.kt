@@ -44,4 +44,7 @@ interface QsoDao {
 
     @Query("DELETE FROM qso_records WHERE id = :id")
     suspend fun delete(id: Long)
+
+    @Query("UPDATE qso_records SET lotwUploaded = 1 WHERE id IN (:ids)")
+    suspend fun markUploaded(ids: List<Long>)
 }

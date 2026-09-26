@@ -350,6 +350,12 @@ class RadarViewModel(
                 }
                 _uiState.update { it.copy(calculatorOffsetKHz = action.offsetKHz) }
             }
+            is RadarAction.UpdateCalculatorFrequency -> {
+                _uiState.update {
+                    if (it.calculatorTxHz == action.txHz && it.calculatorRxHz == action.rxHz) it
+                    else it.copy(calculatorTxHz = action.txHz, calculatorRxHz = action.rxHz)
+                }
+            }
         }
     }
 

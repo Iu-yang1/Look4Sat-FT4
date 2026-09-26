@@ -89,6 +89,7 @@ import kotlin.math.PI
 private enum class RadarPage(@StringRes val titleRes: Int) {
     Transceivers(R.string.radar_tab_transceivers),
     Calculator(R.string.radar_tab_calculator),
+    LiveLog(R.string.radar_tab_live_log),
     Sstv(R.string.radar_tab_sstv),
     Logs(R.string.radar_tab_logs)
 }
@@ -98,6 +99,7 @@ fun RadarDestination(navigateUp: () -> Unit, navigateToMap: () -> Unit) {
     val context = LocalContext.current
     val container = (context.applicationContext as IContainerProvider).getMainContainer()
     val viewModel: RadarViewModel = viewModel(factory = RadarViewModel.factory(container))
+    val logViewModel: LogViewModel = viewModel(factory = LogViewModel.factory(container))
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val mutualData by container.mutualPassData.collectAsStateWithLifecycle()
     val navigateUpAndClearMutual = {
@@ -161,6 +163,7 @@ fun RadarDestination(navigateUp: () -> Unit, navigateToMap: () -> Unit) {
         mutualData,
         container.audioHub,
         connectRadios,
+        logViewModel,
         logsPage = {
             LogsPage(
                 container = container,
@@ -183,6 +186,7 @@ private fun RadarScreen(
     mutualData: MutualPassData,
     audioHub: IAudioHub,
     connectRadios: () -> Unit,
+    logViewModel: LogViewModel,
     requestMicPermission: () -> Unit,
     logsPage: @Composable () -> Unit
 ) {
@@ -247,6 +251,7 @@ private fun RadarScreen(
                 onAction,
                 audioHub,
                 connectRadios,
+                logViewModel,
                 requestMicPermission,
                 logsPage,
                 Modifier.weight(1f)
@@ -259,6 +264,7 @@ private fun RadarScreen(
                     onAction,
                     audioHub,
                     connectRadios,
+                    logViewModel,
                     requestMicPermission,
                     logsPage,
                     Modifier.weight(1f)
@@ -274,6 +280,7 @@ private fun PagerCard(
     onAction: (RadarAction) -> Unit,
     audioHub: IAudioHub,
     connectRadios: () -> Unit,
+    logViewModel: LogViewModel,
     requestMicPermission: () -> Unit,
     logsPage: @Composable () -> Unit,
     modifier: Modifier = Modifier
@@ -285,6 +292,7 @@ private fun PagerCard(
         buildList {
             add(RadarPage.Transceivers)
             if (hasCalculatorPage) add(RadarPage.Calculator)
+            add(RadarPage.LiveLog)
             add(RadarPage.Sstv)
             add(RadarPage.Logs)
         }
@@ -336,6 +344,10 @@ private fun PagerCard(
                         calculatorOffsetKHz = uiState.calculatorOffsetKHz,
                         onAction = onAction,
                         requestMicPermission = requestMicPermission
+                    )
+                    RadarPage.LiveLog -> LogPage(
+                        uiState = uiState,
+                        logViewModel = logViewModel
                     )
                     RadarPage.Sstv -> SstvPage(
                         sstv = uiState.sstv,

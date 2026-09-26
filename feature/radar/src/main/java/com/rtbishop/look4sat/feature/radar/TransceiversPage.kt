@@ -66,6 +66,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -222,6 +223,7 @@ fun CalculatorPage(
             orbitalPos = orbitalPos,
             offsetKHz = calculatorOffsetKHz,
             onOffsetChange = { onAction(RadarAction.ChangeCalculatorOffset(it)) },
+            onFrequencyChange = { tx, rx -> onAction(RadarAction.UpdateCalculatorFrequency(tx, rx)) },
             modifier = Modifier.fillMaxWidth()
         )
 
@@ -588,6 +590,7 @@ private fun DopplerFrequencyCalculator(
     orbitalPos: OrbitalPos?,
     offsetKHz: String = "",
     onOffsetChange: (String) -> Unit = {},
+    onFrequencyChange: (Long, Long) -> Unit = { _, _ -> },
     modifier: Modifier = Modifier
 ) {
     if (orbitalPos == null || !DopplerFrequencyCalculator.isLinearTransponder(transponder)) return
@@ -597,6 +600,11 @@ private fun DopplerFrequencyCalculator(
     var rxFrequencyHz by rememberSaveable(transponder.uuid) { mutableStateOf(0L) }
     var passbandPosition by rememberSaveable(transponder.uuid) { mutableStateOf(0.5f) }
     var stepSizeKHz by remember { mutableIntStateOf(1) }
+
+    // Keep the live log page aligned with the calculator frequencies.
+    SideEffect {
+        if (txFrequencyHz != 0L && rxFrequencyHz != 0L) onFrequencyChange(txFrequencyHz, rxFrequencyHz)
+    }
 
     val offsetHz = DopplerFrequencyCalculator.parseOffsetHz(offsetKHz)
 

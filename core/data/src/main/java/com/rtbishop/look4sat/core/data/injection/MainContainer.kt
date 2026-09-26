@@ -31,6 +31,7 @@ import com.rtbishop.look4sat.core.data.database.QsoDatabase
 import com.rtbishop.look4sat.core.data.database.QSO_MIGRATION_1_2
 import com.rtbishop.look4sat.core.data.database.QSO_MIGRATION_2_3
 import com.rtbishop.look4sat.core.data.database.QSO_MIGRATION_3_4
+import com.rtbishop.look4sat.core.data.database.QSO_MIGRATION_4_5
 import com.rtbishop.look4sat.core.data.lotw.LoTWUploadRepository
 import com.rtbishop.look4sat.core.data.framework.BluetoothReporter
 import com.rtbishop.look4sat.core.data.framework.AndroidRadioTransportFactory
@@ -103,7 +104,7 @@ class MainContainer(private val context: Context) : IMainContainer {
     override val databaseRepo = provideDatabaseRepo()
     override val qsoRepository: IQsoRepository by lazy {
         val database = Room.databaseBuilder(context, QsoDatabase::class.java, "Look4SatQsoDB")
-            .addMigrations(QSO_MIGRATION_1_2, QSO_MIGRATION_2_3, QSO_MIGRATION_3_4)
+            .addMigrations(QSO_MIGRATION_1_2, QSO_MIGRATION_2_3, QSO_MIGRATION_3_4, QSO_MIGRATION_4_5)
             .build()
         QsoRepository(database.qsoDao(), Dispatchers.IO)
     }

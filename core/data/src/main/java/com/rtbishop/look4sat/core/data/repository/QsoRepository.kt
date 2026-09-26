@@ -58,6 +58,11 @@ class QsoRepository(
 
     override suspend fun delete(id: Long) = withContext(dispatcher) { importMutex.withLock { dao.delete(id) } }
 
+    override suspend fun markUploaded(ids: List<Long>) = withContext(dispatcher) {
+        if (ids.isEmpty()) return@withContext
+        dao.markUploaded(ids)
+    }
+
     override suspend fun exportAdi(ids: Set<Long>?, includeIncomplete: Boolean): String = withContext(dispatcher) {
         val records = dao.getAll()
             .asSequence()
@@ -148,6 +153,7 @@ private fun QsoEntity.toDomain() = QsoRecord(
     messageEvents = QsoEventCodec.decode(messageEvents),
     propagationMode = propagationMode,
     lotwConfirmed = lotwConfirmed,
+    lotwUploaded = lotwUploaded,
     lotwReceived = lotwReceived,
     lotwQslDate = lotwQslDate,
     vuccGrids = vuccGrids.split(',').filter(String::isNotBlank),
@@ -187,6 +193,7 @@ private fun QsoRecord.toEntity() = QsoEntity(
     messageEvents = QsoEventCodec.encode(messageEvents),
     propagationMode = propagationMode.ifBlank { if (satelliteName.isNotBlank()) "SAT" else "" },
     lotwConfirmed = lotwConfirmed,
+    lotwUploaded = lotwUploaded,
     lotwReceived = lotwReceived,
     lotwQslDate = lotwQslDate,
     vuccGrids = vuccGrids.joinToString(","),

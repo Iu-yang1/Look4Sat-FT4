@@ -43,9 +43,11 @@ import com.rtbishop.look4sat.core.domain.usecase.IShowToast
 import com.rtbishop.look4sat.core.domain.time.IDisciplinedClock
 import com.rtbishop.look4sat.core.domain.time.ITimeSynchronizationService
 import com.rtbishop.look4sat.core.domain.utility.VersionComparator
+import com.rtbishop.look4sat.core.domain.logbook.toConfirmedRecord
 import com.rtbishop.look4sat.core.presentation.R
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -63,7 +65,8 @@ class SettingsViewModel(
     private val updateRepo: IUpdateRepository,
     private val wavelogRepo: IWavelogRepository,
     private val lotwRepo: com.rtbishop.look4sat.core.domain.repository.ILoTWRepository,
-    private val qsoRepo: IQsoRepository,
+    private val qsoRepository: IQsoRepository,
+    private val lotwUploadRepository: com.rtbishop.look4sat.core.domain.repository.ILoTWUploadRepository,
     private val sensorsRepo: ISensorsRepo,
     private val apkFile: File,
     private val showToast: IShowToast
@@ -209,6 +212,11 @@ class SettingsViewModel(
                 _uiState.update { it.copy(lotwSettings = settings) }
             }
         }
+        viewModelScope.launch {
+            qsoRepository.records.collect { records ->
+                _uiState.update { it.copy(logbookRecords = records) }
+            }
+        }
     }
 
 
@@ -283,6 +291,18 @@ class SettingsViewModel(
             is SettingsAction.UpdateLoTW -> settingsRepo.updateLoTWSettings(action.settings)
             is SettingsAction.SyncLoTWGrids -> syncLoTWGrids(action.settings, action.mode)
             SettingsAction.CancelLoTWSync -> cancelLoTWSync()
+            // Logbook
+            SettingsAction.RefreshLogbook -> refreshLogbook()
+            is SettingsAction.DeleteLogbookRecord -> viewModelScope.launch { qsoRepository.delete(action.id) }
+            SettingsAction.PrepareLogbookUpload -> prepareLogbookUpload()
+            SettingsAction.ConfirmLogbookUpload -> confirmLogbookUpload()
+            SettingsAction.DismissLogbookPreview -> dismissLogbookPreview()
+            SettingsAction.ClearLogbookMessage -> clearLogbookMessage()
+            // LoTW upload configuration
+            SettingsAction.LoadLoTWUploadStatus -> loadLoTWUploadStatus()
+            is SettingsAction.ImportLoTWCertificate -> importLoTWCertificate(action.bytes, action.password)
+            SettingsAction.RemoveLoTWCertificate -> removeLoTWCertificate()
+            is SettingsAction.SaveLoTWStation -> saveLoTWStation(action.station)
             // Update checker
             SettingsAction.CheckForUpdate -> checkForUpdate()
             SettingsAction.DownloadUpdate -> downloadUpdate()
@@ -342,11 +362,18 @@ class SettingsViewModel(
             }
             when (result) {
                 is LoTWResult.Success -> {
-                    qsoRepo.mergeLoTW(result.records)
+                    qsoRepository.mergeLoTW(result.records)
                     // Incremental: merge new grids/QSOs into the stored set (dedup
                     // by call + QSO time); full: the fresh report replaces it all.
                     // Shared with the automatic sync on app start (MainApplication).
                     val mergedGridsCount = applyLoTWGridResult(settingsRepo, result, effectiveMode, callsign)
+                    // Feed the logbook: imported confirmations show up in 日志本 and
+                    // match local uploads (sameConfirmedContact) to mark them confirmed.
+                    viewModelScope.launch {
+                        val confirmed = result.qsos.values.flatten()
+                            .map { it.toConfirmedRecord(callsign) }
+                        qsoRepository.mergeLoTW(confirmed)
+                    }
                     _uiState.update { state ->
                         state.copy(
                             lotwSyncing = false, lotwSyncMode = null, lotwProgress = null,
@@ -392,6 +419,117 @@ class SettingsViewModel(
         lotwSyncJob?.cancel()
         lotwSyncJob = null
         _uiState.update { it.copy(lotwSyncing = false, lotwSyncMode = null, lotwProgress = null) }
+    }
+
+    // endregion
+
+    // region Logbook + LoTW upload configuration
+
+    private fun refreshLogbook() {
+        viewModelScope.launch {
+            _uiState.update { it.copy(logbookRecords = qsoRepository.records.first()) }
+        }
+    }
+
+    // Record ids submitted in the most recent logbook prepare → upload cycle, so a
+    // successful POST can mark them "uploaded" (distinct from "confirmed").
+    private var lastLogbookUploadIds: List<Long> = emptyList()
+
+    private fun prepareLogbookUpload() {
+        if (_uiState.value.logbookUploadBusy) return
+        viewModelScope.launch {
+            _uiState.update { it.copy(logbookUploadBusy = true, logbookUploadMessage = "") }
+            try {
+                val all = qsoRepository.records.first()
+                // Only local (non-confirmed) records are candidates for upload;
+                // LoTW-imported confirmations are the feedback side.
+                val pending = all.filter { !it.lotwConfirmed && it.status == com.rtbishop.look4sat.core.domain.logbook.QsoStatus.COMPLETE }
+                val audit = lotwUploadRepository.audit(pending)
+                if (audit.pending == 0) {
+                    _uiState.update { it.copy(logbookUploadBusy = false, logbookUploadMessage = "No pending QSOs to upload") }
+                    return@launch
+                }
+                val preview = lotwUploadRepository.prepare(pending, false)
+                lastLogbookUploadIds = pending.map { it.id }
+                _uiState.update { it.copy(logbookUploadBusy = false, logbookPreview = preview) }
+            } catch (e: com.rtbishop.look4sat.core.domain.repository.LoTWOperationException) {
+                _uiState.update { it.copy(logbookUploadBusy = false, logbookUploadMessage = "Upload unavailable: ${e.reason}") }
+            } catch (_: Exception) {
+                _uiState.update { it.copy(logbookUploadBusy = false, logbookUploadMessage = "Upload failed") }
+            }
+        }
+    }
+
+    private fun confirmLogbookUpload() {
+        val preview = _uiState.value.logbookPreview ?: return
+        viewModelScope.launch {
+            _uiState.update { it.copy(logbookUploadBusy = true) }
+            val result = lotwUploadRepository.upload(preview.id)
+            if (result is com.rtbishop.look4sat.core.domain.repository.LoTWUploadResult.Accepted && lastLogbookUploadIds.isNotEmpty()) {
+                qsoRepository.markUploaded(lastLogbookUploadIds)
+                lastLogbookUploadIds = emptyList()
+            }
+            val msg = when (result) {
+                is com.rtbishop.look4sat.core.domain.repository.LoTWUploadResult.Accepted -> "Uploaded ${result.count} QSO(s) — accepted by LoTW"
+                is com.rtbishop.look4sat.core.domain.repository.LoTWUploadResult.Rejected -> "Rejected: ${result.message}"
+                com.rtbishop.look4sat.core.domain.repository.LoTWUploadResult.Unknown -> "Unknown result — will not auto-retry"
+                com.rtbishop.look4sat.core.domain.repository.LoTWUploadResult.ExpiredPreview -> "Preview expired — tap upload again"
+            }
+            _uiState.update { it.copy(logbookUploadBusy = false, logbookPreview = null, logbookUploadMessage = msg) }
+        }
+    }
+
+    private fun dismissLogbookPreview() = _uiState.update { it.copy(logbookPreview = null) }
+
+    private fun clearLogbookMessage() = _uiState.update { it.copy(logbookUploadMessage = "") }
+
+    private fun loadLoTWUploadStatus() {
+        viewModelScope.launch {
+            val cert = lotwUploadRepository.certificate()
+            val station = lotwUploadRepository.station()
+            // Config parsing failure must never crash the dialog — degrade to no meta.
+            val meta = cert?.let { runCatching { lotwUploadRepository.stationMeta(it.dxcc) }.getOrNull() }
+            _uiState.update { it.copy(lotwCertificate = cert, lotwStation = station, lotwStationMeta = meta, lotwUploadBusy = false) }
+        }
+    }
+
+    private fun importLoTWCertificate(bytes: ByteArray, password: CharArray) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(lotwUploadBusy = true, lotwUploadError = null) }
+            try {
+                val cert = lotwUploadRepository.importCertificate(bytes, password)
+                _uiState.update { it.copy(lotwCertificate = cert, lotwUploadBusy = false, lotwUploadError = null) }
+            } catch (e: com.rtbishop.look4sat.core.domain.repository.LoTWOperationException) {
+                val error = when (e.reason) {
+                    com.rtbishop.look4sat.core.domain.repository.LoTWProblem.CERTIFICATE_PASSWORD -> LoTWUploadError.PASSWORD
+                    com.rtbishop.look4sat.core.domain.repository.LoTWProblem.CERTIFICATE_EXPIRED -> LoTWUploadError.EXPIRED
+                    com.rtbishop.look4sat.core.domain.repository.LoTWProblem.CERTIFICATE_FORMAT -> LoTWUploadError.FORMAT
+                    else -> LoTWUploadError.INVALID_FILE
+                }
+                _uiState.update { it.copy(lotwUploadBusy = false, lotwUploadError = error) }
+            } catch (_: Exception) {
+                _uiState.update { it.copy(lotwUploadBusy = false, lotwUploadError = LoTWUploadError.UNKNOWN) }
+            }
+        }
+    }
+
+    private fun removeLoTWCertificate() {
+        viewModelScope.launch {
+            lotwUploadRepository.removeCertificate()
+            _uiState.update { it.copy(lotwCertificate = null, lotwStation = null, lotwStationMeta = null) }
+        }
+    }
+
+    private fun saveLoTWStation(station: com.rtbishop.look4sat.core.domain.repository.LoTWStation) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(lotwUploadBusy = true) }
+            try {
+                val saved = lotwUploadRepository.saveStation(station)
+                _uiState.update { it.copy(lotwStation = saved, lotwUploadBusy = false) }
+            } catch (_: Exception) {
+                _uiState.update { it.copy(lotwUploadBusy = false) }
+            }
+        }
     }
 
     // endregion
@@ -535,7 +673,8 @@ class SettingsViewModel(
                     updateRepo = container.updateRepo,
                     wavelogRepo = container.wavelogRepo,
                     lotwRepo = container.lotwRepo,
-                    qsoRepo = container.qsoRepository,
+                    qsoRepository = container.qsoRepository,
+                    lotwUploadRepository = container.lotwUploadRepository,
                     sensorsRepo = container.provideSensorsRepo(),
                     apkFile = File(context.cacheDir, "look4sat-update.apk"),
                     showToast = container.provideShowToast()

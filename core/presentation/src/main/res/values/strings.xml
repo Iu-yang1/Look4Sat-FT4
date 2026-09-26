@@ -222,11 +222,15 @@
     <string name="lotw_sync_progress_qso">Syncing %1$d QSOs, ~%2$d s remaining</string>
     <string name="prefs_locator_text">Set station\'s position using locator</string>
 
+    <string name="btn_delete">Delete</string>
     <string name="prefs_logbook_title">Logbook</string>
     <string name="prefs_logbook_count">%1$d records — local QSOs and LoTW confirmations</string>
     <string name="prefs_logbook_empty">No records yet — record QSOs from the Radar Log tab</string>
     <string name="prefs_logbook_close">Close</string>
-    <string name="prefs_lotw_upload_title">LoTW upload</string>
+    <string name="prefs_logbook_upload">Upload</string>
+    <string name="prefs_logbook_upload_title">Upload to LoTW</string>
+    <string name="prefs_logbook_upload_confirm">Upload</string>
+    <string name="prefs_lotw_upload_title">LoTW upload certificate</string>
     <string name="prefs_lotw_upload_configured">Certificate imported · station grid %1$s</string>
     <string name="prefs_lotw_upload_not_configured">Not configured — import your TrustedQSL certificate to upload QSOs</string>
     <string name="prefs_lotw_upload_busy">Working…</string>
@@ -237,10 +241,12 @@
     <string name="prefs_lotw_upload_error_password">Incorrect certificate password. Check the password you set when exporting the .p12 from TQSL.</string>
     <string name="prefs_lotw_upload_error_expired">Certificate is expired or not yet valid.</string>
     <string name="prefs_lotw_upload_error_invalid">Not a valid LoTW certificate file.</string>
+    <string name="prefs_lotw_upload_error_format">This .p12 uses the new PBES2/AES-256 format (OpenSSL 3 / recent TQSL), which Android cannot read directly. Re-export it as a legacy format (TQSL "export with legacy encryption" or an OpenSSL -legacy conversion), then import again.</string>
     <string name="prefs_lotw_upload_error_unknown">Import failed. Try again.</string>
     <string name="prefs_lotw_upload_cert_info">%1$s · DXCC %2$d · expires %3$s</string>
     <string name="prefs_lotw_upload_remove">Remove certificate</string>
     <string name="prefs_lotw_upload_station_title">Station location</string>
+    <string name="prefs_lotw_upload_region_hint">Not selected</string>
     <string name="prefs_lotw_upload_grid">Grid(s), comma-separated</string>
     <string name="prefs_lotw_upload_save">Save</string>
     <string name="prefs_lotw_upload_close">Close</string>

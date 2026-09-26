@@ -8,6 +8,7 @@ import com.rtbishop.look4sat.core.domain.repository.LoTWCertificate
 import com.rtbishop.look4sat.core.domain.repository.LoTWOperationException
 import com.rtbishop.look4sat.core.domain.repository.LoTWProblem
 import com.rtbishop.look4sat.core.domain.repository.LoTWStation
+import com.rtbishop.look4sat.core.domain.repository.LoTWStationMeta
 import com.rtbishop.look4sat.core.domain.repository.LoTWUploadAudit
 import com.rtbishop.look4sat.core.domain.repository.LoTWUploadPreview
 import com.rtbishop.look4sat.core.domain.repository.LoTWUploadResult
@@ -124,8 +125,18 @@ class LoTWUploadRepository internal constructor(
             val stored = storage.read("certificate") ?: fail(LoTWProblem.CERTIFICATE_MISSING)
             val bundle = try { readBundle(stored) } finally { stored.fill(0) }
             val normalized = station.normalized()
-            try { config().stationFields(normalized, bundle.info.dxcc) }
-            finally {
+            try {
+                config().stationFields(normalized, bundle.info.dxcc)
+            } catch (e: LoTWOperationException) {
+                // A region saved under a different certificate no longer applies to
+                // this DXCC entity — drop it instead of failing the whole save.
+                if (e.reason != LoTWProblem.STATION_REGION) throw e
+                val cleaned = normalized.copy(region = "", county = "")
+                config().stationFields(cleaned, bundle.info.dxcc)
+                writeStation(cleaned)
+                discardPreview()
+                return@withLock cleaned
+            } finally {
                 bundle.p12.fill(0)
                 bundle.password?.fill(0)
             }
@@ -137,6 +148,10 @@ class LoTWUploadRepository internal constructor(
 
     override suspend fun removeCertificate() = withContext(Dispatchers.IO) {
         mutex.withLock { discardPreview(); storage.delete("certificate") }
+    }
+
+    override suspend fun stationMeta(dxcc: Int): LoTWStationMeta = withContext(Dispatchers.IO) {
+        config().stationMeta(dxcc)
     }
 
     override suspend fun audit(records: List<QsoRecord>): LoTWUploadAudit = withContext(Dispatchers.IO) {

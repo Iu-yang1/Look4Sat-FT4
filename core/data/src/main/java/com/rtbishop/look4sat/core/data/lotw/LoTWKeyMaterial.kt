@@ -17,16 +17,40 @@ internal data class LoTWKeyMaterial(val key: PrivateKey, val certificate: X509Ce
     companion object {
         fun read(bytes: ByteArray, password: CharArray, now: Long): LoTWKeyMaterial {
             if (bytes.isEmpty() || bytes.size > MAX_CERTIFICATE_BYTES) fail(LoTWProblem.CERTIFICATE_INVALID)
+            val key: PrivateKey
+            val cert: X509Certificate
             val store = try {
                 KeyStore.getInstance("PKCS12").apply { bytes.inputStream().use { load(it, password) } }
-            } catch (_: Exception) { fail(LoTWProblem.CERTIFICATE_PASSWORD) }
-            val aliases = Collections.list(store.aliases()).filter { store.isKeyEntry(it) }
-            if (aliases.size != 1) fail(LoTWProblem.CERTIFICATE_INVALID)
-            val alias = aliases.single()
-            val key = try { store.getKey(alias, password) as? PrivateKey }
-            catch (_: Exception) { fail(LoTWProblem.CERTIFICATE_PASSWORD) }
-                ?: fail(LoTWProblem.CERTIFICATE_INVALID)
-            val cert = store.getCertificate(alias) as? X509Certificate ?: fail(LoTWProblem.CERTIFICATE_INVALID)
+            } catch (_: Exception) {
+                // Modern TQSL / OpenSSL 3 exports use PBES2+AES-CBC which Android's legacy
+                // Bouncy Castle parser cannot read. Fall back to our own PBES2 reader; if
+                // that fails too, report the real reason (format vs password).
+                if (isPbes2(bytes)) {
+                    try {
+                        val parsed = Pkcs12Reader.read(bytes, password)
+                        parsed.first to parsed.second
+                    } catch (_: Exception) {
+                        fail(if (password.isNotEmpty()) LoTWProblem.CERTIFICATE_FORMAT else LoTWProblem.CERTIFICATE_PASSWORD)
+                    }
+                } else {
+                    fail(LoTWProblem.CERTIFICATE_PASSWORD)
+                }
+            }
+            if (store is Pair<*, *>) {
+                @Suppress("UNCHECKED_CAST")
+                key = store.first as PrivateKey
+                @Suppress("UNCHECKED_CAST")
+                cert = store.second as X509Certificate
+            } else {
+                val ks = store as KeyStore
+                val aliases = Collections.list(ks.aliases()).filter { ks.isKeyEntry(it) }
+                if (aliases.size != 1) fail(LoTWProblem.CERTIFICATE_INVALID)
+                val alias = aliases.single()
+                key = try { ks.getKey(alias, password) as? PrivateKey }
+                catch (_: Exception) { fail(LoTWProblem.CERTIFICATE_PASSWORD) }
+                    ?: fail(LoTWProblem.CERTIFICATE_INVALID)
+                cert = ks.getCertificate(alias) as? X509Certificate ?: fail(LoTWProblem.CERTIFICATE_INVALID)
+            }
             if (key.algorithm != "RSA" || cert.publicKey.algorithm != "RSA") fail(LoTWProblem.CERTIFICATE_INVALID)
             try { cert.checkValidity(Date(now)) } catch (_: Exception) { fail(LoTWProblem.CERTIFICATE_EXPIRED) }
             val info = try { metadata(cert) } catch (_: Exception) { fail(LoTWProblem.CERTIFICATE_INVALID) }
@@ -36,6 +60,18 @@ internal data class LoTWKeyMaterial(val key: PrivateKey, val certificate: X509Ce
             val valid = Signature.getInstance("SHA1withRSA").run { initVerify(cert); update(challenge); verify(signed) }
             if (!valid) fail(LoTWProblem.CERTIFICATE_INVALID)
             return LoTWKeyMaterial(key, cert, info)
+        }
+
+        /** True when the PKCS12 uses PBES2 (OID 1.2.840.113549.1.5.13), the default
+         *  algorithm of OpenSSL 3 / modern TQSL. Android's legacy BC parser can't read it. */
+        private fun isPbes2(bytes: ByteArray): Boolean {
+            val oid = byteArrayOf(0x2a, 0x86.toByte(), 0x48, 0x86.toByte(), 0xf7.toByte(), 0x0d, 0x01, 0x05, 0x0d)
+            if (bytes.size < oid.size) return false
+            outer@ for (i in 0..bytes.size - oid.size) {
+                for (j in oid.indices) if (bytes[i + j] != oid[j]) continue@outer
+                return true
+            }
+            return false
         }
 
         private fun metadata(cert: X509Certificate): LoTWCertificate {

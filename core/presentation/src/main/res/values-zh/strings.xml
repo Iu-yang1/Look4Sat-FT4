@@ -321,7 +321,9 @@
         \n• Libre Space Foundation (SatNOGS)
         \n• xdsopl 和 Robot36 贡献者!
         \n• BG7NTA BG5JSU（CW解码功能）
-        \n• BH2VSQ BG5JSU（天地图渲染支持）</string>
+        \n• BH2VSQ BG5JSU（天地图渲染支持）
+        \n• BG5JSU（LoTW上传支持）
+    </string>
     <string name="prefs_outro_license">该应用程序不提供任何保修.</string>
 
     <!-- 匹配页 Mutual match page -->

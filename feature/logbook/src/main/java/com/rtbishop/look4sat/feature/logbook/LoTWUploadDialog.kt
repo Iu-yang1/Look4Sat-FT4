@@ -448,6 +448,7 @@ private fun problemText(problem: LoTWProblem): Int = when (problem) {
     LoTWProblem.CERTIFICATE_PASSWORD -> R.string.lotw_certificate_password_error
     LoTWProblem.CERTIFICATE_EXPIRED -> R.string.lotw_certificate_expired
     LoTWProblem.CERTIFICATE_INVALID, LoTWProblem.CERTIFICATE_MISSING -> R.string.lotw_certificate_invalid
+    LoTWProblem.CERTIFICATE_FORMAT -> R.string.lotw_certificate_format
     LoTWProblem.STORAGE -> R.string.lotw_storage_error
     LoTWProblem.EMPTY_SELECTION -> R.string.lotw_nothing_to_upload
     LoTWProblem.CALLSIGN_MISMATCH -> R.string.lotw_callsign_mismatch

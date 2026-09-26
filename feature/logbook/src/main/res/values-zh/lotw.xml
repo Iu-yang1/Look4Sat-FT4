@@ -47,6 +47,7 @@
     <string name="lotw_certificate_password_error">无法解锁 .p12 文件。请核对证书备份密码（不是 LoTW 登录密码），或从 TQSL 重新导出证书。</string>
     <string name="lotw_certificate_expired">呼号证书已过期或尚未生效，请检查手机日期并导入有效证书。</string>
     <string name="lotw_certificate_invalid">需要有效的 LoTW 呼号证书及唯一匹配的 RSA 私钥。.tq6 或仅含申请密钥的文件不能签名。</string>
+    <string name="lotw_certificate_format">此 .p12 使用了不支持的加密方案（例如非 AES-256-CBC 的 PBES2）。请在 TQSL 中用标准加密重新导出后再导入。</string>
     <string name="lotw_storage_error">本地操作未完成，请检查设备存储和证书访问权限。未自动重试上传。</string>
     <string name="lotw_callsign_mismatch">日志中的本台呼号与证书不一致，请修正日志或筛选对应呼号。</string>
     <string name="lotw_qso_date_error">通联时间在未来，或超出证书允许签名的 QSO 日期范围。</string>

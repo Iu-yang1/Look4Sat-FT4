@@ -47,6 +47,7 @@
     <string name="lotw_certificate_password_error">Cannot unlock this .p12 file. Check the certificate backup password (not the LoTW login password), or export the certificate again from TQSL.</string>
     <string name="lotw_certificate_expired">The callsign certificate is expired or not yet valid. Check the phone date and import a valid certificate.</string>
     <string name="lotw_certificate_invalid">A valid LoTW callsign certificate with one matching RSA private key is required. .tq6 and key-only requests cannot sign logs.</string>
+    <string name="lotw_certificate_format">This .p12 uses an unsupported encryption scheme (e.g. PBES2 with a non-AES-256-CBC cipher). Re-export the certificate from TQSL with standard encryption, then import again.</string>
     <string name="lotw_storage_error">Cannot complete this local operation. Check device storage and certificate access. No automatic upload retry was attempted.</string>
     <string name="lotw_callsign_mismatch">A contact’s station callsign does not match the certificate. Correct the log or filter for the matching callsign.</string>
     <string name="lotw_qso_date_error">A contact is in the future or outside the certificate’s permitted QSO date range.</string>

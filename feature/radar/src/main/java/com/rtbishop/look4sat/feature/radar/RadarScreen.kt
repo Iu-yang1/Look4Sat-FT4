@@ -74,6 +74,7 @@ import com.rtbishop.look4sat.core.presentation.TimerRow
 import com.rtbishop.look4sat.core.presentation.TopBar
 import com.rtbishop.look4sat.core.presentation.formatFrequency
 import com.rtbishop.look4sat.core.presentation.getDefaultPass
+import com.rtbishop.look4sat.core.presentation.hasEnoughHeight
 import com.rtbishop.look4sat.core.presentation.isVerticalLayout
 import com.rtbishop.look4sat.core.presentation.layoutPadding
 import kotlinx.coroutines.launch
@@ -180,6 +181,12 @@ private fun RadarScreen(
         verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
         val isVertical = isVerticalLayout()
+        // In split-screen / small windows the vertical space is scarce: give the
+        // radar card the priority share so the plot stays large (its Canvas is a
+        // square limited by the card's smaller dimension), and shrink the pager
+        // card — its pages are all scrollable, so nothing gets clipped.
+        val radarWeight = if (isVertical && !hasEnoughHeight()) 1.6f else 1f
+        val pagerWeight = if (isVertical && !hasEnoughHeight()) 0.6f else 1f
         if (isVertical) {
             TopBar {
                 IconCard(action = navigateUp, resId = R.drawable.ic_back)
@@ -196,8 +203,8 @@ private fun RadarScreen(
             }
         }
         if (isVertical) {
-            RadarCard(uiState, trackB, trackBPosition, Modifier.weight(1f))
-            PagerCard(uiState, onAction, logViewModel, requestMicPermission, Modifier.weight(1f))
+            RadarCard(uiState, trackB, trackBPosition, Modifier.weight(radarWeight))
+            PagerCard(uiState, onAction, logViewModel, requestMicPermission, Modifier.weight(pagerWeight))
         } else {
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 RadarCard(uiState, trackB, trackBPosition, Modifier.weight(1f))

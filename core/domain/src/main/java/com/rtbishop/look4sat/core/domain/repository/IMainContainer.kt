@@ -49,6 +49,7 @@ interface IMainContainer {
     val wavelogRepo: IWavelogRepository
     val lotwRepo: ILoTWRepository
     val radioTrackingService: IRadioTrackingService
+    val rotatorTrackingService: IRotatorTrackingService
     val mutualPassData: StateFlow<MutualPassData>
     fun setMutualPassData(data: MutualPassData)
     fun provideAddToCalendar(): IAddToCalendar

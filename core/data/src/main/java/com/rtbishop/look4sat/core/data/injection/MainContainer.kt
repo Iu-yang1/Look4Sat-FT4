@@ -20,6 +20,7 @@ package com.rtbishop.look4sat.core.data.injection
 import android.bluetooth.BluetoothManager
 import android.content.Context
 import android.hardware.SensorManager
+import android.hardware.GeomagneticField
 import android.hardware.display.DisplayManager
 import android.location.LocationManager
 import androidx.room.Room
@@ -35,8 +36,11 @@ import com.rtbishop.look4sat.core.data.database.QSO_MIGRATION_4_5
 import com.rtbishop.look4sat.core.data.lotw.LoTWUploadRepository
 import com.rtbishop.look4sat.core.data.framework.BluetoothReporter
 import com.rtbishop.look4sat.core.data.framework.AndroidRadioTransportFactory
+import com.rtbishop.look4sat.core.data.framework.AndroidRotatorTransportFactory
 import com.rtbishop.look4sat.core.data.framework.NetworkReporter
 import com.rtbishop.look4sat.core.data.framework.RadioTrackingService
+import com.rtbishop.look4sat.core.data.framework.RepositoryRotatorOrbitSource
+import com.rtbishop.look4sat.core.data.framework.RotatorTrackingService
 import com.rtbishop.look4sat.core.data.ft4.Ft4Service
 import com.rtbishop.look4sat.core.data.ft4.Ft4AudioTransmitter
 import com.rtbishop.look4sat.core.data.repository.AmSatRepository
@@ -68,6 +72,7 @@ import com.rtbishop.look4sat.core.domain.time.SystemDisciplinedClock
 import com.rtbishop.look4sat.core.domain.repository.IDatabaseRepo
 import com.rtbishop.look4sat.core.domain.repository.IMainContainer
 import com.rtbishop.look4sat.core.domain.repository.IRadioTrackingService
+import com.rtbishop.look4sat.core.domain.repository.IRotatorTrackingService
 import com.rtbishop.look4sat.core.domain.repository.IReporter
 import com.rtbishop.look4sat.core.domain.repository.ILoTWRepository
 import com.rtbishop.look4sat.core.domain.repository.ISatelliteRepo
@@ -143,6 +148,29 @@ class MainContainer(private val context: Context) : IMainContainer {
         )
     }
     override val radioTrackingService: IRadioTrackingService by lazy { sharedRadioTrackingService }
+    override val rotatorTrackingService: IRotatorTrackingService by lazy {
+        val manager = context.getSystemService(BluetoothManager::class.java)
+        val serialFactory = AndroidRadioTransportFactory(context, manager)
+        val transportFactory = AndroidRotatorTransportFactory(serialFactory)
+        RotatorTrackingService(
+            appScope = appScope,
+            orbitSource = RepositoryRotatorOrbitSource(satelliteRepo) {
+                settingsRepo.stationPosition.value
+            },
+            nowMillis = disciplinedClock::nowMillis,
+            settingsProvider = { settingsRepo.rotatorSettings.value },
+            transportFactory = transportFactory::create,
+            stationPosition = { settingsRepo.stationPosition.value },
+            magneticDeclinationDegrees = { position, time ->
+                GeomagneticField(
+                    position.latitude.toFloat(),
+                    position.longitude.toFloat(),
+                    position.altitude.toFloat(),
+                    time
+                ).declination.toDouble()
+            }
+        )
+    }
     override val ft4TransmitCoordinator: IFt4TransmitCoordinator by lazy { sharedRadioTrackingService }
     override val ft4AudioTransmitter: IFt4AudioTransmitter by lazy {
         Ft4AudioTransmitter(context, ft4Service, ft4TransmitCoordinator, disciplinedClock)

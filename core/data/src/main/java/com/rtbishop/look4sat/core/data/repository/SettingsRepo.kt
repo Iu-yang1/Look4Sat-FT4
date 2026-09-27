@@ -35,6 +35,10 @@ import com.rtbishop.look4sat.core.domain.model.supportedRadioBaudRates
 import com.rtbishop.look4sat.core.domain.model.WavelogSettings
 import com.rtbishop.look4sat.core.domain.predict.GeoPos
 import com.rtbishop.look4sat.core.domain.repository.ISettingsRepo
+import com.rtbishop.look4sat.core.domain.rotator.RotatorAzimuthRange
+import com.rtbishop.look4sat.core.domain.rotator.RotatorProtocol
+import com.rtbishop.look4sat.core.domain.rotator.RotatorSettings
+import com.rtbishop.look4sat.core.domain.rotator.RotatorTransport
 import com.rtbishop.look4sat.core.domain.utility.positionToQth
 import com.rtbishop.look4sat.core.domain.utility.qthToPosition
 import com.rtbishop.look4sat.core.domain.utility.round
@@ -72,6 +76,33 @@ class SettingsRepo(
     private val keyRotatorPort = "rotatorPort"
     private val keyRotatorState = "rotatorState"
     private val keyRotatorFormat = "rotatorFormat"
+    private val keyRotatorSettingsVersion = "rotator.settings.version"
+    private val keyRotatorEnabled = "rotator.enabled"
+    private val keyRotatorProtocol = "rotator.protocol"
+    private val keyRotatorTransport = "rotator.transport"
+    private val keyRotatorDeviceAddress = "rotator.deviceAddress"
+    private val keyRotatorHost = "rotator.host"
+    private val keyRotatorControlPort = "rotator.controlPort"
+    private val keyRotatorBaudRate = "rotator.baudRate"
+    private val keyRotatorCustomPoint = "rotator.customPoint"
+    private val keyRotatorCustomStop = "rotator.customStop"
+    private val keyRotatorCustomQuery = "rotator.customQuery"
+    private val keyRotatorPrepositionLead = "rotator.prepositionLead"
+    private val keyRotatorTrackingLead = "rotator.trackingLead"
+    private val keyRotatorAzimuthLookAhead = "rotator.azimuthLookAhead"
+    private val keyRotatorAzimuthRange = "rotator.azimuthRange"
+    private val keyRotatorAzimuthOffset = "rotator.azimuthOffset"
+    private val keyRotatorElevationOffset = "rotator.elevationOffset"
+    private val keyRotatorDeadband = "rotator.deadband"
+    private val keyRotatorMagneticCorrection = "rotator.magneticCorrection"
+    private val keyRotatorParkAzimuth = "rotator.parkAzimuth"
+    private val keyRotatorParkElevation = "rotator.parkElevation"
+    private val keyRotatorParkOnLos = "rotator.parkOnLos"
+    private val keyRotatorParkOnDisconnect = "rotator.parkOnDisconnect"
+    private val keyRotatorFlip = "rotator.flip"
+    private val keyRotatorMinimumElevation = "rotator.minimumElevation"
+    private val keyRotatorUpdateInterval = "rotator.updateInterval"
+    private val keyRotatorSampleTimeout = "rotator.sampleTimeout"
     private val keyFrequencyState = "frequencyState"
     private val keyFrequencyAddress = "frequencyAddress"
     private val keyFrequencyPort = "frequencyPort"
@@ -623,6 +654,131 @@ class SettingsRepo(
     )
     //endregion
 
+    //region # Rotator control settings
+    private val _rotatorSettings = MutableStateFlow(getRotatorSettings())
+    override val rotatorSettings: StateFlow<RotatorSettings> = _rotatorSettings
+
+    override fun updateRotatorSettings(settings: RotatorSettings) {
+        val normalized = settings.normalized()
+        persistRotatorSettings(normalized)
+        _rotatorSettings.value = normalized
+    }
+
+    private fun getRotatorSettings(): RotatorSettings {
+        if (!preferences.contains(keyRotatorSettingsVersion)) {
+            val migrated = migrateLegacyRotatorSettings(getRCSettings()).normalized()
+            persistRotatorSettings(migrated)
+            return migrated
+        }
+        val defaults = RotatorSettings()
+        return RotatorSettings(
+            enabled = preferences.getBoolean(keyRotatorEnabled, defaults.enabled),
+            protocol = enumValue(
+                preferences.getString(keyRotatorProtocol, null),
+                defaults.protocol
+            ),
+            transport = enumValue(
+                preferences.getString(keyRotatorTransport, null),
+                defaults.transport
+            ),
+            deviceAddress = preferences.getString(keyRotatorDeviceAddress, null) ?: defaults.deviceAddress,
+            host = preferences.getString(keyRotatorHost, null) ?: defaults.host,
+            port = preferences.getInt(keyRotatorControlPort, defaults.port),
+            baudRate = preferences.getInt(keyRotatorBaudRate, defaults.baudRate),
+            customPointTemplate = preferences.getString(keyRotatorCustomPoint, null)
+                ?: defaults.customPointTemplate,
+            customStopTemplate = preferences.getString(keyRotatorCustomStop, null)
+                ?: defaults.customStopTemplate,
+            customQueryTemplate = preferences.getString(keyRotatorCustomQuery, null)
+                ?: defaults.customQueryTemplate,
+            prepositionLeadSeconds = preferences.getInt(
+                keyRotatorPrepositionLead,
+                defaults.prepositionLeadSeconds
+            ),
+            trackingLeadSeconds = preferences.getInt(keyRotatorTrackingLead, defaults.trackingLeadSeconds),
+            azimuthLookAheadSeconds = preferences.getInt(
+                keyRotatorAzimuthLookAhead,
+                defaults.azimuthLookAheadSeconds
+            ),
+            azimuthRange = enumValue(
+                preferences.getString(keyRotatorAzimuthRange, null),
+                defaults.azimuthRange
+            ),
+            azimuthOffsetDegrees = doublePreference(
+                keyRotatorAzimuthOffset,
+                defaults.azimuthOffsetDegrees
+            ),
+            elevationOffsetDegrees = doublePreference(
+                keyRotatorElevationOffset,
+                defaults.elevationOffsetDegrees
+            ),
+            deadbandDegrees = doublePreference(keyRotatorDeadband, defaults.deadbandDegrees),
+            magneticCorrection = preferences.getBoolean(
+                keyRotatorMagneticCorrection,
+                defaults.magneticCorrection
+            ),
+            parkAzimuthDegrees = doublePreference(keyRotatorParkAzimuth, defaults.parkAzimuthDegrees),
+            parkElevationDegrees = doublePreference(keyRotatorParkElevation, defaults.parkElevationDegrees),
+            parkOnLos = preferences.getBoolean(keyRotatorParkOnLos, defaults.parkOnLos),
+            parkOnDisconnect = preferences.getBoolean(
+                keyRotatorParkOnDisconnect,
+                defaults.parkOnDisconnect
+            ),
+            flipOverheadPasses = preferences.getBoolean(keyRotatorFlip, defaults.flipOverheadPasses),
+            minimumElevationDegrees = doublePreference(
+                keyRotatorMinimumElevation,
+                defaults.minimumElevationDegrees
+            ),
+            updateIntervalMillis = preferences.getLong(
+                keyRotatorUpdateInterval,
+                defaults.updateIntervalMillis
+            ),
+            sampleTimeoutMillis = preferences.getLong(
+                keyRotatorSampleTimeout,
+                defaults.sampleTimeoutMillis
+            )
+        ).normalized()
+    }
+
+    private fun persistRotatorSettings(settings: RotatorSettings) {
+        preferences.edit {
+            putInt(keyRotatorSettingsVersion, ROTATOR_SETTINGS_VERSION)
+            putBoolean(keyRotatorEnabled, settings.enabled)
+            putString(keyRotatorProtocol, settings.protocol.name)
+            putString(keyRotatorTransport, settings.transport.name)
+            putString(keyRotatorDeviceAddress, settings.deviceAddress)
+            putString(keyRotatorHost, settings.host)
+            putInt(keyRotatorControlPort, settings.port)
+            putInt(keyRotatorBaudRate, settings.baudRate)
+            putString(keyRotatorCustomPoint, settings.customPointTemplate)
+            putString(keyRotatorCustomStop, settings.customStopTemplate)
+            putString(keyRotatorCustomQuery, settings.customQueryTemplate)
+            putInt(keyRotatorPrepositionLead, settings.prepositionLeadSeconds)
+            putInt(keyRotatorTrackingLead, settings.trackingLeadSeconds)
+            putInt(keyRotatorAzimuthLookAhead, settings.azimuthLookAheadSeconds)
+            putString(keyRotatorAzimuthRange, settings.azimuthRange.name)
+            putString(keyRotatorAzimuthOffset, settings.azimuthOffsetDegrees.toString())
+            putString(keyRotatorElevationOffset, settings.elevationOffsetDegrees.toString())
+            putString(keyRotatorDeadband, settings.deadbandDegrees.toString())
+            putBoolean(keyRotatorMagneticCorrection, settings.magneticCorrection)
+            putString(keyRotatorParkAzimuth, settings.parkAzimuthDegrees.toString())
+            putString(keyRotatorParkElevation, settings.parkElevationDegrees.toString())
+            putBoolean(keyRotatorParkOnLos, settings.parkOnLos)
+            putBoolean(keyRotatorParkOnDisconnect, settings.parkOnDisconnect)
+            putBoolean(keyRotatorFlip, settings.flipOverheadPasses)
+            putString(keyRotatorMinimumElevation, settings.minimumElevationDegrees.toString())
+            putLong(keyRotatorUpdateInterval, settings.updateIntervalMillis)
+            putLong(keyRotatorSampleTimeout, settings.sampleTimeoutMillis)
+        }
+    }
+
+    private inline fun <reified T : Enum<T>> enumValue(stored: String?, default: T): T =
+        enumValues<T>().firstOrNull { it.name == stored } ?: default
+
+    private fun doublePreference(key: String, default: Double): Double =
+        preferences.getString(key, null)?.toDoubleOrNull() ?: default
+    //endregion
+
     //region # Other settings
     private val _otherSettings = MutableStateFlow(getOtherSettings())
     override val otherSettings: StateFlow<OtherSettings> = _otherSettings
@@ -989,5 +1145,55 @@ class SettingsRepo(
     //endregion
 }
 
+internal fun migrateLegacyRotatorSettings(legacy: RCSettings): RotatorSettings {
+    val useNetwork = legacy.rotatorState
+    val useBluetooth = !useNetwork && legacy.bluetoothRotatorState
+    val transport = if (useBluetooth) RotatorTransport.BLUETOOTH_SPP else RotatorTransport.TCP
+    val format = if (useBluetooth) legacy.bluetoothRotatorFormat else legacy.rotatorFormat
+    val protocol = inferLegacyRotatorProtocol(format, transport)
+    val customPoint = if (protocol == RotatorProtocol.CUSTOM_TEMPLATE) {
+        if (
+            transport == RotatorTransport.TCP &&
+            !format.contains("\\n") &&
+            !format.contains('\n')
+        ) "$format\n" else format
+    } else {
+        RotatorSettings().customPointTemplate
+    }
+    return RotatorSettings(
+        enabled = useNetwork || useBluetooth,
+        protocol = protocol,
+        transport = transport,
+        deviceAddress = if (useBluetooth) legacy.bluetoothRotatorAddress else "",
+        host = legacy.rotatorAddress,
+        port = legacy.rotatorPort.toIntOrNull()?.takeIf { it in 1..65_535 }
+            ?: protocol.defaultPort
+            ?: RotatorSettings().port,
+        customPointTemplate = customPoint
+    )
+}
+
+internal fun inferLegacyRotatorProtocol(
+    format: String,
+    transport: RotatorTransport
+): RotatorProtocol {
+    val canonical = format
+        .uppercase(Locale.US)
+        .replace("\\R", "")
+        .replace("\\N", "")
+        .filterNot(Char::isWhitespace)
+    return when {
+        transport == RotatorTransport.TCP && canonical.startsWith("P\$AZ\$EL") ->
+            RotatorProtocol.ROTCTLD
+        canonical.startsWith("W") && canonical.contains("\$AZ") && canonical.contains("\$EL") ->
+            RotatorProtocol.GS232
+        canonical.startsWith("AZ") && canonical.contains("\$AZ") && canonical.contains("EL") &&
+            canonical.contains("\$EL") -> RotatorProtocol.EASYCOMM_II
+        else -> RotatorProtocol.CUSTOM_TEMPLATE
+    }
+}
+
 internal fun parseSelectedModes(value: String?): List<String> =
     value.orEmpty().split(',').map { it.trim() }.filter { it.isNotEmpty() }.distinct().sorted()
+
+private const val ROTATOR_SETTINGS_VERSION = 1

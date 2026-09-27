@@ -26,6 +26,7 @@ import com.rtbishop.look4sat.core.domain.model.RCSettings
 import com.rtbishop.look4sat.core.domain.model.RadioControlSettings
 import com.rtbishop.look4sat.core.domain.model.WavelogSettings
 import com.rtbishop.look4sat.core.domain.predict.GeoPos
+import com.rtbishop.look4sat.core.domain.rotator.RotatorSettings
 import kotlinx.coroutines.flow.StateFlow
 
 interface ISettingsRepo {
@@ -61,6 +62,11 @@ interface ISettingsRepo {
     //region # RC settings
     val rcSettings: StateFlow<RCSettings>
     fun updateRCSettings(settings: RCSettings)
+    //endregion
+
+    //region # Rotator control settings
+    val rotatorSettings: StateFlow<RotatorSettings>
+    fun updateRotatorSettings(settings: RotatorSettings)
     //endregion
 
     //region # Other settings

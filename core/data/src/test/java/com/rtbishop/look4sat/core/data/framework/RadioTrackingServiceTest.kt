@@ -959,6 +959,9 @@ private class FakeSettingsRepo(
     override val rcSettings = MutableStateFlow(
         RCSettings(false, "", "", "", false, "", "", "", 0L, false, "", "", "", false, "", "")
     )
+    override val rotatorSettings = MutableStateFlow(
+        com.rtbishop.look4sat.core.domain.rotator.RotatorSettings()
+    )
     override val otherSettings = MutableStateFlow(
         OtherSettings(
             stateOfAutoUpdate = false,
@@ -1000,6 +1003,9 @@ private class FakeSettingsRepo(
     override fun setSatelliteTypeIds(type: String, ids: List<Int>) = Unit
     override fun updateDatabaseState(state: DatabaseState) { databaseState.value = state }
     override fun updateRCSettings(settings: RCSettings) { rcSettings.value = settings }
+    override fun updateRotatorSettings(
+        settings: com.rtbishop.look4sat.core.domain.rotator.RotatorSettings
+    ) { rotatorSettings.value = settings }
     override fun updateOtherSettings(transform: (OtherSettings) -> OtherSettings) {
         otherSettings.value = transform(otherSettings.value)
     }

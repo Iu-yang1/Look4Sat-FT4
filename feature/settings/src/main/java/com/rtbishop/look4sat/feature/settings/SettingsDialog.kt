@@ -1721,7 +1721,7 @@ private fun parseCivAddress(value: String): Int? {
     return parsed?.takeIf { it in 0..0xFF }
 }
 
-private data class UsbSerialUiPort(
+internal data class UsbSerialUiPort(
     val driverName: String,
     val controlInterfaceId: Int,
     val dataInterfaceId: Int,
@@ -1733,7 +1733,7 @@ private data class UsbSerialUiPort(
     }
 }
 
-private data class RadioDeviceUiEntry(
+internal data class RadioDeviceUiEntry(
     val name: String,
     val address: String,
     val usbDeviceId: Int? = null,
@@ -1805,7 +1805,7 @@ private fun resolveUsbSerialUiDevice(
     return devices.filter(matchesIdentity).singleOrNull()
 }
 
-private fun UsbDevice.usbSerialPorts(): List<UsbSerialUiPort> {
+internal fun UsbDevice.usbSerialPorts(): List<UsbSerialUiPort> {
     val interfaces = (0 until interfaceCount).map(::getInterface)
     val controls = interfaces.filter {
         it.interfaceClass == UsbConstants.USB_CLASS_COMM && it.interfaceSubclass == 0x02

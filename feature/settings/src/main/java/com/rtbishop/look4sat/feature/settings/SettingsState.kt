@@ -31,6 +31,8 @@ import com.rtbishop.look4sat.core.domain.repository.LoTWSyncMode
 import com.rtbishop.look4sat.core.domain.repository.CompassAccuracy
 import com.rtbishop.look4sat.core.domain.time.ClockSnapshot
 import com.rtbishop.look4sat.core.domain.time.TimeSynchronizationState
+import com.rtbishop.look4sat.core.domain.rotator.RotatorSettings
+import com.rtbishop.look4sat.core.domain.rotator.RotatorTrackingState
 import java.io.File
 
 data class PositionSettings(
@@ -65,6 +67,8 @@ data class SettingsState(
     val audioInputDevices: List<AudioInputDevice>,
     val rcSettings: RCSettings,
     val radioControlSettings: RadioControlSettings,
+    val rotatorSettings: RotatorSettings = RotatorSettings(),
+    val rotatorTrackingState: RotatorTrackingState = RotatorTrackingState(),
     val dataSourcesSettings: DataSourcesSettings,
     val dataSourcesStatus: Map<String, Int> = emptyMap(),
     val wavelogSettings: WavelogSettings = WavelogSettings(),
@@ -130,6 +134,12 @@ sealed interface SettingsAction {
     // Remote control
     data class UpdateRC(val settings: RCSettings) : SettingsAction
     data class UpdateRadioControl(val settings: RadioControlSettings) : SettingsAction
+    data class UpdateRotatorControl(val settings: RotatorSettings) : SettingsAction
+    data object ConnectRotator : SettingsAction
+    data object DisconnectRotator : SettingsAction
+    data class TestRotatorPoint(val azimuthDegrees: Double, val elevationDegrees: Double) : SettingsAction
+    data object ParkRotator : SettingsAction
+    data object StopRotator : SettingsAction
 
     // Data sources
     data class UpdateDataSources(val settings: DataSourcesSettings) : SettingsAction

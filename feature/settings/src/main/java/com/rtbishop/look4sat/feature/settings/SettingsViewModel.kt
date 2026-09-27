@@ -29,6 +29,7 @@ import com.rtbishop.look4sat.core.domain.ft4.IFt4Service
 import com.rtbishop.look4sat.core.domain.model.WavelogSettings
 import com.rtbishop.look4sat.core.domain.repository.IMainContainer
 import com.rtbishop.look4sat.core.domain.repository.ISettingsRepo
+import com.rtbishop.look4sat.core.domain.repository.IRotatorTrackingService
 import com.rtbishop.look4sat.core.domain.repository.ISensorsRepo
 import com.rtbishop.look4sat.core.domain.repository.IUpdateRepository
 import com.rtbishop.look4sat.core.domain.repository.LoTWResult
@@ -44,6 +45,7 @@ import com.rtbishop.look4sat.core.domain.time.IDisciplinedClock
 import com.rtbishop.look4sat.core.domain.time.ITimeSynchronizationService
 import com.rtbishop.look4sat.core.domain.utility.VersionComparator
 import com.rtbishop.look4sat.core.domain.logbook.toConfirmedRecord
+import com.rtbishop.look4sat.core.domain.rotator.RotatorPosition
 import com.rtbishop.look4sat.core.presentation.R
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -65,6 +67,7 @@ class SettingsViewModel(
     private val wavelogRepo: IWavelogRepository,
     private val lotwRepo: com.rtbishop.look4sat.core.domain.repository.ILoTWRepository,
     private val qsoRepository: IQsoRepository,
+    private val rotatorTrackingService: IRotatorTrackingService,
     private val sensorsRepo: ISensorsRepo,
     private val apkFile: File,
     private val showToast: IShowToast
@@ -88,6 +91,8 @@ class SettingsViewModel(
             audioInputDevices = audioHub.inputDevices.value,
             rcSettings = settingsRepo.rcSettings.value,
             radioControlSettings = settingsRepo.radioControlSettings.value,
+            rotatorSettings = settingsRepo.rotatorSettings.value,
+            rotatorTrackingState = rotatorTrackingService.state.value,
             dataSourcesSettings = settingsRepo.dataSourcesSettings.value,
             dataSourcesStatus = settingsRepo.dataSourcesStatus.value,
             wavelogSettings = settingsRepo.wavelogSettings.value,
@@ -201,6 +206,16 @@ class SettingsViewModel(
             }
         }
         viewModelScope.launch {
+            settingsRepo.rotatorSettings.collect { settings ->
+                _uiState.update { it.copy(rotatorSettings = settings) }
+            }
+        }
+        viewModelScope.launch {
+            rotatorTrackingService.state.collect { state ->
+                _uiState.update { it.copy(rotatorTrackingState = state) }
+            }
+        }
+        viewModelScope.launch {
             settingsRepo.wavelogSettings.collect { settings ->
                 _uiState.update { it.copy(wavelogSettings = settings) }
             }
@@ -276,6 +291,18 @@ class SettingsViewModel(
             // Remote control & data sources
             is SettingsAction.UpdateRC -> settingsRepo.updateRCSettings(action.settings)
             is SettingsAction.UpdateRadioControl -> settingsRepo.updateRadioControlSettings(action.settings)
+            is SettingsAction.UpdateRotatorControl -> settingsRepo.updateRotatorSettings(action.settings)
+            SettingsAction.ConnectRotator -> viewModelScope.launch { rotatorTrackingService.connect() }
+            SettingsAction.DisconnectRotator -> viewModelScope.launch {
+                rotatorTrackingService.disconnect(park = false)
+            }
+            is SettingsAction.TestRotatorPoint -> viewModelScope.launch {
+                rotatorTrackingService.point(
+                    RotatorPosition(action.azimuthDegrees, action.elevationDegrees)
+                )
+            }
+            SettingsAction.ParkRotator -> viewModelScope.launch { rotatorTrackingService.park() }
+            SettingsAction.StopRotator -> viewModelScope.launch { rotatorTrackingService.emergencyStop() }
             is SettingsAction.UpdateDataSources -> settingsRepo.updateDataSourcesSettings(action.settings)
             // Wavelog worked grids
             is SettingsAction.UpdateWavelog -> settingsRepo.updateWavelogSettings(action.settings)
@@ -544,6 +571,7 @@ class SettingsViewModel(
                     wavelogRepo = container.wavelogRepo,
                     lotwRepo = container.lotwRepo,
                     qsoRepository = container.qsoRepository,
+                    rotatorTrackingService = container.rotatorTrackingService,
                     sensorsRepo = container.provideSensorsRepo(),
                     apkFile = File(context.cacheDir, "look4sat-update.apk"),
                     showToast = container.provideShowToast()

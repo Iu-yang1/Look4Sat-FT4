@@ -226,6 +226,21 @@ private fun SettingsScreen(uiState: SettingsState, onAction: (SettingsAction) ->
             onSave = { onAction(SettingsAction.UpdateRadioControl(it)) }
         )
     }
+    if (dialogs.rotatorControl) {
+        RotatorControlDialog(
+            initialSettings = uiState.rotatorSettings,
+            trackingState = uiState.rotatorTrackingState,
+            onDismiss = { dialogs.rotatorControl = false },
+            onSave = { onAction(SettingsAction.UpdateRotatorControl(it)) },
+            onConnect = { onAction(SettingsAction.ConnectRotator) },
+            onDisconnect = { onAction(SettingsAction.DisconnectRotator) },
+            onTestPoint = { azimuth, elevation ->
+                onAction(SettingsAction.TestRotatorPoint(azimuth, elevation))
+            },
+            onPark = { onAction(SettingsAction.ParkRotator) },
+            onStop = { onAction(SettingsAction.StopRotator) }
+        )
+    }
     if (dialogs.compassCalibration) {
         LaunchedEffect(Unit) { onAction(SettingsAction.StartCompassCalibration) }
         CompassCalibrationDialog(
@@ -365,7 +380,8 @@ private fun SettingsScreen(uiState: SettingsState, onAction: (SettingsAction) ->
                 OutputCard(
                     onNetworkClick = permissions.launchNetwork,
                     onBluetoothClick = permissions.launchBluetooth,
-                    onRadioControlClick = { dialogs.radioControl = true }
+                    onRadioControlClick = { dialogs.radioControl = true },
+                    onRotatorControlClick = { dialogs.rotatorControl = true }
                 )
             }
             item(span = { GridItemSpan(maxLineSpan) }) {
@@ -662,13 +678,14 @@ private fun DataCard(
 
 @Preview(showBackground = true)
 @Composable
-private fun OutputCardPreview() = MainTheme { OutputCard({}, {}, {}) }
+private fun OutputCardPreview() = MainTheme { OutputCard({}, {}, {}, {}) }
 
 @Composable
 private fun OutputCard(
     onNetworkClick: () -> Unit,
     onBluetoothClick: () -> Unit,
-    onRadioControlClick: () -> Unit
+    onRadioControlClick: () -> Unit,
+    onRotatorControlClick: () -> Unit
 ) {
     ElevatedCard(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) {
@@ -688,9 +705,17 @@ private fun OutputCard(
                     text = stringResource(id = R.string.prefs_bt_output),
                     modifier = Modifier.weight(1f)
                 )
+            }
+            Spacer(modifier = Modifier.height(6.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 CardButton(
                     onClick = onRadioControlClick,
                     text = stringResource(id = R.string.prefs_cat_output),
+                    modifier = Modifier.weight(1f)
+                )
+                CardButton(
+                    onClick = onRotatorControlClick,
+                    text = stringResource(id = R.string.prefs_rotator_output),
                     modifier = Modifier.weight(1f)
                 )
             }
@@ -1041,6 +1066,7 @@ private class DialogVisibility {
     var compassCalibration by mutableStateOf(false)
     var wavelog by mutableStateOf(false)
     var lotw by mutableStateOf(false)
+    var rotatorControl by mutableStateOf(false)
 }
 
 @Composable
@@ -1050,7 +1076,8 @@ private fun rememberDialogVisibility(): DialogVisibility {
             save = {
                 listOf(
                     it.position, it.locator, it.dataSources, it.network, it.bluetooth,
-                    it.radioControl, it.wavelog, it.lotw, it.compassCalibration
+                    it.radioControl, it.wavelog, it.lotw, it.compassCalibration,
+                    it.rotatorControl
                 )
             },
             restore = {
@@ -1059,6 +1086,7 @@ private fun rememberDialogVisibility(): DialogVisibility {
                     network = it[3]; bluetooth = it[4]; radioControl = it[5]; wavelog = it[6]
                     lotw = it.getOrElse(7) { false }
                     compassCalibration = it.getOrElse(8) { false }
+                    rotatorControl = it.getOrElse(9) { false }
                 }
             }
         )

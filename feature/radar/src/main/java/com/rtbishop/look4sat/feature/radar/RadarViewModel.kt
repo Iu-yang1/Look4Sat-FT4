@@ -28,6 +28,7 @@ import com.rtbishop.look4sat.core.domain.predict.CelestialComputer
 import com.rtbishop.look4sat.core.domain.predict.OrbitalObject
 import com.rtbishop.look4sat.core.domain.predict.OrbitalPass
 import com.rtbishop.look4sat.core.domain.predict.OrbitalPos
+import com.rtbishop.look4sat.core.domain.rotator.RotatorConnectionState
 import com.rtbishop.look4sat.core.domain.repository.IMainContainer
 import com.rtbishop.look4sat.core.domain.repository.IRadioTrackingService
 import com.rtbishop.look4sat.core.domain.repository.IReporter
@@ -81,6 +82,7 @@ class RadarViewModel(
     private var sstvRecordingJob: Job? = null
     private var cwDecoder: CwDecoder? = null
     private var cwListeningJob: Job? = null
+    private var lastRotatorConnectionState: RotatorConnectionState? = null
 
     // Celestial positions change slowly, recompute at most once per minute
     private var lastCelestialUpdateMs = 0L
@@ -265,11 +267,17 @@ class RadarViewModel(
     private fun collectRotatorTrackingState() {
         viewModelScope.launch {
             rotatorTrackingService.state.collect { serviceState ->
+                val connectedNow = serviceState.connectionState == RotatorConnectionState.CONNECTED &&
+                    lastRotatorConnectionState != RotatorConnectionState.CONNECTED
+                lastRotatorConnectionState = serviceState.connectionState
                 _uiState.update { state ->
                     state.copy(
                         rotatorPosition = (serviceState.reportedPosition ?: serviceState.commandedPosition)
                             .takeIf { state.rotatorEnabled }
-                    )
+                        )
+                }
+                if (connectedNow) {
+                    syncRotatorTracking(_uiState.value.rotatorEnabled, _uiState.value.currentPass)
                 }
             }
         }

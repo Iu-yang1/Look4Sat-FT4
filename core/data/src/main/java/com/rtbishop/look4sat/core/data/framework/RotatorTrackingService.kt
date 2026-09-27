@@ -174,6 +174,10 @@ class RotatorTrackingService(
     }
 
     override suspend fun emergencyStop() {
+        activePass = null
+        trackingJob?.cancelAndJoin()
+        trackingJob = null
+        azimuth450Precommitted = false
         val settings = settingsProvider().normalized()
         val frame = com.rtbishop.look4sat.core.domain.rotator.RotatorCodec.stop(
             settings.protocol,
@@ -186,6 +190,9 @@ class RotatorTrackingService(
         _state.update {
             it.copy(
                 trackingPhase = RotatorTrackingPhase.HOLDING,
+                isTrackingRequested = false,
+                satelliteCatalogNumber = null,
+                satelliteName = "",
                 lastCommandSequence = commandSequence,
                 lastCommandAtMillis = nowMillis(),
                 errorMessage = when {

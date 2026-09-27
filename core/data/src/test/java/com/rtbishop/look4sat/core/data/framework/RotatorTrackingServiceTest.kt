@@ -15,6 +15,7 @@ import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.TestScope
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -116,9 +117,16 @@ class RotatorTrackingServiceTest {
         )
 
         service.connect()
+        service.startTracking(pass(aos = 0L, los = 100_000L))
+        runCurrent()
         service.emergencyStop()
+        val writeCountAfterStop = transport.writes.size
+        advanceTimeBy(5_000L)
+        runCurrent()
 
         assertEquals("S\r", transport.writes.last().decodeToString())
+        assertEquals(writeCountAfterStop, transport.writes.size)
+        assertFalse(service.state.value.isTrackingRequested)
         assertEquals(RotatorTrackingPhase.HOLDING, service.state.value.trackingPhase)
         service.disconnect()
     }

@@ -32,7 +32,8 @@ data class RotatorCommandOutcome(
     val sequence: Long,
     val kind: RotatorCommandKind,
     val success: Boolean,
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
+    val superseded: Boolean = false
 )
 
 /**
@@ -173,7 +174,7 @@ class RotatorCommandActor(
             else -> null
         }
         if (skipReason != null) {
-            finish(command, Result.failure(IllegalStateException(skipReason)))
+            finish(command, Result.failure(IllegalStateException(skipReason)), superseded = true)
             return
         }
 
@@ -187,7 +188,7 @@ class RotatorCommandActor(
         finish(command, result)
     }
 
-    private fun finish(command: Command<Any?>, result: Result<Any?>) {
+    private fun finish(command: Command<Any?>, result: Result<Any?>, superseded: Boolean = false) {
         val value = result.getOrNull()
         val successful = result.isSuccess && value != false
         val error = result.exceptionOrNull()?.message
@@ -198,7 +199,8 @@ class RotatorCommandActor(
                     sequence = command.sequence,
                     kind = command.kind,
                     success = successful,
-                    errorMessage = error
+                    errorMessage = error,
+                    superseded = superseded
                 )
             )
         }

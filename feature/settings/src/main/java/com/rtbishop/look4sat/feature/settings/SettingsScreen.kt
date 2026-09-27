@@ -187,12 +187,10 @@ private fun SettingsScreen(uiState: SettingsState, onAction: (SettingsAction) ->
         NetworkOutputDialog(
             initialSettings = uiState.rcSettings,
             onDismiss = { dialogs.network = false },
-            onSave = { rotState, rotAddr, rotPort, rotFmt, freqState, freqAddr, freqPort, freqFmt, freqOffsetHz ->
+            onSave = { freqState, freqAddr, freqPort, freqFmt, freqOffsetHz ->
                 onAction(
                     SettingsAction.UpdateRC(
                         uiState.rcSettings.copy(
-                            rotatorState = rotState, rotatorAddress = rotAddr,
-                            rotatorPort = rotPort, rotatorFormat = rotFmt,
                             frequencyState = freqState, frequencyAddress = freqAddr,
                             frequencyPort = freqPort, frequencyFormat = freqFmt,
                             frequencyOffsetHz = freqOffsetHz
@@ -206,12 +204,11 @@ private fun SettingsScreen(uiState: SettingsState, onAction: (SettingsAction) ->
         BluetoothOutputDialog(
             initialSettings = uiState.rcSettings,
             onDismiss = { dialogs.bluetooth = false },
-            onSave = { rotState, rotAddr, rotFmt, freqState, freqAddr, freqFmt ->
+            onSave = { freqState, freqAddr, freqFmt ->
                 onAction(
                     SettingsAction.UpdateRC(
                         uiState.rcSettings.copy(
-                            bluetoothRotatorState = rotState, bluetoothRotatorAddress = rotAddr,
-                            bluetoothRotatorFormat = rotFmt, bluetoothFrequencyState = freqState,
+                            bluetoothFrequencyState = freqState,
                             bluetoothFrequencyAddress = freqAddr, bluetoothFrequencyFormat = freqFmt
                         )
                     )

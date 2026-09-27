@@ -808,7 +808,7 @@ fun PreviewNetworkOutputDialog() {
                 bluetoothFrequencyFormat = $$"F $FREQ"
             ),
             onDismiss = {},
-            onSave = { _, _, _, _, _, _, _, _, _ -> }
+            onSave = { _, _, _, _, _ -> }
         )
     }
 }
@@ -817,17 +817,9 @@ fun PreviewNetworkOutputDialog() {
 fun NetworkOutputDialog(
     initialSettings: RCSettings,
     onDismiss: () -> Unit,
-    onSave: (
-        Boolean, String, String, String,
-        Boolean, String, String, String, Long
-    ) -> Unit
+    onSave: (Boolean, String, String, String, Long) -> Unit
 ) {
     val padding = LocalSpacing.current.large
-    val rotatorState = rememberSaveable { mutableStateOf(initialSettings.rotatorState) }
-    val rotatorAddress = rememberSaveable {
-        mutableStateOf("${initialSettings.rotatorAddress}:${initialSettings.rotatorPort}")
-    }
-    val rotatorFormat = rememberSaveable { mutableStateOf(initialSettings.rotatorFormat) }
     val frequencyState = rememberSaveable { mutableStateOf(initialSettings.frequencyState) }
     val frequencyAddress = rememberSaveable {
         mutableStateOf("${initialSettings.frequencyAddress}:${initialSettings.frequencyPort}")
@@ -835,14 +827,10 @@ fun NetworkOutputDialog(
     val frequencyFormat = rememberSaveable { mutableStateOf(initialSettings.frequencyFormat) }
     val frequencyOffsetHz = rememberSaveable { mutableStateOf(initialSettings.frequencyOffsetHz.toString()) }
     val onAccept = {
-        val (rotIp, rotPort) = splitAddress(rotatorAddress.value)
         val (freqIp, freqPort) = splitAddress(frequencyAddress.value)
         val offsetHz = (frequencyOffsetHz.value.trim().toLongOrNull() ?: 0L)
             .coerceIn(Constants.FREQ_OFFSET_MIN_HZ, Constants.FREQ_OFFSET_MAX_HZ)
-        onSave(
-            rotatorState.value, rotIp, rotPort, rotatorFormat.value,
-            frequencyState.value, freqIp, freqPort, frequencyFormat.value, offsetHz
-        )
+        onSave(frequencyState.value, freqIp, freqPort, frequencyFormat.value, offsetHz)
         onDismiss()
     }
     SharedDialog(
@@ -851,18 +839,6 @@ fun NetworkOutputDialog(
         onAccept = onAccept
     ) {
         Column(modifier = Modifier.padding(horizontal = padding)) {
-            OutputChannelSection(
-                switchLabel = stringResource(R.string.prefs_net_rotator_switch),
-                enabled = rotatorState.value,
-                onEnabledChange = { rotatorState.value = it },
-                address = rotatorAddress.value,
-                onAddressChange = { rotatorAddress.value = it },
-                addressLabel = stringResource(R.string.prefs_net_rotator_address_hint),
-                format = rotatorFormat.value,
-                onFormatChange = { rotatorFormat.value = it },
-                formatLabel = stringResource(R.string.prefs_net_rotator_format_hint)
-            )
-            Spacer(modifier = Modifier.height(6.dp))
             OutputChannelSection(
                 switchLabel = stringResource(R.string.prefs_net_frequency_switch),
                 enabled = frequencyState.value,
@@ -930,7 +906,7 @@ fun PreviewBluetoothOutputDialog() {
                 bluetoothFrequencyFormat = $$"F $FREQ"
             ),
             onDismiss = {},
-            onSave = { _, _, _, _, _, _ -> }
+            onSave = { _, _, _ -> }
         )
     }
 }
@@ -939,23 +915,14 @@ fun PreviewBluetoothOutputDialog() {
 fun BluetoothOutputDialog(
     initialSettings: RCSettings,
     onDismiss: () -> Unit,
-    onSave: (
-        Boolean, String, String,
-        Boolean, String, String
-    ) -> Unit
+    onSave: (Boolean, String, String) -> Unit
 ) {
     val padding = LocalSpacing.current.large
-    val rotatorState = rememberSaveable { mutableStateOf(initialSettings.bluetoothRotatorState) }
-    val rotatorAddress = rememberSaveable { mutableStateOf(initialSettings.bluetoothRotatorAddress) }
-    val rotatorFormat = rememberSaveable { mutableStateOf(initialSettings.bluetoothRotatorFormat) }
     val frequencyState = rememberSaveable { mutableStateOf(initialSettings.bluetoothFrequencyState) }
     val frequencyAddress = rememberSaveable { mutableStateOf(initialSettings.bluetoothFrequencyAddress) }
     val frequencyFormat = rememberSaveable { mutableStateOf(initialSettings.bluetoothFrequencyFormat) }
     val onAccept = {
-        onSave(
-            rotatorState.value, rotatorAddress.value, rotatorFormat.value,
-            frequencyState.value, frequencyAddress.value, frequencyFormat.value
-        )
+        onSave(frequencyState.value, frequencyAddress.value, frequencyFormat.value)
         onDismiss()
     }
     SharedDialog(
@@ -964,18 +931,6 @@ fun BluetoothOutputDialog(
         onAccept = onAccept
     ) {
         Column(modifier = Modifier.padding(horizontal = padding)) {
-            OutputChannelSection(
-                switchLabel = stringResource(R.string.prefs_bt_rotator_switch),
-                enabled = rotatorState.value,
-                onEnabledChange = { rotatorState.value = it },
-                address = rotatorAddress.value,
-                onAddressChange = { rotatorAddress.value = it },
-                addressLabel = stringResource(R.string.prefs_bt_rotator_device_hint),
-                format = rotatorFormat.value,
-                onFormatChange = { rotatorFormat.value = it },
-                formatLabel = stringResource(R.string.prefs_bt_rotator_output_hint)
-            )
-            Spacer(modifier = Modifier.height(6.dp))
             OutputChannelSection(
                 switchLabel = stringResource(R.string.prefs_bt_frequency_switch),
                 enabled = frequencyState.value,

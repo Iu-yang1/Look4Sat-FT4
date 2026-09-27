@@ -42,8 +42,6 @@ import com.rtbishop.look4sat.core.domain.cw.CwDecoder
 import com.rtbishop.look4sat.core.domain.usecase.IAddToCalendar
 import com.rtbishop.look4sat.core.domain.usecase.ISaveImage
 import com.rtbishop.look4sat.core.domain.usecase.IShowToast
-import com.rtbishop.look4sat.core.domain.utility.round
-import com.rtbishop.look4sat.core.domain.utility.toDegrees
 import com.rtbishop.look4sat.core.domain.utility.toTimerString
 import com.rtbishop.look4sat.core.presentation.formatFrequency
 import kotlinx.coroutines.Dispatchers
@@ -229,7 +227,7 @@ class RadarViewModel(
             )
         }
         processRadios(allRadios, pass.orbitalObject, timeNow)
-        sendPassData(pos)
+        sendFrequencyData()
     }
 
     private fun collectRadioTrackingState() {
@@ -417,34 +415,17 @@ class RadarViewModel(
         }
     }
 
-    private fun sendPassData(orbitalPos: OrbitalPos) {
+    private fun sendFrequencyData() {
         val rc = settingsRepo.rcSettings.value
-        sendReporterData(
-            networkReporter, orbitalPos,
-            rc.rotatorState, rc.rotatorFormat,
-            rc.frequencyState, rc.frequencyFormat
-        )
-        sendReporterData(
-            bluetoothReporter, orbitalPos,
-            rc.bluetoothRotatorState, rc.bluetoothRotatorFormat,
-            rc.bluetoothFrequencyState, rc.bluetoothFrequencyFormat
-        )
+        reportFrequency(networkReporter, rc.frequencyState, rc.frequencyFormat)
+        reportFrequency(bluetoothReporter, rc.bluetoothFrequencyState, rc.bluetoothFrequencyFormat)
     }
 
-    private fun sendReporterData(
+    private fun reportFrequency(
         reporter: IReporter,
-        orbitalPos: OrbitalPos,
-        rotatorEnabled: Boolean,
-        rotatorFormat: String,
         frequencyEnabled: Boolean,
         frequencyFormat: String
     ) {
-        // Only send rotator commands when the satellite is above the horizon
-        if (rotatorEnabled && orbitalPos.aboveHorizon) {
-            val azimuth = orbitalPos.azimuth.toDegrees().round(2)
-            val elevation = orbitalPos.elevation.toDegrees().round(2)
-            reporter.reportRotation(rotatorFormat, azimuth, elevation)
-        }
         if (frequencyEnabled) {
             _uiState.value.transceivers.selectedFrequency?.let { freq ->
                 reporter.reportFrequency(frequencyFormat, freq)

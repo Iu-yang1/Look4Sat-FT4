@@ -195,7 +195,6 @@ class MainContainer(private val context: Context) : IMainContainer {
         return BluetoothReporter(
             manager,
             CoroutineScope(Dispatchers.IO),
-            rc.bluetoothRotatorAddress,
             rc.bluetoothFrequencyAddress
         )
     }
@@ -204,8 +203,6 @@ class MainContainer(private val context: Context) : IMainContainer {
         val rc = settingsRepo.rcSettings.value
         return NetworkReporter(
             CoroutineScope(Dispatchers.IO),
-            rc.rotatorAddress,
-            rc.rotatorPort.toIntOrNull() ?: 0,
             rc.frequencyAddress,
             rc.frequencyPort.toIntOrNull() ?: 0,
             rc.frequencyOffsetHz

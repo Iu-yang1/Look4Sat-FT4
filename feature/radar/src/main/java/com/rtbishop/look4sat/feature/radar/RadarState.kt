@@ -22,6 +22,7 @@ import com.rtbishop.look4sat.core.domain.model.RadioControlSettings
 import com.rtbishop.look4sat.core.domain.predict.CelestialComputer
 import com.rtbishop.look4sat.core.domain.predict.OrbitalPass
 import com.rtbishop.look4sat.core.domain.predict.OrbitalPos
+import com.rtbishop.look4sat.core.domain.rotator.RotatorPosition
 import com.rtbishop.look4sat.core.domain.sstv.SstvFrame
 import com.rtbishop.look4sat.core.domain.sstv.SstvQualityMetrics
 
@@ -61,6 +62,8 @@ data class RadarState(
     val shouldUseCompass: Boolean = false,
     val sunPosition: CelestialComputer.SunPosition? = null,
     val moonPosition: CelestialComputer.MoonPosition? = null,
+    val rotatorEnabled: Boolean = false,
+    val rotatorPosition: RotatorPosition? = null,
     val transceivers: TransceiverSubState = TransceiverSubState(),
     val radioControl: RadioControlSubState = RadioControlSubState(),
     val sstv: SstvSubState = SstvSubState(),

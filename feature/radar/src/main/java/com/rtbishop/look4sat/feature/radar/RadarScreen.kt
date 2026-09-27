@@ -401,6 +401,7 @@ private fun RadarCard(
                     modifier = Modifier.align(Alignment.Center),
                     sunPosition = uiState.sunPosition,
                     moonPosition = uiState.moonPosition,
+                    rotatorPosition = uiState.rotatorPosition.takeIf { uiState.rotatorEnabled },
                 )
                 PositionOverlay(position)
             }

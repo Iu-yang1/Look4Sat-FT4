@@ -59,6 +59,7 @@ import com.rtbishop.look4sat.core.domain.rotator.RotatorAzimuthRange
 import com.rtbishop.look4sat.core.domain.rotator.RotatorConnectionState
 import com.rtbishop.look4sat.core.domain.rotator.RotatorProtocol
 import com.rtbishop.look4sat.core.domain.rotator.RotatorSettings
+import com.rtbishop.look4sat.core.domain.rotator.RotatorTrackingPhase
 import com.rtbishop.look4sat.core.domain.rotator.RotatorTrackingState
 import com.rtbishop.look4sat.core.domain.rotator.RotatorTransport
 import com.rtbishop.look4sat.core.presentation.R
@@ -451,6 +452,33 @@ fun RotatorControlDialog(
                         MaterialTheme.colorScheme.error
                     }
                 )
+                Text(
+                    stringResource(
+                        R.string.rotator_tracking_status,
+                        stringResource(trackingLabelResource(trackingState.trackingPhase))
+                    ),
+                    style = MaterialTheme.typography.bodySmall
+                )
+                trackingState.commandedPosition?.let { position ->
+                    Text(
+                        stringResource(
+                            R.string.rotator_target_position,
+                            position.azimuthDegrees,
+                            position.elevationDegrees
+                        ),
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+                trackingState.reportedPosition?.let { position ->
+                    Text(
+                        stringResource(
+                            R.string.rotator_reported_position,
+                            position.azimuthDegrees,
+                            position.elevationDegrees
+                        ),
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
                 trackingState.errorMessage?.let {
                     Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                 }
@@ -660,6 +688,16 @@ private fun connectionLabelResource(state: RotatorConnectionState): Int = when (
     RotatorConnectionState.CONNECTED -> R.string.rotator_state_connected
     RotatorConnectionState.RECONNECTING -> R.string.rotator_state_reconnecting
     RotatorConnectionState.ERROR -> R.string.rotator_state_error
+}
+
+private fun trackingLabelResource(phase: RotatorTrackingPhase): Int = when (phase) {
+    RotatorTrackingPhase.IDLE -> R.string.rotator_phase_idle
+    RotatorTrackingPhase.HOLDING -> R.string.rotator_phase_holding
+    RotatorTrackingPhase.PREPOSITIONING -> R.string.rotator_phase_prepositioning
+    RotatorTrackingPhase.TRACKING -> R.string.rotator_phase_tracking
+    RotatorTrackingPhase.PARKING -> R.string.rotator_phase_parking
+    RotatorTrackingPhase.PARKED -> R.string.rotator_phase_parked
+    RotatorTrackingPhase.ERROR -> R.string.rotator_phase_error
 }
 
 private fun Double.toPlainText(): String =

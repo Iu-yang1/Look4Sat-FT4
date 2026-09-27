@@ -163,6 +163,10 @@ class SettingsViewModel(
                 _uiState.update { it.copy(logbookRecords = records) }
             }
         }
+        // Load the LoTW upload certificate + station once at startup so the
+        // settings card reflects the real state on first frame (previously it
+        // stayed "not imported" until the config dialog was opened).
+        loadLoTWUploadStatus()
     }
 
 

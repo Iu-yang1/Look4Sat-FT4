@@ -30,12 +30,14 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.pager.HorizontalPager
@@ -74,8 +76,6 @@ import com.rtbishop.look4sat.core.presentation.TimerRow
 import com.rtbishop.look4sat.core.presentation.TopBar
 import com.rtbishop.look4sat.core.presentation.formatFrequency
 import com.rtbishop.look4sat.core.presentation.getDefaultPass
-import com.rtbishop.look4sat.core.presentation.hasEnoughHeight
-import com.rtbishop.look4sat.core.presentation.isVerticalLayout
 import com.rtbishop.look4sat.core.presentation.layoutPadding
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
@@ -87,6 +87,9 @@ private enum class RadarPage(val title: String) {
     Log("Log"),
     Sstv("SSTV")
 }
+
+/** Compact pager strip height in split-screen / small windows. */
+private val COMPACT_PAGER_HEIGHT = 132.dp
 
 @Composable
 fun RadarDestination(navigateUp: () -> Unit) {
@@ -173,42 +176,54 @@ private fun RadarScreen(
                 time = it.time
             )
         }
-    Column(
+    BoxWithConstraints(
         modifier = Modifier
             .layoutPadding()
             .padding(bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding())
-            .keepScreenOn(),
-        verticalArrangement = Arrangement.spacedBy(6.dp)
+            .keepScreenOn()
     ) {
-        val isVertical = isVerticalLayout()
-        // In split-screen / small windows the vertical space is scarce: give the
-        // radar card the priority share so the plot stays large (its Canvas is a
-        // square limited by the card's smaller dimension), and shrink the pager
-        // card — its pages are all scrollable, so nothing gets clipped.
-        val radarWeight = if (isVertical && !hasEnoughHeight()) 1.6f else 1f
-        val pagerWeight = if (isVertical && !hasEnoughHeight()) 0.6f else 1f
-        if (isVertical) {
-            TopBar {
-                IconCard(action = navigateUp, resId = R.drawable.ic_back)
-                TimerRow(timeString = uiState.currentTime, isTimeAos = uiState.isTimeAos)
-                IconCard(action = addToCalendar, resId = R.drawable.ic_calendar)
+        // Measure the ACTUAL window constraints instead of the window size
+        // class: currentWindowAdaptiveInfo() often reports the full-screen
+        // size in split-screen / multi-window, so the compact branch never
+        // triggered there. maxHeight/maxWidth are the real window bounds.
+        val isVertical = maxWidth < 600.dp
+        // In split-screen / small windows the vertical space is scarce: let the
+        // radar card fill ALL remaining space so the square plot is as large as
+        // possible, and give the pager a compact fixed strip — its pages are all
+        // scrollable, so nothing gets clipped. Full-screen layouts keep the 1:1 split.
+        val compact = isVertical && maxHeight < 480.dp
+        Column(
+            modifier = Modifier.fillMaxSize(),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            if (isVertical) {
+                TopBar {
+                    IconCard(action = navigateUp, resId = R.drawable.ic_back)
+                    TimerRow(timeString = uiState.currentTime, isTimeAos = uiState.isTimeAos)
+                    IconCard(action = addToCalendar, resId = R.drawable.ic_calendar)
+                }
+                TopBar { NextPassRow(pass = upcomingPass, isUtc = uiState.isUtc) }
+            } else {
+                TopBar {
+                    IconCard(action = navigateUp, resId = R.drawable.ic_back)
+                    TimerRow(timeString = uiState.currentTime, isTimeAos = uiState.isTimeAos)
+                    NextPassRow(pass = upcomingPass, modifier = Modifier.weight(1f), isUtc = uiState.isUtc)
+                    IconCard(action = addToCalendar, resId = R.drawable.ic_calendar)
+                }
             }
-            TopBar { NextPassRow(pass = upcomingPass, isUtc = uiState.isUtc) }
-        } else {
-            TopBar {
-                IconCard(action = navigateUp, resId = R.drawable.ic_back)
-                TimerRow(timeString = uiState.currentTime, isTimeAos = uiState.isTimeAos)
-                NextPassRow(pass = upcomingPass, modifier = Modifier.weight(1f), isUtc = uiState.isUtc)
-                IconCard(action = addToCalendar, resId = R.drawable.ic_calendar)
-            }
-        }
-        if (isVertical) {
-            RadarCard(uiState, trackB, trackBPosition, Modifier.weight(radarWeight))
-            PagerCard(uiState, onAction, logViewModel, requestMicPermission, Modifier.weight(pagerWeight))
-        } else {
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                RadarCard(uiState, trackB, trackBPosition, Modifier.weight(1f))
-                PagerCard(uiState, onAction, logViewModel, requestMicPermission, Modifier.weight(1f))
+            if (isVertical) {
+                if (compact) {
+                    RadarCard(uiState, trackB, trackBPosition, Modifier.weight(1f))
+                    PagerCard(uiState, onAction, logViewModel, requestMicPermission, Modifier.height(COMPACT_PAGER_HEIGHT))
+                } else {
+                    RadarCard(uiState, trackB, trackBPosition, Modifier.weight(1f))
+                    PagerCard(uiState, onAction, logViewModel, requestMicPermission, Modifier.weight(1f))
+                }
+            } else {
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    RadarCard(uiState, trackB, trackBPosition, Modifier.weight(1f))
+                    PagerCard(uiState, onAction, logViewModel, requestMicPermission, Modifier.weight(1f))
+                }
             }
         }
     }

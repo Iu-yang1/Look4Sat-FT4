@@ -24,14 +24,6 @@ internal class LoTWSigner(private val config: LoTWConfig) {
         if (date < key.info.firstQsoDate || (key.info.lastQsoDate.isNotBlank() && date > key.info.lastQsoDate) || record.startUtcMillis > now) {
             fail(LoTWProblem.QSO_DATE, call)
         }
-        val grids = buildList {
-            addAll(station.getValue("GRIDSQUARE").split(',').map(String::trim))
-            station["MY_VUCC_GRIDS"]?.split(',')?.map(String::trim)?.let(::addAll)
-        }.filter(String::isNotBlank)
-        if (record.myGrid.isNotBlank() && grids.none { grid ->
-            val local = record.myGrid.trim().uppercase(Locale.US)
-            grid.startsWith(local) || local.startsWith(grid)
-        }) fail(LoTWProblem.LOCATION_MISMATCH, call)
         fun mhz(hz: Long?): String = hz?.let { BigDecimal.valueOf(it, 6).stripTrailingZeros().toPlainString() }.orEmpty()
         val fields = linkedMapOf(
             "BAND" to config.band(record.band, record.txFrequencyHz, true),
@@ -46,8 +38,12 @@ internal class LoTWSigner(private val config: LoTWConfig) {
             "SAT_NAME" to if (record.isSatellite) config.satellite(record.satelliteName, date) else ""
         ).filterValues { it.isNotBlank() }
         val signData = (config.stationOrder.map { station[it].orEmpty() } + config.contactOrder.map { fields[it].orEmpty() }).joinToString("")
+        // Fingerprint identifies the CONTACT only (call, date/time, band, mode,
+        // satellite, frequency). Station fields (grid, zones, county, IOTA) are
+        // deliberately excluded: changing the station location must not change
+        // the fingerprint, otherwise previously-uploaded contacts would lose
+        // their ledger entry and be re-uploaded (and rejected as duplicates).
         val identity = field("CALL", key.info.callsign) + field("DXCC", key.info.dxcc.toString()) +
-            station.toSortedMap().entries.joinToString("") { field(it.key, it.value) } +
             fields.entries.joinToString("") { field(it.key, it.value) }
         val hash = MessageDigest.getInstance("SHA-256").digest(identity.toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it) }
         return LoTWContact(record, fields, signData, hash)

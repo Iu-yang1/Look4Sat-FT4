@@ -167,7 +167,7 @@ class LoTWUploadRepository internal constructor(
                 coroutineContext.ensureActive()
                 when {
                     record.status != QsoStatus.COMPLETE -> unavailable++
-                    record.lotwReceived -> uploaded++
+                    record.lotwReceived || record.lotwUploaded -> uploaded++
                     else -> {
                         val contact = try {
                             signing.signer.contact(record, signing.key, signing.location, now())
@@ -199,8 +199,15 @@ class LoTWUploadRepository internal constructor(
             val unique = hashSetOf<String>()
             val contacts = records.sortedBy { it.startUtcMillis }.mapNotNull { record ->
                 coroutineContext.ensureActive()
-                if (record.status != QsoStatus.COMPLETE || (record.lotwReceived && !resubmit)) { skipped++; return@mapNotNull null }
-                val contact = signing.signer.contact(record, signing.key, signing.location, now())
+                if (record.status != QsoStatus.COMPLETE || ((record.lotwReceived || record.lotwUploaded) && !resubmit)) { skipped++; return@mapNotNull null }
+                val contact = try {
+                    signing.signer.contact(record, signing.key, signing.location, now())
+                } catch (_: LoTWOperationException) {
+                    // One un-signable record must not abort the whole batch:
+                    // skip it, count it, and let the rest upload.
+                    skipped++
+                    return@mapNotNull null
+                }
                 val previous = ledger[contact.fingerprint]
                 when {
                     (previous == "accepted" && !resubmit) || !unique.add(contact.fingerprint) -> { skipped++; null }

@@ -145,6 +145,14 @@ private fun LogbookUploadPreviewDialog(
                     "${preview.count} QSO(s) · ${preview.firstUtc} – ${preview.lastUtc}",
                     fontSize = 13.sp
                 )
+                if (preview.skipped > 0 || preview.unknownSkipped > 0 || preview.unavailableSkipped > 0) {
+                    val parts = buildList {
+                        if (preview.skipped > 0) add("${preview.skipped} already uploaded/duplicate")
+                        if (preview.unknownSkipped > 0) add("${preview.unknownSkipped} unknown result")
+                        if (preview.unavailableSkipped > 0) add("${preview.unavailableSkipped} un-uploadable")
+                    }
+                    Text(parts.joinToString(" · "), fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
+                }
                 Text(preview.contacts.joinToString("\n") { it }, fontSize = 12.sp, maxLines = 8)
             }
         },

@@ -367,11 +367,18 @@ class SettingsViewModel(
                 val pending = all.filter { !it.lotwConfirmed && it.status == com.rtbishop.look4sat.core.domain.logbook.QsoStatus.COMPLETE }
                 val audit = lotwUploadRepository.audit(pending)
                 if (audit.pending == 0) {
-                    _uiState.update { it.copy(logbookUploadBusy = false, logbookUploadMessage = "No pending QSOs to upload") }
+                    val msg = when {
+                        audit.unavailable > 0 -> "${audit.unavailable} QSO(s) can't be uploaded (invalid call/date — check the logbook)"
+                        audit.unknown > 0 -> "${audit.unknown} QSO(s) had an unknown upload result — not retried automatically"
+                        else -> "No pending QSOs to upload"
+                    }
+                    _uiState.update { it.copy(logbookUploadBusy = false, logbookUploadMessage = msg) }
                     return@launch
                 }
                 val preview = lotwUploadRepository.prepare(pending, false)
-                lastLogbookUploadIds = pending.map { it.id }
+                // Only the records that actually made it into the TQ8 may be
+                // marked uploaded later — never the whole candidate list.
+                lastLogbookUploadIds = preview.submittedIds
                 _uiState.update { it.copy(logbookUploadBusy = false, logbookPreview = preview) }
             } catch (e: com.rtbishop.look4sat.core.domain.repository.LoTWOperationException) {
                 _uiState.update { it.copy(logbookUploadBusy = false, logbookUploadMessage = "Upload unavailable: ${e.reason}") }

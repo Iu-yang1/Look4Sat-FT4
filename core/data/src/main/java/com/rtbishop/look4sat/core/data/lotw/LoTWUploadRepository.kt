@@ -196,6 +196,7 @@ class LoTWUploadRepository internal constructor(
             val ledger = ledger()
             var skipped = 0
             var unknown = 0
+            var unavailable = 0
             val unique = hashSetOf<String>()
             val contacts = records.sortedBy { it.startUtcMillis }.mapNotNull { record ->
                 coroutineContext.ensureActive()
@@ -205,7 +206,7 @@ class LoTWUploadRepository internal constructor(
                 } catch (_: LoTWOperationException) {
                     // One un-signable record must not abort the whole batch:
                     // skip it, count it, and let the rest upload.
-                    skipped++
+                    unavailable++
                     return@mapNotNull null
                 }
                 val previous = ledger[contact.fingerprint]
@@ -221,7 +222,9 @@ class LoTWUploadRepository internal constructor(
                 contacts.firstOrNull()?.record?.let { utc(it.startUtcMillis, "yyyy-MM-dd HH:mm:ss") }.orEmpty(),
                 contacts.lastOrNull()?.record?.let { utc(it.startUtcMillis, "yyyy-MM-dd HH:mm:ss") }.orEmpty(),
                 contacts.map { "${utc(it.record.startUtcMillis, "MM-dd HH:mm")} ${it.record.theirCallsign} ${it.fields["MODE"]} ${it.fields["SAT_NAME"].orEmpty()}" },
-                unknown
+                unknown,
+                unavailable,
+                contacts.map { it.record.id }
             )
             if (contacts.isNotEmpty()) pending = Pending(
                 preview,

@@ -66,7 +66,12 @@ data class LoTWUploadPreview(
     val firstUtc: String,
     val lastUtc: String,
     val contacts: List<String>,
-    val unknownSkipped: Int = 0
+    val unknownSkipped: Int = 0,
+    /** Un-signable records (invalid call/date/…) skipped instead of aborting the batch. */
+    val unavailableSkipped: Int = 0,
+    /** Ids of the records that actually made it into this TQ8 batch. Only these
+     *  may be marked "uploaded" after an accepted POST — never the full candidate list. */
+    val submittedIds: List<Long> = emptyList()
 )
 
 /** Local comparison against downloaded LoTW receipt flags and this app's durable upload receipts. */

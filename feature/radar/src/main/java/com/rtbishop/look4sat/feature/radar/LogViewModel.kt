@@ -160,11 +160,18 @@ class LogViewModel(
                 val pending = all.filter { !it.lotwConfirmed && it.status == QsoStatus.COMPLETE }
                 val audit = lotwUploadRepository.audit(pending)
                 if (audit.pending == 0) {
-                    _uiState.update { it.copy(busy = false, message = "No pending QSOs to upload") }
+                    val msg = when {
+                        audit.unavailable > 0 -> "${audit.unavailable} QSO(s) can't be uploaded (invalid call/date — check the logbook)"
+                        audit.unknown > 0 -> "${audit.unknown} QSO(s) had an unknown upload result — not retried automatically"
+                        else -> "No pending QSOs to upload"
+                    }
+                    _uiState.update { it.copy(busy = false, message = msg) }
                     return@launch
                 }
                 val preview = lotwUploadRepository.prepare(pending, false)
-                lastUploadedIds = pending.map { it.id }
+                // Only the records that actually made it into the TQ8 may be
+                // marked uploaded later — never the whole candidate list.
+                lastUploadedIds = preview.submittedIds
                 _uiState.update { it.copy(busy = false, preview = preview) }
             } catch (e: LoTWOperationException) {
                 _uiState.update { it.copy(busy = false, message = "Upload unavailable: ${e.reason}") }

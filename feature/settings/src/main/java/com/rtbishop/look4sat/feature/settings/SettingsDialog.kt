@@ -103,6 +103,8 @@ import androidx.compose.ui.zIndex
 import com.rtbishop.look4sat.core.domain.model.Constants
 import com.rtbishop.look4sat.core.domain.model.RCSettings
 import com.rtbishop.look4sat.core.domain.model.RadioControlSettings
+import com.rtbishop.look4sat.core.domain.model.RadioProtocolFamily
+import com.rtbishop.look4sat.core.domain.model.radioModelDescriptor
 import com.rtbishop.look4sat.core.domain.model.parseRadioTcpEndpoint
 import com.rtbishop.look4sat.core.domain.model.supportedRadioBaudRates
 import com.rtbishop.look4sat.core.domain.repository.LoTWSyncMode
@@ -1005,7 +1007,8 @@ fun RadioControlDialog(
     val padding    = LocalSpacing.current.large
     val enabled    = rememberSaveable { mutableStateOf(initialSettings.enabled) }
     val radioModel = rememberSaveable { mutableStateOf(initialSettings.radioModel) }
-    val initialIsIcom = initialSettings.radioModel in RadioControlSettings.ICOM_RADIOS
+    val initialIsIcom = radioModelDescriptor(initialSettings.radioModel).protocolFamily ==
+        RadioProtocolFamily.ICOM_CIV
     val initialBaudRates = radioBaudRates(initialSettings.radioModel)
     val splitMode  = rememberSaveable { mutableStateOf(initialSettings.splitMode && initialIsIcom) }
     val duplexMode = rememberSaveable { mutableStateOf(initialSettings.duplexMode) }
@@ -1125,13 +1128,14 @@ fun RadioControlDialog(
         }
     }
 
-    val isIcom = radioModel.value in RadioControlSettings.ICOM_RADIOS
+    val modelDescriptor = radioModelDescriptor(radioModel.value)
+    val isIcom = modelDescriptor.protocolFamily == RadioProtocolFamily.ICOM_CIV
     val isVox = catTransport.value == RadioControlSettings.TRANSPORT_VOX
-    val supportsSatelliteMode = radioModel.value in RadioControlSettings.SATELLITE_MODE_RADIOS &&
+    val supportsSatelliteMode = modelDescriptor.capabilities.satelliteMode &&
         !(catTransport.value == RadioControlSettings.TRANSPORT_TCP &&
             tcpProtocol.value == RadioControlSettings.TCP_PROTOCOL_HAMLIB)
-    val isSingleRadio = isIcom && splitMode.value
-    val requiredStopBits = if (isIcom) 1 else 2
+    val isSingleRadio = modelDescriptor.capabilities.singleRadioSplit && splitMode.value
+    val requiredStopBits = modelDescriptor.serialStopBits
 
     val baudRates = radioBaudRates(radioModel.value)
 
@@ -1350,8 +1354,9 @@ fun RadioControlDialog(
                             val oldDefaultAddress = defaultCivAddress(radioModel.value)
                             val currentAddress = parseCivAddress(civAddress.value)
                             radioModel.value = model
-                            if (model !in RadioControlSettings.ICOM_RADIOS) splitMode.value = false
-                            if (model !in RadioControlSettings.SATELLITE_MODE_RADIOS) {
+                            val newCapabilities = radioModelDescriptor(model).capabilities
+                            if (!newCapabilities.singleRadioSplit) splitMode.value = false
+                            if (!newCapabilities.satelliteMode) {
                                 duplexMode.value = RadioControlSettings.DUPLEX_MODE_SPLIT
                             }
                             val modelRates = radioBaudRates(model)
@@ -1659,12 +1664,7 @@ fun RadioControlDialog(
 
 private fun radioBaudRates(model: String): List<Int> = supportedRadioBaudRates(model)
 
-private fun defaultCivAddress(model: String): Int? = when (model) {
-    RadioControlSettings.MODEL_ICOM_IC705 -> 0xA4
-    RadioControlSettings.MODEL_ICOM_IC9700 -> 0xA2
-    RadioControlSettings.MODEL_ICOM_IC910 -> 0x60
-    else -> null
-}
+private fun defaultCivAddress(model: String): Int? = radioModelDescriptor(model).defaultCivAddress
 
 private fun parseCivAddress(value: String): Int? {
     val text = value.trim()

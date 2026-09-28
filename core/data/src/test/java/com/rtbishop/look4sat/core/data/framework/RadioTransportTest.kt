@@ -86,6 +86,13 @@ class RadioTransportTest {
         assertEquals(1, radioProfile(RadioControlSettings.MODEL_ICOM_IC9700).serialStopBits)
         assertEquals(1, ic910.serialStopBits)
         assertEquals(0xAA.toByte(), radioProfile(RadioControlSettings.MODEL_ICOM_IC705, 0xAA).civAddress)
+        assertEquals(false, radioProfile(RadioControlSettings.MODEL_YAESU_FT857)
+            .canSetTxFrequencyWhileTransmitting)
+        assertEquals(true, radioProfile(RadioControlSettings.MODEL_ICOM_IC9700).capabilities.fullDuplex)
+        assertEquals(
+            RadioControlSettings.MODEL_YAESU_FT817,
+            radioProfile("Unknown radio").model
+        )
     }
 
     @Test

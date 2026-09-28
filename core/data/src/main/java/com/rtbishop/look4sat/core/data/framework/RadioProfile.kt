@@ -10,6 +10,8 @@
 package com.rtbishop.look4sat.core.data.framework
 
 import com.rtbishop.look4sat.core.domain.model.RadioControlSettings
+import com.rtbishop.look4sat.core.domain.model.RadioCapabilities
+import com.rtbishop.look4sat.core.domain.model.radioModelDescriptor
 
 enum class YaesuCatVariant {
     FT817,
@@ -27,41 +29,51 @@ data class RadioProfile(
     val yaesuVariant: YaesuCatVariant? = null,
     val icomVariant: IcomCivVariant? = null,
     val civAddress: Byte? = null,
-    val serialStopBits: Int = 1
+    val serialStopBits: Int = 1,
+    val capabilities: RadioCapabilities
 ) {
     val isIcom: Boolean get() = icomVariant != null
     val supportsSatelliteMode: Boolean
-        get() = icomVariant == IcomCivVariant.IC9700 || icomVariant == IcomCivVariant.IC910
+        get() = capabilities.satelliteMode
     val canSetTxFrequencyWhileTransmitting: Boolean
-        get() = yaesuVariant != YaesuCatVariant.FT857
+        get() = capabilities.canSetTxFrequencyWhileTransmitting
 }
 
 fun radioProfile(model: String, civAddressOverride: Int? = null): RadioProfile {
-    val profile = when (model) {
+    val descriptor = radioModelDescriptor(model)
+    val profile = when (descriptor.model) {
         RadioControlSettings.MODEL_YAESU_FT857 -> RadioProfile(
-            model = model,
+            model = descriptor.model,
             yaesuVariant = YaesuCatVariant.FT857,
-            serialStopBits = 2
+            serialStopBits = descriptor.serialStopBits,
+            capabilities = descriptor.capabilities
         )
         RadioControlSettings.MODEL_ICOM_IC705 -> RadioProfile(
-            model = model,
+            model = descriptor.model,
             icomVariant = IcomCivVariant.IC705,
-            civAddress = IcomCivProtocol.ADDR_IC705
+            civAddress = descriptor.defaultCivAddress?.toByte(),
+            serialStopBits = descriptor.serialStopBits,
+            capabilities = descriptor.capabilities
         )
         RadioControlSettings.MODEL_ICOM_IC9700 -> RadioProfile(
-            model = model,
+            model = descriptor.model,
             icomVariant = IcomCivVariant.IC9700,
-            civAddress = IcomCivProtocol.ADDR_IC9700
+            civAddress = descriptor.defaultCivAddress?.toByte(),
+            serialStopBits = descriptor.serialStopBits,
+            capabilities = descriptor.capabilities
         )
         RadioControlSettings.MODEL_ICOM_IC910 -> RadioProfile(
-            model = model,
+            model = descriptor.model,
             icomVariant = IcomCivVariant.IC910,
-            civAddress = IcomCivProtocol.ADDR_IC910
+            civAddress = descriptor.defaultCivAddress?.toByte(),
+            serialStopBits = descriptor.serialStopBits,
+            capabilities = descriptor.capabilities
         )
         else -> RadioProfile(
             model = RadioControlSettings.MODEL_YAESU_FT817,
             yaesuVariant = YaesuCatVariant.FT817,
-            serialStopBits = 2
+            serialStopBits = descriptor.serialStopBits,
+            capabilities = descriptor.capabilities
         )
     }
     return if (profile.isIcom && civAddressOverride in 0..0xFF) {

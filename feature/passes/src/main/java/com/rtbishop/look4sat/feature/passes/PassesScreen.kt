@@ -72,6 +72,7 @@ import com.rtbishop.look4sat.core.presentation.EmptyListCard
 import com.rtbishop.look4sat.core.presentation.IconCard
 import com.rtbishop.look4sat.core.presentation.MainTheme
 import com.rtbishop.look4sat.core.presentation.NextPassRow
+import com.rtbishop.look4sat.core.presentation.ProjectWikiBody
 import com.rtbishop.look4sat.core.presentation.R
 import com.rtbishop.look4sat.core.presentation.ScreenColumn
 import com.rtbishop.look4sat.core.presentation.SharedDialog
@@ -143,17 +144,14 @@ private fun PassesScreen(
     if (uiState.shouldSeeWhatsNew) {
         val dismiss = { onAction(PassesAction.DismissWhatsNew) }
         SharedDialog(
-            title = stringResource(R.string.pass_whatsnew_title),
+            title = stringResource(R.string.prefs_project_wiki),
             onDismissRequest = dismiss,
             onAccept = dismiss,
             titleFontSize = 18
         ) { padding ->
-            // The changelog is long; keep the dialog frame fixed and let the
+            // The wiki is long; keep the dialog frame fixed and let the
             // text scroll inside it (matches the update-checker page pattern).
-            Text(
-                text = stringResource(R.string.pass_whatsnew_message),
-                fontSize = 16.sp,
-                color = MaterialTheme.colorScheme.onSurface,
+            ProjectWikiBody(
                 modifier = Modifier
                     .padding(horizontal = padding)
                     .heightIn(max = 360.dp)

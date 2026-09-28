@@ -17,54 +17,22 @@
  */
 package com.rtbishop.look4sat.feature.settings
 
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import com.rtbishop.look4sat.core.presentation.ProjectWikiBody
 import com.rtbishop.look4sat.core.presentation.R
+import com.rtbishop.look4sat.core.presentation.SheetDialogTitle
 import com.rtbishop.look4sat.core.presentation.sheetDialogContainerColor
 import com.rtbishop.look4sat.core.presentation.sheetDialogShape
-import com.rtbishop.look4sat.core.presentation.SheetDialogTitle
 
-/**
- * The fork's Project Wiki: a short overview of what Look4Sat-BA7OPF adds over upstream
- * and how to use those features. Shown in the update-checker screen and behind the
- * Settings → Project Wiki entry. Text lives in string resources (no release-body parsing),
- * so it always renders even when the GitHub page is unreachable.
- */
-@Composable
-fun ProjectWikiBody(modifier: Modifier = Modifier) {
-    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(
-            text = stringResource(R.string.project_wiki_intro),
-            fontSize = 13.sp
-        )
-        WikiSection(stringResource(R.string.project_wiki_section_logbook))
-        WikiEntry(stringResource(R.string.project_wiki_logbook_1))
-        WikiEntry(stringResource(R.string.project_wiki_logbook_2))
-        WikiEntry(stringResource(R.string.project_wiki_logbook_3))
-        WikiHow(stringResource(R.string.project_wiki_logbook_how))
-        WikiSection(stringResource(R.string.project_wiki_section_mutual))
-        WikiEntry(stringResource(R.string.project_wiki_mutual_1))
-        WikiHow(stringResource(R.string.project_wiki_mutual_how))
-        WikiSection(stringResource(R.string.project_wiki_section_grids))
-        WikiEntry(stringResource(R.string.project_wiki_grids_1))
-        WikiHow(stringResource(R.string.project_wiki_grids_how))
-    }
-}
-
+/** Settings → Project Wiki: the same content as the What's-New card, in a dialog. */
 @Composable
 fun ProjectWikiDialog(onDismiss: () -> Unit) {
     AlertDialog(
@@ -84,30 +52,5 @@ fun ProjectWikiDialog(onDismiss: () -> Unit) {
                 Text(stringResource(android.R.string.ok))
             }
         }
-    )
-}
-
-@Composable
-private fun WikiSection(text: String) {
-    Text(
-        text = text,
-        color = MaterialTheme.colorScheme.primary,
-        fontWeight = FontWeight.Medium,
-        fontSize = 13.sp
-    )
-}
-
-@Composable
-private fun WikiEntry(text: String) {
-    Text(text = text, fontSize = 12.sp)
-}
-
-@Composable
-private fun WikiHow(text: String) {
-    Text(
-        text = text,
-        fontSize = 12.sp,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.padding(start = 8.dp)
     )
 }

@@ -1027,6 +1027,18 @@ fun RadioControlDialog(
     val baudRate   = rememberSaveable {
         mutableIntStateOf(initialSettings.baudRate.takeIf { it in initialBaudRates } ?: initialBaudRates.first())
     }
+    val dialSettleMillis = rememberSaveable {
+        mutableStateOf(initialSettings.dialSettleMillis.toString())
+    }
+    val linearDialDeadbandHz = rememberSaveable {
+        mutableStateOf(initialSettings.linearDialDeadbandHz.toString())
+    }
+    val fmDialDeadbandHz = rememberSaveable {
+        mutableStateOf(initialSettings.fmDialDeadbandHz.toString())
+    }
+    val sharedBusDelayMillis = rememberSaveable {
+        mutableStateOf(initialSettings.sharedBusCommandDelayMillis.toString())
+    }
     val initialCivAddress = initialSettings.civAddress
         ?: defaultCivAddress(initialSettings.radioModel)
     val civAddress = rememberSaveable {
@@ -1257,7 +1269,11 @@ fun RadioControlDialog(
                     RadioControlSettings.DUPLEX_MODE_SPLIT
                 },
                 civAddress     = parsedCivAddress,
-                tcpProtocol    = tcpProtocol.value
+                tcpProtocol    = tcpProtocol.value,
+                dialSettleMillis = dialSettleMillis.value.toLongOrNull() ?: 1_500L,
+                linearDialDeadbandHz = linearDialDeadbandHz.value.toLongOrNull() ?: 20L,
+                fmDialDeadbandHz = fmDialDeadbandHz.value.toLongOrNull() ?: 200L,
+                sharedBusCommandDelayMillis = sharedBusDelayMillis.value.toLongOrNull() ?: 0L
             )
         )
         onDismiss()
@@ -1657,6 +1673,44 @@ fun RadioControlDialog(
                 }
                 Spacer(modifier = Modifier.height(6.dp))
             }
+            Text(stringResource(R.string.rc_dial_follow), fontWeight = FontWeight.Medium)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = dialSettleMillis.value,
+                    onValueChange = { dialSettleMillis.value = it },
+                    label = { Text(stringResource(R.string.rc_dial_settle_ms)) },
+                    singleLine = true,
+                    enabled = enabled.value,
+                    modifier = Modifier.weight(1f)
+                )
+                OutlinedTextField(
+                    value = sharedBusDelayMillis.value,
+                    onValueChange = { sharedBusDelayMillis.value = it },
+                    label = { Text(stringResource(R.string.rc_shared_bus_delay_ms)) },
+                    singleLine = true,
+                    enabled = enabled.value,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = linearDialDeadbandHz.value,
+                    onValueChange = { linearDialDeadbandHz.value = it },
+                    label = { Text(stringResource(R.string.rc_linear_deadband_hz)) },
+                    singleLine = true,
+                    enabled = enabled.value,
+                    modifier = Modifier.weight(1f)
+                )
+                OutlinedTextField(
+                    value = fmDialDeadbandHz.value,
+                    onValueChange = { fmDialDeadbandHz.value = it },
+                    label = { Text(stringResource(R.string.rc_fm_deadband_hz)) },
+                    singleLine = true,
+                    enabled = enabled.value,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+            Spacer(modifier = Modifier.height(6.dp))
             }
         }
     }

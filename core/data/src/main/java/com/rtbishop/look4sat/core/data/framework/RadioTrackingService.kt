@@ -35,6 +35,9 @@ import com.rtbishop.look4sat.core.domain.repository.RadioTrackingState
 import com.rtbishop.look4sat.core.domain.repository.PttState
 import com.rtbishop.look4sat.core.domain.repository.TrackingPhase
 import com.rtbishop.look4sat.core.domain.time.IDisciplinedClock
+import com.rtbishop.look4sat.core.domain.utility.DialFollowPolicy
+import com.rtbishop.look4sat.core.domain.utility.DialFollowState
+import com.rtbishop.look4sat.core.domain.utility.DialLeg
 import com.rtbishop.look4sat.core.domain.utility.TransponderMapper
 import com.rtbishop.look4sat.core.domain.utility.DopplerFrequencyCalculator
 import java.util.concurrent.atomic.AtomicLong
@@ -797,9 +800,7 @@ class RadioTrackingService(
     private suspend fun runTrackingLoop(split: Boolean) {
         var lastSetTx: Long? = null
         var lastSetRx: Long? = null
-        var tuning = ""
-        var lastRead = 0L
-        var stableCount = 0
+        var dialFollowState = DialFollowState()
         var revision = -1L
         var previousOffset: Long? = null
         while (currentCoroutineContext().isActive && _state.value.isActive) {
@@ -817,12 +818,18 @@ class RadioTrackingService(
                         return@withLock
                     }
                     val cycleRevision = tuningRevision.get()
-                    val offset = if (DopplerFrequencyCalculator.isLinearTransponder(transponder)) {
+                    val isLinear = DopplerFrequencyCalculator.isLinearTransponder(transponder)
+                    val controlSettings = settingsRepo.radioControlSettings.value
+                    val dialDeadband = if (isLinear) {
+                        controlSettings.linearDialDeadbandHz
+                    } else {
+                        controlSettings.fmDialDeadbandHz
+                    }
+                    val offset = if (isLinear) {
                         DopplerFrequencyCalculator.parseOffsetHz(settingsRepo.getSatelliteOffset(pass.catNum))
                     } else 0L
                     if (revision != cycleRevision || previousOffset != offset) {
-                        tuning = ""
-                        stableCount = 0
+                        dialFollowState = DialFollowState()
                         lastSetTx = null
                         lastSetRx = null
                         revision = cycleRevision
@@ -839,48 +846,48 @@ class RadioTrackingService(
                     suspend fun readRx() = if (split) rx?.readWorkingFrequency() else rx?.readFrequencyAndMode()?.first
                     // Do not change the nominal pair under a waveform, even from the RX dial.
                     if (!frozen) {
-                        if (tuning.isNotEmpty()) {
-                            val frequency = if (tuning == "tx") readTx() else readRx()
-                            if (frequency != null) {
-                                if (tuning == "tx") observedTx = frequency else observedRx = frequency
-                                if (kotlin.math.abs(frequency - lastRead) <= 20L) stableCount++
-                                else { stableCount = 0; lastRead = frequency }
-                                if (stableCount >= 2) {
-                                    val velocity = position.distanceRate * 1000.0
-                                    val candidate = if (tuning == "tx") {
-                                        (frequency.toDouble() * SPEED_OF_LIGHT / (SPEED_OF_LIGHT + velocity)).toLong()
-                                    } else {
-                                        val nominalRx = (frequency.toDouble() * SPEED_OF_LIGHT /
-                                            (SPEED_OF_LIGHT - velocity)).toLong() - offset
-                                        TransponderMapper.mapDownlinkToUplink(nominalRx, transponder)
-                                    }
-                                    if (candidate != null && candidate > 0L) base = candidate
-                                    tuning = ""
-                                    stableCount = 0
-                                    lastSetTx = null
-                                    lastSetRx = null
+                        suspend fun sampleDial(leg: DialLeg): Boolean {
+                            val controller = if (leg == DialLeg.TX) tx else rx
+                            val commanded = if (leg == DialLeg.TX) lastSetTx else lastSetRx
+                            if (controller?.isConnected != true || commanded == null || base == null) return false
+                            val frequency = (if (leg == DialLeg.TX) readTx() else readRx())
+                                ?: return dialFollowState.activeLeg != null
+                            if (leg == DialLeg.TX) observedTx = frequency else observedRx = frequency
+                            val result = DialFollowPolicy.update(
+                                state = dialFollowState,
+                                leg = leg,
+                                observedFrequencyHz = frequency,
+                                commandedFrequencyHz = commanded,
+                                nowMillis = now,
+                                deadbandHz = dialDeadband,
+                                settleMillis = controlSettings.dialSettleMillis
+                            )
+                            dialFollowState = result.state
+                            result.acceptedFrequencyHz?.let { acceptedFrequency ->
+                                val velocity = position.distanceRate * 1000.0
+                                val candidate = if (leg == DialLeg.TX) {
+                                    (acceptedFrequency.toDouble() * SPEED_OF_LIGHT /
+                                        (SPEED_OF_LIGHT + velocity)).toLong()
+                                } else {
+                                    val nominalRx = (acceptedFrequency.toDouble() * SPEED_OF_LIGHT /
+                                        (SPEED_OF_LIGHT - velocity)).toLong() - offset
+                                    TransponderMapper.mapDownlinkToUplink(nominalRx, transponder)
                                 }
+                                if (candidate != null && candidate > 0L) base = candidate
+                                lastSetTx = null
+                                lastSetRx = null
+                                return true
                             }
-                        } else {
-                            if (base != null && lastSetTx != null && tx?.isConnected == true) {
-                                val frequency = readTx()
-                                if (frequency != null) {
-                                    observedTx = frequency
-                                    if (kotlin.math.abs(frequency - checkNotNull(lastSetTx)) >= 20L) {
-                                        tuning = "tx"; lastRead = frequency; stableCount = 0
-                                    }
-                                }
-                            }
-                            if (tuning.isEmpty() && lastSetRx != null && rx?.isConnected == true) {
-                                val frequency = readRx()
-                                if (frequency != null) {
-                                    observedRx = frequency
-                                    if (kotlin.math.abs(frequency - checkNotNull(lastSetRx)) >= 20L) {
-                                        tuning = "rx"; lastRead = frequency; stableCount = 0
-                                    }
-                                }
-                            }
+                            return dialFollowState.activeLeg != null
                         }
+                        val activeLeg = dialFollowState.activeLeg
+                        if (activeLeg != null) {
+                            sampleDial(activeLeg)
+                        } else if (!sampleDial(DialLeg.TX)) {
+                            sampleDial(DialLeg.RX)
+                        }
+                    } else {
+                        dialFollowState = DialFollowState()
                     }
                     // A synchronous UI intent can invalidate this snapshot while a read suspends.
                     if (cycleRevision != tuningRevision.get() || !_state.value.isActive) return@withLock
@@ -888,16 +895,20 @@ class RadioTrackingService(
                         ?: transponder.downlinkLow)?.plus(offset)
                     val desiredTx = base?.let(position::getUplinkFreq)
                     val desiredRx = nominalRx?.let(position::getDownlinkFreq)
-                    if (tuning.isEmpty()) {
+                    if (dialFollowState.activeLeg == null) {
                         val txWriteAllowed = current.pttState != PttState.ON ||
-                            radioProfile(settingsRepo.radioControlSettings.value.radioModel)
+                            radioProfile(controlSettings.radioModel)
                                 .canSetTxFrequencyWhileTransmitting
+                        var wroteTx = false
                         if (txWriteAllowed && tx?.isConnected == true && desiredTx != null) {
                             val ok = if (split) tx.setTxVfoFrequency(desiredTx) else tx.setFrequency(desiredTx)
-                            if (ok) { lastSetTx = desiredTx; observedTx = desiredTx }
+                            if (ok) { lastSetTx = desiredTx; observedTx = desiredTx; wroteTx = true }
                             else failTrackingCommand("TX frequency was not acknowledged")
                         }
                         if (rx?.isConnected == true && desiredRx != null) {
+                            if (split && wroteTx && controlSettings.sharedBusCommandDelayMillis > 0L) {
+                                delay(controlSettings.sharedBusCommandDelayMillis)
+                            }
                             val ok = if (split) rx.setWorkingFrequency(desiredRx) else rx.setFrequency(desiredRx)
                             if (ok) { lastSetRx = desiredRx; observedRx = desiredRx }
                             else failTrackingCommand("RX frequency was not acknowledged")

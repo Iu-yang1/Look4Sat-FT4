@@ -1013,6 +1013,10 @@ class SettingsRepo(
     private val keyRadioDuplexMode = "radioDuplexMode"
     private val keyRadioCivAddress = "radioCivAddress"
     private val keyRadioTcpProtocol = "radioTcpProtocol"
+    private val keyRadioDialSettle = "radioDialSettleMillis"
+    private val keyRadioLinearDeadband = "radioLinearDialDeadbandHz"
+    private val keyRadioFmDeadband = "radioFmDialDeadbandHz"
+    private val keyRadioSharedBusDelay = "radioSharedBusCommandDelayMillis"
 
     private val _radioControlSettings = MutableStateFlow(getRadioControlSettings())
     override val radioControlSettings: StateFlow<RadioControlSettings> = _radioControlSettings
@@ -1020,7 +1024,11 @@ class SettingsRepo(
     override fun updateRadioControlSettings(settings: RadioControlSettings) {
         val supportedBaudRates = supportedRadioBaudRates(settings.radioModel)
         val normalized = settings.copy(
-            baudRate = settings.baudRate.takeIf { it in supportedBaudRates } ?: supportedBaudRates.first()
+            baudRate = settings.baudRate.takeIf { it in supportedBaudRates } ?: supportedBaudRates.first(),
+            dialSettleMillis = settings.dialSettleMillis.coerceIn(0L, 10_000L),
+            linearDialDeadbandHz = settings.linearDialDeadbandHz.coerceIn(1L, 10_000L),
+            fmDialDeadbandHz = settings.fmDialDeadbandHz.coerceIn(10L, 100_000L),
+            sharedBusCommandDelayMillis = settings.sharedBusCommandDelayMillis.coerceIn(0L, 2_000L)
         )
         preferences.edit {
             putBoolean(keyRadioControlEnabled, normalized.enabled)
@@ -1035,6 +1043,10 @@ class SettingsRepo(
             putString(keyRadioDuplexMode, normalized.duplexMode)
             putInt(keyRadioCivAddress, normalized.civAddress ?: -1)
             putString(keyRadioTcpProtocol, normalized.tcpProtocol)
+            putLong(keyRadioDialSettle, normalized.dialSettleMillis)
+            putLong(keyRadioLinearDeadband, normalized.linearDialDeadbandHz)
+            putLong(keyRadioFmDeadband, normalized.fmDialDeadbandHz)
+            putLong(keyRadioSharedBusDelay, normalized.sharedBusCommandDelayMillis)
         }
         _radioControlSettings.value = normalized
     }
@@ -1063,7 +1075,11 @@ class SettingsRepo(
             civAddress = preferences.getInt(keyRadioCivAddress, -1).takeIf { it in 0..0xFF },
             tcpProtocol = preferences.getString(keyRadioTcpProtocol, null)
                 ?.takeIf { it in RadioControlSettings.SUPPORTED_TCP_PROTOCOLS }
-                ?: RadioControlSettings.TCP_PROTOCOL_RAW_CAT
+                ?: RadioControlSettings.TCP_PROTOCOL_RAW_CAT,
+            dialSettleMillis = preferences.getLong(keyRadioDialSettle, 1_500L).coerceIn(0L, 10_000L),
+            linearDialDeadbandHz = preferences.getLong(keyRadioLinearDeadband, 20L).coerceIn(1L, 10_000L),
+            fmDialDeadbandHz = preferences.getLong(keyRadioFmDeadband, 200L).coerceIn(10L, 100_000L),
+            sharedBusCommandDelayMillis = preferences.getLong(keyRadioSharedBusDelay, 0L).coerceIn(0L, 2_000L)
         )
     }
     //endregion

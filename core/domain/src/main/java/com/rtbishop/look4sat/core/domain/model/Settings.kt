@@ -141,7 +141,15 @@ data class RadioControlSettings(
     /** Optional override for the radio's default CI-V address (0x00..0xFF). */
     val civAddress: Int? = null,
     /** TCP payload protocol: direct binary CAT or Hamlib rigctld text commands. */
-    val tcpProtocol: String = TCP_PROTOCOL_RAW_CAT
+    val tcpProtocol: String = TCP_PROTOCOL_RAW_CAT,
+    /** Time that a manually moved dial must remain stable before it becomes the new reference. */
+    val dialSettleMillis: Long = 1_500L,
+    /** Manual-tuning detection threshold for linear transponders. */
+    val linearDialDeadbandHz: Long = 20L,
+    /** Manual-tuning detection threshold for FM transponders. */
+    val fmDialDeadbandHz: Long = 200L,
+    /** Optional spacing between commands sharing one physical CAT connection. */
+    val sharedBusCommandDelayMillis: Long = 0L
 ) {
     companion object {
         const val MODEL_YAESU_FT817 = "Yaesu FT-817/818"

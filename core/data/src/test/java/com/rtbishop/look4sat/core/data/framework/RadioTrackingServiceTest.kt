@@ -556,6 +556,8 @@ class RadioTrackingServiceTest {
                 uplinkMode = if (inverted) "LSB" else "USB")
             fixture.satelliteRepo.positionAt = { fixture.position.copy(distanceRate = 0.0) }
             fixture.settings.setSatelliteOffset(12_345, "1.25")
+            fixture.settings.radioControlSettings.value =
+                fixture.settings.radioControlSettings.value.copy(dialSettleMillis = 0L)
             fixture.service.connectRadios()
             fixture.startTracking()
             runCurrent()
@@ -574,6 +576,49 @@ class RadioTrackingServiceTest {
             assertEquals(initialRx + 1_000L - 3_250L, fixture.service.state.value.rxFrequencyHz)
             fixture.close()
         }
+    }
+
+    @Test
+    fun dialFollowWaitsForSettleAndRejectsCrossBandReadback() = runTest {
+        var now = 1_000_000L
+        val tx = FakeRadioController()
+        val fixture = Fixture(
+            backgroundScope,
+            tx,
+            FakeRadioController(),
+            nowProvider = { now },
+            radioModel = RadioControlSettings.MODEL_ICOM_IC705,
+            splitMode = true
+        )
+        fixture.settings.radioControlSettings.value = fixture.settings.radioControlSettings.value.copy(
+            dialSettleMillis = 1_500L,
+            linearDialDeadbandHz = 20L
+        )
+        fixture.satelliteRepo.positionAt = { fixture.position.copy(distanceRate = 0.0) }
+        fixture.service.connectRadios()
+        fixture.startTracking()
+        runCurrent()
+
+        tx.txFrequencyHz = 435_100_000L
+        now += 1_000L
+        advanceTimeBy(1_000L)
+        runCurrent()
+        assertEquals(fixture.nominalTxHz, fixture.service.state.value.txBaseFrequencyHz)
+
+        tx.txFrequencyHz = fixture.nominalTxHz + 1_000L
+        now += 1_000L
+        advanceTimeBy(1_000L)
+        runCurrent()
+        now += 1_499L
+        advanceTimeBy(1_000L)
+        runCurrent()
+        assertEquals(fixture.nominalTxHz, fixture.service.state.value.txBaseFrequencyHz)
+
+        now += 1L
+        advanceTimeBy(1_000L)
+        runCurrent()
+        assertEquals(fixture.nominalTxHz + 1_000L, fixture.service.state.value.txBaseFrequencyHz)
+        fixture.close()
     }
 
     @Test

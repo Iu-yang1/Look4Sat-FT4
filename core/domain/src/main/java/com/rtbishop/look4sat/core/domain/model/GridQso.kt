@@ -26,9 +26,12 @@ package com.rtbishop.look4sat.core.domain.model
  * @param epochMs   QSO date+time in UTC milliseconds
  * @param satName   satellite name (e.g. "FO-29")
  * @param mode      ADIF mode (FM / CW / SSB ...)
- * @param bandUp    uplink band as reported by LoTW (BAND_RX: "70CM", "2M", "10M"...)
- * @param bandDown  downlink band (BAND: "2M", "70CM"...) — may be empty when
- *                  LoTW did not include it
+ * @param bandUp    uplink band, the band of the transmitted frequency (ADIF BAND:
+ *                  "2M", "70CM", "10M"...). Measured against the live report of the
+ *                  user's own uploads: SO-50 arrives as BAND=2M/FREQ=145.85 with
+ *                  BAND_RX=70CM/FREQ_RX=436.8, i.e. BAND carries the uplink.
+ * @param bandDown  downlink band (ADIF BAND_RX) — may be empty when LoTW did not
+ *                  include it
  * @param dxcc      ARRL DXCC entity code of the opposite station (from ADIF
  *                  <DXCC>), or null when LoTW omitted it
  * @param country   DXCC entity name (ADIF <COUNTRY>), or null

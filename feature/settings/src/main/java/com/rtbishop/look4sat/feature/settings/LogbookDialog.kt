@@ -26,7 +26,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -38,7 +41,12 @@ import androidx.compose.ui.unit.sp
 import com.rtbishop.look4sat.core.domain.logbook.QsoRecord
 import com.rtbishop.look4sat.core.domain.logbook.displayMode
 import com.rtbishop.look4sat.core.domain.logbook.frequencyBand
+import com.rtbishop.look4sat.core.domain.logbook.unavailableUploadSummary
 import com.rtbishop.look4sat.core.presentation.LocalSpacing
+import com.rtbishop.look4sat.core.presentation.QsoEditDialog
+import com.rtbishop.look4sat.core.presentation.SheetDialogTitle
+import com.rtbishop.look4sat.core.presentation.sheetDialogContainerColor
+import com.rtbishop.look4sat.core.presentation.sheetDialogShape
 import com.rtbishop.look4sat.core.presentation.R
 import com.rtbishop.look4sat.core.presentation.SharedDialog
 import com.rtbishop.look4sat.core.presentation.SwipeController
@@ -70,17 +78,21 @@ fun LogbookCard(recordCount: Int, showLogbookDialog: () -> Unit) {
 @Composable
 fun LogbookDialog(
     records: List<QsoRecord>,
+    satelliteCandidates: List<String>,
     uploadBusy: Boolean,
     uploadMessage: String,
     preview: com.rtbishop.look4sat.core.domain.repository.LoTWUploadPreview?,
     onDismiss: () -> Unit,
     onDelete: (Long) -> Unit,
+    onEdit: (QsoRecord) -> Unit,
     onUpload: () -> Unit,
     onConfirmUpload: () -> Unit,
     onDismissPreview: () -> Unit,
     onDismissMessage: () -> Unit
 ) {
     val swipeController = rememberSwipeController()
+    // Record currently open in the edit dialog (null when closed).
+    var editTarget by remember { mutableStateOf<QsoRecord?>(null) }
     SharedDialog(
         title = stringResource(R.string.prefs_logbook_title),
         onDismissRequest = onDismiss,
@@ -101,7 +113,12 @@ fun LogbookDialog(
                     verticalArrangement = Arrangement.spacedBy(2.dp)
                 ) {
                     items(records, key = { it.id }) { record ->
-                        LogbookRow(record, swipeController, onDelete = { onDelete(record.id) })
+                        LogbookRow(
+                            record = record,
+                            swipeController = swipeController,
+                            onDelete = { onDelete(record.id) },
+                            onClick = { editTarget = record }
+                        )
                     }
                 }
             }
@@ -119,10 +136,24 @@ fun LogbookDialog(
     if (uploadMessage.isNotBlank()) {
         AlertDialog(
             onDismissRequest = onDismissMessage,
-            title = { Text("LoTW Upload") },
+            shape = sheetDialogShape(),
+            containerColor = sheetDialogContainerColor(),
+            title = { SheetDialogTitle("LoTW Upload") },
             text = { Text(uploadMessage) },
             confirmButton = {
                 TextButton(onClick = onDismissMessage) { Text("OK") }
+            }
+        )
+    }
+
+    editTarget?.let { target ->
+        QsoEditDialog(
+            record = target,
+            satelliteCandidates = satelliteCandidates,
+            onDismiss = { editTarget = null },
+            onSave = { updated ->
+                onEdit(updated)
+                editTarget = null
             }
         )
     }
@@ -137,7 +168,9 @@ private fun LogbookUploadPreviewDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.prefs_logbook_upload_title)) },
+        shape = sheetDialogShape(),
+        containerColor = sheetDialogContainerColor(),
+        title = { SheetDialogTitle(stringResource(R.string.prefs_logbook_upload_title)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text("${preview.callsign}  DXCC ${preview.dxcc}  Grid ${preview.grid}", fontSize = 13.sp)
@@ -147,9 +180,17 @@ private fun LogbookUploadPreviewDialog(
                 )
                 if (preview.skipped > 0 || preview.unknownSkipped > 0 || preview.unavailableSkipped > 0) {
                     val parts = buildList {
-                        if (preview.skipped > 0) add("${preview.skipped} already uploaded/duplicate")
+                        val alreadyUploaded = preview.skipped - preview.duplicateSkipped - preview.unknownSkipped
+                        if (alreadyUploaded > 0) add("$alreadyUploaded already uploaded")
+                        if (preview.duplicateSkipped > 0) add("${preview.duplicateSkipped} duplicate")
                         if (preview.unknownSkipped > 0) add("${preview.unknownSkipped} unknown result")
-                        if (preview.unavailableSkipped > 0) add("${preview.unavailableSkipped} un-uploadable")
+                        if (preview.unavailableSkipped > 0) add(
+                            unavailableUploadSummary(
+                                preview.unavailableSkipped,
+                                preview.unavailableReasons,
+                                duplicates = preview.duplicateSkipped
+                            )
+                        )
                     }
                     Text(parts.joinToString(" · "), fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
                 }
@@ -168,7 +209,12 @@ private fun LogbookUploadPreviewDialog(
 }
 
 @Composable
-private fun LogbookRow(record: QsoRecord, swipeController: SwipeController, onDelete: () -> Unit) {
+private fun LogbookRow(
+    record: QsoRecord,
+    swipeController: SwipeController,
+    onDelete: () -> Unit,
+    onClick: () -> Unit
+) {
     val time = remember(record.startUtcMillis) {
         SimpleDateFormat("MM-dd HH:mm'Z'", Locale.US).apply {
             timeZone = TimeZone.getTimeZone("UTC")
@@ -188,6 +234,7 @@ private fun LogbookRow(record: QsoRecord, swipeController: SwipeController, onDe
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .clickable { onClick() }
                 .padding(horizontal = 4.dp, vertical = 8.dp)
         ) {
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
@@ -195,15 +242,15 @@ private fun LogbookRow(record: QsoRecord, swipeController: SwipeController, onDe
                     text = record.theirCallsign,
                     style = MaterialTheme.typography.titleMedium,
                     fontFamily = FontFamily.Monospace,
-                    color = Color(0xFFFFE082),
+                    color = MaterialTheme.colorScheme.primary,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f)
                 )
                 if (record.lotwConfirmed) {
-                    Text(text = "QSL", fontSize = 13.sp, color = Color(0xFFFFE082), fontFamily = FontFamily.Monospace)
+                    Text(text = "QSL", fontSize = 13.sp, color = MaterialTheme.colorScheme.primary, fontFamily = FontFamily.Monospace)
                 } else if (record.lotwUploaded) {
-                    Text(text = "UP", fontSize = 13.sp, color = Color(0xFFFFE082), fontFamily = FontFamily.Monospace)
+                    Text(text = "UP", fontSize = 13.sp, color = MaterialTheme.colorScheme.primary, fontFamily = FontFamily.Monospace)
                 }
             }
             Text(

@@ -1,3 +1,21 @@
+/*
+ * Look4Sat-BA7OPF. Amateur radio satellite tracker and pass predictor.
+ * Copyright (C) 2026 BA7OPF.
+ * Based on Look4Sat by Arty Bishop and contributors.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
 package com.rtbishop.look4sat.core.data.repository
 
 import com.rtbishop.look4sat.core.domain.repository.LoTWResult
@@ -112,9 +130,12 @@ class LoTWRepositoryTest {
         assertEquals("A50QO", qso.call)
         assertEquals("FO-29", qso.satName)
         assertEquals("CW", qso.mode)
-        assertEquals("2M", qso.bandUp)
-        assertEquals("70CM", qso.bandDown)
-        assertEquals("V/U", qso.bandLabel)
+        // ADIF BAND is the transmitted (uplink) band, BAND_RX the received (downlink) one.
+        // Confirmed against the live report of the own uploads: SO-50 QSOs arrive as
+        // BAND=2M/FREQ=145.85000 + BAND_RX=70CM/FREQ_RX=436.80500, i.e. BAND=uplink.
+        assertEquals("70CM", qso.bandUp)
+        assertEquals("2M", qso.bandDown)
+        assertEquals("U/V", qso.bandLabel)
         assertEquals(2026, java.time.Instant.ofEpochMilli(qso.epochMs).atZone(java.time.ZoneOffset.UTC).year)
     }
 

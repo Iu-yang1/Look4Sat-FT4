@@ -163,6 +163,11 @@ class SettingsViewModel(
                 _uiState.update { it.copy(logbookRecords = records) }
             }
         }
+        // ARRL satellite names for the logbook edit dialog's satellite picker.
+        viewModelScope.launch {
+            val catalog = runCatching { lotwUploadRepository.satelliteCatalog() }.getOrDefault(emptyList())
+            _uiState.update { it.copy(satelliteCatalog = catalog) }
+        }
         // Load the LoTW upload certificate + station once at startup so the
         // settings card reflects the real state on first frame (previously it
         // stayed "not imported" until the config dialog was opened).
@@ -197,7 +202,15 @@ class SettingsViewModel(
             is SettingsAction.SetCompassOffset -> settingsRepo.updateOtherSettings {
                 it.copy(compassOffsetDegrees = action.degrees.coerceIn(-180f, 180f))
             }
-            is SettingsAction.ToggleLightTheme -> settingsRepo.updateOtherSettings { it.copy(stateOfLightTheme = action.value) }
+            is SettingsAction.ToggleLightTheme -> settingsRepo.updateOtherSettings {
+                // The red night filter is a dark-screen aid; turning the light theme on
+                // switches it off so the UI isn't red-on-white. Turning the light theme
+                // off leaves the filter as the user set it (off).
+                it.copy(
+                    stateOfLightTheme = action.value,
+                    stateOfNightMode = if (action.value) false else it.stateOfNightMode
+                )
+            }
             is SettingsAction.ToggleNightMode -> settingsRepo.updateOtherSettings { it.copy(stateOfNightMode = action.value) }
             is SettingsAction.UpdateMapSettings -> settingsRepo.updateOtherSettings {
                 it.copy(mapSource = action.mapSource, tiandituKey = action.tiandituKey)
@@ -216,6 +229,7 @@ class SettingsViewModel(
             // Logbook
             SettingsAction.RefreshLogbook -> refreshLogbook()
             is SettingsAction.DeleteLogbookRecord -> viewModelScope.launch { qsoRepository.delete(action.id) }
+            is SettingsAction.UpdateLogbookRecord -> viewModelScope.launch { qsoRepository.save(action.record) }
             SettingsAction.PrepareLogbookUpload -> prepareLogbookUpload()
             SettingsAction.ConfirmLogbookUpload -> confirmLogbookUpload()
             SettingsAction.DismissLogbookPreview -> dismissLogbookPreview()
@@ -364,11 +378,14 @@ class SettingsViewModel(
                 val all = qsoRepository.records.first()
                 // Only local (non-confirmed) records are candidates for upload;
                 // LoTW-imported confirmations are the feedback side.
-                val pending = all.filter { !it.lotwConfirmed && it.status == com.rtbishop.look4sat.core.domain.logbook.QsoStatus.COMPLETE }
+                val pending = all.filter { !it.lotwConfirmed && !it.lotwUploaded && it.status == com.rtbishop.look4sat.core.domain.logbook.QsoStatus.COMPLETE }
                 val audit = lotwUploadRepository.audit(pending)
                 if (audit.pending == 0) {
                     val msg = when {
-                        audit.unavailable > 0 -> "${audit.unavailable} QSO(s) can't be uploaded (invalid call/date — check the logbook)"
+                        audit.unavailable > 0 -> com.rtbishop.look4sat.core.domain.logbook.unavailableUploadSummary(
+                            audit.unavailable, audit.reasons, audit.details, audit.duplicates, audit.incomplete
+                        )
+
                         audit.unknown > 0 -> "${audit.unknown} QSO(s) had an unknown upload result — not retried automatically"
                         else -> "No pending QSOs to upload"
                     }

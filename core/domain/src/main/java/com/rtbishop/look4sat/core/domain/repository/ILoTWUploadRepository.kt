@@ -1,3 +1,21 @@
+/*
+ * Look4Sat-BA7OPF. Amateur radio satellite tracker and pass predictor.
+ * Copyright (C) 2026 BA7OPF.
+ * Based on Look4Sat by Arty Bishop and contributors.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
 package com.rtbishop.look4sat.core.domain.repository
 
 import com.rtbishop.look4sat.core.domain.logbook.QsoRecord
@@ -11,6 +29,9 @@ interface ILoTWUploadRepository {
     suspend fun removeCertificate()
     /** Region field (State/Province/Prefecture…) and national CQZ/ITUZ map for a DXCC entity. */
     suspend fun stationMeta(dxcc: Int): LoTWStationMeta
+    /** Every satellite name ARRL accepts (config.tq6), sorted. Only these names may be
+     *  signed, so the logbook UI validates/picks satellite names from this list. */
+    suspend fun satelliteCatalog(): List<String>
     suspend fun audit(records: List<QsoRecord>): LoTWUploadAudit
     suspend fun prepare(records: List<QsoRecord>, resubmit: Boolean): LoTWUploadPreview
     suspend fun upload(previewId: String): LoTWUploadResult
@@ -69,18 +90,30 @@ data class LoTWUploadPreview(
     val unknownSkipped: Int = 0,
     /** Un-signable records (invalid call/date/…) skipped instead of aborting the batch. */
     val unavailableSkipped: Int = 0,
+    /** Why those records were un-signable, so the operator sees the real cause. */
+    val unavailableReasons: Map<LoTWProblem, Int> = emptyMap(),
+    /** Records dropped because the same contact already appears earlier in the batch. */
+    val duplicateSkipped: Int = 0,
     /** Ids of the records that actually made it into this TQ8 batch. Only these
      *  may be marked "uploaded" after an accepted POST — never the full candidate list. */
     val submittedIds: List<Long> = emptyList()
 )
 
-/** Local comparison against downloaded LoTW receipt flags and this app's durable upload receipts. */
+/** Why the un-uploadable records of a selection cannot be signed, and what was left out. */
 data class LoTWUploadAudit(
     val total: Int,
     val pending: Int,
     val uploaded: Int,
     val unknown: Int,
-    val unavailable: Int
+    val unavailable: Int,
+    /** Signing failures counted per reason (see [com.rtbishop.look4sat.core.domain.logbook.label]). */
+    val reasons: Map<LoTWProblem, Int> = emptyMap(),
+    /** First offending value per reason, e.g. SATELLITE -> "SAUDISAT 1C". */
+    val details: Map<LoTWProblem, String> = emptyMap(),
+    /** Records dropped as duplicates of an earlier record in the same selection. */
+    val duplicates: Int = 0,
+    /** Records that are not marked complete, so they are not uploadable at all. */
+    val incomplete: Int = 0
 )
 
 sealed interface LoTWUploadResult {

@@ -322,9 +322,9 @@ class LoTWRepository : ILoTWRepository {
                 line.startsWith("<MODE:") ->
                     mode = adifValue(line)
                 line.startsWith("<BAND_RX:") ->
-                    bandUp = adifValue(line).uppercase()
-                line.startsWith("<BAND:") && !line.startsWith("<BAND_RX:") ->
                     bandDown = adifValue(line).uppercase()
+                line.startsWith("<BAND:") && !line.startsWith("<BAND_RX:") ->
+                    bandUp = adifValue(line).uppercase()
                 line.startsWith("<DXCC:") ->
                     dxcc = adifValue(line).toIntOrNull()
                 line.startsWith("<COUNTRY:") ->

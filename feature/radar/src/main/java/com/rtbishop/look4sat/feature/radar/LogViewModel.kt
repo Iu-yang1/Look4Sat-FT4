@@ -18,6 +18,9 @@ import com.rtbishop.look4sat.core.domain.logbook.QsoRecord
 import com.rtbishop.look4sat.core.domain.logbook.QsoStatus
 import com.rtbishop.look4sat.core.domain.logbook.displayMode
 import com.rtbishop.look4sat.core.domain.logbook.frequencyBand
+import com.rtbishop.look4sat.core.domain.logbook.officialSatelliteName
+import com.rtbishop.look4sat.core.domain.logbook.satelliteIdentity
+import com.rtbishop.look4sat.core.domain.logbook.unavailableUploadSummary
 import com.rtbishop.look4sat.core.domain.repository.ILoTWUploadRepository
 import com.rtbishop.look4sat.core.domain.repository.IMainContainer
 import com.rtbishop.look4sat.core.domain.repository.ISettingsRepo
@@ -43,6 +46,8 @@ data class LogUiState(
     val certificateCallsign: String = "",
     /** Primary grid of the LoTW upload station location ("" when none). */
     val stationGrid: String = "",
+    /** ARRL satellite names (config.tq6) — the only names a record may be signed with. */
+    val satelliteCatalog: List<String> = emptyList(),
     val preview: LoTWUploadPreview? = null,
     /** User-facing upload / record message ("" when none). */
     val message: String = "",
@@ -56,6 +61,8 @@ class LogViewModel(
     private val settingsRepo: ISettingsRepo
 ) : ViewModel() {
 
+    /** Records shown on the radar log page: all records of the current pass window, including
+     *  already-uploaded (UP) and confirmed (QSL) ones. Window filtering happens in LogPage. */
     val records: Flow<List<QsoRecord>> = qsoRepository.records
 
     private val _uiState = MutableStateFlow(LogUiState())
@@ -69,10 +76,12 @@ class LogViewModel(
         viewModelScope.launch {
             val cert = lotwUploadRepository.certificate()
             val station = lotwUploadRepository.station()
+            val catalog = runCatching { lotwUploadRepository.satelliteCatalog() }.getOrDefault(emptyList())
             _uiState.update {
                 it.copy(
                     certificateCallsign = cert?.callsign.orEmpty(),
-                    stationGrid = station?.grid.orEmpty()
+                    stationGrid = station?.grid.orEmpty(),
+                    satelliteCatalog = catalog
                 )
             }
         }
@@ -96,20 +105,27 @@ class LogViewModel(
         val call = _uiState.value.callsignInput.trim()
         if (call.isEmpty()) return
         val normalizedMode = mode.ifBlank { "FM" }.uppercase(Locale.US)
-        val now = System.currentTimeMillis()
+        // Whole minutes (seconds zeroed): matches the edit dialog's HH:mm granularity and the
+        // minute-resolution of LoTW reports, so re-saving an unchanged record never looks edited.
+        val now = System.currentTimeMillis() / 60_000L * 60_000L
+        // kHz granularity (3 decimals in MHz) — enough for operating and for the ADIF export.
+        val tx = txHz?.let { (it + 500L) / 1000L * 1000L }
+        val rx = rxHz?.let { (it + 500L) / 1000L * 1000L }
         val record = QsoRecord(
             startUtcMillis = now,
             endUtcMillis = now,
             theirCallsign = call,
             myCallsign = _uiState.value.certificateCallsign,
             myGrid = myGrid.take(6).uppercase(Locale.US),
-            txFrequencyHz = txHz,
-            rxFrequencyHz = rxHz,
-            band = frequencyBand(txHz),
-            rxBand = frequencyBand(rxHz),
+            txFrequencyHz = tx,
+            rxFrequencyHz = rx,
+            band = frequencyBand(tx),
+            rxBand = frequencyBand(rx),
             mode = if (normalizedMode == "FT4") "MFSK" else normalizedMode,
             submode = normalizedMode.takeIf { it == "FT4" }.orEmpty(),
-            satelliteName = satName,
+            // Stored under the ARRL name (the tracker's "SAUDISAT 1C" is logged as "SO-50"):
+            // one name for the logbook, the ADIF export and the signed record.
+            satelliteName = officialSatelliteName(satName, _uiState.value.satelliteCatalog),
             satelliteMode = normalizedMode,
             status = QsoStatus.COMPLETE,
             propagationMode = "SAT"
@@ -120,16 +136,25 @@ class LogViewModel(
 
     fun delete(id: Long) = viewModelScope.launch { qsoRepository.delete(id) }
 
+    /**
+     * Persist an edited record (frequency/callsign/time/…). The repository keeps
+     * the LoTW confirmation state consistent when the contact identity changes.
+     */
+    fun updateRecord(record: QsoRecord) = viewModelScope.launch { qsoRepository.save(record) }
+
     /** English social post from the recorded QSOs of the current satellite (last 24h). */
     fun generatePost(satName: String, maxElev: Double) {
         viewModelScope.launch {
             val now = System.currentTimeMillis()
+            // Records carry the ARRL name while the pass carries the tracker's name, so the
+            // operator's own contacts are collected by identity, not by the raw name.
+            val identity = satelliteIdentity(satName)
             val list = qsoRepository.records.first()
-                .filter { it.satelliteName.trim().equals(satName.trim(), true) }
+                .filter { satelliteIdentity(it.satelliteName) == identity }
                 .filter { it.startUtcMillis > now - 24 * 3_600_000L }
                 .sortedBy { it.startUtcMillis }
             if (list.isEmpty()) return@launch
-            val shortName = satName.substringBefore('(').trim().uppercase(Locale.US)
+            val shortName = officialSatelliteName(satName).substringBefore('(').trim().uppercase(Locale.US)
             val utc = SimpleDateFormat("yyyyMMdd|HH:mm'Z'", Locale.US).apply {
                 timeZone = TimeZone.getTimeZone("UTC")
             }
@@ -140,7 +165,7 @@ class LogViewModel(
                 .joinToString("\n")
             val currentGrid = settingsRepo.stationPosition.value.qthLocator.take(6)
             val logLine = "📍 Log: ${_uiState.value.stationGrid.take(4)} | Current: $currentGrid"
-            val viaLine = "via Look4Sat — TNX de ${_uiState.value.certificateCallsign}"
+            val viaLine = "via Look4Sat-BA7OPF — TNX de ${_uiState.value.certificateCallsign}"
             val tag = "#HamRadio #SatelliteQSO #" + shortName.filter { it.isLetterOrDigit() }
             val text = listOf(firstLine, elLine, modeLines, "", logLine, viaLine, tag).joinToString("\n")
             _uiState.update { it.copy(postText = text) }
@@ -157,11 +182,14 @@ class LogViewModel(
                 val all = qsoRepository.records.first()
                 // Only local (non-confirmed) records are candidates for upload;
                 // LoTW-imported confirmations are the feedback side.
-                val pending = all.filter { !it.lotwConfirmed && it.status == QsoStatus.COMPLETE }
+                val pending = all.filter { !it.lotwConfirmed && !it.lotwUploaded && it.status == QsoStatus.COMPLETE }
                 val audit = lotwUploadRepository.audit(pending)
                 if (audit.pending == 0) {
                     val msg = when {
-                        audit.unavailable > 0 -> "${audit.unavailable} QSO(s) can't be uploaded (invalid call/date — check the logbook)"
+                        audit.unavailable > 0 -> unavailableUploadSummary(
+                            audit.unavailable, audit.reasons, audit.details, audit.duplicates, audit.incomplete
+                        )
+
                         audit.unknown > 0 -> "${audit.unknown} QSO(s) had an unknown upload result — not retried automatically"
                         else -> "No pending QSOs to upload"
                     }

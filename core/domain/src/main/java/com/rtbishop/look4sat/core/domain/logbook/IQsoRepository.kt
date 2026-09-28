@@ -22,4 +22,12 @@ interface IQsoRepository {
     suspend fun importAdi(content: String): AdifImportResult
     suspend fun mergeConfirmed(records: List<QsoRecord>): AdifImportResult
     suspend fun mergeLoTW(records: List<QsoRecord>): AdifImportResult
+
+    /**
+     * Folds LoTW confirmations that were imported as their own rows back into the local
+     * record they belong to (see [com.rtbishop.look4sat.core.domain.logbook.splitConfirmationPairs]).
+     * Confirmations merged before the tracker-name/band identity fix split every contact in
+     * two; this repairs the existing logbook. Returns the number of merged rows.
+     */
+    suspend fun consolidateConfirmations(): Int
 }

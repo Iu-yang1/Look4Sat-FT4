@@ -9,6 +9,8 @@
  */
 package com.rtbishop.look4sat.core.data.lotw
 
+import com.rtbishop.look4sat.core.domain.logbook.LoTWSatelliteAliases
+import com.rtbishop.look4sat.core.domain.repository.LoTWOperationException
 import com.rtbishop.look4sat.core.domain.repository.LoTWZonePair
 import java.io.File
 import org.junit.Assert.assertEquals
@@ -74,5 +76,51 @@ class LoTWConfigTest {
         val meta = config.stationMeta(999999)
         assertNull(meta.regionField)
         assertTrue(meta.countryZones.isEmpty())
+    }
+
+    @Test
+    fun `tracker catalogue names resolve to the ARRL satellite`() {
+        // The names the TLE sources store vs the single name ARRL knows for that satellite.
+        assertEquals("SO-50", config.resolveSatellite("SAUDISAT 1C"))
+        assertEquals("ARISS", config.resolveSatellite("ISS (ZARYA)"))
+        assertEquals("PO-101", config.resolveSatellite("DIWATA 2B"))
+        assertEquals("AO-91", config.resolveSatellite("FOX-1B"))
+        assertEquals("IO-86", config.resolveSatellite("LAPAN-A2"))
+        assertEquals("RS-44", config.resolveSatellite("DOSAAF-85"))
+        assertEquals("BO-102", config.resolveSatellite("CAS-7B"))
+        assertEquals("SO-50", config.resolveSatellite("SO-50"))
+    }
+
+    @Test
+    fun `satellite signing accepts tracker names and keeps ARRL spelling`() {
+        assertEquals("SO-50", config.satellite("SAUDISAT 1C", "2026-09-27"))
+        assertEquals("ARISS", config.satellite("ISS (ZARYA)", "2026-09-27"))
+        assertEquals("SO-50", config.satellite("SO-50 (SaudiOSCAR 50)", "2026-09-27"))
+    }
+
+    @Test
+    fun `satellite signing rejects names ARRL does not know`() {
+        // Placeholder designations are deliberately unmapped: signing them would name the
+        // wrong object, so the record must stay un-uploadable.
+        listOf("OBJECT AY", "MARINA", "NOT A SATELLITE").forEach { name ->
+            val error = runCatching { config.satellite(name, "2026-09-27") }.exceptionOrNull()
+            assertTrue("$name should be rejected", error is LoTWOperationException)
+        }
+    }
+
+    @Test
+    fun `satellite signing enforces the ARRL service dates`() {
+        // SO-50 is listed from 2002-12-20: a QSO before that cannot be signed.
+        val error = runCatching { config.satellite("SAUDISAT 1C", "2002-01-01") }.exceptionOrNull()
+        assertTrue(error is LoTWOperationException)
+        assertEquals("SO-50", config.satellite("SAUDISAT 1C", "2003-01-01"))
+    }
+
+    @Test
+    fun `every alias target is a real ARRL satellite name`() {
+        val catalogue = config.satelliteNames().toSet()
+        assertTrue("ARRL catalogue is unexpectedly small", catalogue.size > 100)
+        val unknown = LoTWSatelliteAliases.table.filterValues { it !in catalogue }
+        assertEquals("alias targets missing from config.tq6: $unknown", emptyMap<String, String>(), unknown)
     }
 }

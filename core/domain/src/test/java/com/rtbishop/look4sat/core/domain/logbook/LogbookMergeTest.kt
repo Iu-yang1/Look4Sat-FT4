@@ -12,6 +12,7 @@ package com.rtbishop.look4sat.core.domain.logbook
 import com.rtbishop.look4sat.core.domain.model.GridQso
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -133,4 +134,140 @@ class LogbookMergeTest {
         assertEquals("FM", staleFm.displayMode)
         assertEquals("CW", staleCw.displayMode)
     }
+
+    // region logbook split (tracker name / band direction, 2026-09-28)
+
+    @Test
+    fun satelliteIdentity_mapsTrackerNamesOntoArlNames() {
+        // Local records keep the tracking-source name, LoTW reports the ARRL name; both
+        // must land on one identity or every confirmation becomes a second row.
+        assertEquals("SO-50", satelliteIdentity("SAUDISAT 1C"))
+        assertEquals("SO-50", satelliteIdentity("SO-50"))
+        assertEquals("ARISS", satelliteIdentity("ISS (ZARYA)"))
+        assertEquals("ARISS", satelliteIdentity("ARISS"))
+        assertEquals("PO-101", satelliteIdentity("DIWATA 2B"))
+        assertEquals("FO-29", satelliteIdentity("JAS 2"))
+    }
+
+    @Test
+    fun satelliteIdentity_isSymmetricForEveryAliasEntry() {
+        // Guards the whole table: an entry whose target does not resolve back to the same
+        // identity would split that satellite's contacts again.
+        LoTWSatelliteAliases.table.forEach { (tracker, official) ->
+            assertEquals(official, satelliteIdentity(tracker), satelliteIdentity(official))
+        }
+    }
+
+    @Test
+    fun satelliteIdentity_keepsRecycledPlaceholdersUnmatched() {
+        // "OBJECT xx" names are reused between objects and deliberately unmapped, so they
+        // must never resolve onto a real ARRL satellite.
+        assertEquals("OBJECT AY", satelliteIdentity("OBJECT AY"))
+        assertNotEquals(satelliteIdentity("AO-123"), satelliteIdentity("OBJECT AY"))
+    }
+
+    @Test
+    fun sameConfirmedContact_matchesTrackerNameAgainstArlName() {
+        // The reported bug: SO-50 logged in the app (tracker name, 145.850 uplink) never
+        // picked up the confirmation LoTW reported for it.
+        val uploaded = loggedRecord("SAUDISAT 1C", uplinkHz = 145_850_000L, downlinkHz = 436_795_000L)
+        val reported = reportedRecord("SO-50", band = "2M", rxBand = "70CM")
+        assertTrue(sameConfirmedContact(uploaded, reported))
+    }
+
+    @Test
+    fun sameConfirmedContact_stillRejectsOtherContactOrMinute() {
+        val uploaded = loggedRecord("SAUDISAT 1C", uplinkHz = 145_850_000L, downlinkHz = 436_795_000L)
+        val otherOperator = reportedRecord("SO-50", band = "2M", rxBand = "70CM").copy(theirCallsign = "BG5JVM")
+        val anotherMinute = reportedRecord("SO-50", band = "2M", rxBand = "70CM")
+            .copy(startUtcMillis = uploaded.startUtcMillis + 90_000L)
+        assertFalse(sameConfirmedContact(uploaded, otherOperator))
+        assertFalse(sameConfirmedContact(uploaded, anotherMinute))
+    }
+
+    @Test
+    fun splitConfirmationPairs_foldsRowsSplitByTheOldMismatch() {
+        // Both pre-fix symptoms in one pair: the imported row keeps the ARRL name and the
+        // mirrored band direction the old parser produced (band=downlink).
+        val uploaded = loggedRecord("SAUDISAT 1C", 145_850_000L, 436_795_000L)
+            .copy(id = 1L, lotwUploaded = true)
+        val imported = reportedRecord("SO-50", band = "70CM", rxBand = "2M").copy(id = 2L)
+        val pairs = splitConfirmationPairs(listOf(uploaded, imported))
+        assertEquals(1, pairs.size)
+        assertEquals(0, pairs.first().localIndex)
+        assertEquals(1, pairs.first().confirmationIndex)
+    }
+
+    @Test
+    fun splitConfirmationPairs_keepsUnrelatedRowsApart() {
+        val uploaded = loggedRecord("SAUDISAT 1C", 145_850_000L, 436_795_000L)
+            .copy(id = 1L, lotwUploaded = true)
+        // Another operator on another satellite in the same minute must not be folded in.
+        val otherOperator = reportedRecord("SO-50", band = "70CM", rxBand = "2M")
+            .copy(id = 2L, theirCallsign = "BG5JVM")
+        // A contact on a satellite the local record does not name at all stays separate.
+        val otherSatellite = reportedRecord("AO-91", band = "70CM", rxBand = "2M").copy(id = 3L)
+        assertTrue(splitConfirmationPairs(listOf(uploaded, otherOperator, otherSatellite)).isEmpty())
+    }
+
+    /** A record as the log page creates it: tracker name, uplink/downlink bands, no flags. */
+    @Test
+    fun officialSatelliteName_storesTheArlName() {
+        assertEquals("SO-50", officialSatelliteName("SAUDISAT 1C"))
+        assertEquals("ARISS", officialSatelliteName("ISS (ZARYA)"))
+        assertEquals("PO-101", officialSatelliteName("DIWATA 2B"))
+        assertEquals("FO-29", officialSatelliteName("JAS 2"))
+        // Already-ARRL names are left alone (the rewrite is idempotent).
+        assertEquals("SO-50", officialSatelliteName("SO-50"))
+        assertEquals("AO-123", officialSatelliteName("AO-123"))
+        // Nothing to map onto: a satellite ARRL does not list, a recycled placeholder, a blank.
+        assertEquals("FOO-1", officialSatelliteName("FOO-1"))
+        assertEquals("OBJECT AY", officialSatelliteName("OBJECT AY"))
+        assertEquals("", officialSatelliteName("   "))
+    }
+
+    @Test
+    fun officialSatelliteName_usesTheCatalogueWhenItKnowsTheNameTheTrackerCarries() {
+        val catalogue = listOf("BO-102", "SO-50")
+        // "CAS-7B" resolves through the alias table, the description-only name through the catalogue.
+        assertEquals("BO-102", officialSatelliteName("CAS-7B", catalogue))
+        assertEquals("BO-102", officialSatelliteName("CAS-7B (BO-102)", catalogue))
+        assertEquals("SO-50", officialSatelliteName("SAUDISAT 1C", catalogue))
+    }
+
+    private fun loggedRecord(satelliteName: String, uplinkHz: Long, downlinkHz: Long) = QsoRecord(
+        startUtcMillis = REPORTED_START,
+        theirCallsign = "BG5JSB",
+        myCallsign = "BA7OPF",
+        txFrequencyHz = uplinkHz,
+        rxFrequencyHz = downlinkHz,
+        band = frequencyBand(uplinkHz),
+        rxBand = frequencyBand(downlinkHz),
+        mode = "FM",
+        satelliteName = satelliteName,
+        propagationMode = "SAT",
+        status = QsoStatus.COMPLETE,
+        lotwUploaded = true
+    )
+
+    /** A record as a LoTW confirmation carries it: ARRL name, report bands, confirmed. */
+    private fun reportedRecord(satelliteName: String, band: String, rxBand: String) = QsoRecord(
+        startUtcMillis = REPORTED_START,
+        theirCallsign = "BG5JSB",
+        myCallsign = "BA7OPF",
+        band = band,
+        rxBand = rxBand,
+        mode = "FM",
+        satelliteName = satelliteName,
+        propagationMode = "SAT",
+        status = QsoStatus.COMPLETE,
+        lotwConfirmed = true
+    )
+
+    private companion object {
+        /** 2026-09-16 07:45Z — an SO-50 pass of the user's real report. */
+        const val REPORTED_START = 1_789_544_700_000L
+    }
+
+    // endregion
 }

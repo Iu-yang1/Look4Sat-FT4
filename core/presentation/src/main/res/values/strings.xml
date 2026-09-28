@@ -342,6 +342,19 @@
     <string name="prefs_highlight_high">High &gt; %1$d°</string>
 
     <string name="prefs_outro_title">Credits &amp; Notices</string>
+    <string name="prefs_project_wiki">Project Wiki</string>
+    <string name="project_wiki_intro">Look4Sat-BA7OPF is a customized fork of Look4Sat. All upstream features, plus:</string>
+    <string name="project_wiki_section_logbook">Satellite Logbook &amp; LoTW</string>
+    <string name="project_wiki_logbook_1">Satellite logbook — one-tap logging of callsign, time, frequency, mode, report and grid.</string>
+    <string name="project_wiki_logbook_2">Direct LoTW upload — import your ARRL certificate and upload logs to LoTW right from the app, no PC needed.</string>
+    <string name="project_wiki_logbook_3">Confirmation sync — one-tap sync of LoTW confirmations, marked as uploaded/confirmed. Editing an uploaded entry creates a new one, leaving the original untouched.</string>
+    <string name="project_wiki_logbook_how">How: tap Record after a QSO → Upload on the log page → Sync in Settings.</string>
+    <string name="project_wiki_section_mutual">Mutual Pass Matching</string>
+    <string name="project_wiki_mutual_1">Enter your QTH and a friend\'s to find passes visible to both; tap a pass to open the radar.</string>
+    <string name="project_wiki_mutual_how">How: Match tab → set both stations → Query.</string>
+    <string name="project_wiki_section_grids">Worked-Grid Map</string>
+    <string name="project_wiki_grids_1">Grids synced from LoTW/Wavelog shown in green, with award boundaries and first-QSO callsign labels; tap a grid to see its QSOs and match a friend.</string>
+    <string name="project_wiki_grids_how">How: enable Grid mode on the map → sync LoTW/Wavelog in Settings.</string>
     <string name="prefs_outro_thanks" translatable="false">
         * Look4Sat users and contributors!
         \n* David A. B. Johnson (predict4java)

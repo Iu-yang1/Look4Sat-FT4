@@ -101,6 +101,10 @@ fun SettingsDestination() {
 private fun SettingsScreen(uiState: SettingsState, onAction: (SettingsAction) -> Unit) {
     var showUpdateChecker by rememberSaveable { mutableStateOf(false) }
     var showMapSettings by rememberSaveable { mutableStateOf(false) }
+    var showProjectWiki by rememberSaveable { mutableStateOf(false) }
+    if (showProjectWiki) {
+        ProjectWikiDialog(onDismiss = { showProjectWiki = false })
+    }
     if (showUpdateChecker) {
         UpdateCheckerScreen(
             currentVersion = uiState.appVersionName,
@@ -421,6 +425,7 @@ private fun SettingsScreen(uiState: SettingsState, onAction: (SettingsAction) ->
                 )
             }
             item { MapSettingsCard(onClick = { showMapSettings = true }) }
+            item { ProjectWikiCard(onClick = { showProjectWiki = true }) }
             item { CardCredits() }
             item(span = { GridItemSpan(maxLineSpan) }) {
                 CardButton(
@@ -850,6 +855,26 @@ private fun UpdateIndicator(isUpdating: Boolean, modifier: Modifier = Modifier) 
         drawStopIndicator = {},
         modifier = modifier.padding(start = 6.dp)
     )
+}
+
+@Composable
+private fun ProjectWikiCard(onClick: () -> Unit, modifier: Modifier = Modifier) {
+    ElevatedCard(modifier = modifier) {
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+                .height(48.dp)
+                .clickable { onClick() }) {
+            Spacer(Modifier)
+            Icon(painter = painterResource(id = R.drawable.ic_policy), contentDescription = null)
+            Text(
+                text = stringResource(R.string.prefs_project_wiki),
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Medium
+            )
+        }
+    }
 }
 
 @Preview(showBackground = true)

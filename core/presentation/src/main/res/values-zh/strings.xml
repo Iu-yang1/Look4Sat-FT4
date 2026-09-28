@@ -313,6 +313,19 @@
     <string name="prefs_highlight_high">高 &gt; %1$d°</string>
 
     <string name="prefs_outro_title">致谢与声明</string>
+    <string name="prefs_project_wiki">Project Wiki</string>
+    <string name="project_wiki_intro">Look4Sat-BA7OPF 是基于 Look4Sat 的定制版，保留上游全部功能，并新增：</string>
+    <string name="project_wiki_section_logbook">卫星日志本与 LoTW</string>
+    <string name="project_wiki_logbook_1">卫星通联日志本——通联时一键记录呼号、时间、频率、模式、信号报告和网格。</string>
+    <string name="project_wiki_logbook_2">LoTW 直传——导入 ARRL 证书后，直接在 App 内把日志上传到 LoTW，无需电脑。</string>
+    <string name="project_wiki_logbook_3">确认同步——一键同步 LoTW 官方确认，日志自动标记“已上传 / 已确认”；修改已上传的记录会自动新建一条，原记录不受影响。</string>
+    <string name="project_wiki_logbook_how">用法：通联后点“记录”→ 日志页点“上传”→ 设置里“同步”查看确认。</string>
+    <string name="project_wiki_section_mutual">双站过境匹配</string>
+    <string name="project_wiki_mutual_1">友台共视匹配——输入你和友台的位置，找出双方同时可见的卫星过境，点一下直接进雷达图。</string>
+    <string name="project_wiki_mutual_how">用法：Match 页 → 设置两站位置 → 查询。</string>
+    <string name="project_wiki_section_grids">通联网格地图</string>
+    <string name="project_wiki_grids_1">已通联网格——LoTW/Wavelog 同步的网格在地图上标绿，支持奖状边界和首通呼号标签；点格子看该网格的通联记录，还能一键去匹配友台。</string>
+    <string name="project_wiki_grids_how">用法：地图页开启网格模式 → 设置里同步 LoTW/Wavelog。</string>
     <string name="prefs_outro_thanks" translatable="false">
         • Look4Sat 所有用户及贡献者!
         \n• David A. B. Johnson (predict4java)

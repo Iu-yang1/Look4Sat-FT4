@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- Commmon -->
-    <string name="app_name" translatable="false">Look4Sat</string>
+    <string name="app_name" translatable="false">Look4Sat-BA7OPF</string>
     <string name="btn_accept">Kabul et</string>
     <string name="btn_cancel">İptal</string>
     <string name="empty_list_message">Gösterilecek veri bulunamadı</string>
@@ -104,18 +104,16 @@
     <string name="map_visible">Görünür</string>
 
     <!-- Settings screen -->
-    <string name="prefs_app_title" translatable="false">Look4Sat v%s</string>
-    <string name="prefs_app_url" translatable="false">https://play.google.com/store/apps/details?id=com.rtbishop.look4sat</string>
-    <string name="prefs_donate_title">Bağış yap</string>
-    <string name="prefs_donate_url" translatable="false">https://ko-fi.com/rt_bishop</string>
-    <string name="prefs_fdroid_title" translatable="false">F-Droid</string>
-    <string name="prefs_fdroid_url" translatable="false">https://f-droid.org/en/packages/com.rtbishop.look4sat/</string>
+    <string name="prefs_app_title" translatable="false">Look4Sat-BA7OPF v%s</string>
+    <string name="prefs_app_url" translatable="false">https://github.com/atsunatsu/Look4Sat/releases</string>
     <string name="prefs_github_title" translatable="false">GitHub</string>
-    <string name="prefs_github_url" translatable="false">https://github.com/rt-bishop/Look4Sat/</string>
+    <string name="prefs_github_url" translatable="false">https://github.com/atsunatsu/Look4Sat</string>
     <string name="prefs_license_title" translatable="false">GPLv3</string>
     <string name="prefs_license_url" translatable="false">https://www.gnu.org/licenses/gpl-3.0.html</string>
     <string name="prefs_privacy_title">Gizlilik Politikası</string>
     <string name="prefs_privacy_url" translatable="false">https://sites.google.com/view/look4sat-privacy-policy/home</string>
+    <string name="prefs_upstream_title" translatable="false">Upstream Project</string>
+    <string name="prefs_upstream_url" translatable="false">https://github.com/rt-bishop/Look4Sat</string>
 
     <string name="prefs_updated_title">Güncellendi: %s</string>
     <string name="prefs_updated_time">d MMM yyyy - HH:mm:ss</string>

@@ -82,7 +82,6 @@
     <string name="map_visible">Видимый</string>
 
     <!-- Settings screen -->
-    <string name="prefs_donate_title">Поддержать</string>
     <string name="prefs_privacy_title">Политика конфиденциальности</string>
 
     <string name="prefs_updated_title">Обновлено: %s</string>

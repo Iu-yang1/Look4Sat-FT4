@@ -35,6 +35,7 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.material3.ElevatedCard
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -264,11 +265,13 @@ private fun SettingsScreen(uiState: SettingsState, onAction: (SettingsAction) ->
     if (dialogs.logbook) {
         LogbookDialog(
             records = uiState.logbookRecords,
+            satelliteCandidates = uiState.satelliteCatalog,
             uploadBusy = uiState.logbookUploadBusy,
             uploadMessage = uiState.logbookUploadMessage,
             preview = uiState.logbookPreview,
             onDismiss = { dialogs.logbook = false },
             onDelete = { onAction(SettingsAction.DeleteLogbookRecord(it)) },
+            onEdit = { onAction(SettingsAction.UpdateLogbookRecord(it)) },
             onUpload = { onAction(SettingsAction.PrepareLogbookUpload) },
             onConfirmUpload = { onAction(SettingsAction.ConfirmLogbookUpload) },
             onDismissPreview = { onAction(SettingsAction.DismissLogbookPreview) },
@@ -292,10 +295,8 @@ private fun SettingsScreen(uiState: SettingsState, onAction: (SettingsAction) ->
 
     // URLs for top bar
     val uriHandler = LocalUriHandler.current
-    val appUrl = stringResource(R.string.prefs_app_url)
-    val donateUrl = stringResource(R.string.prefs_donate_url)
-    val fdroidTitle = stringResource(R.string.prefs_fdroid_title)
-    val fdroidUrl = stringResource(R.string.prefs_fdroid_url)
+    val upstreamTitle = stringResource(R.string.prefs_upstream_title)
+    val upstreamUrl = stringResource(R.string.prefs_upstream_url)
     val gitHubTitle = stringResource(R.string.prefs_github_title)
     val gitHubUrl = stringResource(R.string.prefs_github_url)
     val licenseUrl = stringResource(R.string.prefs_license_url)
@@ -309,18 +310,17 @@ private fun SettingsScreen(uiState: SettingsState, onAction: (SettingsAction) ->
             if (isVerticalLayout) {
                 TopBar {
                     TopCard(
-                        onClick = { safeOpenUri(appUrl) },
+                        onClick = { showUpdateChecker = true },
                         version = uiState.appVersionName,
                         modifier = Modifier.weight(1f)
                     )
-                    PrimaryIconCard(onClick = { safeOpenUri(donateUrl) }, resId = R.drawable.ic_pound)
                 }
                 TopBar {
                     Row(modifier = Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         BotCard(
-                            onClick = { safeOpenUri(fdroidUrl) },
-                            resId = R.drawable.ic_fdroid,
-                            text = fdroidTitle,
+                            onClick = { safeOpenUri(upstreamUrl) },
+                            resId = R.drawable.ic_github,
+                            text = upstreamTitle,
                             modifier = Modifier.weight(1f)
                         )
                         BotCard(
@@ -335,17 +335,16 @@ private fun SettingsScreen(uiState: SettingsState, onAction: (SettingsAction) ->
                 }
             } else {
                 TopBar {
-                    PrimaryIconCard(onClick = { safeOpenUri(donateUrl) }, resId = R.drawable.ic_pound)
                     TopCard(
-                        onClick = { safeOpenUri(appUrl) },
+                        onClick = { showUpdateChecker = true },
                         version = uiState.appVersionName,
                         modifier = Modifier.weight(1f)
                     )
                     Row(modifier = Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         BotCard(
-                            onClick = { safeOpenUri(fdroidUrl) },
-                            resId = R.drawable.ic_fdroid,
-                            text = fdroidTitle,
+                            onClick = { safeOpenUri(upstreamUrl) },
+                            resId = R.drawable.ic_github,
+                            text = upstreamTitle,
                             modifier = Modifier.weight(1f)
                         )
                         BotCard(
@@ -639,7 +638,7 @@ private fun OtherCard(
     ElevatedCard(
         modifier = Modifier
             .fillMaxWidth()
-            .height(370.dp)
+            .height(420.dp) // 370dp + one switch row (light theme)
     ) {
         Column(modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) {
             Text(
@@ -666,7 +665,16 @@ private fun OtherCard(
                 text = stringResource(R.string.prefs_compass_calibration_button),
                 modifier = Modifier.fillMaxWidth()
             )
-            SwitchRow(R.string.prefs_other_switch_night_mode, settings.stateOfNightMode) {
+            // Appearance: light theme + the red night filter (mutually exclusive —
+            // the night filter is disabled while the light theme is on).
+            SwitchRow(R.string.prefs_other_switch_light_theme, settings.stateOfLightTheme) {
+                onAction(SettingsAction.ToggleLightTheme(it))
+            }
+            SwitchRow(
+                R.string.prefs_other_switch_night_mode,
+                settings.stateOfNightMode,
+                enabled = !settings.stateOfLightTheme
+            ) {
                 onAction(SettingsAction.ToggleNightMode(it))
             }
         }
@@ -762,14 +770,19 @@ private fun CompassCalibrationDialog(
 }
 
 @Composable
-private fun SwitchRow(labelResId: Int, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
+private fun SwitchRow(
+    labelResId: Int,
+    checked: Boolean,
+    enabled: Boolean = true,
+    onCheckedChange: (Boolean) -> Unit
+) {
     Row(
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier.fillMaxWidth()
     ) {
         Text(text = stringResource(id = labelResId))
-        Switch(checked = checked, onCheckedChange = onCheckedChange)
+        Switch(checked = checked, enabled = enabled, onCheckedChange = onCheckedChange)
     }
 }
 
@@ -845,27 +858,28 @@ private fun CardCreditsPreview() = MainTheme { CardCredits() }
 
 @Composable
 private fun CardCredits(modifier: Modifier = Modifier) {
-    ElevatedCard(
-        modifier = modifier
-            .fillMaxWidth()
-            .height(268.dp)
-    ) {
+    ElevatedCard(modifier = modifier.fillMaxWidth()) {
         Column(
-            verticalArrangement = Arrangement.SpaceBetween,
-            modifier = Modifier
-                .padding(horizontal = 8.dp, vertical = 4.dp)
-                .fillMaxHeight()
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp)
         ) {
             Text(
                 text = stringResource(id = R.string.prefs_outro_title),
                 color = MaterialTheme.colorScheme.primary
             )
             Text(
-                text = stringResource(id = R.string.prefs_outro_thanks)
+                text = stringResource(id = R.string.prefs_outro_notice),
+                fontSize = 12.sp
+            )
+            HorizontalDivider()
+            Text(
+                text = stringResource(id = R.string.prefs_outro_thanks),
+                fontSize = 12.sp
             )
             Text(
                 text = stringResource(id = R.string.prefs_outro_license),
-                color = MaterialTheme.colorScheme.primary
+                color = MaterialTheme.colorScheme.primary,
+                fontSize = 12.sp
             )
         }
     }

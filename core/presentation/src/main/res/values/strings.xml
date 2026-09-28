@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- Commmon -->
-    <string name="app_name" translatable="false">Look4Sat</string>
+    <string name="app_name" translatable="false">Look4Sat-BA7OPF</string>
     <string name="btn_accept">Accept</string>
     <string name="btn_cancel">Cancel</string>
     <string name="empty_list_message">No data to show</string>
@@ -52,7 +52,7 @@
         Make sure to set your position via GPS, Lat/Lon or QTH in Settings.
         \n\nPlease update the database at least weekly to get accurate predictions.</string>
     <string name="pass_whatsnew_title" translatable="false">What\'s new in Look4Sat</string>
-    <string name="pass_whatsnew_message">All changes since 4.4.6 (the 4.4.7 series):\n\n• Grid-mode map: LoTW confirmed grids in green, roamed grids with blue stripes, current grid highlighted; mode switch pill at the map\'s top-right.\n\n• First-call labels (VUCC view): show the first callsign worked in each green grid instead of the grid code; non-worked cells stay empty.\n\n• Worked grids filtered by operated grid (with an All option); tap a grid to see its QSO detail dialog; per-grid QSO counts.\n\n• Per-operated-grid VUCC counting; polar grid labels; antimeridian fixes; consistent roamed-stripe density.\n\n• WAPC/WAJA map labels follow the system language.\n\n• Grid-mode viewport and award filter survive page switches.\n\n• LoTW sync: direct login, full/incremental modes, live progress, cancel button, auto-sync on app start with its own toggle, last-sync time shown.\n\n• Pass history: filter can look back over past passes (Time before).\n\n• Compass calibration: figure-eight accuracy meter plus manual heading offset.\n\n• AMSAT status page: consecutive same-status report counts.\n\n• Passes/radar: UTC toggle recalculates passes; sunrise/sunset and elevation color fixes; satellite fuzzy search; mutual page keeps scroll, follows UTC, radar shortcut.\n\n• CW decoder for 32/64-bit devices; Android 17 (API 37) support.</string>
+    <string name="pass_whatsnew_message">All changes since 4.4.6 (the 4.4.7 / 4.4.8 series):\n\n• Merged from upstream 4.4.8: IC-705 frequency readout fix; day/night terminator polarity fix (shading was inverted after the September equinox); white/light theme (map, status bar, dialogs and the custom grid/award overlays included); fuzzy satellite search.\n\n• LoTW logbook: upload pre-check reports the real BAND/SATELLITE reasons; full QSO detail editing; satellite names validated against the TQSL list (unofficial names are not saved); FM satellites always log the voice repeater frequency (SO-50 downlink 436.795); a LoTW confirmation now folds into the uploaded QSO instead of appearing as a second row (satellite names are matched through the TQSL aliases, and the report\'s BAND is read as the uplink).\n\n• Dialogs share the bottom-sheet colours and corner radius.\n\n• Settings links point to this project: version number -> releases page, GitHub -> repository.\n\n• Grid-mode map: LoTW confirmed grids in green, roamed grids with blue stripes, current grid highlighted; mode switch pill at the map\'s top-right.\n\n• First-call labels (VUCC view): show the first callsign worked in each green grid instead of the grid code; non-worked cells stay empty.\n\n• Worked grids filtered by operated grid (with an All option); tap a grid to see its QSO detail dialog; per-grid QSO counts.\n\n• Per-operated-grid VUCC counting; polar grid labels; antimeridian fixes; consistent roamed-stripe density.\n\n• WAPC/WAJA map labels follow the system language.\n\n• Grid-mode viewport and award filter survive page switches.\n\n• LoTW sync: direct login, full/incremental modes, live progress, cancel button, auto-sync on app start with its own toggle, last-sync time shown.\n\n• Pass history: filter can look back over past passes (Time before).\n\n• Compass calibration: figure-eight accuracy meter plus manual heading offset.\n\n• AMSAT status page: consecutive same-status report counts.\n\n• Passes/radar: UTC toggle recalculates passes; sunrise/sunset and elevation color fixes; satellite fuzzy search; mutual page keeps scroll, follows UTC, radar shortcut.\n\n• CW decoder for 32/64-bit devices; Android 17 (API 37) support.\n\n• v4.4.7-ba7opf.21: the logbook stores and shows satellites under their TQSL official names (SAUDISAT 1C -> SO-50); existing records are renamed automatically; the log page and QSO post match by satellite identity.\n• v4.4.7-ba7opf.22: stale confirmation rows get their band direction fixed on sync; upload duplicate detection keys on time + satellite + callsign.\n• v4.4.7-ba7opf.23: renamed to Look4Sat-BA7OPF; the credits card states this is an unofficial build, the About screen links the upstream project, and the Donate / F-Droid cards were removed.</string>
 
     <!-- AMSAT Status screen -->
     <string name="nav_amsat">AMSAT</string>
@@ -162,18 +162,16 @@
     <string name="map_visible">Visible</string>
 
     <!-- Settings screen -->
-    <string name="prefs_app_title" translatable="false">Look4Sat v%s</string>
-    <string name="prefs_app_url" translatable="false">https://play.google.com/store/apps/details?id=com.rtbishop.look4sat</string>
-    <string name="prefs_donate_title">Donate</string>
-    <string name="prefs_donate_url" translatable="false">https://ko-fi.com/rt_bishop</string>
-    <string name="prefs_fdroid_title" translatable="false">F-Droid</string>
-    <string name="prefs_fdroid_url" translatable="false">https://f-droid.org/en/packages/com.rtbishop.look4sat/</string>
+    <string name="prefs_app_title" translatable="false">Look4Sat-BA7OPF v%s</string>
+    <string name="prefs_app_url" translatable="false">https://github.com/atsunatsu/Look4Sat/releases</string>
     <string name="prefs_github_title" translatable="false">GitHub</string>
-    <string name="prefs_github_url" translatable="false">https://github.com/rt-bishop/Look4Sat/</string>
+    <string name="prefs_github_url" translatable="false">https://github.com/atsunatsu/Look4Sat</string>
     <string name="prefs_license_title" translatable="false">GPLv3</string>
     <string name="prefs_license_url" translatable="false">https://www.gnu.org/licenses/gpl-3.0.html</string>
     <string name="prefs_privacy_title">Privacy Policy</string>
     <string name="prefs_privacy_url" translatable="false">https://sites.google.com/view/look4sat-privacy-policy/home</string>
+    <string name="prefs_upstream_title" translatable="false">Upstream Project</string>
+    <string name="prefs_upstream_url" translatable="false">https://github.com/rt-bishop/Look4Sat</string>
 
     <string name="prefs_updated_title">Updated: %s</string>
     <string name="prefs_updated_time">d MMM yyyy - HH:mm:ss</string>
@@ -334,6 +332,7 @@
     <string name="prefs_compass_offset">Manual heading offset (°)</string>
     <string name="prefs_compass_offset_support">Range −180° to +180°. Positive values rotate clockwise.</string>
     <string name="prefs_compass_offset_reset">Reset offset</string>
+    <string name="prefs_other_switch_light_theme">Light theme</string>
     <string name="prefs_other_switch_night_mode">Enable red night mode filter</string>
     <string name="prefs_other_switch_map_grid">Show Maidenhead grid on map</string>
 
@@ -342,7 +341,7 @@
     <string name="prefs_highlight_mid">Mid %1$d–%2$d°</string>
     <string name="prefs_highlight_high">High &gt; %1$d°</string>
 
-    <string name="prefs_outro_title">I would like to say thanks to</string>
+    <string name="prefs_outro_title">Credits &amp; Notices</string>
     <string name="prefs_outro_thanks" translatable="false">
         * Look4Sat users and contributors!
         \n* David A. B. Johnson (predict4java)
@@ -355,7 +354,9 @@
         \n* BH2VSQ BG5JSU (TianDiTu rendering support)
         \n* BG5JSU (LoTW upload support)
     </string>
-    <string name="prefs_outro_license">The app comes with no warranty</string>
+    <string name="prefs_outro_notice">Look4Sat-BA7OPF is an unofficial modified build based on Look4Sat (GPL-3.0), independently maintained by BA7OPF. It is not affiliated with or endorsed by the original Look4Sat project.
+Upstream: https://github.com/rt-bishop/Look4Sat</string>
+<string name="prefs_outro_license">Licensed under the GNU General Public License v3 · The app comes with no warranty</string>
 
     <!-- Mutual match page -->
     <string name="mutual_title">Pass Match</string>
@@ -403,5 +404,33 @@
     <string name="update_check_error">Failed to check for updates. Check your connection.</string>
     <string name="update_check_download_error">Download failed. Try again.</string>
     <string name="update_check_no_apk">No APK attached to this release.</string>
+
+    <!-- QSO edit dialog -->
+    <string name="qso_edit_title">Edit QSO</string>
+    <string name="qso_edit_uploaded_notice">This QSO was already uploaded or confirmed. Saving keeps the original record unchanged and creates a new one.</string>
+    <string name="qso_edit_callsign">Callsign</string>
+    <string name="qso_edit_date">Date (UTC)</string>
+    <string name="qso_edit_time">Time (UTC)</string>
+    <string name="qso_edit_tx">Uplink (MHz)</string>
+    <string name="qso_edit_rx">Downlink (MHz)</string>
+    <string name="qso_edit_band">Band: %1$s</string>
+    <string name="qso_edit_mode">Mode</string>
+    <string name="qso_edit_satellite">Satellite</string>
+    <string name="qso_edit_hint_satellite">LoTW only accepts its official satellite name</string>
+    <string name="qso_edit_sent">Sent RST</string>
+    <string name="qso_edit_received">Received RST</string>
+    <string name="qso_edit_grid">Opposite grid</string>
+    <string name="qso_edit_comment">Comment</string>
+    <string name="qso_edit_save">Save</string>
+    <string name="qso_edit_cancel">Cancel</string>
+    <string name="qso_edit_err_callsign">Callsign is required</string>
+    <string name="qso_edit_err_datetime">Invalid date/time — use yyyy-MM-dd and HH:mm:ss (UTC)</string>
+    <string name="qso_edit_err_frequency">Invalid frequency — enter MHz, e.g. 145.850</string>
+    <string name="qso_edit_err_satellite">Not an ARRL satellite name — pick one from the list</string>
+    <string name="qso_edit_satellite_pick">Pick</string>
+    <string name="qso_edit_satellite_pick_title">ARRL satellite name</string>
+    <string name="qso_edit_satellite_search">Search name or catalogue alias</string>
+    <string name="qso_edit_satellite_official">Saved and signed as %1$s</string>
+    <string name="qso_edit_warn_no_freq">No uplink frequency: LoTW requires a band, so this QSO cannot be uploaded yet</string>
 
 </resources>

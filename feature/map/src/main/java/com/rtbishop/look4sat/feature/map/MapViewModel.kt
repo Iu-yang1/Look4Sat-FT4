@@ -84,6 +84,7 @@ class MapViewModel(
                 _uiState.update {
                     it.copy(
                         isUtc = settings.stateOfUtc,
+                        isLightUi = settings.stateOfLightTheme,
                         mapSource = settings.mapSource,
                         tiandituKey = settings.tiandituKey,
                         isGridMode = settings.stateOfMapGrid,

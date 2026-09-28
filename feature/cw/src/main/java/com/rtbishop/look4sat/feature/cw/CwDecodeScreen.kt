@@ -1,4 +1,22 @@
 /*
+ * Look4Sat-BA7OPF. Amateur radio satellite tracker and pass predictor.
+ * Copyright (C) 2026 BA7OPF.
+ * Based on Look4Sat by Arty Bishop and contributors.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+/*
  * CwDecodeScreen.kt — Look4Sat 的 CW 解码页面(Compose 外壳)。
  *
  * 照搬自 Morse Expert 1.15 的 com.ve3nea.morse_expert.MainActivity(已改为普通控制器类):

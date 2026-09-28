@@ -159,6 +159,71 @@ private val moonIconPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         android.graphics.PorterDuffColorFilter("#E0E0E0".toColorInt(), android.graphics.PorterDuff.Mode.SRC_IN)
 }
 
+/**
+ * Accent used for the station marker, footprint outline and map labels. It is recolored per
+ * theme (dark amber on light tiles, light amber on dark tiles) so every map element stays
+ * readable; [applyMapColors] keeps it in sync with the shared paints.
+ */
+private var mapAccentColor = "#FFE082".toColorInt()
+
+/** Grayscale + invert filter that turns the offline OSM map dark; unused (and off) in light theme. */
+private val darkTileFilter by lazy { createColorFilter() }
+
+/** Theme the shared map paints were last colored for; null = not applied yet this process. */
+private var mapIsLightUi: Boolean? = null
+
+/** Theme the tile filter / icon caches were last applied for (drives the per-frame theme check). */
+private var appliedLightUi: Boolean? = null
+
+/** True while the offline OSM source is active — satellite imagery (Tianditu) is never filtered. */
+private var offlineTilesActive = true
+
+/**
+ * Recolor the shared overlay paints and custom overlays for the current theme. Must run before the
+ * markers are (re)built each frame so freshly created icons use the new colors; [applyThemeToOverlays]
+ * and the icon-cache eviction in the update block handle the already created ones.
+ */
+private fun applyMapColors(isLightUi: Boolean) {
+    mapIsLightUi = isLightUi
+    if (isLightUi) {
+        // Dark amber (lightScheme primary) reads on light tiles; labels get a white halo.
+        mapAccentColor = "#715C0C".toColorInt()
+        footprintPaint.color = mapAccentColor
+        textPaint.color = "#1E1B13".toColorInt()
+        textPaint.setShadowLayer(3f, 3f, 3f, Color.WHITE)
+        sunIconPaint.colorFilter =
+            android.graphics.PorterDuffColorFilter(mapAccentColor, android.graphics.PorterDuff.Mode.SRC_IN)
+        moonIconPaint.colorFilter = android.graphics.PorterDuffColorFilter(
+            "#4C4639".toColorInt(), android.graphics.PorterDuff.Mode.SRC_IN
+        )
+    } else {
+        mapAccentColor = "#FFE082".toColorInt()
+        footprintPaint.color = mapAccentColor
+        textPaint.color = mapAccentColor
+        textPaint.setShadowLayer(3f, 3f, 3f, Color.BLACK)
+        sunIconPaint.colorFilter =
+            android.graphics.PorterDuffColorFilter(mapAccentColor, android.graphics.PorterDuff.Mode.SRC_IN)
+        moonIconPaint.colorFilter =
+            android.graphics.PorterDuffColorFilter("#E0E0E0".toColorInt(), android.graphics.PorterDuff.Mode.SRC_IN)
+    }
+    applyThemeToOverlays()
+}
+
+/** Push the current theme into the grid / award overlays, which own their own paints. */
+private fun applyThemeToOverlays() {
+    val isLight = mapIsLightUi == true
+    currentMapView?.overlays?.forEach { overlay ->
+        when (overlay) {
+            is MaidenheadGridOverlay -> overlay.applyTheme(isLight)
+            is AwardBoundaryOverlay -> overlay.applyTheme(isLight)
+            else -> Unit
+        }
+    }
+}
+
+/** The MapView currently attached to the map page; used to recolor overlays on a theme change. */
+private var currentMapView: MapView? = null
+
 @Composable
 fun MapDestination(
     mapFilterViewModel: MapFilterViewModel,
@@ -320,8 +385,8 @@ private fun MapScreen(
         val firstPos = uiState.track?.firstOrNull()?.firstOrNull() ?: return@LaunchedEffect
         mapView.controller.animateTo(GeoPoint(firstPos.latitude, firstPos.longitude))
     }
-    LaunchedEffect(uiState.mapSource, uiState.tiandituKey) {
-        configureTileSources(mapView, uiState.mapSource, uiState.tiandituKey)
+    LaunchedEffect(uiState.mapSource, uiState.tiandituKey, uiState.isLightUi) {
+        configureTileSources(mapView, uiState.mapSource, uiState.tiandituKey, uiState.isLightUi)
     }
     Column(modifier = Modifier.layoutPadding(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         val isVertical = isVerticalLayout()
@@ -359,6 +424,18 @@ private fun MapScreen(
                     mutableStateOf(restoredViewport && uiState.isGridMode)
                 }
                 AndroidView({ mapView }) { view ->
+                    // Theme change: recolor the paints/tile filter/overlays and drop the icon
+                    // caches, which baked the previous theme's colors into their bitmaps.
+                    if (appliedLightUi != uiState.isLightUi) {
+                        appliedLightUi = uiState.isLightUi
+                        applyMapColors(uiState.isLightUi)
+                        iconCache.evictAll()
+                        dotIcon = null
+                        view.overlayManager.tilesOverlay.setColorFilter(
+                            if (!uiState.isLightUi && offlineTilesActive) darkTileFilter else null
+                        )
+                        requestTileRefresh(view)
+                    }
                     // Award filter mode: show the selected award's regions with
                     // worked ones filled green; hide satellite layers like grid mode.
                     val awardMode = selectedAward?.takeIf { it != AwardType.VUCC }
@@ -393,13 +470,13 @@ private fun MapScreen(
                         }
                     }
                     if (!uiState.isGridMode) {
-                        uiState.stationPosition?.let { setStationPosition(it, view) }
+                        uiState.stationPosition?.let { setStationPosition(it, view, uiState.isLightUi) }
                         uiState.track?.let { setSatelliteTrack(it, view) }
                         uiState.footprint?.let { setFootprint(it, view) }
                         uiState.positions?.let { setPositions(it, view) { item -> onAction(MapAction.SelectItem(item)) } }
                         setTerminator(uiState.sunLatDeg, uiState.sunLonDeg, view)
-                        setSubSolarPoint(uiState.sunLatDeg, uiState.sunLonDeg, view)
-                        setMoonPosition(uiState.moonLatDeg, uiState.moonLonDeg, view)
+                        setSubSolarPoint(uiState.sunLatDeg, uiState.sunLonDeg, view, uiState.isLightUi)
+                        setMoonPosition(uiState.moonLatDeg, uiState.moonLonDeg, view, uiState.isLightUi)
                     }
                     view.invalidate()
                 }
@@ -634,7 +711,7 @@ private fun MarkedStationRow(
             text = marked.call,
             style = MaterialTheme.typography.titleMedium,
             fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
-            color = ComposeColor(0xFFFFE082),
+            color = MaterialTheme.colorScheme.primary,
             maxLines = 1,
             overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f)
@@ -651,7 +728,7 @@ private fun MarkedStationRow(
                 Icon(
                     painter = painterResource(R.drawable.ic_pin),
                     contentDescription = stringResource(R.string.grid_mark_pin),
-                    tint = if (isPinned) ComposeColor(0xFF9E9E9E) else ComposeColor(0xFFFFE082),
+                    tint = if (isPinned) ComposeColor(0xFF9E9E9E) else MaterialTheme.colorScheme.primary,
                     modifier = Modifier
                         .size(18.dp)
                         .clickable(onClick = onPinMark)
@@ -706,7 +783,7 @@ private fun WorkedGridCallRow(
                 text = call,
                 style = MaterialTheme.typography.titleMedium,
                 fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
-                color = ComposeColor(0xFFFFE082),
+                color = MaterialTheme.colorScheme.primary,
                 maxLines = 1,
                 overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f)
@@ -1092,22 +1169,29 @@ private fun FirstCallToggle(
 // region Tile sources
 private var configuredTileMapView: MapView? = null
 private var configuredTileSource: String? = null
+private var configuredTileIsLightUi: Boolean? = null
 
-private fun configureTileSources(mapView: MapView, mapSource: String, tiandituKey: String) {
+private fun configureTileSources(mapView: MapView, mapSource: String, tiandituKey: String, isLightUi: Boolean) {
     val key = tiandituKey.trim()
     val layers = tiandituLayers(mapSource)
-    val sourceKey = if (layers == null || key.isBlank()) MapSource.OSM else "${layers.base}:$key"
-    if (configuredTileMapView === mapView && configuredTileSource == sourceKey) return
+    val offlineSource = layers == null || key.isBlank()
+    offlineTilesActive = offlineSource
+    val sourceKey = if (offlineSource) MapSource.OSM else "${layers.base}:$key"
+    if (configuredTileMapView === mapView && configuredTileSource == sourceKey &&
+        configuredTileIsLightUi == isLightUi
+    ) return
 
     configuredTileMapView = mapView
     configuredTileSource = sourceKey
+    configuredTileIsLightUi = isLightUi
     (mapView.overlays.getOrNull(OVERLAY_TDT_LABELS) as? TilesOverlay)?.onDetach(mapView)
 
-    if (layers == null || key.isBlank()) {
+    if (offlineSource) {
         mapView.setUseDataConnection(false)
         mapView.setTileSource(offlineTileSource)
         mapView.maxZoomLevel = OFFLINE_MAX_ZOOM
-        mapView.overlayManager.tilesOverlay.applyTileOverlayDefaults(createColorFilter())
+        // The dark-map filter belongs to the dark theme only; the light theme shows plain tiles.
+        mapView.overlayManager.tilesOverlay.applyTileOverlayDefaults(if (isLightUi) null else darkTileFilter)
         mapView.overlays[OVERLAY_TDT_LABELS] = FolderOverlay()
         requestTileRefresh(mapView)
         return
@@ -1210,6 +1294,7 @@ private fun setAwardMode(award: AwardType, workedCodes: Set<String>, mapView: Ma
             isEnabled = true
             regions = AwardBoundaryData.load(mapView.context, asset)
             this.workedCodes = workedCodes
+            applyTheme(mapIsLightUi == true)
         }
     }
     for (index in OVERLAY_STATION..OVERLAY_MOON) {
@@ -1252,6 +1337,7 @@ private fun setGridMode(
                 this.firstCallsByGrid = firstCallsByGrid
                 this.markedGrids = markedGrids
                 this.ownGrid = ownGridOf(stationPosition)
+                applyTheme(mapIsLightUi == true)
             }
         }
         // Satellite-related layers are hidden in grid mode; the grid overlay
@@ -1306,17 +1392,28 @@ private fun gridOfPoint(latitude: Double, longitude: Double): String? {
     return "${'A' + fieldLon}${'A' + fieldLat}$subLon$subLat"
 }
 
-private fun setStationPosition(stationPos: GeoPos, mapView: MapView) {
+private fun setStationPosition(stationPos: GeoPos, mapView: MapView, isLightUi: Boolean) {
     try {
         val overlay = mapView.overlays[OVERLAY_STATION]
+        val stationPoint = GeoPoint(stationPos.latitude, stationPos.longitude)
         if (overlay is Marker) {
-            overlay.position = GeoPoint(stationPos.latitude, stationPos.longitude)
+            overlay.position = stationPoint
+            // Icon tint is baked into the drawable, so re-tint after a theme change.
+            if ((overlay.relatedObject as? Boolean) != isLightUi) {
+                overlay.icon = ContextCompat.getDrawable(mapView.context, R.drawable.ic_position)?.apply {
+                    setTint(mapAccentColor)
+                }
+                overlay.relatedObject = isLightUi
+            }
         } else {
             mapView.overlays[OVERLAY_STATION] = Marker(mapView).apply {
                 setInfoWindow(null)
                 setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
-                icon = ContextCompat.getDrawable(mapView.context, R.drawable.ic_position)
-                position = GeoPoint(stationPos.latitude, stationPos.longitude)
+                icon = ContextCompat.getDrawable(mapView.context, R.drawable.ic_position)?.apply {
+                    setTint(mapAccentColor)
+                }
+                position = stationPoint
+                relatedObject = isLightUi
             }
         }
     } catch (e: Exception) {
@@ -1539,26 +1636,37 @@ private fun setTerminator(sunLatDeg: Double, sunLonDeg: Double, mapView: MapView
     }
 }
 
+/** Build the 48dp sun/moon marker icon, tinted with the theme-dependent paint. */
+private fun buildMarkerIcon(mapView: MapView, resId: Int, paint: Paint): Drawable {
+    val iconSize = 48
+    val bmp = createBitmap(iconSize, iconSize)
+    ContextCompat.getDrawable(mapView.context, resId)?.apply {
+        setBounds(0, 0, iconSize, iconSize)
+        colorFilter = paint.colorFilter
+        draw(Canvas(bmp))
+    }
+    return bmp.toDrawable(mapView.context.resources)
+}
+
 /** Place an ic_sun icon marker at the sub-solar point. */
-private fun setSubSolarPoint(sunLatDeg: Double, sunLonDeg: Double, mapView: MapView) {
+private fun setSubSolarPoint(sunLatDeg: Double, sunLonDeg: Double, mapView: MapView, isLightUi: Boolean) {
     try {
         val overlay = mapView.overlays[OVERLAY_SUN]
         val sunPos = GeoPoint(sunLatDeg, sunLonDeg)
         if (overlay is Marker) {
             overlay.position = sunPos
-        } else {
-            val iconSize = 48
-            val bmp = createBitmap(iconSize, iconSize)
-            ContextCompat.getDrawable(mapView.context, R.drawable.ic_sun)?.apply {
-                setBounds(0, 0, iconSize, iconSize)
-                colorFilter = sunIconPaint.colorFilter
-                draw(Canvas(bmp))
+            // The icon bitmap bakes in the theme tint, so rebuild it after a theme change.
+            if ((overlay.relatedObject as? Boolean) != isLightUi) {
+                overlay.icon = buildMarkerIcon(mapView, R.drawable.ic_sun, sunIconPaint)
+                overlay.relatedObject = isLightUi
             }
+        } else {
             mapView.overlays[OVERLAY_SUN] = Marker(mapView).apply {
                 setInfoWindow(null)
                 setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
-                icon = bmp.toDrawable(mapView.context.resources)
+                icon = buildMarkerIcon(mapView, R.drawable.ic_sun, sunIconPaint)
                 position = sunPos
+                relatedObject = isLightUi
             }
         }
     } catch (e: Exception) {
@@ -1567,26 +1675,23 @@ private fun setSubSolarPoint(sunLatDeg: Double, sunLonDeg: Double, mapView: MapV
 }
 
 /** Place an ic_moon icon marker at the sub-lunar point. */
-private fun setMoonPosition(moonLatDeg: Double, moonLonDeg: Double, mapView: MapView) {
+private fun setMoonPosition(moonLatDeg: Double, moonLonDeg: Double, mapView: MapView, isLightUi: Boolean) {
     try {
         val overlay = mapView.overlays[OVERLAY_MOON]
         val moonPos = GeoPoint(moonLatDeg, moonLonDeg)
         if (overlay is Marker) {
             overlay.position = moonPos
-        } else {
-            val iconSize = 48
-            val bmp = createBitmap(iconSize, iconSize)
-            val c = Canvas(bmp)
-            ContextCompat.getDrawable(mapView.context, R.drawable.ic_moon)?.apply {
-                setBounds(0, 0, iconSize, iconSize)
-                colorFilter = moonIconPaint.colorFilter
-                draw(c)
+            if ((overlay.relatedObject as? Boolean) != isLightUi) {
+                overlay.icon = buildMarkerIcon(mapView, R.drawable.ic_moon, moonIconPaint)
+                overlay.relatedObject = isLightUi
             }
+        } else {
             mapView.overlays[OVERLAY_MOON] = Marker(mapView).apply {
                 setInfoWindow(null)
                 setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
-                icon = bmp.toDrawable(mapView.context.resources)
+                icon = buildMarkerIcon(mapView, R.drawable.ic_moon, moonIconPaint)
                 position = moonPos
+                relatedObject = isLightUi
             }
         }
     } catch (e: Exception) {
@@ -1631,10 +1736,12 @@ private fun rememberMapViewWithLifecycle(
             zoomController.setVisibility(CustomZoomButtonsController.Visibility.NEVER)
             overlayManager.tilesOverlay.loadingBackgroundColor = Color.TRANSPARENT
             overlayManager.tilesOverlay.loadingLineColor = Color.TRANSPARENT
-            overlayManager.tilesOverlay.setColorFilter(createColorFilter())
+            // The dark-map tile filter (or no filter in the light theme) is applied per theme from
+            // the AndroidView update block, so it also follows a theme switch at runtime.
             setScrollableAreaLimitLatitude(maxLat, minLat, 0)
             overlays.addAll(Array(OVERLAY_COUNT) { FolderOverlay() })
-            overlays[OVERLAY_GRID] = MaidenheadGridOverlay()
+            overlays[OVERLAY_GRID] = MaidenheadGridOverlay().apply { applyTheme(mapIsLightUi == true) }
+            currentMapView = this
         }
     }
     val lifecycleObserver = rememberMapViewLifecycleObserver(mapView)
@@ -1647,7 +1754,10 @@ private fun rememberMapViewWithLifecycle(
     // released with the MapView or they keep the Activity and its bitmaps alive after disposal.
     // (The viewport save lives in MapDestination, where the grid/satellite mode is known.)
     DisposableEffect(mapView) {
-        onDispose { clearMapCaches() }
+        onDispose {
+            clearMapCaches()
+            if (currentMapView === mapView) currentMapView = null
+        }
     }
     return mapView
 }

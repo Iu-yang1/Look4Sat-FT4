@@ -83,7 +83,6 @@
     <string name="map_visible">දෘශ්‍ය</string>
 
     <!-- Settings screen -->
-    <string name="prefs_donate_title">දායකත්ව</string>
     <string name="prefs_privacy_title">රහස්යතා ප්රතිපත්තිය</string>
 
     <string name="prefs_updated_title">යාවත්කාලීන කරන ලදී: %s</string>

@@ -83,7 +83,6 @@
     <string name="map_visible">Visible</string>
 
     <!-- Settings screen -->
-    <string name="prefs_donate_title">Soporte</string>
     <string name="prefs_privacy_title">Política de privacidad</string>
 
     <string name="prefs_updated_title">Actualizado: %s</string>

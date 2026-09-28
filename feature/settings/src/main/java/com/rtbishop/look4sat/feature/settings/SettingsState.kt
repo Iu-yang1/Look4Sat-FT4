@@ -70,6 +70,8 @@ data class SettingsState(
     val lotwLastSyncEpochMs: Long = 0L,
     /** Logbook (QSO records + LoTW confirmations), newest first. */
     val logbookRecords: List<com.rtbishop.look4sat.core.domain.logbook.QsoRecord> = emptyList(),
+    /** ARRL satellite names (config.tq6) — the only names a record may be signed with. */
+    val satelliteCatalog: List<String> = emptyList(),
     /** Imported LoTW upload certificate (null when none). */
     val lotwCertificate: com.rtbishop.look4sat.core.domain.repository.LoTWCertificate? = null,
     /** LoTW upload station location (null when unset). */
@@ -153,6 +155,8 @@ sealed interface SettingsAction {
     // Logbook (QSO records + LoTW confirmations)
     data object RefreshLogbook : SettingsAction
     data class DeleteLogbookRecord(val id: Long) : SettingsAction
+    /** Persist an edited record (frequency/callsign/time/…) from the logbook dialog. */
+    data class UpdateLogbookRecord(val record: com.rtbishop.look4sat.core.domain.logbook.QsoRecord) : SettingsAction
     data object PrepareLogbookUpload : SettingsAction
     data object ConfirmLogbookUpload : SettingsAction
     data object DismissLogbookPreview : SettingsAction

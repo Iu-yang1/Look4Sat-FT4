@@ -41,7 +41,7 @@
     <string name="pass_welcome_message">请务必在设置中通过GPS、经纬度或QTH定位您的位置\n建议至少每周更新一次数据库，以确保预测结果的准确性</string>
 
     <!-- AMSAT Status screen -->
-    <string name="pass_whatsnew_message">4.4.6 以来的全部更新（4.4.7 系列）：\n\n• 网格模式地图：LoTW 已确认网格绿色填充、漫游网格蓝色条纹、当前网格加粗框；右上角网格/卫星模式开关。\n\n• 首通呼号（VUCC 视图）：绿格显示该格最早通联的呼号，非绿格空白。\n\n• worked 网格可按操作网格筛选（含“全部”）；点击网格弹出 QSO 明细；每格 QSO 计数。\n\n• 各操作网格独立 VUCC 计数；极区网格标签；反经线修复；漫游条纹密度一致。\n\n• WAPC/WAJA 地图标签随系统语言。\n\n• 网格模式视口与筛选跨页保持。\n\n• LoTW 同步：账号直连、全量/增量模式、实时进度、可取消、启动自动同步（独立开关）、设置页显示上次同步时间。\n\n• 历史过境：过境筛选可回看过去数小时（历史过境时间）。\n\n• 指南针校准：8 字动作精度指示 + 手动航向偏置。\n\n• AMSAT 状态页：连续相同状态报告计数。\n\n• 过境/雷达：UTC 切换重算过境；日出日落与仰角颜色修复；卫星模糊搜索；相互过境页滚动保持、跟随 UTC、雷达快捷入口。\n\n• CW 解码器支持 32/64 位设备；Android 17 (API 37) 适配。</string>
+    <string name="pass_whatsnew_message">4.4.6 以来的全部更新（4.4.7 / 4.4.8 系列）：\n\n• 合并上游 4.4.8：IC-705 读频修复；地图昼夜分界线极性修复（秋分后昼夜阴影反相）；白色主题（地图、状态栏、弹窗与自绘网格/奖状图层一并适配）；卫星名模糊搜索。\n\n• LoTW 日志本：上传预检按真实 BAND/SATELLITE 给出原因；QSO 全详情编辑；卫星名按 TQSL 官方名录校验（非官方名不予保存）；FM 卫星固定记录语音转发器频率（SO-50 下行 436.795）；LoTW 确认记录会并入已上传的那条 QSO，不再另起一行（卫星名经 TQSL 别名表比对，报告里的 BAND 按上行解析）。\n\n• 弹窗统一为底部弹出栏同款配色与圆角。\n\n• 设置页链接指向本项目：版本号 → 发布页，GitHub → 本仓库。\n\n• 网格模式地图：LoTW 已确认网格绿色填充、漫游网格蓝色条纹、当前网格加粗框；右上角网格/卫星模式开关。\n\n• 首通呼号（VUCC 视图）：绿格显示该格最早通联的呼号，非绿格空白。\n\n• worked 网格可按操作网格筛选（含“全部”）；点击网格弹出 QSO 明细；每格 QSO 计数。\n\n• 各操作网格独立 VUCC 计数；极区网格标签；反经线修复；漫游条纹密度一致。\n\n• WAPC/WAJA 地图标签随系统语言。\n\n• 网格模式视口与筛选跨页保持。\n\n• LoTW 同步：账号直连、全量/增量模式、实时进度、可取消、启动自动同步（独立开关）、设置页显示上次同步时间。\n\n• 历史过境：过境筛选可回看过去数小时（历史过境时间）。\n\n• 指南针校准：8 字动作精度指示 + 手动航向偏置。\n\n• AMSAT 状态页：连续相同状态报告计数。\n\n• 过境/雷达：UTC 切换重算过境；日出日落与仰角颜色修复；卫星模糊搜索；相互过境页滚动保持、跟随 UTC、雷达快捷入口。\n\n• CW 解码器支持 32/64 位设备；Android 17 (API 37) 适配。\n\n• v4.4.7-ba7opf.21：日志本卫星名统一按 TQSL 官方名存取（SAUDISAT 1C → SO-50），存量记录自动改名；日志页与通联帖按卫星身份匹配。\n• v4.4.7-ba7opf.22：同步时自动修正旧确认行的频段方向；上传重复判定改为时间+卫星+呼号三者相同。\n• v4.4.7-ba7opf.23：应用更名为 Look4Sat-BA7OPF；致谢页声明为非官方修改版，关于页加入上游项目链接，移除打赏/F-Droid 卡片。</string>
 
 <string name="nav_amsat">AMSAT</string>
     <string name="amsat_title">AMSAT 卫星状态</string>
@@ -141,7 +141,6 @@
     <string name="map_visible">日照中</string>
 
     <!-- Settings screen -->
-    <string name="prefs_donate_title">支持</string>
     <string name="prefs_privacy_title">隐私政策</string>
 
     <string name="prefs_updated_title">更新：%s</string>
@@ -304,6 +303,7 @@
     <string name="prefs_compass_offset">手动航向偏置（°）</string>
     <string name="prefs_compass_offset_support">范围 −180° 至 +180°；正值为顺时针偏移。</string>
     <string name="prefs_compass_offset_reset">偏置归零</string>
+    <string name="prefs_other_switch_light_theme">浅色主题</string>
     <string name="prefs_other_switch_night_mode">启用红色夜间模式</string>
     <string name="prefs_other_switch_map_grid">地图显示 Maidenhead 网格</string>
 
@@ -312,7 +312,7 @@
     <string name="prefs_highlight_mid">中 %1$d-%2$d°</string>
     <string name="prefs_highlight_high">高 &gt; %1$d°</string>
 
-    <string name="prefs_outro_title">我要感谢：</string>
+    <string name="prefs_outro_title">致谢与声明</string>
     <string name="prefs_outro_thanks" translatable="false">
         • Look4Sat 所有用户及贡献者!
         \n• David A. B. Johnson (predict4java)
@@ -325,7 +325,9 @@
         \n• BH2VSQ BG5JSU（天地图渲染支持）
         \n• BG5JSU（LoTW上传支持）
     </string>
-    <string name="prefs_outro_license">该应用程序不提供任何保修.</string>
+    <string name="prefs_outro_notice">Look4Sat-BA7OPF 是基于 Look4Sat（GPL-3.0）的非官方修改版，由 BA7OPF 独立维护，与原项目无隶属关系，亦未获其背书。
+上游项目：https://github.com/rt-bishop/Look4Sat</string>
+<string name="prefs_outro_license">基于 GNU GPL v3 许可 · 本程序不提供任何保修</string>
 
     <!-- 匹配页 Mutual match page -->
     <string name="mutual_title">过境匹配</string>
@@ -373,5 +375,33 @@
     <string name="update_check_error">检查更新失败，请检查网络连接。</string>
     <string name="update_check_download_error">下载失败，请重试。</string>
     <string name="update_check_no_apk">该版本未附带 APK 安装包。</string>
+
+    <!-- QSO edit dialog -->
+    <string name="qso_edit_title">编辑通联记录</string>
+    <string name="qso_edit_uploaded_notice">该通联已上传或已确认。保存将保留原记录不变，并新建一条记录。</string>
+    <string name="qso_edit_callsign">呼号</string>
+    <string name="qso_edit_date">日期 (UTC)</string>
+    <string name="qso_edit_time">时间 (UTC)</string>
+    <string name="qso_edit_tx">上行频率 (MHz)</string>
+    <string name="qso_edit_rx">下行频率 (MHz)</string>
+    <string name="qso_edit_band">频段：%1$s</string>
+    <string name="qso_edit_mode">模式</string>
+    <string name="qso_edit_satellite">卫星</string>
+    <string name="qso_edit_hint_satellite">LoTW 只接受它的官方卫星名</string>
+    <string name="qso_edit_sent">发送报告</string>
+    <string name="qso_edit_received">接收报告</string>
+    <string name="qso_edit_grid">对方网格</string>
+    <string name="qso_edit_comment">备注</string>
+    <string name="qso_edit_save">保存</string>
+    <string name="qso_edit_cancel">取消</string>
+    <string name="qso_edit_err_callsign">呼号不能为空</string>
+    <string name="qso_edit_err_datetime">日期或时间格式不对 —— 应为 yyyy-MM-dd 与 HH:mm:ss（UTC）</string>
+    <string name="qso_edit_err_frequency">频率格式不对 —— 请输入 MHz，例如 145.850</string>
+    <string name="qso_edit_err_satellite">不是 LoTW 官方卫星名 —— 请从列表中选一个</string>
+    <string name="qso_edit_satellite_pick">选择</string>
+    <string name="qso_edit_satellite_pick_title">LoTW 官方卫星名</string>
+    <string name="qso_edit_satellite_search">搜索卫星名或数据源别名</string>
+    <string name="qso_edit_satellite_official">保存并签名时使用 %1$s</string>
+    <string name="qso_edit_warn_no_freq">没有上行频率：LoTW 要求 BAND，补上频率前这条无法上传</string>
 
 </resources>

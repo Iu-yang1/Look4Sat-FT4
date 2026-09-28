@@ -139,6 +139,18 @@ class AwardBoundaryOverlay : Overlay() {
         color = Color.argb(90, 76, 217, 100)
     }
 
+    /**
+     * Recolor the amber boundary/label paints for the active map theme (dark amber + white halo on
+     * the light map, light amber + black halo on the dark map). The worked fill reads on both.
+     */
+    fun applyTheme(isLightUi: Boolean) {
+        val line = if (isLightUi) Color.argb(200, 113, 92, 12) else Color.argb(160, 255, 224, 130)
+        val label = if (isLightUi) Color.argb(235, 30, 25, 5) else Color.argb(220, 255, 224, 130)
+        linePaint.color = line
+        labelPaint.color = label
+        labelPaint.setShadowLayer(3f, 2f, 2f, if (isLightUi) Color.WHITE else Color.BLACK)
+    }
+
     /** Boundary regions to render; assigning recomputes culling bounds. */
     var regions: List<AwardRegion> = emptyList()
         set(value) {

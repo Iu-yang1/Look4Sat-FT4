@@ -27,7 +27,9 @@ import android.view.View
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.runtime.getValue
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import com.rtbishop.look4sat.core.domain.repository.IContainerProvider
 import com.rtbishop.look4sat.core.presentation.MainTheme
@@ -47,9 +49,12 @@ class MainActivity : ComponentActivity() {
         installSplashScreen()
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
+        val settingsRepo = (applicationContext as IContainerProvider).getMainContainer().settingsRepo
         observeNightFilterState()
         setContent {
-            MainTheme(isDarkTheme = true) { NavRoot() }
+            val otherSettings by settingsRepo.otherSettings.collectAsStateWithLifecycle()
+            // Light theme is opt-in: the app stays dark until the user turns it on.
+            MainTheme(isDarkTheme = !otherSettings.stateOfLightTheme) { NavRoot() }
         }
     }
 

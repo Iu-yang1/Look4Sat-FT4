@@ -51,6 +51,20 @@ class HamlibRigctldControllerTest {
     }
 
     @Test
+    fun narrowFmAndDataModesUseHamlibModeAndPassbandCommands() = runTest {
+        val transport = FakeRigctldTransport()
+        val controller = HamlibRigctldController("127.0.0.1:4532", transport)
+        assertTrue(controller.connect())
+
+        assertTrue(controller.setMode("FM-N"))
+        assertEquals("\\set_mode FM 10000", transport.commands.last())
+        assertTrue(controller.setDataMode(true, "LSB"))
+        assertEquals("\\set_mode PKTLSB 0", transport.commands.last())
+        assertTrue(controller.setDataMode(false, "LSB"))
+        assertEquals("\\set_mode LSB 0", transport.commands.last())
+    }
+
+    @Test
     fun pttAndCtcssAreConfirmedThroughRigctld() = runTest {
         val transport = FakeRigctldTransport()
         val controller = HamlibRigctldController("127.0.0.1:4532", transport)

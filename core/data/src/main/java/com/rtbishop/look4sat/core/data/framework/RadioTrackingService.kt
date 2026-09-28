@@ -84,6 +84,9 @@ class RadioTrackingService(
     @Volatile private var activeTxLease: TxLease? = null
     @Volatile private var transmitPreparing = false
     private var pttWatchdogJob: Job? = null
+    private var dataModeController: IRadioController? = null
+    private var dataModeBaseMode: String? = null
+    private var dataModeUsesSplit = false
     private var nextLeaseId = 1L
     private val commandLatencyEstimator = RadioCommandLatencyEstimator()
     private val commandActor = RadioCommandActor(appScope) { busy, failure ->
@@ -360,6 +363,18 @@ class RadioTrackingService(
             check(kotlin.math.abs(effectiveFrequency - requestedFrequency) <= 10L) {
                 "TX frequency readback did not match"
             }
+            val profile = radioProfile(settingsRepo.radioControlSettings.value.radioModel)
+            if (profile.capabilities.dataMode) {
+                val dataModeEnabled = if (split) {
+                    controller.setTxDataMode(enabled = true, baseMode = checkNotNull(txMode))
+                } else {
+                    controller.setDataMode(enabled = true, baseMode = checkNotNull(txMode))
+                }
+                check(dataModeEnabled) { "TX DATA mode was not acknowledged" }
+                dataModeController = controller
+                dataModeBaseMode = txMode
+                dataModeUsesSplit = split
+            }
             check(pendingControls.get() == 0 && controller.pttSafetyGeneration() == safetyGeneration &&
                 _state.value.isActive && _state.value.currentPass == pass &&
                 _state.value.selectedTransponder == transponder) { "Radio context changed during transmit preparation" }
@@ -392,6 +407,7 @@ class RadioTrackingService(
             }
             lease
         } catch (error: Throwable) {
+            withContext(NonCancellable) { restoreDataModeLocked() }
             updateCommandFailure(error)
             throw error
         } finally {
@@ -600,9 +616,14 @@ class RadioTrackingService(
                 !hadActiveLease
             }
         }
+        val dataModeRestored = withContext(NonCancellable) { restoreDataModeLocked() }
         activeTxLease = null
         tuningRevision.incrementAndGet()
-        val error = failure ?: if (!acknowledged) "PTT OFF was not confirmed" else null
+        val error = failure ?: when {
+            !acknowledged -> "PTT OFF was not confirmed"
+            !dataModeRestored -> "TX DATA mode could not be restored"
+            else -> null
+        }
         _state.update {
             it.copy(
                 pttState = if (error == null) PttState.OFF else PttState.ERROR,
@@ -610,6 +631,21 @@ class RadioTrackingService(
                 lastCommandError = error,
                 errorMessage = error ?: it.errorMessage
             )
+        }
+    }
+
+    private suspend fun restoreDataModeLocked(): Boolean {
+        val controller = dataModeController ?: return true
+        val baseMode = dataModeBaseMode ?: return true
+        val split = dataModeUsesSplit
+        dataModeController = null
+        dataModeBaseMode = null
+        dataModeUsesSplit = false
+        if (!controller.isConnected) return false
+        return if (split) {
+            controller.setTxDataMode(enabled = false, baseMode = baseMode)
+        } else {
+            controller.setDataMode(enabled = false, baseMode = baseMode)
         }
     }
 
@@ -687,7 +723,7 @@ class RadioTrackingService(
                 if (!rx.setMode(rxMode)) return failTrackingInitialization("RX mode was not acknowledged")
             }
             if (tx != null && tx.isConnected) {
-                val tone = _state.value.ctcssTone.takeIf { txMode?.uppercase() == "FM" }
+                val tone = _state.value.ctcssTone.takeIf { txMode.isFmMode() }
                 val ctcssOk = if (tone != null) {
                     Log.d(tag, "Setting CTCSS: ${tone}Hz")
                     tx.setCtcssTone(tone) && tx.setCtcssMode(true)
@@ -768,7 +804,7 @@ class RadioTrackingService(
             if (!radio.setSplitModes(rxMode = rxMode, txMode = txMode)) {
                 return failTrackingInitialization("Split VFO modes were not acknowledged or verified")
             }
-            val splitTone = _state.value.ctcssTone.takeIf { txMode?.uppercase() == "FM" }
+            val splitTone = _state.value.ctcssTone.takeIf { txMode.isFmMode() }
             Log.d(tag, "Split init: TX CTCSS=${splitTone ?: "OFF"}")
             if (!radio.configureTxCtcss(splitTone)) {
                 return failTrackingInitialization("CTCSS command was not acknowledged")
@@ -978,7 +1014,7 @@ class RadioTrackingService(
                 txModeOk = txMode?.let { tx?.setMode(it) } ?: true
                 rxModeOk = rxMode?.let { mode -> rx?.setMode(mode) } ?: true
             }
-            val tone = _state.value.ctcssTone.takeIf { txMode?.uppercase() == "FM" }
+            val tone = _state.value.ctcssTone.takeIf { txMode.isFmMode() }
             val ctcssOk = if (split) {
                 tx != null && tx.configureTxCtcss(tone)
             } else if (tx == null || !tx.isConnected) {
@@ -1107,6 +1143,8 @@ private fun SatRadio.resolvedUplinkMode(): String? =
     uplinkMode?.uppercase() ?: downlinkMode?.let {
         TransponderMapper.mapUplinkModeToDownlinkMode(it.uppercase(), isInverted)
     }
+
+private fun String?.isFmMode(): Boolean = this?.uppercase() in setOf("FM", "FM-N", "NFM")
 
 private fun SatRadio.uplinkCenterFrequency(): Long? {
     val low = uplinkLow

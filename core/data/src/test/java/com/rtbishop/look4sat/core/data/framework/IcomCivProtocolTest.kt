@@ -107,6 +107,25 @@ class IcomCivProtocolTest {
     }
 
     @Test
+    fun narrowFmAndDataModeCommandsMatchIcomReference() {
+        assertArrayEquals(
+            civCommand(0x06, 0x05, 0x02),
+            IcomCivProtocol.buildSetModeCommand("FM-N")
+        )
+        assertArrayEquals(
+            civCommand(0x1A, 0x06, 0x01, 0x02),
+            IcomCivProtocol.buildDataModeCommand(enabled = true)
+        )
+        assertArrayEquals(
+            civCommand(0x1A, 0x06, 0x00, 0x00),
+            IcomCivProtocol.buildDataModeCommand(enabled = false)
+        )
+        assertEquals("FM", IcomCivProtocol.parseModePayload(byteArrayOf(0x05, 0x02)))
+        assertEquals(true, IcomCivProtocol.parseDataModeState(byteArrayOf(0x06, 0x01, 0x02)))
+        assertEquals(false, IcomCivProtocol.parseDataModeState(byteArrayOf(0x06, 0x00, 0x00)))
+    }
+
+    @Test
     fun ctcssToneUsesThreeByteCivBcd() {
         assertArrayEquals(
             byteArrayOf(0x00, 0x06, 0x70),

@@ -84,8 +84,26 @@ class HamlibRigctldController(
 
     override suspend fun setMode(mode: String): Boolean = withContext(Dispatchers.IO) {
         val hamlibMode = toHamlibMode(mode) ?: return@withContext false
-        ioMutex.withLock { setCommandLocked("\\set_mode $hamlibMode 0") }
+        val passband = if (mode.equals("FM-N", ignoreCase = true) || mode.equals("NFM", ignoreCase = true)) {
+            NARROW_FM_PASSBAND_HZ
+        } else {
+            0
+        }
+        ioMutex.withLock { setCommandLocked("\\set_mode $hamlibMode $passband") }
     }
+
+    override suspend fun setDataMode(enabled: Boolean, baseMode: String): Boolean {
+        val target = dataModeTarget(enabled, baseMode)
+        return setMode(target)
+    }
+
+    override suspend fun setTxDataMode(enabled: Boolean, baseMode: String): Boolean =
+        withContext(Dispatchers.IO) {
+            val target = dataModeTarget(enabled, baseMode)
+            val hamlibMode = toHamlibMode(target) ?: return@withContext false
+            val passband = if (target.equals("FM-N", ignoreCase = true)) NARROW_FM_PASSBAND_HZ else 0
+            ioMutex.withLock { setCommandLocked("\\set_split_mode $hamlibMode $passband") }
+        }
 
     override suspend fun setCtcssMode(enabled: Boolean): Boolean = withContext(Dispatchers.IO) {
         ioMutex.withLock { setCommandLocked("\\set_func TONE ${if (enabled) 1 else 0}") }
@@ -266,7 +284,9 @@ class HamlibRigctldController(
     }
 
     private fun toHamlibMode(mode: String): String? = when (mode.uppercase(Locale.US)) {
-        "LSB", "USB", "CW", "AM", "FM", "WFM", "RTTY" -> mode.uppercase(Locale.US)
+        "LSB", "USB", "CW", "AM", "FM", "WFM", "RTTY", "PKTUSB", "PKTLSB", "PKTFM" ->
+            mode.uppercase(Locale.US)
+        "FM-N", "NFM" -> "FM"
         "CW-R" -> "CWR"
         "RTTY-R" -> "RTTYR"
         "AFSK" -> "FM"
@@ -283,10 +303,21 @@ class HamlibRigctldController(
         else -> mode.uppercase(Locale.US)
     }
 
+    private fun dataModeTarget(enabled: Boolean, baseMode: String): String = if (enabled) {
+        when (baseMode.uppercase(Locale.US)) {
+            "LSB" -> "PKTLSB"
+            "FM", "FM-N", "NFM" -> "PKTFM"
+            else -> "PKTUSB"
+        }
+    } else {
+        baseMode
+    }
+
     private companion object {
         const val TAG = "HamlibRigctld"
         const val RESPONSE_TIMEOUT_MS = 1_500L
         const val DISCONNECT_PTT_TIMEOUT_MS = 1_500L
+        const val NARROW_FM_PASSBAND_HZ = 10_000
         const val POLL_INTERVAL_MS = 10L
         const val MAX_RESPONSE_BYTES = 8_192
         const val NANOS_PER_MILLISECOND = 1_000_000L

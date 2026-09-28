@@ -18,6 +18,30 @@ import org.junit.Test
 
 class Ic705ControllerTest {
     @Test
+    fun dataModeUsesDocumentedIcomCommandAndIc910RejectsEnable() = runTest {
+        for ((variant, address, supported) in listOf(
+            Triple(IcomCivVariant.IC705, 0xA4, true),
+            Triple(IcomCivVariant.IC9700, 0xA2, true),
+            Triple(IcomCivVariant.IC910, 0x60, false)
+        )) {
+            val transport = ScriptedCivTransport(civAddress = address)
+            val radio = Ic705Controller(null, "USB", address.toByte(), transport, variant)
+            assertTrue(radio.connect())
+            transport.payloads.clear()
+            assertEquals(supported, radio.setDataMode(true, "USB"))
+            if (supported) {
+                assertEquals("1A:06:01:02", transport.payloads.single())
+                assertTrue(radio.setDataMode(false, "USB"))
+                assertEquals("1A:06:00:00", transport.payloads.last())
+            } else {
+                assertTrue(transport.payloads.isEmpty())
+                assertTrue(radio.setDataMode(false, "USB"))
+            }
+            radio.disconnect()
+        }
+    }
+
+    @Test
     fun usbLsbCommandsAndReadbacksUseCorrectDuplexTargetsOnAllIcoms() = runTest {
         for ((variant, address) in listOf(
             IcomCivVariant.IC705 to 0xA4, IcomCivVariant.IC9700 to 0xA2, IcomCivVariant.IC910 to 0x60

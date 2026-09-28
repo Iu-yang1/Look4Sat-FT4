@@ -232,6 +232,7 @@ class RadioTrackingServiceTest {
 
         fixture.service.confirmTransmitReady(lease)
         assertEquals(PttState.ON, fixture.service.state.value.pttState)
+        assertTrue(tx.operations.indexOf("data:true:USB") < tx.operations.indexOf("ptt:on"))
         advanceTimeBy(1_100L)
         runCurrent()
         assertTrue(tx.operations.count { it.startsWith("frequency:") } > txFrequencyCommands)
@@ -241,6 +242,7 @@ class RadioTrackingServiceTest {
         assertEquals(PttState.OFF, fixture.service.state.value.pttState)
         assertTrue("ptt:on" in tx.operations)
         assertTrue("ptt:off" in tx.operations)
+        assertTrue(tx.operations.lastIndexOf("ptt:off") < tx.operations.lastIndexOf("data:false:USB"))
         fixture.close()
     }
 
@@ -315,6 +317,7 @@ class RadioTrackingServiceTest {
         assertEquals(1, fixture.service.state.value.physicalConnectionCount)
 
         val lease = fixture.service.beginTransmit(fixture.request(generation = 71L))
+        assertTrue("tx-data:true:USB" in radio.operations)
         val txUpdatesAfterPrepare = radio.operations.count { it.startsWith("tx-frequency:") }
         val rxUpdatesBeforePtt = radio.operations.count { it.startsWith("rx-frequency:") }
         fixture.service.confirmTransmitReady(lease)
@@ -326,6 +329,7 @@ class RadioTrackingServiceTest {
 
         fixture.service.endTransmit(lease)
         assertTrue(radio.operations.indexOf("ptt:on") < radio.operations.lastIndexOf("ptt:off"))
+        assertTrue(radio.operations.lastIndexOf("ptt:off") < radio.operations.lastIndexOf("tx-data:false:USB"))
         fixture.close()
     }
 
@@ -425,6 +429,7 @@ class RadioTrackingServiceTest {
         assertEquals(PttState.OFF, fixture.service.state.value.pttState)
         assertEquals(null, fixture.service.state.value.txLeaseId)
         assertTrue("ptt:off" in tx.operations)
+        assertTrue("data:false:USB" in tx.operations)
         fixture.close()
     }
 
@@ -441,6 +446,7 @@ class RadioTrackingServiceTest {
         assertEquals(PttState.ERROR, fixture.service.state.value.pttState)
         assertEquals(null, fixture.service.state.value.txLeaseId)
         assertTrue("ptt:off" in tx.operations)
+        assertTrue("data:false:USB" in tx.operations)
         fixture.close()
     }
 
@@ -887,6 +893,16 @@ private class FakeRadioController(
         operations += "mode:$mode"
         if (setModeSucceeds) this.mode = mode
         return setModeSucceeds
+    }
+
+    override suspend fun setDataMode(enabled: Boolean, baseMode: String): Boolean {
+        operations += "data:$enabled:$baseMode"
+        return true
+    }
+
+    override suspend fun setTxDataMode(enabled: Boolean, baseMode: String): Boolean {
+        operations += "tx-data:$enabled:$baseMode"
+        return true
     }
 
     override suspend fun setCtcssMode(enabled: Boolean): Boolean {

@@ -859,11 +859,12 @@ private fun UpdateIndicator(isUpdating: Boolean, modifier: Modifier = Modifier) 
 
 @Composable
 private fun ProjectWikiCard(onClick: () -> Unit, modifier: Modifier = Modifier) {
-    ElevatedCard(modifier = modifier) {
+    ElevatedCard(modifier = modifier.fillMaxWidth()) {
         Row(
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier
+                .fillMaxWidth()
                 .height(48.dp)
                 .clickable { onClick() }) {
             Spacer(Modifier)

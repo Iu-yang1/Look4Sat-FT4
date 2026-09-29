@@ -14,6 +14,10 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ *
+ * Contains code ported from OrbitDeckiOS (https://github.com/prstoetzer/OrbitDeckiOS),
+ * Copyright (c) 2025 Paul Stoetzer, N8HM, licensed under the MIT License.
+ * See THIRD_PARTY_NOTICES.md for the full MIT license text.
  */
 package com.rtbishop.look4sat.core.domain.utility
 

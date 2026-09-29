@@ -89,16 +89,20 @@ import java.util.Date
 import java.util.Locale
 
 @Composable
-fun SettingsDestination() {
+fun SettingsDestination(onOpenGridFinder: () -> Unit = {}) {
     val context = LocalContext.current
     val container = (context.applicationContext as IContainerProvider).getMainContainer()
     val viewModel: SettingsViewModel = viewModel(factory = SettingsViewModel.factory(container, context))
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-    SettingsScreen(uiState, viewModel::onAction)
+    SettingsScreen(uiState, viewModel::onAction, onOpenGridFinder)
 }
 
 @Composable
-private fun SettingsScreen(uiState: SettingsState, onAction: (SettingsAction) -> Unit) {
+private fun SettingsScreen(
+    uiState: SettingsState,
+    onAction: (SettingsAction) -> Unit,
+    onOpenGridFinder: () -> Unit
+) {
     var showUpdateChecker by rememberSaveable { mutableStateOf(false) }
     var showMapSettings by rememberSaveable { mutableStateOf(false) }
     var showProjectWiki by rememberSaveable { mutableStateOf(false) }
@@ -378,6 +382,7 @@ private fun SettingsScreen(uiState: SettingsState, onAction: (SettingsAction) ->
                     showPosDialog = { dialogs.position = true },
                     showLocDialog = { dialogs.locator = true },
                     dismissPosMessage = { onAction(SettingsAction.DismissPosMessages) },
+                    openGridFinder = onOpenGridFinder,
                     onAction = onAction
                 )
             }
@@ -443,7 +448,7 @@ private fun SettingsScreen(uiState: SettingsState, onAction: (SettingsAction) ->
 private fun LocationCardPreview() = MainTheme {
     val stationPos = GeoPos(0.0, 0.0, 0.0, "IO91vl", 0L)
     val settings = PositionSettings(true, stationPos, 0)
-    LocationCard(settings = settings, setGpsPos = {}, showPosDialog = {}, {}, {}) {}
+    LocationCard(settings = settings, setGpsPos = {}, showPosDialog = {}, {}, {}, {}) {}
 }
 
 @Composable
@@ -453,6 +458,7 @@ private fun LocationCard(
     showPosDialog: () -> Unit,
     showLocDialog: () -> Unit,
     dismissPosMessage: () -> Unit,
+    openGridFinder: () -> Unit,
     onAction: (SettingsAction) -> Unit
 ) {
     ElevatedCard(modifier = Modifier.fillMaxWidth()) {
@@ -495,6 +501,12 @@ private fun LocationCard(
                     modifier = Modifier.weight(1f)
                 )
             }
+            Spacer(modifier = Modifier.height(4.dp))
+            CardButton(
+                onClick = openGridFinder,
+                text = stringResource(id = R.string.gridfinder_title),
+                modifier = Modifier.fillMaxWidth()
+            )
         }
     }
     if (settings.messageResId != 0) {

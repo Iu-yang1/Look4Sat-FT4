@@ -93,6 +93,7 @@ fun LoTWUploadConfigDialog(
     busy: Boolean,
     error: LoTWUploadError?,
     errorDetail: String = "",
+    initialGrid: String = "",
     onDismiss: () -> Unit,
     onImport: (ByteArray, CharArray) -> Unit,
     onRemove: () -> Unit,
@@ -100,7 +101,9 @@ fun LoTWUploadConfigDialog(
 ) {
     var password by remember { mutableStateOf("") }
     var selectedFile by remember { mutableStateOf<Uri?>(null) }
-    var grid by remember { mutableStateOf(station?.grid.orEmpty()) }
+    // A grid Finder prefill (e.g. "OL62,OL72" for a line, four grids for a
+    // corner) wins over the saved station grid; otherwise keep what TQSL had.
+    var grid by remember { mutableStateOf(initialGrid.ifBlank { station?.grid.orEmpty() }) }
     var cqZone by remember { mutableStateOf(station?.cqZone.orEmpty()) }
     var ituZone by remember { mutableStateOf(station?.ituZone.orEmpty()) }
     var iota by remember { mutableStateOf(station?.iota.orEmpty()) }

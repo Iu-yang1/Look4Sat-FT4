@@ -38,8 +38,12 @@ interface IMainContainer {
     val qsoRepository: IQsoRepository
     val lotwUploadRepository: ILoTWUploadRepository
     val radioTrackingService: IRadioTrackingService
+    val locationRepo: ILocationRepo
     val mutualPassData: StateFlow<MutualPassData>
+    /** Grid Finder → LoTW station page prefill, consumed once by that page. */
+    val pendingLoTWStationGrid: StateFlow<String?>
     fun setMutualPassData(data: MutualPassData)
+    fun setPendingLoTWStationGrid(grid: String?)
     fun provideAddToCalendar(): IAddToCalendar
     fun provideShowToast(): IShowToast
     fun provideBluetoothReporter(): IReporter

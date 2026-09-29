@@ -269,7 +269,14 @@ fun MapDestination(
             viewModel.onAction(MapAction.SetVisible(false))
         }
     }
-    MapScreen(uiState, viewModel::onAction, mapView, mapFilterViewModel, onMatchGrid, matchCalculating)
+    MapScreen(
+        uiState = uiState,
+        onAction = viewModel::onAction,
+        mapView = mapView,
+        mapFilterViewModel = mapFilterViewModel,
+        onMatchGrid = onMatchGrid,
+        matchCalculating = matchCalculating
+    )
 }
 
 @Composable

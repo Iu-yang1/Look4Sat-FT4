@@ -69,6 +69,45 @@ fun positionToQth(latitude: Double, longitude: Double): String? {
     return "$lonFirst$latFirst$lonSecond$latSecond$lonThird$latThird"
 }
 
+/**
+ * Convert a position to its 4-char Maidenhead locator (field + square), the
+ * square VUCC credits, upper-cased. Returns null outside the Maidenhead grid
+ * (lat >= 90 is out of range: the top row is 80..90 N). The longitude is
+ * wrapped into [-180, 180) first, so fixes either side of the antimeridian
+ * resolve to the square they are actually in.
+ */
+fun positionToGrid4(latitude: Double, longitude: Double): String? {
+    if (latitude < -90.0 || latitude >= 90.0) return null
+    val normalizedLon = normalizeLongitude(longitude)
+    val fieldLat = ((latitude + 90.0) / 10.0).toInt().coerceIn(0, 17)
+    val fieldLon = ((normalizedLon + 180.0) / 20.0).toInt().coerceIn(0, 17)
+    val subLat = ((latitude + 90.0) % 10.0).toInt()
+    val subLon = ((normalizedLon + 180.0) % 20.0 / 2.0).toInt()
+    return "${'A' + fieldLon}${'A' + fieldLat}$subLon$subLat"
+}
+
+/**
+ * Convert a position to its 8-char Maidenhead locator: the 6-char locator plus
+ * the numeric extended-square pair (the Maidenhead maximum). Returns null for
+ * out-of-range positions.
+ */
+fun positionToGrid8(latitude: Double, longitude: Double): String? {
+    val normalizedLon = normalizeLongitude(longitude)
+    val base = positionToQth(latitude, normalizedLon) ?: return null
+    val latitudeOffset = latitude.coerceIn(-90.0, 89.999999) + 90.0
+    val longitudeOffset = normalizedLon.coerceIn(-180.0, 179.999999) + 180.0
+    val subLon = 2.0 / 24.0
+    val subLat = 1.0 / 24.0
+    val lonDigit = minOf(9, ((longitudeOffset % subLon) / subLon * 10).toInt())
+    val latDigit = minOf(9, ((latitudeOffset % subLat) / subLat * 10).toInt())
+    return "$base$lonDigit$latDigit"
+}
+
+/** Wrap any longitude into [-180, 180). */
+private fun normalizeLongitude(longitude: Double): Double {
+    return ((longitude + 180.0) % 360.0 + 360.0) % 360.0 - 180.0
+}
+
 private fun isValidPosition(lat: Double, lon: Double): Boolean {
     return (lat >= -90.0 && lat <= 90.0) && (lon >= -180.0 && lon <= 360.0)
 }

@@ -17,11 +17,14 @@
  */
 package com.rtbishop.look4sat.core.data.injection
 
+import android.Manifest
 import android.bluetooth.BluetoothManager
 import android.content.Context
+import android.content.pm.PackageManager
 import android.hardware.SensorManager
 import android.hardware.display.DisplayManager
 import android.location.LocationManager
+import androidx.core.content.ContextCompat
 import androidx.room.Room
 import com.rtbishop.look4sat.core.data.database.Look4SatDb
 import com.rtbishop.look4sat.core.data.database.MIGRATION_1_2
@@ -43,6 +46,7 @@ import com.rtbishop.look4sat.core.data.repository.SensorsRepo
 import com.rtbishop.look4sat.core.data.repository.SettingsRepo
 import com.rtbishop.look4sat.core.data.repository.UpdateRepository
 import com.rtbishop.look4sat.core.data.repository.LoTWRepository
+import com.rtbishop.look4sat.core.data.repository.LocationRepo
 import com.rtbishop.look4sat.core.data.repository.WavelogRepository
 import com.rtbishop.look4sat.core.data.source.LocalSource
 import com.rtbishop.look4sat.core.data.source.RemoteSource
@@ -59,6 +63,7 @@ import com.rtbishop.look4sat.core.domain.repository.IRadioController
 import com.rtbishop.look4sat.core.domain.repository.IRadioTrackingService
 import com.rtbishop.look4sat.core.domain.repository.IReporter
 import com.rtbishop.look4sat.core.domain.repository.ILoTWRepository
+import com.rtbishop.look4sat.core.domain.repository.ILocationRepo
 import com.rtbishop.look4sat.core.domain.repository.ISatelliteRepo
 import com.rtbishop.look4sat.core.domain.repository.ISelectionRepo
 import com.rtbishop.look4sat.core.domain.repository.ISensorsRepo
@@ -107,12 +112,24 @@ class MainContainer(private val context: Context) : IMainContainer {
         val manager = context.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
         RadioTrackingService(appScope, manager, satelliteRepo, settingsRepo)
     }
+    override val locationRepo: ILocationRepo by lazy {
+        val manager = context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
+        LocationRepo(manager) {
+            ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) ==
+                PackageManager.PERMISSION_GRANTED
+        }
+    }
 
     private val _mutualPassData = MutableStateFlow(MutualPassData())
     override val mutualPassData: StateFlow<MutualPassData> = _mutualPassData.asStateFlow()
+    private val _pendingLoTWStationGrid = MutableStateFlow<String?>(null)
+    override val pendingLoTWStationGrid: StateFlow<String?> = _pendingLoTWStationGrid.asStateFlow()
 
     override fun setMutualPassData(data: MutualPassData) {
         _mutualPassData.value = data
+    }
+    override fun setPendingLoTWStationGrid(grid: String?) {
+        _pendingLoTWStationGrid.value = grid
     }
 
     override fun provideAddToCalendar(): IAddToCalendar = AddToCalendar(context)

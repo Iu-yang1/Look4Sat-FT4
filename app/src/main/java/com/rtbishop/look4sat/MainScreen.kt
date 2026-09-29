@@ -75,11 +75,14 @@ import com.rtbishop.look4sat.core.domain.repository.IContainerProvider
 import com.rtbishop.look4sat.core.domain.repository.MutualPassData
 import com.rtbishop.look4sat.core.presentation.DeeplinkResolver
 import com.rtbishop.look4sat.core.presentation.ElevationThresholds
+import com.rtbishop.look4sat.core.presentation.GridFinderDestination
 import com.rtbishop.look4sat.core.presentation.LocalElevationThresholds
+import com.rtbishop.look4sat.core.presentation.LoTWUploadDestination
 import com.rtbishop.look4sat.core.presentation.RadarDestination
 import com.rtbishop.look4sat.core.presentation.Screen
 import com.rtbishop.look4sat.core.presentation.hasEnoughHeight
 import com.rtbishop.look4sat.core.presentation.hasEnoughWidth
+import com.rtbishop.look4sat.feature.gridfinder.GridFinderDestination
 import com.rtbishop.look4sat.feature.map.MapDestination
 import com.rtbishop.look4sat.feature.map.MapFilterViewModel
 import com.rtbishop.look4sat.feature.mutual.MutualScreen
@@ -88,6 +91,7 @@ import com.rtbishop.look4sat.feature.passes.PassesDestination
 import com.rtbishop.look4sat.feature.radar.RadarDestination
 import com.rtbishop.look4sat.feature.satellites.SatellitesDestination
 import com.rtbishop.look4sat.feature.settings.SettingsDestination
+import com.rtbishop.look4sat.feature.settings.LoTWUploadDestination
 import com.rtbishop.look4sat.feature.status.SatStatusDestination
 
 @Composable
@@ -99,6 +103,8 @@ fun NavRoot(deeplink: String? = null) {
     }
     val navigateBack: () -> Unit = { rootBackStack.removeLastOrNull() }
     val navigateToRadar: () -> Unit = { rootBackStack.add(RadarDestination) }
+    val navigateToGridFinder: () -> Unit = { rootBackStack.add(GridFinderDestination) }
+    val navigateToLoTWStation: () -> Unit = { rootBackStack.add(LoTWUploadDestination) }
     // Incoming screen slides in from the right, outgoing drifts left at 1/3 speed (API35+ style)
     val pushTransition = slideInHorizontally(tween(300)) { it } togetherWith
         slideOutHorizontally(tween(300)) { -it / 3 }
@@ -132,7 +138,8 @@ fun NavRoot(deeplink: String? = null) {
             entryProvider = entryProvider {
                 entry<Screen.Passes> {
                     MainScreen(
-                        navigateToRadar = navigateToRadar
+                        navigateToRadar = navigateToRadar,
+                        navigateToGridFinder = navigateToGridFinder
                     )
                 }
                 entry<RadarDestination> {
@@ -143,6 +150,25 @@ fun NavRoot(deeplink: String? = null) {
                         RadarDestination(navigateUp = navigateBack)
                     }
                 }
+                entry<GridFinderDestination> {
+                    Surface(
+                        modifier = Modifier.fillMaxSize(),
+                        color = MaterialTheme.colorScheme.background
+                    ) {
+                        GridFinderDestination(
+                            navigateUp = navigateBack,
+                            onOpenLoTWStation = navigateToLoTWStation
+                        )
+                    }
+                }
+                entry<LoTWUploadDestination> {
+                    Surface(
+                        modifier = Modifier.fillMaxSize(),
+                        color = MaterialTheme.colorScheme.background
+                    ) {
+                        LoTWUploadDestination(navigateUp = navigateBack)
+                    }
+                }
             }
         )
     }
@@ -150,7 +176,8 @@ fun NavRoot(deeplink: String? = null) {
 
 @Composable
 fun MainScreen(
-    navigateToRadar: () -> Unit = {}
+    navigateToRadar: () -> Unit = {},
+    navigateToGridFinder: () -> Unit = {}
 ) {
     val backStack = rememberNavBackStack(Screen.Passes)
     val currentKey = backStack.lastOrNull()
@@ -291,7 +318,7 @@ fun MainScreen(
                         }
                         entry<Screen.AMSAT> { SatStatusDestination() }
                         entry<Screen.Settings> {
-                            SettingsDestination()
+                            SettingsDestination(onOpenGridFinder = navigateToGridFinder)
                         }
                     }
                 )

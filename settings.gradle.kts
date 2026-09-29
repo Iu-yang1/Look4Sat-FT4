@@ -22,6 +22,7 @@ include(
 )
 include(
     ":feature:cw",
+    ":feature:gridfinder",
     ":feature:map",
     ":feature:mutual",
     ":feature:passes",

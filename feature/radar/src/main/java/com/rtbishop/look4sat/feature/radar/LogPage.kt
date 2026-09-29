@@ -178,7 +178,7 @@ fun LogPage(
 
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
             OutlinedButton(
-                onClick = { logViewModel.generatePost(satName, maxElev) },
+                onClick = { logViewModel.generatePost(satName, maxElev, passWindow) },
                 enabled = recent.isNotEmpty(),
                 modifier = Modifier.weight(1f)
             ) { Text("生成通联记录", fontSize = 13.sp) }

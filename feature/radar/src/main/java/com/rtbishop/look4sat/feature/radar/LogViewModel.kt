@@ -142,16 +142,16 @@ class LogViewModel(
      */
     fun updateRecord(record: QsoRecord) = viewModelScope.launch { qsoRepository.save(record) }
 
-    /** English social post from the recorded QSOs of the current satellite (last 24h). */
-    fun generatePost(satName: String, maxElev: Double) {
+    /** English social post from the recorded QSOs of the current satellite.
+     *  Same window logic as the on-screen list: only the current pass (aos..los). */
+    fun generatePost(satName: String, maxElev: Double, passWindow: ClosedRange<Long>?) {
         viewModelScope.launch {
-            val now = System.currentTimeMillis()
             // Records carry the ARRL name while the pass carries the tracker's name, so the
             // operator's own contacts are collected by identity, not by the raw name.
             val identity = satelliteIdentity(satName)
             val list = qsoRepository.records.first()
                 .filter { satelliteIdentity(it.satelliteName) == identity }
-                .filter { it.startUtcMillis > now - 24 * 3_600_000L }
+                .filter { passWindow?.contains(it.startUtcMillis) == true }
                 .sortedBy { it.startUtcMillis }
             if (list.isEmpty()) return@launch
             val shortName = officialSatelliteName(satName).substringBefore('(').trim().uppercase(Locale.US)

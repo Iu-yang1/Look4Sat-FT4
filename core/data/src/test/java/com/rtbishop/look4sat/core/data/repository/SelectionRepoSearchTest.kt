@@ -282,6 +282,10 @@ private class FakeLocalSourceForSearch(
     override suspend fun getEntriesTotal(): Int = items.size
     override suspend fun getEntriesList(): List<SatItem> = items
     override suspend fun getEntriesWithIds(ids: List<Int>): List<OrbitalObject> = emptyList()
+    override suspend fun getEntriesEpochs(): Map<Int, Double> = emptyMap()
+    override suspend fun getEntriesNames(): Map<Int, String> = emptyMap()
+    override suspend fun renameEntries(names: Map<Int, String>) = Unit
+    override suspend fun deleteEntriesWithIds(ids: List<Int>) = Unit
     override suspend fun insertEntries(entries: List<OrbitalData>) = Unit
     override suspend fun deleteEntries() = Unit
     override suspend fun getIdsWithModes(modes: List<String>): List<Int> = sstvIds

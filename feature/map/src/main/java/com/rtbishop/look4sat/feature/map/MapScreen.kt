@@ -730,11 +730,12 @@ private fun MarkedStationRow(
         )
         // "标记" column: pin icon (only when the grid has multiple marks) sits
         // left of the label; pinned (first) row's icon is grey, others pale
-        // yellow — tapping moves that mark to the top.
+        // yellow — tapping moves that mark to the top. Wrap-content (no weight),
+        // same as the count column of the QSO rows, so the callsign column next
+        // to it takes the leftover width while these glyphs stay row-centred.
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.Center,
-            modifier = Modifier.weight(1f)
+            horizontalArrangement = Arrangement.Center
         ) {
             if (showPin) {
                 Icon(
@@ -807,8 +808,13 @@ private fun WorkedGridCallRow(
                 else stringResource(R.string.grid_qso_count_many, callQsos.size),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                modifier = Modifier.weight(1f)
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                // No weight: the count column wraps its content, so the callsign
+                // column (weight 1f, opposite the date column) absorbs the slack
+                // that used to sit left of the centred count text. The count text
+                // keeps its exact on-screen position: with equal weights on the
+                // outer columns the wrap-content middle column starts where the
+                // centred text used to start, i.e. its centre stays at row centre.
             )
             Row(
                 verticalAlignment = Alignment.CenterVertically,

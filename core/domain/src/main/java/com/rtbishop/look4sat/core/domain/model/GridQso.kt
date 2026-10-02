@@ -72,7 +72,13 @@ data class GridQso(
      *  MY_STATE + MY_CQ_ZONE + MY_ITU_ZONE + MY_IOTA + MY_COUNTRY), so the
      *  operated-grid selector can group QSOs per 台址 and show each 台址 with
      *  its full grid set. Null for data synced before this field existed. */
-    val stationKey: String? = null
+    val stationKey: String? = null,
+    /** Every 4-char grid of the OPPOSITE station for this QSO — ADIF
+     *  <GRIDSQUARE> plus every field of <VUCC_GRIDS> (comma-separated when
+     *  the contact spans several squares; up to four in one QSO). The logbook
+     *  shows the set in the QSL slot of a confirmed row; [myGrids] is the
+     *  same thing for the user's own side. */
+    val theirGrids: List<String> = emptyList()
 ) {
     /** Short uplink/downlink band label ("U/V", "V/A"), or "" when unknown. */
     val bandLabel: String

@@ -80,7 +80,7 @@ fun sameContactIdentity(local: QsoRecord, remote: QsoRecord): Boolean {
         local.theirCallsign.trim().equals(remote.theirCallsign.trim(), true) &&
         (local.myCallsign.isBlank() || remote.myCallsign.isBlank() || local.myCallsign.equals(remote.myCallsign, true)) &&
         local.isSatellite == remote.isSatellite &&
-        local.displayMode == remote.displayMode &&
+        local.matchableMode == remote.matchableMode &&
         abs(local.startUtcMillis - remote.startUtcMillis) < 60_000L
 }
 
@@ -93,45 +93,100 @@ fun sameConfirmedContact(local: QsoRecord, remote: QsoRecord): Boolean =
     sameContactIdentity(local, remote) && sameBandOrBlank(local.band, remote.band)
 
 fun QsoRecord.confirmationLookupKey(): String = listOf(
-    theirCallsign.trim().uppercase(Locale.US), satelliteIdentity(satelliteName), displayMode
+    theirCallsign.trim().uppercase(Locale.US), satelliteIdentity(satelliteName), matchableMode
 ).joinToString("|")
 
-/** A local row and the confirmation row that belongs to it, as indices into one list. */
+/** A row to keep and the duplicate row to fold into it (then delete), as indices into one list. */
 data class SplitConfirmationPair(val localIndex: Int, val confirmationIndex: Int)
 
 /**
- * Rows that a confirmation should have been folded into but was not, so they can be
- * consolidated back into one.
+ * Rows that should have been one row but were not, so they can be consolidated back into one.
  *
- * Confirmations merged before the identity fix landed as their own rows: the tracker
- * name vs ARRL name comparison failed, and the band direction of the report was read
- * mirrored (BAND_RX was taken as the uplink), so even satellites with matching names
- * were stored twice. The pair is only accepted when the contact identity matches and
- * the bands are either identical or exactly mirrored — the signature of that second
- * mismatch — which keeps unrelated QSOs of the same operator and minute apart.
+ * Two known holes leave a contact stored twice:
+ *
+ * 1. Confirmations merged before the identity fix landed as their own rows: the tracker name
+ *    vs ARRL name comparison failed, and the band direction of the report was read mirrored
+ *    (BAND_RX taken as the uplink) — so an unconfirmed local row and its confirmation stayed
+ *    apart. Pass 1 folds the confirmation into the local row.
+ * 2. A contact can also end up with TWO confirmed rows: a mirrored import the old parser
+ *    created plus the row that was confirmed on its own later, or a duplicate import added
+ *    while ambiguous candidates made the match fail. Pass 1 cannot fold those — both sides
+ *    are confirmed — so pass 2 pairs confirmed rows with each other.
+ *
+ * Both passes accept a pair only when the contact identity matches and the bands are either
+ * identical or exactly mirrored — the mirror being the fingerprint of the pre-fix parser —
+ * which keeps unrelated QSOs of the same operator and minute apart. In pass 2 the row with
+ * more content is kept (frequencies/grids/reports beat an empty mirrored import) and the
+ * other one is folded into it, so no data is lost.
  */
 fun splitConfirmationPairs(records: List<QsoRecord>): List<SplitConfirmationPair> {
-    val pendingIndices = records.indices.filter { !records[it].lotwConfirmed }
     val taken = mutableSetOf<Int>()
-    return records.indices.filter { records[it].lotwConfirmed }.mapNotNull { confirmationIndex ->
+    val pairs = mutableListOf<SplitConfirmationPair>()
+    // Pass 1: fold a downloaded confirmation into the unconfirmed local row it belongs to.
+    val pendingIndices = records.indices.filter { !records[it].lotwConfirmed }
+    records.indices.filter { records[it].lotwConfirmed }.forEach { confirmationIndex ->
         val confirmation = records[confirmationIndex]
         val localIndex = pendingIndices.firstOrNull { index ->
             index !in taken && sameContactIdentity(records[index], confirmation) &&
                 bandsMatchOrMirror(records[index], confirmation)
-        } ?: return@mapNotNull null
+        } ?: return@forEach
         taken += localIndex
-        SplitConfirmationPair(localIndex, confirmationIndex)
+        taken += confirmationIndex
+        pairs += SplitConfirmationPair(localIndex, confirmationIndex)
     }
+    // Pass 2: two CONFIRMED rows describing the same contact (mirrored import + the confirmed
+    // row it never folded into, or a duplicate import). Keep the richer row, drop the other.
+    val confirmedLeft = records.indices.filter { records[it].lotwConfirmed && it !in taken }
+    confirmedLeft.forEach { index ->
+        if (index in taken) return@forEach
+        val cluster = mutableListOf(index)
+        confirmedLeft.forEach { candidate ->
+            if (candidate != index && candidate !in taken &&
+                cluster.all {
+                    sameContactIdentity(records[it], records[candidate]) &&
+                        bandsMatchOrMirror(records[it], records[candidate])
+                }
+            ) {
+                cluster += candidate
+            }
+        }
+        if (cluster.size < 2) return@forEach
+        cluster.forEach { taken += it }
+        val keep = cluster.maxBy { contentScore(records[it]) }
+        cluster.filter { it != keep }.forEach { pairs += SplitConfirmationPair(keep, it) }
+    }
+    return pairs
+}
+
+/** More operator/report detail first — decides which row survives a pass-2 fold. */
+fun contentScore(record: QsoRecord): Int {
+    var score = 0
+    // Frequencies are the strongest operator-entered signal; a band label consistent with its
+    // frequency (frequencyBand(tx) == band) beats the mirrored parser output, whose labels
+    // contradict the side they describe.
+    record.txFrequencyHz?.let { hz -> score += 2; if (record.band == frequencyBand(hz)) score += 1 }
+    record.rxFrequencyHz?.let { hz -> score += 2; if (record.rxBand == frequencyBand(hz)) score += 1 }
+    score += listOf(record.sentReport, record.receivedReport, record.myGrid, record.theirGrid, record.comment)
+        .count { it.isNotBlank() }
+    score += record.vuccGrids.size
+    score += record.theirVuccGrids.size
+    if (record.lotwUploaded) score += 1
+    if (record.lotwReceived) score += 1
+    if (record.dxcc != null) score += 1
+    if (record.country.isNotBlank()) score += 1
+    if (record.lotwQslDate.isNotBlank()) score += 1
+    return score
 }
 
 /** Same band on both sides, or the mirrored pair the pre-fix parser produced. */
-private fun bandsMatchOrMirror(local: QsoRecord, confirmation: QsoRecord): Boolean =
+fun bandsMatchOrMirror(local: QsoRecord, confirmation: QsoRecord): Boolean =
     (sameBandOrBlank(local.band, confirmation.band) && sameBandOrBlank(local.rxBand, confirmation.rxBand)) ||
         (sameBandOrBlank(local.band, confirmation.rxBand) && sameBandOrBlank(local.rxBand, confirmation.band))
 
 fun QsoRecord.withConfirmation(confirmed: QsoRecord): QsoRecord = copy(
     myCallsign = myCallsign.ifBlank { confirmed.myCallsign },
     theirGrid = confirmed.theirGrid.ifBlank { theirGrid },
+    theirVuccGrids = confirmed.theirVuccGrids.ifEmpty { theirVuccGrids },
     myGrid = myGrid.ifBlank { confirmed.myGrid },
     sentReport = sentReport.ifBlank { confirmed.sentReport },
     receivedReport = receivedReport.ifBlank { confirmed.receivedReport },
@@ -158,6 +213,12 @@ val QsoRecord.displayMode: String
         val label = if (mode.equals("MFSK", true) && submode.isNotBlank()) submode else mode
         return label.trim().uppercase(Locale.US)
     }
+
+/** The mode label as the merge compares it: satellite FT4 is written as MFSK + FT4, and
+ *  releases that dropped the sub-mode persisted plain MFSK — the same mode, spelled
+ *  differently, so both spellings must match. */
+val QsoRecord.matchableMode: String
+    get() = displayMode.let { if (it == "MFSK") "FT4" else it }
 
 val QsoRecord.isSatellite: Boolean
     get() = propagationMode.equals("SAT", true) || (propagationMode.isBlank() && satelliteName.isNotBlank())

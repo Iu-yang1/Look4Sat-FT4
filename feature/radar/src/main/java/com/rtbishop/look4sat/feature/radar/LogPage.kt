@@ -40,6 +40,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
@@ -60,14 +61,18 @@ import com.rtbishop.look4sat.core.domain.utility.uplinkHz
 import com.rtbishop.look4sat.core.domain.utility.voiceRepeater
 import com.rtbishop.look4sat.core.presentation.EmptyListCard
 import com.rtbishop.look4sat.core.presentation.QsoEditDialog
+import com.rtbishop.look4sat.core.presentation.R
 import com.rtbishop.look4sat.core.presentation.SheetDialogTitle
 import com.rtbishop.look4sat.core.presentation.sheetDialogContainerColor
 import com.rtbishop.look4sat.core.presentation.sheetDialogShape
+import com.rtbishop.look4sat.core.presentation.gridsLabel
+import com.rtbishop.look4sat.core.presentation.LoTWGridWarningDialog
 
 @Composable
 fun LogPage(
     uiState: RadarState,
     logViewModel: LogViewModel,
+    onFixGrid: (List<String>) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val logUiState by logViewModel.uiState.collectAsStateWithLifecycle()
@@ -139,11 +144,11 @@ fun LogPage(
                     imeAction = ImeAction.Done
                 ),
                 keyboardActions = androidx.compose.foundation.text.KeyboardActions(onDone = {
-                    logViewModel.record(satName, mode, txHz, rxHz, logUiState.stationGrid)
+                    logViewModel.record(satName, mode, txHz, rxHz, logUiState.stationGrid, passWindow)
                 })
             )
             Button(
-                onClick = { logViewModel.record(satName, mode, txHz, rxHz, logUiState.stationGrid) },
+                onClick = { logViewModel.record(satName, mode, txHz, rxHz, logUiState.stationGrid, passWindow) },
                 enabled = logUiState.callsignInput.isNotBlank() && satName.isNotBlank()
             ) { Text("Log") }
         }
@@ -217,13 +222,27 @@ fun LogPage(
         )
     }
 
-    logUiState.preview?.let { preview ->
-        UploadPreviewDialog(
-            preview = preview,
-            busy = logUiState.busy,
-            onConfirm = logViewModel::confirmUpload,
-            onDismiss = logViewModel::dismissPreview
+    logUiState.uploadGridWarning?.let { warning ->
+        LoTWGridWarningDialog(
+            warning = warning,
+            onFixStation = {
+                logViewModel.abandonForGridFix()
+                onFixGrid(warning.recordGrids)
+            },
+            onIgnore = logViewModel::ignoreGridWarning
         )
+    }
+
+    // The preview only opens once the grid check is out of the way.
+    if (logUiState.uploadGridWarning == null) {
+        logUiState.preview?.let { preview ->
+            UploadPreviewDialog(
+                preview = preview,
+                busy = logUiState.busy,
+                onConfirm = logViewModel::confirmUpload,
+                onDismiss = logViewModel::dismissPreview
+            )
+        }
     }
 
     if (logUiState.message.isNotBlank()) {
@@ -235,6 +254,34 @@ fun LogPage(
             text = { Text(logUiState.message) },
             confirmButton = {
                 TextButton(onClick = logViewModel::clearMessage) { Text("OK") }
+            }
+        )
+    }
+
+    // Out-of-window notice: the clock is outside the current pass [aos, los], so the record
+    // would never show in the window-filtered list. Confirm first, then store it at the pass
+    // midpoint (there is always an edit dialog afterwards for the exact time).
+    logUiState.outOfWindowLog?.let { pending ->
+        val midpointText = remember(pending.midpointUtcMillis) {
+            java.text.SimpleDateFormat("HH:mm'Z'", java.util.Locale.US).apply {
+                timeZone = java.util.TimeZone.getTimeZone("UTC")
+            }.format(java.util.Date(pending.midpointUtcMillis))
+        }
+        AlertDialog(
+            onDismissRequest = logViewModel::dismissOutOfWindowLog,
+            shape = sheetDialogShape(),
+            containerColor = sheetDialogContainerColor(),
+            title = { SheetDialogTitle(stringResource(R.string.log_out_window_title)) },
+            text = { Text(stringResource(R.string.log_out_window_message, midpointText)) },
+            confirmButton = {
+                TextButton(onClick = logViewModel::confirmOutOfWindowLog) {
+                    Text(stringResource(R.string.log_out_window_confirm))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = logViewModel::dismissOutOfWindowLog) {
+                    Text(stringResource(R.string.btn_cancel))
+                }
             }
         )
     }
@@ -264,6 +311,8 @@ private fun LogRecordRow(
             timeZone = java.util.TimeZone.getTimeZone("UTC")
         }.format(java.util.Date(record.startUtcMillis))
     }
+    // Own station grid: the upload-stamped set, else the grid the QSO was logged under.
+    val ownGrids = gridsLabel(record.vuccGrids.ifEmpty { listOf(record.myGrid) })
     // 右划露出删除按钮（短信式）；整行点击不再删除。
     SwipeRevealRow(
         key = record.id.toString(),
@@ -289,6 +338,14 @@ private fun LogRecordRow(
                     maxLines = 1
                 )
                 Text(text = "  ${record.displayMode}", fontSize = 14.sp, maxLines = 1)
+                if (ownGrids.isNotBlank()) {
+                    Text(
+                        text = "  $ownGrids",
+                        fontSize = 14.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1
+                    )
+                }
             }
             when {
                 record.lotwConfirmed -> Text("QSL", fontSize = 12.sp, color = MaterialTheme.colorScheme.primary, fontFamily = FontFamily.Monospace)

@@ -285,7 +285,9 @@ class LoTWRepository : ILoTWRepository {
                 myGrid = myGrids.firstOrNull(),
                 myGrids = myGrids,
                 myCallsign = myCallsign,
-                stationKey = stationKey
+                stationKey = stationKey,
+                // Copy, never the live buffer — resetRecord() clears it.
+                theirGrids = gridsInRecord.distinct().toList()
             )
             for (grid in gridsInRecord) {
                 result.getOrPut(grid) { mutableListOf() }.add(qso)

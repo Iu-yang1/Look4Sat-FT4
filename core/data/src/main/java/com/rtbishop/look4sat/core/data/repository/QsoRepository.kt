@@ -16,8 +16,11 @@ import com.rtbishop.look4sat.core.domain.logbook.AdifImportResult
 import com.rtbishop.look4sat.core.domain.logbook.IQsoRepository
 import com.rtbishop.look4sat.core.domain.logbook.QsoRecord
 import com.rtbishop.look4sat.core.domain.logbook.QsoStatus
+import com.rtbishop.look4sat.core.domain.logbook.bandsMatchOrMirror
+import com.rtbishop.look4sat.core.domain.logbook.contentScore
 import com.rtbishop.look4sat.core.domain.logbook.displayMode
 import com.rtbishop.look4sat.core.domain.logbook.sameConfirmedContact
+import com.rtbishop.look4sat.core.domain.logbook.sameContactIdentity
 import com.rtbishop.look4sat.core.domain.logbook.satelliteIdentity
 import com.rtbishop.look4sat.core.domain.logbook.splitConfirmationPairs
 import com.rtbishop.look4sat.core.domain.logbook.withConfirmation
@@ -54,14 +57,14 @@ class QsoRepository(
                 dao.save(record.copy(
                     id = 0L,
                     lotwUploaded = false, lotwConfirmed = false, lotwReceived = false,
-                    lotwQslDate = "", vuccGrids = emptyList(),
+                    lotwQslDate = "", vuccGrids = emptyList(), theirVuccGrids = emptyList(),
                     dxcc = null, country = "", cqZone = null, region = ""
                 ).toEntity())
             } else {
                 val saved = if (previous?.lotwConfirmed == true && sameConfirmedContact(record, previous)) {
                     record.withConfirmation(previous)
                 } else if (previous?.lotwConfirmed == true) record.copy(
-                    lotwConfirmed = false, lotwQslDate = "", vuccGrids = emptyList(),
+                    lotwConfirmed = false, lotwQslDate = "", vuccGrids = emptyList(), theirVuccGrids = emptyList(),
                     dxcc = null, country = "", cqZone = null, region = ""
                 ) else record
                 val received = if (previous != null && (
@@ -76,9 +79,18 @@ class QsoRepository(
 
     override suspend fun delete(id: Long) = withContext(dispatcher) { importMutex.withLock { dao.delete(id) } }
 
-    override suspend fun markUploaded(ids: List<Long>) = withContext(dispatcher) {
+    override suspend fun markUploaded(ids: List<Long>, grids: List<String>) = withContext(dispatcher) {
         if (ids.isEmpty()) return@withContext
         dao.markUploaded(ids)
+        // Stamp the station grid set this batch went out under (a line/corner prefill from
+        // the grid finder carries 2–4 grids). The logbook row shows it after the timestamp.
+        val normalized = grids.map { it.trim().uppercase(Locale.US).take(4) }
+            .filter { it.length >= 4 }.distinct().sorted()
+        if (normalized.isEmpty()) return@withContext
+        val stamped = ids.mapNotNull { id ->
+            dao.find(id)?.toDomain()?.takeIf { it.vuccGrids != normalized }?.copy(vuccGrids = normalized)
+        }
+        if (stamped.isNotEmpty()) dao.saveBatch(stamped.map { it.toEntity() })
     }
 
     override suspend fun exportAdi(ids: Set<Long>?, includeIncomplete: Boolean): String = withContext(dispatcher) {
@@ -132,9 +144,7 @@ class QsoRepository(
         val renames = rewriteOfficialNames(working)
         val lookup = working.indices.groupBy { working[it].confirmationLookupKey() }
             .mapValues { it.value.toMutableList() }.toMutableMap()
-        val keyIndex = working.indices.groupBy { stableQsoKey(working[it]) }
-            .mapValues { it.value.toMutableList() }.toMutableMap()
-        val knownKeys = keyIndex.keys.toMutableSet()
+        val knownKeys = working.map { stableQsoKey(it) }.toMutableSet()
         val changes = linkedMapOf<Int, QsoRecord>().apply {
             putAll(consolidation.merged)
             putAll(renames)
@@ -149,27 +159,38 @@ class QsoRepository(
             val exact = candidates.filter { working[it].startUtcMillis == remote.startUtcMillis }
             val match = exact.singleOrNull() ?: candidates.singleOrNull()
             if (match == null) {
-                // A confirmation downloaded by the pre-fix parser sits as its own row with the
-                // band direction read mirrored (the downlink was stored as the uplink). It has no
-                // local partner (so nothing folds it) and its dedupe key equals the fresh report,
-                // so it would otherwise be skipped forever, keeping the wrong band on display.
-                // When the bands are exactly mirrored, adopt the report's direction instead.
-                val stale = if (fromLoTW) keyIndex[stableQsoKey(remote)]?.firstOrNull()
-                    ?.takeIf { index -> working[index].lotwConfirmed &&
-                        working[index].band.equals(remote.rxBand, true) &&
-                        working[index].rxBand.equals(remote.band, true) } else null
-                if (stale != null) {
-                    val fixed = working[stale].copy(band = remote.band, rxBand = remote.rxBand)
-                    working[stale] = fixed
-                    changes[stale] = fixed
-                    updated++
+                // A confirmation downloaded by an early release sits as its own row with the
+                // band direction read mirrored (the downlink was stored as the uplink). The
+                // strict lookup above cannot see it: its bands fail the comparison, and its
+                // dedupe key can differ too (fields written by older releases — timestamp
+                // precision, FT4 sub-mode spelling, missing callsign — so it is not treated
+                // as known either). Fold the report into the richest mirrored row instead of
+                // inserting a second row next to it; left as two rows, neither consolidation
+                // nor a later sync could reliably heal them.
+                val mirroredRows = if (fromLoTW) lookup[remote.confirmationLookupKey()].orEmpty().filter { index ->
+                    working[index].band.isNotBlank() && remote.band.isNotBlank() &&
+                        !working[index].band.equals(remote.band, true) &&
+                        sameContactIdentity(working[index], remote) &&
+                        bandsMatchOrMirror(working[index], remote)
+                } else emptyList()
+                if (mirroredRows.isNotEmpty()) {
+                    val target = mirroredRows.maxBy { contentScore(working[it]) }
+                    mirroredRows.forEach { index ->
+                        val healed = working[index].copy(
+                            band = remote.band.ifBlank { working[index].band },
+                            rxBand = remote.rxBand.ifBlank { working[index].rxBand }
+                        )
+                        val folded = if (index == target) healed.withConfirmation(remote) else healed
+                        working[index] = folded
+                        changes[index] = folded
+                    }
+                    updated += mirroredRows.size
                     return@forEach
                 }
                 if (stableQsoKey(remote) in knownKeys) { skipped++; return@forEach }
                 val added = remote.copy(id = 0L, satelliteName = officialSatelliteName(remote.satelliteName))
                 changes[working.size] = added
                 lookup.getOrPut(added.confirmationLookupKey()) { mutableListOf() }.add(working.size)
-                keyIndex.getOrPut(stableQsoKey(added)) { mutableListOf() }.add(working.size)
                 knownKeys += stableQsoKey(added)
                 working += added
                 imported++
@@ -268,6 +289,7 @@ private fun QsoEntity.toDomain() = QsoRecord(
     lotwReceived = lotwReceived,
     lotwQslDate = lotwQslDate,
     vuccGrids = vuccGrids.split(',').filter(String::isNotBlank),
+    theirVuccGrids = theirVuccGrids.split(',').filter(String::isNotBlank),
     dxcc = dxcc,
     country = country,
     cqZone = cqZone,
@@ -304,6 +326,7 @@ private fun QsoRecord.toEntity() = QsoEntity(
     lotwReceived = lotwReceived,
     lotwQslDate = lotwQslDate,
     vuccGrids = vuccGrids.joinToString(","),
+    theirVuccGrids = theirVuccGrids.joinToString(","),
     dxcc = dxcc,
     country = country,
     cqZone = cqZone,

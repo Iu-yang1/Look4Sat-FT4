@@ -26,6 +26,7 @@ import com.rtbishop.look4sat.core.domain.repository.IMainContainer
 import com.rtbishop.look4sat.core.domain.repository.ISettingsRepo
 import com.rtbishop.look4sat.core.domain.repository.LoTWOperationException
 import com.rtbishop.look4sat.core.domain.repository.LoTWUploadPreview
+import com.rtbishop.look4sat.core.domain.repository.LoTWGridWarning
 import com.rtbishop.look4sat.core.domain.repository.LoTWUploadResult
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -38,6 +39,23 @@ import java.util.Date
 import java.util.Locale
 import java.util.TimeZone
 
+/**
+ * A contact waiting for the operator to confirm logging while the clock is outside the
+ * current pass window (after LOS, before AOS, or against a pass card that is not the one
+ * being worked). Confirmed entries are stored at the pass midpoint — inside [aos, los] —
+ * so the window-filtered log page can show them; the exact time can be re-dated from the
+ * edit dialog afterwards.
+ */
+data class OutOfWindowLog(
+    val callsign: String,
+    val satName: String,
+    val mode: String,
+    val txHz: Long?,
+    val rxHz: Long?,
+    val myGrid: String,
+    val midpointUtcMillis: Long
+)
+
 data class LogUiState(
     val callsignInput: String = "",
     /** Current logbook mode for the selected satellite (FM/CW/SSB/FT4). */
@@ -49,10 +67,15 @@ data class LogUiState(
     /** ARRL satellite names (config.tq6) — the only names a record may be signed with. */
     val satelliteCatalog: List<String> = emptyList(),
     val preview: LoTWUploadPreview? = null,
+    /** Roaming guard: the prepared batch holds records whose own grids fall outside the
+     *  station-location grids — shown as a dialog before the preview opens. */
+    val uploadGridWarning: LoTWGridWarning? = null,
     /** User-facing upload / record message ("" when none). */
     val message: String = "",
     val postText: String? = null,
-    val busy: Boolean = false
+    val busy: Boolean = false,
+    /** Out-of-window contact waiting for the operator's confirmation (null when closed). */
+    val outOfWindowLog: OutOfWindowLog? = null
 )
 
 class LogViewModel(
@@ -101,19 +124,64 @@ class LogViewModel(
         settingsRepo.setSatelliteMode(catnum, mode)
     }
 
-    fun record(satName: String, mode: String, txHz: Long?, rxHz: Long?, myGrid: String) {
+    fun record(
+        satName: String,
+        mode: String,
+        txHz: Long?,
+        rxHz: Long?,
+        myGrid: String,
+        passWindow: ClosedRange<Long>?
+    ) {
         val call = _uiState.value.callsignInput.trim()
         if (call.isEmpty()) return
-        val normalizedMode = mode.ifBlank { "FM" }.uppercase(Locale.US)
         // Whole minutes (seconds zeroed): matches the edit dialog's HH:mm granularity and the
         // minute-resolution of LoTW reports, so re-saving an unchanged record never looks edited.
         val now = System.currentTimeMillis() / 60_000L * 60_000L
+        // Logging while the clock sits outside the current pass window (after LOS, before AOS,
+        // or against a pass card that is not the one being worked): the log page only shows
+        // records inside [aos, los], so a "now" timestamp could never appear there. Ask the
+        // operator first; the confirmed contact is stored at the pass midpoint (always inside
+        // the window) and can be re-dated later from the edit dialog.
+        if (passWindow != null && now !in passWindow) {
+            val midpoint = ((passWindow.start + passWindow.endInclusive) / 2L)
+                .let { it / 60_000L * 60_000L }
+                .coerceIn(passWindow.start, passWindow.endInclusive)
+            _uiState.update {
+                it.copy(outOfWindowLog = OutOfWindowLog(call, satName, mode, txHz, rxHz, myGrid, midpoint))
+            }
+            return
+        }
+        storeRecord(call, satName, mode, txHz, rxHz, myGrid, now)
+    }
+
+    /** The operator confirmed the out-of-window notice: store the contact at the pass midpoint. */
+    fun confirmOutOfWindowLog() {
+        val pending = _uiState.value.outOfWindowLog ?: return
+        storeRecord(
+            pending.callsign, pending.satName, pending.mode,
+            pending.txHz, pending.rxHz, pending.myGrid, pending.midpointUtcMillis
+        )
+        _uiState.update { it.copy(outOfWindowLog = null) }
+    }
+
+    fun dismissOutOfWindowLog() = _uiState.update { it.copy(outOfWindowLog = null) }
+
+    private fun storeRecord(
+        call: String,
+        satName: String,
+        mode: String,
+        txHz: Long?,
+        rxHz: Long?,
+        myGrid: String,
+        timeMillis: Long
+    ) {
+        val normalizedMode = mode.ifBlank { "FM" }.uppercase(Locale.US)
         // kHz granularity (3 decimals in MHz) — enough for operating and for the ADIF export.
         val tx = txHz?.let { (it + 500L) / 1000L * 1000L }
         val rx = rxHz?.let { (it + 500L) / 1000L * 1000L }
         val record = QsoRecord(
-            startUtcMillis = now,
-            endUtcMillis = now,
+            startUtcMillis = timeMillis,
+            endUtcMillis = timeMillis,
             theirCallsign = call,
             myCallsign = _uiState.value.certificateCallsign,
             myGrid = myGrid.take(6).uppercase(Locale.US),
@@ -200,7 +268,7 @@ class LogViewModel(
                 // Only the records that actually made it into the TQ8 may be
                 // marked uploaded later — never the whole candidate list.
                 lastUploadedIds = preview.submittedIds
-                _uiState.update { it.copy(busy = false, preview = preview) }
+                _uiState.update { it.copy(busy = false, preview = preview, uploadGridWarning = preview.gridWarning) }
             } catch (e: LoTWOperationException) {
                 _uiState.update { it.copy(busy = false, message = "Upload unavailable: ${e.reason}") }
             } catch (_: Exception) {
@@ -215,8 +283,9 @@ class LogViewModel(
             _uiState.update { it.copy(busy = true) }
             val result = lotwUploadRepository.upload(preview.id)
             if (result is LoTWUploadResult.Accepted && lastUploadedIds.isNotEmpty()) {
-                // Mark the submitted QSOs as uploaded (distinct from confirmed).
-                qsoRepository.markUploaded(lastUploadedIds)
+                // Mark the submitted QSOs as uploaded (distinct from confirmed) and stamp
+                // the station grids this batch went out under.
+                qsoRepository.markUploaded(lastUploadedIds, preview.grids)
                 lastUploadedIds = emptyList()
             }
             val msg = when (result) {
@@ -230,6 +299,16 @@ class LogViewModel(
     }
 
     fun dismissPreview() = _uiState.update { it.copy(preview = null) }
+
+    /** Operator chose "ignore" on the grid check: keep the prepared preview. */
+    fun ignoreGridWarning() = _uiState.update { it.copy(uploadGridWarning = null) }
+
+    /** Operator chose to fix the station grid first: drop the prepared preview and leave. */
+    fun abandonForGridFix() {
+        lotwUploadRepository.discardPreview()
+        lastUploadedIds = emptyList()
+        _uiState.update { it.copy(uploadGridWarning = null, preview = null) }
+    }
 
     fun clearMessage() = _uiState.update { it.copy(message = "") }
 

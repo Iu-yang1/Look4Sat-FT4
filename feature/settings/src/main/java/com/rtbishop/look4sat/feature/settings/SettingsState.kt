@@ -85,9 +85,16 @@ data class SettingsState(
     val lotwUploadErrorDetail: String = "",
     /** One-click logbook upload: prepared preview awaiting confirmation. */
     val logbookPreview: com.rtbishop.look4sat.core.domain.repository.LoTWUploadPreview? = null,
+    /** Roaming guard: the prepared batch holds records whose own grids fall outside the
+     *  station-location grids — shown as a dialog before the preview opens. */
+    val logbookGridWarning: com.rtbishop.look4sat.core.domain.repository.LoTWGridWarning? = null,
     val logbookUploadBusy: Boolean = false,
     /** User-facing upload message shown inside the logbook dialog ("" = none). */
     val logbookUploadMessage: String = "",
+    /** Logbook multi-select mode (entered by long-pressing a row); checked records can be
+     *  re-uploaded so a corrected station location updates them on LoTW (resubmit). */
+    val logbookSelectionMode: Boolean = false,
+    val logbookSelectedIds: Set<Long> = emptySet(),
     /** 指南针校准精度等级 (校准对话框进度条). */
     val compassAccuracy: CompassAccuracy = CompassAccuracy.UNRELIABLE,
     /** 校正后航向(度, 含磁偏角+手动偏置), 校准对话框实时显示. */
@@ -160,6 +167,16 @@ sealed interface SettingsAction {
     data object PrepareLogbookUpload : SettingsAction
     data object ConfirmLogbookUpload : SettingsAction
     data object DismissLogbookPreview : SettingsAction
+    /** The operator acknowledged the grid mismatch and wants to upload anyway. */
+    data object IgnoreLogbookGridWarning : SettingsAction
+    /** The operator chose to fix the station location first; the preview is discarded. */
+    data object AbandonLogbookForGridFix : SettingsAction
+    /** Long-press on a row: enter selection mode with that record checked. */
+    data class StartLogbookSelection(val id: Long) : SettingsAction
+    data class ToggleLogbookSelection(val id: Long) : SettingsAction
+    data object ExitLogbookSelection : SettingsAction
+    /** Re-upload the checked records — uploaded/confirmed rows included (resubmit). */
+    data object ResubmitSelectedLogbook : SettingsAction
     data object ClearLogbookMessage : SettingsAction
 
     // LoTW upload configuration (certificate + station)

@@ -175,7 +175,7 @@ internal fun radarFillSizes(maxWidth: Dp, maxHeight: Dp): RadarFillSizes {
 }
 
 @Composable
-fun RadarDestination(navigateUp: () -> Unit) {
+fun RadarDestination(navigateUp: () -> Unit, onOpenLoTWStation: () -> Unit = {}) {
     val context = LocalContext.current
     val container = (context.applicationContext as IContainerProvider).getMainContainer()
     val viewModel: RadarViewModel = viewModel(factory = RadarViewModel.factory(container))
@@ -216,9 +216,15 @@ fun RadarDestination(navigateUp: () -> Unit) {
         viewModel.onAction(RadarAction.SstvPermissionResult(granted))
         viewModel.onAction(RadarAction.CwPermissionResult(granted))
     }
+    // Grid-check "fix it" jump from the log page: hand the affected records' grids to the
+    // station-location page as its prefill (mirrors the Grid Finder's hand-off).
+    val openLoTWStationForGridFix: (List<String>) -> Unit = { grids ->
+        if (grids.isNotEmpty()) container.setPendingLoTWStationGrid(grids.joinToString(","))
+        onOpenLoTWStation()
+    }
     RadarScreen(uiState, viewModel::onAction, navigateUpAndClearMutual, mutualData, logViewModel, requestMicPermission = {
         permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
-    })
+    }, onFixGrid = openLoTWStationForGridFix)
 }
 
 @Composable
@@ -228,7 +234,8 @@ private fun RadarScreen(
     navigateUp: () -> Unit,
     mutualData: MutualPassData,
     logViewModel: LogViewModel,
-    requestMicPermission: () -> Unit
+    requestMicPermission: () -> Unit,
+    onFixGrid: (List<String>) -> Unit
 ) {
     val upcomingPass = uiState.currentPass ?: getDefaultPass()
     // 日程功能: 把当前过境写入系统日历(原仓库的 addToCalendar, ic_calendar 按钮)
@@ -308,16 +315,17 @@ private fun RadarScreen(
                         onAction = onAction,
                         logViewModel = logViewModel,
                         requestMicPermission = requestMicPermission,
+                        onFixGrid = onFixGrid,
                         modifier = Modifier.weight(1f)
                     )
                 } else {
                     RadarCard(uiState, trackB, trackBPosition, Modifier.weight(1f))
-                    PagerCard(uiState, onAction, logViewModel, requestMicPermission, Modifier.weight(1f))
+                    PagerCard(uiState, onAction, logViewModel, requestMicPermission, Modifier.weight(1f), onFixGrid = onFixGrid)
                 }
             } else {
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     RadarCard(uiState, trackB, trackBPosition, Modifier.weight(1f))
-                    PagerCard(uiState, onAction, logViewModel, requestMicPermission, Modifier.weight(1f))
+                    PagerCard(uiState, onAction, logViewModel, requestMicPermission, Modifier.weight(1f), onFixGrid = onFixGrid)
                 }
             }
         }
@@ -338,6 +346,7 @@ private fun RadarFillArea(
     onAction: (RadarAction) -> Unit,
     logViewModel: LogViewModel,
     requestMicPermission: () -> Unit,
+    onFixGrid: (List<String>) -> Unit,
     modifier: Modifier = Modifier
 ) {
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
@@ -351,7 +360,7 @@ private fun RadarFillArea(
                 verticalArrangement = Arrangement.spacedBy(ROW_GAP)
             ) {
                 RadarCard(uiState, trackB, trackBPosition, Modifier.height(sizes.radarSide).fillMaxWidth())
-                PagerCard(uiState, onAction, logViewModel, requestMicPermission, Modifier.height(sizes.pagerSpace))
+                PagerCard(uiState, onAction, logViewModel, requestMicPermission, Modifier.height(sizes.pagerSpace), onFixGrid = onFixGrid)
             }
         } else {
             Box(modifier = Modifier.fillMaxSize()) {
@@ -361,6 +370,7 @@ private fun RadarFillArea(
                     onAction = onAction,
                     logViewModel = logViewModel,
                     requestMicPermission = requestMicPermission,
+                    onFixGrid = onFixGrid,
                     panelHeight = pagerPanelHeight,
                     modifier = Modifier.align(Alignment.BottomCenter)
                 )
@@ -380,6 +390,7 @@ private fun CompactPagerOverlay(
     onAction: (RadarAction) -> Unit,
     logViewModel: LogViewModel,
     requestMicPermission: () -> Unit,
+    onFixGrid: (List<String>) -> Unit,
     panelHeight: Dp,
     modifier: Modifier = Modifier
 ) {
@@ -420,6 +431,7 @@ private fun CompactPagerOverlay(
             onAction = onAction,
             logViewModel = logViewModel,
             requestMicPermission = requestMicPermission,
+            onFixGrid = onFixGrid,
             modifier = modifier
                 .fillMaxWidth()
                 .height(panelHeight),
@@ -453,7 +465,8 @@ private fun PagerCard(
     requestMicPermission: () -> Unit,
     modifier: Modifier = Modifier,
     startPage: RadarPage? = null,
-    onCollapse: (() -> Unit)? = null
+    onCollapse: (() -> Unit)? = null,
+    onFixGrid: (List<String>) -> Unit = {}
 ) {
     val pages = rememberRadarPages(uiState)
     val pagerState = rememberPagerState(
@@ -515,7 +528,8 @@ private fun PagerCard(
                     )
                     RadarPage.Log -> LogPage(
                         uiState = uiState,
-                        logViewModel = logViewModel
+                        logViewModel = logViewModel,
+                        onFixGrid = onFixGrid
                     )
                     RadarPage.Sstv -> SstvPage(
                         sstv = uiState.sstv,

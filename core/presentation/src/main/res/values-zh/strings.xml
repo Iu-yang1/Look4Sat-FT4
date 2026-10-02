@@ -197,6 +197,14 @@
     <string name="prefs_logbook_upload">上传</string>
     <string name="prefs_logbook_upload_title">上传到 LoTW</string>
     <string name="prefs_logbook_upload_confirm">确认上传</string>
+    <string name="prefs_logbook_resubmit">重传选中 (%1$d)</string>
+    <string name="prefs_logbook_selected">已选 %1$d 条</string>
+    <string name="prefs_logbook_select_hint">长按记录行可多选重传</string>
+    <string name="prefs_logbook_resubmit_note">已上传记录将按当前台址就地更新；已被奖项使用的旧网格可能被拒绝。</string>
+    <string name="lotw_upload_grid_title">上传前核对</string>
+    <string name="lotw_upload_grid_fix">修改台址</string>
+    <string name="lotw_upload_grid_ignore">忽略</string>
+    <string name="lotw_upload_grid_mismatch">有 %1$d 条记录的自己的网格不在上传台址内（记录：%2$s；台址：%3$s）——请确认台址是通联时实际所在的网格。</string>
     <string name="prefs_lotw_upload_title">LoTW 上传证书</string>
     <string name="prefs_lotw_upload_configured">证书已导入 · 台址网格 %1$s</string>
     <string name="prefs_lotw_upload_not_configured">未配置 — 导入 TrustedQSL 证书后即可上传通联</string>
@@ -406,6 +414,9 @@
     <string name="qso_edit_comment">备注</string>
     <string name="qso_edit_save">保存</string>
     <string name="qso_edit_cancel">取消</string>
+    <string name="log_out_window_title">不在过境窗口</string>
+    <string name="log_out_window_message">当前时间不在该过境窗口内，将默认按过境中点 %1$s 录入；如需修改，请点击该条通联记录。</string>
+    <string name="log_out_window_confirm">录入</string>
     <string name="qso_edit_err_callsign">呼号不能为空</string>
     <string name="qso_edit_err_datetime">日期或时间格式不对 —— 应为 yyyy-MM-dd 与 HH:mm:ss（UTC）</string>
     <string name="qso_edit_err_frequency">频率格式不对 —— 请输入 MHz，例如 145.850</string>

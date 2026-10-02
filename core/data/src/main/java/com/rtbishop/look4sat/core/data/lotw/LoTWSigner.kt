@@ -39,7 +39,14 @@ internal class LoTWSigner(private val config: LoTWConfig) {
             !call.any(Char::isLetter) || !call.any(Char::isDigit)) fail(LoTWProblem.INVALID_CONTACT, call)
         if (!record.myCallsign.trim().equals(key.info.callsign, true)) fail(LoTWProblem.CALLSIGN_MISMATCH, call)
         val date = utc(record.startUtcMillis, "yyyy-MM-dd")
-        if (date < key.info.firstQsoDate || (key.info.lastQsoDate.isNotBlank() && date > key.info.lastQsoDate) || record.startUtcMillis > now) {
+        // A record dated after "now" gets its own message: it happens when the operator
+        // logged against a pass that had not started yet (out-of-window flow), and "fix the
+        // time" is the actionable advice. Reporting it as "outside the certificate" sent one
+        // operator hunting the certificate while the culprit was the record's future time.
+        if (record.startUtcMillis > now) {
+            fail(LoTWProblem.QSO_FUTURE, "$call @ ${utc(record.startUtcMillis, "MM-dd HH:mm'Z'")}")
+        }
+        if (date < key.info.firstQsoDate || (key.info.lastQsoDate.isNotBlank() && date > key.info.lastQsoDate)) {
             fail(LoTWProblem.QSO_DATE, call)
         }
         fun mhz(hz: Long?): String = hz?.let { BigDecimal.valueOf(it, 6).stripTrailingZeros().toPlainString() }.orEmpty()

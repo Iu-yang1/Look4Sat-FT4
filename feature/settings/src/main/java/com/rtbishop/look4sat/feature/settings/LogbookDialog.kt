@@ -9,7 +9,9 @@
  */
 package com.rtbishop.look4sat.feature.settings
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -26,6 +28,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -33,6 +36,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
@@ -47,6 +52,8 @@ import com.rtbishop.look4sat.core.presentation.QsoEditDialog
 import com.rtbishop.look4sat.core.presentation.SheetDialogTitle
 import com.rtbishop.look4sat.core.presentation.sheetDialogContainerColor
 import com.rtbishop.look4sat.core.presentation.sheetDialogShape
+import com.rtbishop.look4sat.core.presentation.gridsLabel
+import com.rtbishop.look4sat.core.presentation.LoTWGridWarningDialog
 import com.rtbishop.look4sat.core.presentation.R
 import com.rtbishop.look4sat.core.presentation.SharedDialog
 import com.rtbishop.look4sat.core.presentation.SwipeController
@@ -82,24 +89,39 @@ fun LogbookDialog(
     uploadBusy: Boolean,
     uploadMessage: String,
     preview: com.rtbishop.look4sat.core.domain.repository.LoTWUploadPreview?,
+    gridWarning: com.rtbishop.look4sat.core.domain.repository.LoTWGridWarning? = null,
     onDismiss: () -> Unit,
     onDelete: (Long) -> Unit,
     onEdit: (QsoRecord) -> Unit,
     onUpload: () -> Unit,
     onConfirmUpload: () -> Unit,
     onDismissPreview: () -> Unit,
-    onDismissMessage: () -> Unit
+    onDismissMessage: () -> Unit,
+    onIgnoreGridWarning: () -> Unit = {},
+    onFixGrid: (List<String>) -> Unit = {},
+    selectionMode: Boolean = false,
+    selectedIds: Set<Long> = emptySet(),
+    onStartSelection: (Long) -> Unit = {},
+    onToggleSelection: (Long) -> Unit = {},
+    onExitSelection: () -> Unit = {},
+    onResubmitSelected: () -> Unit = {}
 ) {
     val swipeController = rememberSwipeController()
+    // Entering selection mode closes any row left swiped open — reveals are off there.
+    LaunchedEffect(selectionMode) { if (selectionMode) swipeController.close() }
     // Record currently open in the edit dialog (null when closed).
     var editTarget by remember { mutableStateOf<QsoRecord?>(null) }
     SharedDialog(
         title = stringResource(R.string.prefs_logbook_title),
         onDismissRequest = onDismiss,
-        onCancel = onDismiss,
-        onAccept = onUpload,
-        acceptText = stringResource(R.string.prefs_logbook_upload),
-        acceptEnabled = !uploadBusy
+        onCancel = if (selectionMode) onExitSelection else onDismiss,
+        onAccept = if (selectionMode) onResubmitSelected else onUpload,
+        acceptText = if (selectionMode) {
+            stringResource(R.string.prefs_logbook_resubmit, selectedIds.size)
+        } else {
+            stringResource(R.string.prefs_logbook_upload)
+        },
+        acceptEnabled = if (selectionMode) selectedIds.isNotEmpty() && !uploadBusy else !uploadBusy
     ) {
         Column(
             modifier = Modifier.fillMaxWidth().padding(horizontal = LocalSpacing.current.large),
@@ -108,6 +130,21 @@ fun LogbookDialog(
             if (records.isEmpty()) {
                 Text(stringResource(R.string.prefs_logbook_empty), fontSize = 14.sp)
             } else {
+                // Selection mode shows the checked count; otherwise a hint that long-press
+                // opens it (the path to resubmitting already-uploaded records).
+                if (selectionMode) {
+                    Text(
+                        text = stringResource(R.string.prefs_logbook_selected, selectedIds.size),
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                } else {
+                    Text(
+                        text = stringResource(R.string.prefs_logbook_select_hint),
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
                 LazyColumn(
                     modifier = Modifier.fillMaxWidth().heightIn(max = 420.dp),
                     verticalArrangement = Arrangement.spacedBy(2.dp)
@@ -115,9 +152,16 @@ fun LogbookDialog(
                     items(records, key = { it.id }) { record ->
                         LogbookRow(
                             record = record,
+                            selectionMode = selectionMode,
+                            selected = record.id in selectedIds,
                             swipeController = swipeController,
                             onDelete = { onDelete(record.id) },
-                            onClick = { editTarget = record }
+                            onClick = {
+                                if (selectionMode) onToggleSelection(record.id) else editTarget = record
+                            },
+                            onLongClick = {
+                                if (selectionMode) onToggleSelection(record.id) else onStartSelection(record.id)
+                            }
                         )
                     }
                 }
@@ -125,7 +169,15 @@ fun LogbookDialog(
         }
     }
 
-    if (preview != null) {
+    if (gridWarning != null) {
+        // Roaming guard: the batch would be signed under a station grid it was not operated
+        // from — confirm the station location before the preview opens.
+        LoTWGridWarningDialog(
+            warning = gridWarning,
+            onFixStation = { onFixGrid(gridWarning.recordGrids) },
+            onIgnore = onIgnoreGridWarning
+        )
+    } else if (preview != null) {
         LogbookUploadPreviewDialog(
             preview = preview,
             busy = uploadBusy,
@@ -194,6 +246,15 @@ private fun LogbookUploadPreviewDialog(
                     }
                     Text(parts.joinToString(" · "), fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
                 }
+                if (preview.resubmit) {
+                    // LoTW treats an identical contact as an update, except grids already
+                    // locked in by award credits — say so before the operator commits.
+                    Text(
+                        stringResource(R.string.prefs_logbook_resubmit_note),
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
                 Text(preview.contacts.joinToString("\n") { it }, fontSize = 12.sp, maxLines = 8)
             }
         },
@@ -208,12 +269,19 @@ private fun LogbookUploadPreviewDialog(
     )
 }
 
+/** Confirmed-grid colour: the map's worked-grid green, so "confirmed" reads the same everywhere. */
+private val ConfirmedGreen = Color(0xFF4CD964)
+
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun LogbookRow(
     record: QsoRecord,
+    selectionMode: Boolean,
+    selected: Boolean,
     swipeController: SwipeController,
     onDelete: () -> Unit,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    onLongClick: () -> Unit
 ) {
     val time = remember(record.startUtcMillis) {
         SimpleDateFormat("MM-dd HH:mm'Z'", Locale.US).apply {
@@ -222,11 +290,13 @@ private fun LogbookRow(
     }
     val satShort = record.satelliteName.substringBefore('(').trim()
     val band = record.band.ifBlank { frequencyBand(record.txFrequencyHz) }
-    // 右划露出删除按钮（短信式）；整行点击不再删除。
+    val haptics = LocalHapticFeedback.current
+    // 右划露出删除按钮（短信式）；整行点击不再删除。选择模式下右划禁用、长按进入多选。
     SwipeRevealRow(
         key = record.id.toString(),
         controller = swipeController,
         revealAction = onDelete,
+        gesturesEnabled = !selectionMode,
         modifier = Modifier.fillMaxWidth()
     ) {
         // Row style mirrors the worked-grid QSO details on the map: callsign in
@@ -234,10 +304,30 @@ private fun LogbookRow(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable { onClick() }
+                .combinedClickable(
+                    onClick = onClick,
+                    onLongClick = {
+                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                        onLongClick()
+                    }
+                )
                 .padding(horizontal = 4.dp, vertical = 8.dp)
         ) {
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                // Checkbox slot: only while picking records for a resubmit.
+                if (selectionMode) {
+                    Text(
+                        text = if (selected) "✓" else "○",
+                        fontSize = 15.sp,
+                        fontFamily = FontFamily.Monospace,
+                        color = if (selected) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                        },
+                        modifier = Modifier.padding(end = 6.dp)
+                    )
+                }
                 Text(
                     text = record.theirCallsign,
                     style = MaterialTheme.typography.titleMedium,
@@ -247,14 +337,30 @@ private fun LogbookRow(
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f)
                 )
+                // Confirmed contacts show the opposite station's grid set from the LoTW
+                // report (single or multi-grid, abbreviated) in the worked-grid green
+                // instead of the word QSL; without any grid the QSL text stays.
                 if (record.lotwConfirmed) {
-                    Text(text = "QSL", fontSize = 13.sp, color = MaterialTheme.colorScheme.primary, fontFamily = FontFamily.Monospace)
+                    val oppositeGrids = gridsLabel(
+                        record.theirVuccGrids.ifEmpty { listOf(record.theirGrid) }
+                    )
+                    if (oppositeGrids.isNotEmpty()) {
+                        Text(text = oppositeGrids, fontSize = 13.sp, color = ConfirmedGreen, fontFamily = FontFamily.Monospace)
+                    } else {
+                        Text(text = "QSL", fontSize = 13.sp, color = MaterialTheme.colorScheme.primary, fontFamily = FontFamily.Monospace)
+                    }
                 } else if (record.lotwUploaded) {
                     Text(text = "UP", fontSize = 13.sp, color = MaterialTheme.colorScheme.primary, fontFamily = FontFamily.Monospace)
                 }
             }
             Text(
-                text = listOf(satShort, record.displayMode, band, time).filter { it.isNotBlank() }.joinToString(" · "),
+                // Own station grid: the set the upload was stamped with, or — for rows from
+                // before the stamp existed — the grid the QSO was logged under, so every
+                // stored contact shows where the operator was.
+                text = listOf(
+                    satShort, record.displayMode, band, time,
+                    gridsLabel(record.vuccGrids.ifEmpty { listOf(record.myGrid) })
+                ).filter { it.isNotBlank() }.joinToString(" · "),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,

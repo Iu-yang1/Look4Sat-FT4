@@ -31,6 +31,7 @@ fun LoTWProblem.label(): String = when (this) {
     LoTWProblem.SATELLITE -> "satellite name not in ARRL's list"
     LoTWProblem.MODE -> "mode not accepted by LoTW"
     LoTWProblem.QSO_DATE -> "date outside the certificate"
+    LoTWProblem.QSO_FUTURE -> "record time is in the future"
     LoTWProblem.CALLSIGN_MISMATCH -> "MY callsign does not match the certificate"
     LoTWProblem.INVALID_CONTACT -> "invalid callsign/record"
     LoTWProblem.STATION_GRID -> "station grid missing"

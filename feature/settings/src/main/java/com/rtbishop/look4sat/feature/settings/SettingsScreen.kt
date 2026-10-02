@@ -94,14 +94,29 @@ fun SettingsDestination(onOpenGridFinder: () -> Unit = {}) {
     val container = (context.applicationContext as IContainerProvider).getMainContainer()
     val viewModel: SettingsViewModel = viewModel(factory = SettingsViewModel.factory(container, context))
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-    SettingsScreen(uiState, viewModel::onAction, onOpenGridFinder)
+    // Station-grid prefill for the "fix it" jump from the logbook grid check (single-use,
+    // mirrors the Grid Finder's "Set as LoTW station" hand-off).
+    val pendingStationGrid by container.pendingLoTWStationGrid.collectAsStateWithLifecycle()
+    SettingsScreen(
+        uiState = uiState,
+        onAction = viewModel::onAction,
+        onOpenGridFinder = onOpenGridFinder,
+        pendingStationGrid = pendingStationGrid.orEmpty(),
+        onFixStationGrid = { grids ->
+            if (grids.isNotEmpty()) container.setPendingLoTWStationGrid(grids.joinToString(","))
+        },
+        onClearStationGridPrefill = { container.setPendingLoTWStationGrid(null) }
+    )
 }
 
 @Composable
 private fun SettingsScreen(
     uiState: SettingsState,
     onAction: (SettingsAction) -> Unit,
-    onOpenGridFinder: () -> Unit
+    onOpenGridFinder: () -> Unit,
+    pendingStationGrid: String = "",
+    onFixStationGrid: (List<String>) -> Unit = {},
+    onClearStationGridPrefill: () -> Unit = {}
 ) {
     var showUpdateChecker by rememberSaveable { mutableStateOf(false) }
     var showMapSettings by rememberSaveable { mutableStateOf(false) }
@@ -277,13 +292,33 @@ private fun SettingsScreen(
             uploadBusy = uiState.logbookUploadBusy,
             uploadMessage = uiState.logbookUploadMessage,
             preview = uiState.logbookPreview,
-            onDismiss = { dialogs.logbook = false },
+            gridWarning = uiState.logbookGridWarning,
+            onDismiss = {
+                // Leaving the logbook resets the resubmit selection: re-entering starts
+                // clean — the operator long-presses again to pick records.
+                onAction(SettingsAction.ExitLogbookSelection)
+                dialogs.logbook = false
+            },
             onDelete = { onAction(SettingsAction.DeleteLogbookRecord(it)) },
             onEdit = { onAction(SettingsAction.UpdateLogbookRecord(it)) },
             onUpload = { onAction(SettingsAction.PrepareLogbookUpload) },
             onConfirmUpload = { onAction(SettingsAction.ConfirmLogbookUpload) },
             onDismissPreview = { onAction(SettingsAction.DismissLogbookPreview) },
-            onDismissMessage = { onAction(SettingsAction.ClearLogbookMessage) }
+            onDismissMessage = { onAction(SettingsAction.ClearLogbookMessage) },
+            onIgnoreGridWarning = { onAction(SettingsAction.IgnoreLogbookGridWarning) },
+            onFixGrid = { grids ->
+                onAction(SettingsAction.AbandonLogbookForGridFix)
+                onAction(SettingsAction.ExitLogbookSelection)
+                dialogs.logbook = false
+                onFixStationGrid(grids)
+                dialogs.lotwUpload = true
+            },
+            selectionMode = uiState.logbookSelectionMode,
+            selectedIds = uiState.logbookSelectedIds,
+            onStartSelection = { onAction(SettingsAction.StartLogbookSelection(it)) },
+            onToggleSelection = { onAction(SettingsAction.ToggleLogbookSelection(it)) },
+            onExitSelection = { onAction(SettingsAction.ExitLogbookSelection) },
+            onResubmitSelected = { onAction(SettingsAction.ResubmitSelectedLogbook) }
         )
     }
     if (dialogs.lotwUpload) {
@@ -294,7 +329,11 @@ private fun SettingsScreen(
             busy = uiState.lotwUploadBusy,
             error = uiState.lotwUploadError,
             errorDetail = uiState.lotwUploadErrorDetail,
-            onDismiss = { dialogs.lotwUpload = false },
+            initialGrid = pendingStationGrid,
+            onDismiss = {
+                dialogs.lotwUpload = false
+                onClearStationGridPrefill()
+            },
             onImport = { bytes, password -> onAction(SettingsAction.ImportLoTWCertificate(bytes, password)) },
             onRemove = { onAction(SettingsAction.RemoveLoTWCertificate) },
             onSaveStation = { onAction(SettingsAction.SaveLoTWStation(it)) }

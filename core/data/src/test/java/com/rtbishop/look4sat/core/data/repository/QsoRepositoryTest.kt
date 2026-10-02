@@ -52,6 +52,9 @@ class QsoRepositoryTest {
         // The row is also renamed to the ARRL spelling while it is merged.
         assertEquals("SO-50", rows.first().satelliteName)
         assertEquals(145_850_000L, rows.first().txFrequencyHz)
+        // The opposite station's grid set from the report lands on the row.
+        assertEquals("EN52", rows.first().theirGrid)
+        assertEquals("EN52,EN53", rows.first().theirVuccGrids)
     }
 
     @Test
@@ -122,6 +125,106 @@ class QsoRepositoryTest {
         dao.save(loggedInApp("FOO-1", lotwUploaded = false).toEntity())
         repository.consolidateConfirmations()
         assertEquals(setOf("SO-50", "FOO-1"), dao.getAll().map { it.satelliteName }.toSet())
+    }
+
+    @Test
+    fun consolidateConfirmations_foldsADoubledConfirmedPairKeepingTheRicherRow() = runBlocking {
+        // The mirrored import the old parser created (no frequencies, no report-side grids —
+        // the pre-fix parser filled neither — band direction reversed)... seeded FIRST so it
+        // carries the lower id.
+        dao.save(
+            reportConfirmation(satName = "SO-50")
+                .copy(band = "70CM", rxBand = "2M", theirGrid = "", theirVuccGrids = emptyList())
+                .toEntity()
+        )
+        // ...plus the app row that was confirmed on its own later (frequencies, upload state).
+        val localId = dao.save(
+            loggedInApp("SO-50", lotwUploaded = true).copy(lotwConfirmed = true).toEntity()
+        )
+
+        assertEquals(1, repository.consolidateConfirmations())
+
+        val rows = dao.getAll()
+        assertEquals(1, rows.size)
+        assertEquals(localId, rows.first().id)
+        // The surviving row keeps the correct uplink-first bands and gains the report fills.
+        assertEquals("2M", rows.first().band)
+        assertEquals("70CM", rows.first().rxBand)
+        assertEquals("OL62", rows.first().myGrid)
+        assertEquals(318, rows.first().dxcc)
+        assertEquals("China", rows.first().country)
+        assertTrue(rows.first().lotwUploaded)
+    }
+
+    @Test
+    fun mergeLoTW_healsADoubledMirroredContact() = runBlocking {
+        // Two mirrored copies of one confirmation (as the pre-fix parser imported on separate
+        // syncs — no frequencies, no report-side grids): the full sync must consolidate them
+        // into one row with the report's direction.
+        val stale = reportConfirmation(satName = "SO-50")
+            .copy(band = "70CM", rxBand = "2M", theirGrid = "", theirVuccGrids = emptyList())
+        dao.save(stale.toEntity())
+        dao.save(stale.copy(id = 0L).toEntity())
+
+        repository.mergeLoTW(listOf(reportConfirmation(satName = "SO-50")))
+
+        val rows = dao.getAll()
+        assertEquals(1, rows.size)
+        assertEquals("2M", rows.first().band)
+        assertEquals("70CM", rows.first().rxBand)
+        // The report's fills land on the healed row.
+        assertEquals("EN52", rows.first().theirGrid)
+    }
+
+    @Test
+    fun mergeLoTW_healsAMirroredRowWhoseDedupeKeyDivergedFromTheReport() = runBlocking {
+        // The doubled contacts of the reported bug: a mirrored row written by an older release
+        // (millisecond-precision timestamp here — enough to make the dedupe key, which holds
+        // the exact time, differ from the report's) used to gain a second row next to it
+        // instead of being healed, because every net relied on the key or the strict bands.
+        val staleId = dao.save(
+            reportConfirmation(satName = "SO-50")
+                .copy(
+                    band = "70CM", rxBand = "2M", theirGrid = "", theirVuccGrids = emptyList(),
+                    startUtcMillis = qsoStart + 456L
+                )
+                .toEntity()
+        )
+
+        repository.mergeLoTW(listOf(reportConfirmation(satName = "SO-50")))
+
+        val rows = dao.getAll()
+        assertEquals(1, rows.size)
+        assertEquals(staleId, rows.first().id)
+        assertEquals("2M", rows.first().band)
+        assertEquals("70CM", rows.first().rxBand)
+        assertTrue(rows.first().lotwConfirmed)
+        assertEquals("EN52", rows.first().theirGrid)
+    }
+
+    @Test
+    fun mergeLoTW_foldsAMirroredRowSpelledAsPlainMfskIntoItsFt4Report() = runBlocking {
+        // Releases that persisted no sub-mode stored FT4 rows as plain MFSK while the report
+        // carries MFSK + FT4. The spelling difference must not block the heal either.
+        dao.save(
+            reportConfirmation(satName = "SO-50")
+                .copy(
+                    band = "70CM", rxBand = "2M", mode = "MFSK", submode = "",
+                    theirGrid = "", theirVuccGrids = emptyList()
+                )
+                .toEntity()
+        )
+
+        repository.mergeLoTW(
+            listOf(reportConfirmation(satName = "SO-50").copy(mode = "MFSK", submode = "FT4"))
+        )
+
+        val rows = dao.getAll()
+        assertEquals(1, rows.size)
+        assertEquals("2M", rows.first().band)
+        assertEquals("70CM", rows.first().rxBand)
+        assertTrue(rows.first().lotwConfirmed)
+        assertEquals("EN52", rows.first().theirGrid)
     }
 
     @Test
@@ -221,7 +324,8 @@ class QsoRepositoryTest {
         cqz = 24,
         state = "GD",
         myGrid = "OL62",
-        myGrids = setOf("OL62", "OL63")
+        myGrids = setOf("OL62", "OL63"),
+        theirGrids = listOf("EN52", "EN53")
     ).toConfirmedRecord("BA7OPF")
 
     private fun QsoRecord.toEntity() = QsoEntity(
@@ -254,6 +358,7 @@ class QsoRepositoryTest {
         lotwReceived = lotwReceived,
         lotwQslDate = lotwQslDate,
         vuccGrids = vuccGrids.joinToString(","),
+        theirVuccGrids = theirVuccGrids.joinToString(","),
         dxcc = dxcc,
         country = country,
         cqZone = cqZone,

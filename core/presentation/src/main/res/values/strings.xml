@@ -226,6 +226,14 @@
     <string name="prefs_logbook_upload">Upload</string>
     <string name="prefs_logbook_upload_title">Upload to LoTW</string>
     <string name="prefs_logbook_upload_confirm">Upload</string>
+    <string name="prefs_logbook_resubmit">Resubmit (%1$d)</string>
+    <string name="prefs_logbook_selected">%1$d selected</string>
+    <string name="prefs_logbook_select_hint">Long-press a row to re-upload corrected records</string>
+    <string name="prefs_logbook_resubmit_note">Existing contacts will be updated in place — a grid already used for an award may be rejected.</string>
+    <string name="lotw_upload_grid_title">Upload check</string>
+    <string name="lotw_upload_grid_fix">Fix station location</string>
+    <string name="lotw_upload_grid_ignore">Ignore</string>
+    <string name="lotw_upload_grid_mismatch">%1$d record(s) log a grid outside the upload station location (records: %2$s; station: %3$s). Verify the station location is where you actually operated.</string>
     <string name="prefs_lotw_upload_title">LoTW upload certificate</string>
     <string name="prefs_lotw_upload_configured">Certificate imported · station grid %1$s</string>
     <string name="prefs_lotw_upload_not_configured">Not configured — import your TrustedQSL certificate to upload QSOs</string>
@@ -434,6 +442,9 @@ Upstream: https://github.com/rt-bishop/Look4Sat</string>
     <string name="qso_edit_comment">Comment</string>
     <string name="qso_edit_save">Save</string>
     <string name="qso_edit_cancel">Cancel</string>
+    <string name="log_out_window_title">Outside pass window</string>
+    <string name="log_out_window_message">The current time is outside this pass window. The contact will be logged at the pass midpoint %1$s by default; tap the record afterwards to change the time if needed.</string>
+    <string name="log_out_window_confirm">Log it</string>
     <string name="qso_edit_err_callsign">Callsign is required</string>
     <string name="qso_edit_err_datetime">Invalid date/time — use yyyy-MM-dd and HH:mm:ss (UTC)</string>
     <string name="qso_edit_err_frequency">Invalid frequency — enter MHz, e.g. 145.850</string>

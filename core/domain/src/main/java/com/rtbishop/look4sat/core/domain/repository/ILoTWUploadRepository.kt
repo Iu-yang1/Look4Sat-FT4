@@ -19,6 +19,7 @@
 package com.rtbishop.look4sat.core.domain.repository
 
 import com.rtbishop.look4sat.core.domain.logbook.QsoRecord
+import java.util.Locale
 
 interface ILoTWUploadRepository {
     suspend fun certificate(): LoTWCertificate?
@@ -96,7 +97,26 @@ data class LoTWUploadPreview(
     val duplicateSkipped: Int = 0,
     /** Ids of the records that actually made it into this TQ8 batch. Only these
      *  may be marked "uploaded" after an accepted POST — never the full candidate list. */
-    val submittedIds: List<Long> = emptyList()
+    val submittedIds: List<Long> = emptyList(),
+    /** The full station-location grid set this batch is signed with (1 inside a grid,
+     *  2 on a line, 4 on a corner). Stamped onto the uploaded records so the logbook
+     *  can show which gridsquares the QSO went out under. */
+    val grids: List<String> = emptyList(),
+    /** Records whose own grids fall outside this batch's station location — the fingerprint
+     *  of uploading while roaming with a stale station location. Null when all covered. */
+    val gridWarning: LoTWGridWarning? = null,
+    /** True when this batch is a resubmit: already-uploaded/confirmed records were allowed
+     *  through so the corrected station location reaches LoTW as an update of the contact. */
+    val resubmit: Boolean = false
+)
+
+/** Pre-upload grid audit result: [count] records carry own grids outside the station grids. */
+data class LoTWGridWarning(
+    val count: Int,
+    /** Distinct own grids of the affected records (normalized, 4 characters). */
+    val recordGrids: List<String>,
+    /** Distinct station-location grids this batch would be signed with. */
+    val stationGrids: List<String>
 )
 
 /** Why the un-uploadable records of a selection cannot be signed, and what was left out. */
@@ -128,7 +148,36 @@ class LoTWOperationException(val reason: LoTWProblem, val detail: String = "") :
 
 enum class LoTWProblem {
     CERTIFICATE_PASSWORD, CERTIFICATE_INVALID, CERTIFICATE_EXPIRED, CERTIFICATE_MISSING,
-    CERTIFICATE_FORMAT, STORAGE, EMPTY_SELECTION, CALLSIGN_MISMATCH, QSO_DATE, STATION_GRID,
+    CERTIFICATE_FORMAT, STORAGE, EMPTY_SELECTION, CALLSIGN_MISMATCH, QSO_DATE, QSO_FUTURE, STATION_GRID,
     STATION_REGION, STATION_ZONE, STATION_IOTA, MODE, BAND, SATELLITE, INVALID_CONTACT,
     LOCATION_MISMATCH, TOO_MANY_CONTACTS
 }
+
+/**
+ * Records whose own grids (the set a previous upload stamped, else the logged grid) do not
+ * appear at all in the station-location grids an upload goes out under — the signature of
+ * uploading while roaming with a station location that was never updated. Records without
+ * any grid are not flagged, and a partially covered set (boundary operations) is not
+ * flagged either: only a fully disjoint pair, which is always a mistake, warns.
+ */
+fun uploadGridWarning(records: List<QsoRecord>, stationGrids: List<String>): LoTWGridWarning? {
+    val station = stationGrids.mapNotNull { it.grid4() }.toSet()
+    if (station.isEmpty()) return null
+    val affected = records.filter { record ->
+        val own = record.ownGrids()
+        own.isNotEmpty() && own.none { it in station }
+    }
+    if (affected.isEmpty()) return null
+    return LoTWGridWarning(
+        affected.size,
+        affected.flatMap { it.ownGrids() }.distinct().sorted(),
+        station.sorted()
+    )
+}
+
+/** The grid set a previous upload stamped onto the record, else the grid it was logged under. */
+private fun QsoRecord.ownGrids(): Set<String> =
+    (vuccGrids.ifEmpty { listOf(myGrid) }).mapNotNull { it.grid4() }.toSet()
+
+/** Normalized 4-character grid, null when the value is not a usable grid. */
+private fun String.grid4(): String? = trim().uppercase(Locale.US).take(4).takeIf { it.length >= 4 }

@@ -40,7 +40,8 @@ class LogbookMergeTest {
         propagationMode = "SAT",
         status = QsoStatus.COMPLETE,
         lotwConfirmed = true,
-        vuccGrids = listOf("OM60", "OM50")
+        vuccGrids = listOf("OM60", "OM50"),
+        theirVuccGrids = listOf("EN52", "EN53")
     )
 
     @Test
@@ -74,11 +75,23 @@ class LogbookMergeTest {
     }
 
     @Test
+    fun confirmationLookupKey_groupsMfskAndFt4Spellings() {
+        // Satellite FT4 is MFSK + FT4; a row persisted by an older release as plain MFSK is
+        // the same mode and must resolve to the same contact.
+        val plainMfsk = confirmed.copy(mode = "MFSK", submode = "")
+        val ft4 = confirmed.copy(mode = "MFSK", submode = "FT4")
+        assertEquals(plainMfsk.confirmationLookupKey(), ft4.confirmationLookupKey())
+        assertTrue(sameContactIdentity(plainMfsk, ft4))
+    }
+
+    @Test
     fun withConfirmation_marksConfirmedAndMergesVuccGrids() {
         val merged = local.withConfirmation(confirmed)
         assertTrue(merged.lotwConfirmed)
         assertTrue(merged.lotwReceived)
         assertEquals(listOf("OM60", "OM50"), merged.vuccGrids)
+        // The opposite station's grid set arrives with the confirmation too.
+        assertEquals(listOf("EN52", "EN53"), merged.theirVuccGrids)
         // Local myCallsign is kept when present; only blanks are backfilled.
         assertEquals("ba7opf", merged.myCallsign)
     }
@@ -97,13 +110,16 @@ class LogbookMergeTest {
             cqz = 24,
             state = "GD",
             myGrid = "OM60",
-            myGrids = setOf("OM60", "OM50")
+            myGrids = setOf("OM60", "OM50"),
+            theirGrids = listOf("EN52", "EN53")
         )
         val record = qso.toConfirmedRecord("ba7opf")
         assertEquals("BH6RJD", record.theirCallsign)
         assertEquals("BA7OPF", record.myCallsign)
         assertEquals("OM60", record.myGrid)
         assertEquals(listOf("OM60", "OM50"), record.vuccGrids)
+        assertEquals("EN52", record.theirGrid)
+        assertEquals(listOf("EN52", "EN53"), record.theirVuccGrids)
         assertTrue(record.lotwConfirmed)
         assertTrue(record.isSatellite)
         assertEquals("70CM", record.band)
@@ -196,6 +212,30 @@ class LogbookMergeTest {
         assertEquals(1, pairs.size)
         assertEquals(0, pairs.first().localIndex)
         assertEquals(1, pairs.first().confirmationIndex)
+    }
+
+    @Test
+    fun splitConfirmationPairs_foldsTwoConfirmedRowsAndKeepsTheRicher() {
+        // A contact stored twice with BOTH sides confirmed: the mirrored import the old parser
+        // created (no frequencies, report-only fills) plus the app row that was confirmed on
+        // its own later (frequencies, upload state). Pass 1 cannot fold those; without pass 2
+        // they stay doubled in the logbook forever.
+        val mirroredImport = reportedRecord("SO-50", band = "70CM", rxBand = "2M").copy(id = 1L)
+        val confirmedLocal = loggedRecord("SAUDISAT 1C", 145_850_000L, 436_795_000L)
+            .copy(id = 2L, lotwConfirmed = true)
+        val pairs = splitConfirmationPairs(listOf(mirroredImport, confirmedLocal))
+        assertEquals(1, pairs.size)
+        // The richer row (frequencies + consistent bands + upload state) is the survivor.
+        assertEquals(1, pairs.first().localIndex)
+        assertEquals(0, pairs.first().confirmationIndex)
+    }
+
+    @Test
+    fun splitConfirmationPairs_keepsTwoConfirmedRowsOfDifferentMinutesApart() {
+        val one = reportedRecord("SO-50", band = "70CM", rxBand = "2M").copy(id = 1L)
+        val otherMinute = reportedRecord("SO-50", band = "2M", rxBand = "70CM")
+            .copy(id = 2L, startUtcMillis = REPORTED_START + 90_000L)
+        assertTrue(splitConfirmationPairs(listOf(one, otherMinute)).isEmpty())
     }
 
     @Test

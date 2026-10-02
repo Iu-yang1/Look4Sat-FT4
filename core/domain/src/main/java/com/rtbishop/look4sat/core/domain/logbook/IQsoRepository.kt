@@ -17,7 +17,12 @@ interface IQsoRepository {
     suspend fun find(id: Long): QsoRecord?
     suspend fun save(record: QsoRecord): Long
     suspend fun delete(id: Long)
-    suspend fun markUploaded(ids: List<Long>)
+    /**
+     * Marks the batch as uploaded and stamps the station-location grids the batch was
+     * signed with (1–4 gridsquares: inside a grid / on a line / on a corner), so the
+     * logbook row can show which grids the QSO went out under.
+     */
+    suspend fun markUploaded(ids: List<Long>, grids: List<String> = emptyList())
     suspend fun exportAdi(ids: Set<Long>? = null, includeIncomplete: Boolean = false): String
     suspend fun importAdi(content: String): AdifImportResult
     suspend fun mergeConfirmed(records: List<QsoRecord>): AdifImportResult

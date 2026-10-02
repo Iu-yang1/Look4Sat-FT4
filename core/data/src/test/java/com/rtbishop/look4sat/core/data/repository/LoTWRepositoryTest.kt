@@ -168,6 +168,29 @@ class LoTWRepositoryTest {
     }
 
     @Test
+    fun parseQsosCapturesOppositeGridSet() {
+        // The opposite station's grids (GRIDSQUARE + VUCC_GRIDS) must ride on the
+        // GridQso so the logbook can show multi-grid confirmations in its QSL slot.
+        val single = "<PROP_MODE:3>SAT\n<SAT_NAME:5>FO-29\n<GRIDSQUARE:4>NL47\n<EOR>\n"
+        assertEquals(
+            listOf("NL47"),
+            repo.parseConfirmedGridQsos(report(single))!!["NL47"]!!.first().theirGrids
+        )
+        val pair = "<PROP_MODE:3>SAT\n<SAT_NAME:5>SO-50\n<VUCC_GRIDS:11>EN52en,EN53fa\n<EOR>\n"
+        assertEquals(
+            listOf("EN52", "EN53"),
+            repo.parseConfirmedGridQsos(report(pair))!!["EN52"]!!.first().theirGrids
+        )
+        // A 6-char GRIDSQUARE plus a VUCC pair: every field, truncated to 4 chars, in order.
+        val six = "<PROP_MODE:3>SAT\n<SAT_NAME:5>SO-50\n" +
+            "<GRIDSQUARE:6>OM60IL\n<VUCC_GRIDS:11>EN52en,EN53fa\n<EOR>\n"
+        assertEquals(
+            listOf("OM60", "EN52", "EN53"),
+            repo.parseConfirmedGridQsos(report(six))!!["OM60"]!!.first().theirGrids
+        )
+    }
+
+    @Test
     fun parseQsosRejectsBodyWithoutEoh() {
         assertNull(repo.parseConfirmedGridQsos("<HTML>Username/password incorrect</HTML>"))
     }

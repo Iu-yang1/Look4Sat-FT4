@@ -81,7 +81,10 @@ import com.rtbishop.look4sat.core.domain.repository.IContainerProvider
 import com.rtbishop.look4sat.core.presentation.CardButton
 import com.rtbishop.look4sat.core.presentation.InfoDialog
 import com.rtbishop.look4sat.core.presentation.R
+import com.rtbishop.look4sat.core.presentation.SheetDialogTitle
 import com.rtbishop.look4sat.core.presentation.layoutPadding
+import com.rtbishop.look4sat.core.presentation.sheetDialogContainerColor
+import com.rtbishop.look4sat.core.presentation.sheetDialogShape
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
@@ -591,7 +594,9 @@ private fun AmSatUploadConfirmDialog(
     val grid = upload.gridSquare.ifBlank { stringResource(R.string.amsat_upload_grid_none) }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.amsat_upload_confirm_title)) },
+        shape = sheetDialogShape(),
+        containerColor = sheetDialogContainerColor(),
+        title = { SheetDialogTitle(stringResource(R.string.amsat_upload_confirm_title)) },
         text = {
             Text(
                 text = stringResource(

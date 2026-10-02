@@ -30,6 +30,7 @@ import com.rtbishop.look4sat.core.domain.repository.LoTWStation
 import com.rtbishop.look4sat.core.domain.repository.LoTWStationMeta
 import com.rtbishop.look4sat.core.domain.repository.LoTWUploadAudit
 import com.rtbishop.look4sat.core.domain.repository.LoTWUploadPreview
+import com.rtbishop.look4sat.core.domain.repository.uploadGridWarning
 import com.rtbishop.look4sat.core.domain.repository.LoTWUploadResult
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
@@ -279,6 +280,16 @@ class LoTWUploadRepository internal constructor(
                     else -> contact
                 }
             }
+            // The station-location grids this batch is signed with: the primary grid plus the
+            // MY_VUCC_GRIDS set (1 inside a grid, 2 on a line, 4 on a corner — see [LoTWConfig]).
+            val locationGrids = buildList {
+                signing.location["GRIDSQUARE"]?.takeIf(String::isNotBlank)?.let(::add)
+                signing.location["MY_VUCC_GRIDS"]?.split(',')
+                    ?.map(String::trim)?.filter(String::isNotBlank)?.let(::addAll)
+            }.distinct()
+            // Roaming guard: flag records whose own grids fall outside the station grids this
+            // batch would be signed with (a station location never updated while roaming).
+            val gridWarning = uploadGridWarning(contacts.map { it.record }, locationGrids)
             val preview = LoTWUploadPreview(
                 UUID.randomUUID().toString(), signing.key.info.callsign, signing.key.info.dxcc, signing.location.getValue("GRIDSQUARE"),
                 contacts.size, skipped,
@@ -289,7 +300,10 @@ class LoTWUploadRepository internal constructor(
                 unavailable,
                 reasons.toMap(),
                 duplicates,
-                contacts.map { it.record.id }
+                contacts.map { it.record.id },
+                locationGrids,
+                gridWarning,
+                resubmit
             )
             if (contacts.isNotEmpty()) pending = Pending(
                 preview,

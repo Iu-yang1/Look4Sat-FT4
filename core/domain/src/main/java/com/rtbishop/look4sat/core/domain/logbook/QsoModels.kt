@@ -18,6 +18,10 @@ data class QsoRecord(
     val theirCallsign: String,
     val myCallsign: String,
     val theirGrid: String = "",
+    /** Every 4-char grid the OPPOSITE station logged this QSO under (ADIF
+     *  <GRIDSQUARE> + <VUCC_GRIDS>; 1–4 grids). [theirGrid] keeps the first;
+     *  the logbook's QSL slot shows the abbreviated set. */
+    val theirVuccGrids: List<String> = emptyList(),
     val myGrid: String = "",
     val sentReport: String = "",
     val receivedReport: String = "",

@@ -37,7 +37,9 @@ import com.rtbishop.look4sat.core.domain.repository.resolveLoTWSyncMode
 import com.rtbishop.look4sat.core.domain.repository.IWavelogRepository
 import com.rtbishop.look4sat.core.domain.usecase.IShowToast
 import com.rtbishop.look4sat.core.domain.utility.VersionComparator
+import com.rtbishop.look4sat.core.domain.logbook.resubmitCandidates
 import com.rtbishop.look4sat.core.domain.logbook.toConfirmedRecord
+import com.rtbishop.look4sat.core.domain.logbook.unavailableUploadSummary
 import com.rtbishop.look4sat.core.presentation.R
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -233,6 +235,12 @@ class SettingsViewModel(
             SettingsAction.PrepareLogbookUpload -> prepareLogbookUpload()
             SettingsAction.ConfirmLogbookUpload -> confirmLogbookUpload()
             SettingsAction.DismissLogbookPreview -> dismissLogbookPreview()
+            SettingsAction.IgnoreLogbookGridWarning -> ignoreLogbookGridWarning()
+            SettingsAction.AbandonLogbookForGridFix -> abandonLogbookForGridFix()
+            is SettingsAction.StartLogbookSelection -> startLogbookSelection(action.id)
+            is SettingsAction.ToggleLogbookSelection -> toggleLogbookSelection(action.id)
+            SettingsAction.ExitLogbookSelection -> exitLogbookSelection()
+            SettingsAction.ResubmitSelectedLogbook -> resubmitSelectedLogbook()
             SettingsAction.ClearLogbookMessage -> clearLogbookMessage()
             // LoTW upload configuration
             SettingsAction.LoadLoTWUploadStatus -> loadLoTWUploadStatus()
@@ -396,7 +404,7 @@ class SettingsViewModel(
                 // Only the records that actually made it into the TQ8 may be
                 // marked uploaded later — never the whole candidate list.
                 lastLogbookUploadIds = preview.submittedIds
-                _uiState.update { it.copy(logbookUploadBusy = false, logbookPreview = preview) }
+                _uiState.update { it.copy(logbookUploadBusy = false, logbookPreview = preview, logbookGridWarning = preview.gridWarning) }
             } catch (e: com.rtbishop.look4sat.core.domain.repository.LoTWOperationException) {
                 _uiState.update { it.copy(logbookUploadBusy = false, logbookUploadMessage = "Upload unavailable: ${e.reason}") }
             } catch (_: Exception) {
@@ -410,8 +418,9 @@ class SettingsViewModel(
         viewModelScope.launch {
             _uiState.update { it.copy(logbookUploadBusy = true) }
             val result = lotwUploadRepository.upload(preview.id)
-            if (result is com.rtbishop.look4sat.core.domain.repository.LoTWUploadResult.Accepted && lastLogbookUploadIds.isNotEmpty()) {
-                qsoRepository.markUploaded(lastLogbookUploadIds)
+            val accepted = result is com.rtbishop.look4sat.core.domain.repository.LoTWUploadResult.Accepted
+            if (accepted && lastLogbookUploadIds.isNotEmpty()) {
+                qsoRepository.markUploaded(lastLogbookUploadIds, preview.grids)
                 lastLogbookUploadIds = emptyList()
             }
             val msg = when (result) {
@@ -420,11 +429,82 @@ class SettingsViewModel(
                 com.rtbishop.look4sat.core.domain.repository.LoTWUploadResult.Unknown -> "Unknown result — will not auto-retry"
                 com.rtbishop.look4sat.core.domain.repository.LoTWUploadResult.ExpiredPreview -> "Preview expired — tap upload again"
             }
-            _uiState.update { it.copy(logbookUploadBusy = false, logbookPreview = null, logbookUploadMessage = msg) }
+            _uiState.update {
+                it.copy(
+                    logbookUploadBusy = false,
+                    logbookPreview = null,
+                    logbookUploadMessage = msg,
+                    // An accepted resubmit is done — drop the checks; a failed one keeps
+                    // them so retrying stays one tap away.
+                    logbookSelectionMode = if (accepted) false else it.logbookSelectionMode,
+                    logbookSelectedIds = if (accepted) emptySet() else it.logbookSelectedIds
+                )
+            }
         }
     }
 
     private fun dismissLogbookPreview() = _uiState.update { it.copy(logbookPreview = null) }
+
+    /** Operator chose "ignore" on the grid check: keep the prepared preview. */
+    private fun ignoreLogbookGridWarning() = _uiState.update { it.copy(logbookGridWarning = null) }
+
+    /** Operator chose to fix the station grid first: drop the prepared preview and leave. */
+    private fun abandonLogbookForGridFix() {
+        lotwUploadRepository.discardPreview()
+        lastLogbookUploadIds = emptyList()
+        _uiState.update { it.copy(logbookGridWarning = null, logbookPreview = null) }
+    }
+
+    /** Long-press entry: selection mode with the pressed record checked. */
+    private fun startLogbookSelection(id: Long) = _uiState.update {
+        it.copy(logbookSelectionMode = true, logbookSelectedIds = setOf(id))
+    }
+
+    private fun toggleLogbookSelection(id: Long) = _uiState.update {
+        val selection = it.logbookSelectedIds.toMutableSet().apply { if (!add(id)) remove(id) }
+        it.copy(logbookSelectedIds = selection)
+    }
+
+    private fun exitLogbookSelection() = _uiState.update {
+        it.copy(logbookSelectionMode = false, logbookSelectedIds = emptySet())
+    }
+
+    /**
+     * Re-upload the checked records — already-uploaded and confirmed rows included — so a
+     * corrected station location reaches LoTW and the server updates the existing contacts.
+     * The rest is the normal prepare → preview → upload cycle, resubmit flag included.
+     */
+    private fun resubmitSelectedLogbook() {
+        if (_uiState.value.logbookUploadBusy) return
+        viewModelScope.launch {
+            _uiState.update { it.copy(logbookUploadBusy = true, logbookUploadMessage = "") }
+            try {
+                val selected = resubmitCandidates(qsoRepository.records.first(), _uiState.value.logbookSelectedIds)
+                if (selected.isEmpty()) {
+                    _uiState.update { it.copy(logbookUploadBusy = false, logbookUploadMessage = "No complete QSOs in the selection") }
+                    return@launch
+                }
+                val preview = lotwUploadRepository.prepare(selected, true)
+                if (preview.count == 0) {
+                    // Every checked record proved un-signable — say why instead of opening
+                    // a dead preview whose POST could only expire.
+                    val message = unavailableUploadSummary(
+                        preview.unavailableSkipped, preview.unavailableReasons, duplicates = preview.duplicateSkipped
+                    ).ifBlank { "No QSOs to resubmit" }
+                    _uiState.update { it.copy(logbookUploadBusy = false, logbookUploadMessage = message) }
+                    return@launch
+                }
+                lastLogbookUploadIds = preview.submittedIds
+                _uiState.update {
+                    it.copy(logbookUploadBusy = false, logbookPreview = preview, logbookGridWarning = preview.gridWarning)
+                }
+            } catch (e: com.rtbishop.look4sat.core.domain.repository.LoTWOperationException) {
+                _uiState.update { it.copy(logbookUploadBusy = false, logbookUploadMessage = "Upload unavailable: ${e.reason}") }
+            } catch (_: Exception) {
+                _uiState.update { it.copy(logbookUploadBusy = false, logbookUploadMessage = "Upload failed") }
+            }
+        }
+    }
 
     private fun clearLogbookMessage() = _uiState.update { it.copy(logbookUploadMessage = "") }
 

@@ -147,7 +147,7 @@ fun NavRoot(deeplink: String? = null) {
                         modifier = Modifier.fillMaxSize(),
                         color = MaterialTheme.colorScheme.background
                     ) {
-                        RadarDestination(navigateUp = navigateBack)
+                        RadarDestination(navigateUp = navigateBack, onOpenLoTWStation = navigateToLoTWStation)
                     }
                 }
                 entry<GridFinderDestination> {

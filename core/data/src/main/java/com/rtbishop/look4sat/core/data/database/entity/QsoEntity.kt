@@ -47,6 +47,7 @@ data class QsoEntity(
     @ColumnInfo(defaultValue = "0") val lotwReceived: Boolean = false,
     @ColumnInfo(defaultValue = "''") val lotwQslDate: String = "",
     @ColumnInfo(defaultValue = "''") val vuccGrids: String = "",
+    @ColumnInfo(defaultValue = "''") val theirVuccGrids: String = "",
     val dxcc: Int? = null,
     @ColumnInfo(defaultValue = "''") val country: String = "",
     val cqZone: Int? = null,

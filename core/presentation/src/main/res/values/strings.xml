@@ -269,6 +269,8 @@
     <string name="prefs_data_import_transceivers_error">No transceivers imported. Select a valid SatNOGS (.json) file.</string>
 
     <string name="prefs_data_sources_title">Custom data sources</string>
+    <string name="prefs_data_sources_sat_hint">Orbital data takes the freshest elements; this order only affects satellite names</string>
+    <string name="prefs_data_sources_transceivers_hint">Top priority affects transceivers data</string>
     <string name="prefs_data_sources_restore">Restore default sources</string>
     <string name="prefs_data_sources_tle_switch">Custom TLE URL</string>
     <string name="prefs_data_sources_transceivers_switch">Custom transceivers URL</string>

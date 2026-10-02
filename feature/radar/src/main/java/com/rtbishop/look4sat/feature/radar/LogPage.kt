@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -66,7 +67,7 @@ import com.rtbishop.look4sat.core.presentation.SheetDialogTitle
 import com.rtbishop.look4sat.core.presentation.sheetDialogContainerColor
 import com.rtbishop.look4sat.core.presentation.sheetDialogShape
 import com.rtbishop.look4sat.core.presentation.gridsLabel
-import com.rtbishop.look4sat.core.presentation.LoTWGridWarningDialog
+import com.rtbishop.look4sat.core.presentation.LoTWPositionWarningDialog
 
 @Composable
 fun LogPage(
@@ -103,6 +104,12 @@ fun LogPage(
 
     LaunchedEffect(catnum) {
         if (catnum != 0) logViewModel.selectSatellite(catnum)
+    }
+
+    // Refresh the roaming hint whenever the page re-enters composition (e.g. returning
+    // from the station-location fix jump).
+    LaunchedEffect(Unit) {
+        logViewModel.refreshPositionHint()
     }
 
     val selectedTxHz = remember(selectedRadio) { selectedRadio?.uplinkHz() }
@@ -151,6 +158,20 @@ fun LogPage(
                 onClick = { logViewModel.record(satName, mode, txHz, rxHz, logUiState.stationGrid, passWindow) },
                 enabled = logUiState.callsignInput.isNotBlank() && satName.isNotBlank()
             ) { Text("Log") }
+        }
+        logUiState.stationMismatch?.let { mismatch ->
+            Text(
+                text = "⚠ " + stringResource(
+                    R.string.lotw_upload_pos_hint,
+                    mismatch.currentGrid,
+                    gridsLabel(mismatch.stationGrids)
+                ),
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onFixGrid(listOf(mismatch.currentGrid)) }
+            )
         }
         if (isLinear) {
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -222,19 +243,19 @@ fun LogPage(
         )
     }
 
-    logUiState.uploadGridWarning?.let { warning ->
-        LoTWGridWarningDialog(
+    logUiState.uploadPositionWarning?.let { warning ->
+        LoTWPositionWarningDialog(
             warning = warning,
             onFixStation = {
                 logViewModel.abandonForGridFix()
-                onFixGrid(warning.recordGrids)
+                onFixGrid(listOf(warning.currentGrid))
             },
-            onIgnore = logViewModel::ignoreGridWarning
+            onIgnore = logViewModel::ignorePositionWarning
         )
     }
 
-    // The preview only opens once the grid check is out of the way.
-    if (logUiState.uploadGridWarning == null) {
+    // The preview only opens once the position check is out of the way.
+    if (logUiState.uploadPositionWarning == null) {
         logUiState.preview?.let { preview ->
             UploadPreviewDialog(
                 preview = preview,

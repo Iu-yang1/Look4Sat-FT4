@@ -23,17 +23,17 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.sp
-import com.rtbishop.look4sat.core.domain.repository.LoTWGridWarning
+import com.rtbishop.look4sat.core.domain.repository.LoTWPositionWarning
 
 /**
- * Pre-upload grid check: the prepared batch holds records whose own grids fall outside the
- * station-location grids they would be signed with — the fingerprint of uploading while
+ * Pre-upload position check: the operator's current position grid falls outside the station
+ * location the prepared batch would be signed with — the fingerprint of operating while
  * roaming with a station location that was never updated. The operator either jumps to the
  * station location to fix it, or ignores the warning and proceeds to the normal preview.
  */
 @Composable
-fun LoTWGridWarningDialog(
-    warning: LoTWGridWarning,
+fun LoTWPositionWarningDialog(
+    warning: LoTWPositionWarning,
     onFixStation: () -> Unit,
     onIgnore: () -> Unit
 ) {
@@ -46,8 +46,7 @@ fun LoTWGridWarningDialog(
             Text(
                 text = stringResource(
                     R.string.lotw_upload_grid_mismatch,
-                    warning.count,
-                    gridsLabel(warning.recordGrids),
+                    warning.currentGrid,
                     gridsLabel(warning.stationGrids)
                 ),
                 fontSize = 14.sp

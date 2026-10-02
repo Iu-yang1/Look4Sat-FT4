@@ -233,7 +233,8 @@
     <string name="lotw_upload_grid_title">Upload check</string>
     <string name="lotw_upload_grid_fix">Fix station location</string>
     <string name="lotw_upload_grid_ignore">Ignore</string>
-    <string name="lotw_upload_grid_mismatch">%1$d record(s) log a grid outside the upload station location (records: %2$s; station: %3$s). Verify the station location is where you actually operated.</string>
+    <string name="lotw_upload_grid_mismatch">Current position %1$s is outside the certificate station grids %2$s — if you are operating here, update the station location before uploading.</string>
+    <string name="lotw_upload_pos_hint">Current position %1$s is outside the station grids %2$s — tap to update</string>
     <string name="prefs_lotw_upload_title">LoTW upload certificate</string>
     <string name="prefs_lotw_upload_configured">Certificate imported · station grid %1$s</string>
     <string name="prefs_lotw_upload_not_configured">Not configured — import your TrustedQSL certificate to upload QSOs</string>

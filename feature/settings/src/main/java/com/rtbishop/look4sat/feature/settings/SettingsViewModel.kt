@@ -34,6 +34,7 @@ import com.rtbishop.look4sat.core.domain.repository.applyLoTWGridResult
 import com.rtbishop.look4sat.core.domain.repository.lotwCursorApi
 import com.rtbishop.look4sat.core.domain.repository.lotwCursorEpochMs
 import com.rtbishop.look4sat.core.domain.repository.resolveLoTWSyncMode
+import com.rtbishop.look4sat.core.domain.repository.positionWarning
 import com.rtbishop.look4sat.core.domain.repository.IWavelogRepository
 import com.rtbishop.look4sat.core.domain.usecase.IShowToast
 import com.rtbishop.look4sat.core.domain.utility.VersionComparator
@@ -235,7 +236,7 @@ class SettingsViewModel(
             SettingsAction.PrepareLogbookUpload -> prepareLogbookUpload()
             SettingsAction.ConfirmLogbookUpload -> confirmLogbookUpload()
             SettingsAction.DismissLogbookPreview -> dismissLogbookPreview()
-            SettingsAction.IgnoreLogbookGridWarning -> ignoreLogbookGridWarning()
+            SettingsAction.IgnoreLogbookPositionWarning -> ignoreLogbookPositionWarning()
             SettingsAction.AbandonLogbookForGridFix -> abandonLogbookForGridFix()
             is SettingsAction.StartLogbookSelection -> startLogbookSelection(action.id)
             is SettingsAction.ToggleLogbookSelection -> toggleLogbookSelection(action.id)
@@ -404,7 +405,13 @@ class SettingsViewModel(
                 // Only the records that actually made it into the TQ8 may be
                 // marked uploaded later — never the whole candidate list.
                 lastLogbookUploadIds = preview.submittedIds
-                _uiState.update { it.copy(logbookUploadBusy = false, logbookPreview = preview, logbookGridWarning = preview.gridWarning) }
+                _uiState.update {
+                    it.copy(
+                        logbookUploadBusy = false,
+                        logbookPreview = preview,
+                        logbookPositionWarning = positionWarning(settingsRepo.getCurrentGrid(), preview.grids)
+                    )
+                }
             } catch (e: com.rtbishop.look4sat.core.domain.repository.LoTWOperationException) {
                 _uiState.update { it.copy(logbookUploadBusy = false, logbookUploadMessage = "Upload unavailable: ${e.reason}") }
             } catch (_: Exception) {
@@ -445,14 +452,14 @@ class SettingsViewModel(
 
     private fun dismissLogbookPreview() = _uiState.update { it.copy(logbookPreview = null) }
 
-    /** Operator chose "ignore" on the grid check: keep the prepared preview. */
-    private fun ignoreLogbookGridWarning() = _uiState.update { it.copy(logbookGridWarning = null) }
+    /** Operator chose "ignore" on the position check: keep the prepared preview. */
+    private fun ignoreLogbookPositionWarning() = _uiState.update { it.copy(logbookPositionWarning = null) }
 
     /** Operator chose to fix the station grid first: drop the prepared preview and leave. */
     private fun abandonLogbookForGridFix() {
         lotwUploadRepository.discardPreview()
         lastLogbookUploadIds = emptyList()
-        _uiState.update { it.copy(logbookGridWarning = null, logbookPreview = null) }
+        _uiState.update { it.copy(logbookPositionWarning = null, logbookPreview = null) }
     }
 
     /** Long-press entry: selection mode with the pressed record checked. */
@@ -496,7 +503,11 @@ class SettingsViewModel(
                 }
                 lastLogbookUploadIds = preview.submittedIds
                 _uiState.update {
-                    it.copy(logbookUploadBusy = false, logbookPreview = preview, logbookGridWarning = preview.gridWarning)
+                    it.copy(
+                        logbookUploadBusy = false,
+                        logbookPreview = preview,
+                        logbookPositionWarning = positionWarning(settingsRepo.getCurrentGrid(), preview.grids)
+                    )
                 }
             } catch (e: com.rtbishop.look4sat.core.domain.repository.LoTWOperationException) {
                 _uiState.update { it.copy(logbookUploadBusy = false, logbookUploadMessage = "Upload unavailable: ${e.reason}") }

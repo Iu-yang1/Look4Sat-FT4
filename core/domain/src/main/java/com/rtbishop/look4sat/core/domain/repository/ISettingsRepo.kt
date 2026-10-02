@@ -48,6 +48,12 @@ interface ISettingsRepo {
     fun setStationPosition(latitude: Double, longitude: Double, altitude: Double): Boolean
     fun setStationPosition(): Boolean
     fun setStationPosition(locator: String): Boolean
+    /**
+     * Freshest known position grid for the roaming check, read-only: the newer of a fresh
+     * (≤ 24 h) system location fix and the stored station position. Null only when neither
+     * yields a usable locator. Never writes the station position.
+     */
+    fun getCurrentGrid(): String?
     //endregion
 
     //region # Database update settings

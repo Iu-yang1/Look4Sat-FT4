@@ -53,7 +53,7 @@ import com.rtbishop.look4sat.core.presentation.SheetDialogTitle
 import com.rtbishop.look4sat.core.presentation.sheetDialogContainerColor
 import com.rtbishop.look4sat.core.presentation.sheetDialogShape
 import com.rtbishop.look4sat.core.presentation.gridsLabel
-import com.rtbishop.look4sat.core.presentation.LoTWGridWarningDialog
+import com.rtbishop.look4sat.core.presentation.LoTWPositionWarningDialog
 import com.rtbishop.look4sat.core.presentation.R
 import com.rtbishop.look4sat.core.presentation.SharedDialog
 import com.rtbishop.look4sat.core.presentation.SwipeController
@@ -89,7 +89,7 @@ fun LogbookDialog(
     uploadBusy: Boolean,
     uploadMessage: String,
     preview: com.rtbishop.look4sat.core.domain.repository.LoTWUploadPreview?,
-    gridWarning: com.rtbishop.look4sat.core.domain.repository.LoTWGridWarning? = null,
+    positionWarning: com.rtbishop.look4sat.core.domain.repository.LoTWPositionWarning? = null,
     onDismiss: () -> Unit,
     onDelete: (Long) -> Unit,
     onEdit: (QsoRecord) -> Unit,
@@ -97,7 +97,7 @@ fun LogbookDialog(
     onConfirmUpload: () -> Unit,
     onDismissPreview: () -> Unit,
     onDismissMessage: () -> Unit,
-    onIgnoreGridWarning: () -> Unit = {},
+    onIgnorePositionWarning: () -> Unit = {},
     onFixGrid: (List<String>) -> Unit = {},
     selectionMode: Boolean = false,
     selectedIds: Set<Long> = emptySet(),
@@ -169,13 +169,13 @@ fun LogbookDialog(
         }
     }
 
-    if (gridWarning != null) {
-        // Roaming guard: the batch would be signed under a station grid it was not operated
-        // from — confirm the station location before the preview opens.
-        LoTWGridWarningDialog(
-            warning = gridWarning,
-            onFixStation = { onFixGrid(gridWarning.recordGrids) },
-            onIgnore = onIgnoreGridWarning
+    if (positionWarning != null) {
+        // Roaming guard: the current position sits outside the station location this batch
+        // would be signed with — confirm the station location before the preview opens.
+        LoTWPositionWarningDialog(
+            warning = positionWarning,
+            onFixStation = { onFixGrid(listOf(positionWarning.currentGrid)) },
+            onIgnore = onIgnorePositionWarning
         )
     } else if (preview != null) {
         LogbookUploadPreviewDialog(

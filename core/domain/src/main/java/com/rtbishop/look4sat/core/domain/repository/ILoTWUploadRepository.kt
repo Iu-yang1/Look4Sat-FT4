@@ -102,20 +102,17 @@ data class LoTWUploadPreview(
      *  2 on a line, 4 on a corner). Stamped onto the uploaded records so the logbook
      *  can show which gridsquares the QSO went out under. */
     val grids: List<String> = emptyList(),
-    /** Records whose own grids fall outside this batch's station location — the fingerprint
-     *  of uploading while roaming with a stale station location. Null when all covered. */
-    val gridWarning: LoTWGridWarning? = null,
     /** True when this batch is a resubmit: already-uploaded/confirmed records were allowed
      *  through so the corrected station location reaches LoTW as an update of the contact. */
     val resubmit: Boolean = false
 )
 
-/** Pre-upload grid audit result: [count] records carry own grids outside the station grids. */
-data class LoTWGridWarning(
-    val count: Int,
-    /** Distinct own grids of the affected records (normalized, 4 characters). */
-    val recordGrids: List<String>,
-    /** Distinct station-location grids this batch would be signed with. */
+/** Pre-upload location check: the freshest known position grid is not covered by the
+ *  station grids an upload would be signed with. */
+data class LoTWPositionWarning(
+    /** Normalized 4-character grid of the freshest known position. */
+    val currentGrid: String,
+    /** Distinct station-location grids the upload would be signed with. */
     val stationGrids: List<String>
 )
 
@@ -154,30 +151,19 @@ enum class LoTWProblem {
 }
 
 /**
- * Records whose own grids (the set a previous upload stamped, else the logged grid) do not
- * appear at all in the station-location grids an upload goes out under — the signature of
- * uploading while roaming with a station location that was never updated. Records without
- * any grid are not flagged, and a partially covered set (boundary operations) is not
- * flagged either: only a fully disjoint pair, which is always a mistake, warns.
+ * Roaming check run before upload: warns when the operator's freshest known position
+ * (see [ISettingsRepo.getCurrentGrid]) lies outside every grid of the station location the
+ * batch would be signed with — the signature of operating while roaming with a station
+ * location that was never updated. An unknown position, missing station grids, or a covered
+ * position (boundary operations included) produce no warning.
  */
-fun uploadGridWarning(records: List<QsoRecord>, stationGrids: List<String>): LoTWGridWarning? {
+fun positionWarning(currentGrid: String?, stationGrids: List<String>): LoTWPositionWarning? {
+    val current = currentGrid?.grid4() ?: return null
     val station = stationGrids.mapNotNull { it.grid4() }.toSet()
     if (station.isEmpty()) return null
-    val affected = records.filter { record ->
-        val own = record.ownGrids()
-        own.isNotEmpty() && own.none { it in station }
-    }
-    if (affected.isEmpty()) return null
-    return LoTWGridWarning(
-        affected.size,
-        affected.flatMap { it.ownGrids() }.distinct().sorted(),
-        station.sorted()
-    )
+    if (current in station) return null
+    return LoTWPositionWarning(current, station.sorted())
 }
-
-/** The grid set a previous upload stamped onto the record, else the grid it was logged under. */
-private fun QsoRecord.ownGrids(): Set<String> =
-    (vuccGrids.ifEmpty { listOf(myGrid) }).mapNotNull { it.grid4() }.toSet()
 
 /** Normalized 4-character grid, null when the value is not a usable grid. */
 private fun String.grid4(): String? = trim().uppercase(Locale.US).take(4).takeIf { it.length >= 4 }

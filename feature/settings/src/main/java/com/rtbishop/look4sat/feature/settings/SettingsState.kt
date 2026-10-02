@@ -85,9 +85,9 @@ data class SettingsState(
     val lotwUploadErrorDetail: String = "",
     /** One-click logbook upload: prepared preview awaiting confirmation. */
     val logbookPreview: com.rtbishop.look4sat.core.domain.repository.LoTWUploadPreview? = null,
-    /** Roaming guard: the prepared batch holds records whose own grids fall outside the
-     *  station-location grids — shown as a dialog before the preview opens. */
-    val logbookGridWarning: com.rtbishop.look4sat.core.domain.repository.LoTWGridWarning? = null,
+    /** Roaming guard: the current position grid is outside the station grids the prepared
+     *  batch would be signed with — shown as a dialog before the preview opens. */
+    val logbookPositionWarning: com.rtbishop.look4sat.core.domain.repository.LoTWPositionWarning? = null,
     val logbookUploadBusy: Boolean = false,
     /** User-facing upload message shown inside the logbook dialog ("" = none). */
     val logbookUploadMessage: String = "",
@@ -167,8 +167,8 @@ sealed interface SettingsAction {
     data object PrepareLogbookUpload : SettingsAction
     data object ConfirmLogbookUpload : SettingsAction
     data object DismissLogbookPreview : SettingsAction
-    /** The operator acknowledged the grid mismatch and wants to upload anyway. */
-    data object IgnoreLogbookGridWarning : SettingsAction
+    /** The operator acknowledged the position mismatch and wants to upload anyway. */
+    data object IgnoreLogbookPositionWarning : SettingsAction
     /** The operator chose to fix the station location first; the preview is discarded. */
     data object AbandonLogbookForGridFix : SettingsAction
     /** Long-press on a row: enter selection mode with that record checked. */

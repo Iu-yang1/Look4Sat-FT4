@@ -204,7 +204,8 @@
     <string name="lotw_upload_grid_title">上传前核对</string>
     <string name="lotw_upload_grid_fix">修改台址</string>
     <string name="lotw_upload_grid_ignore">忽略</string>
-    <string name="lotw_upload_grid_mismatch">有 %1$d 条记录的自己的网格不在上传台址内（记录：%2$s；台址：%3$s）——请确认台址是通联时实际所在的网格。</string>
+    <string name="lotw_upload_grid_mismatch">当前定位 %1$s 不在证书台址网格 %2$s 内——如果正在此处操作，请先更新台址再上传。</string>
+    <string name="lotw_upload_pos_hint">当前定位 %1$s 不在证书台址网格 %2$s 内 · 点此更新</string>
     <string name="prefs_lotw_upload_title">LoTW 上传证书</string>
     <string name="prefs_lotw_upload_configured">证书已导入 · 台址网格 %1$s</string>
     <string name="prefs_lotw_upload_not_configured">未配置 — 导入 TrustedQSL 证书后即可上传通联</string>

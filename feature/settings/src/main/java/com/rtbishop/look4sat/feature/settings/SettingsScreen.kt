@@ -292,7 +292,7 @@ private fun SettingsScreen(
             uploadBusy = uiState.logbookUploadBusy,
             uploadMessage = uiState.logbookUploadMessage,
             preview = uiState.logbookPreview,
-            gridWarning = uiState.logbookGridWarning,
+            positionWarning = uiState.logbookPositionWarning,
             onDismiss = {
                 // Leaving the logbook resets the resubmit selection: re-entering starts
                 // clean — the operator long-presses again to pick records.
@@ -305,7 +305,7 @@ private fun SettingsScreen(
             onConfirmUpload = { onAction(SettingsAction.ConfirmLogbookUpload) },
             onDismissPreview = { onAction(SettingsAction.DismissLogbookPreview) },
             onDismissMessage = { onAction(SettingsAction.ClearLogbookMessage) },
-            onIgnoreGridWarning = { onAction(SettingsAction.IgnoreLogbookGridWarning) },
+            onIgnorePositionWarning = { onAction(SettingsAction.IgnoreLogbookPositionWarning) },
             onFixGrid = { grids ->
                 onAction(SettingsAction.AbandonLogbookForGridFix)
                 onAction(SettingsAction.ExitLogbookSelection)

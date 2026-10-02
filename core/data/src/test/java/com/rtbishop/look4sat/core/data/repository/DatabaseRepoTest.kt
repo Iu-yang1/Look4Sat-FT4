@@ -271,6 +271,8 @@ private class FakeSettingsRepo(dataSources: DataSourcesSettings = defaultDataSou
 
     override fun setStationPosition(locator: String): Boolean = true
 
+    override fun getCurrentGrid(): String? = null
+
     override fun getSatelliteTypesIds(types: List<String>): List<Int> = emptyList()
 
     override fun setSatelliteTypeIds(type: String, ids: List<Int>) {

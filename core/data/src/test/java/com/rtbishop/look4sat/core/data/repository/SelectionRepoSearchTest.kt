@@ -330,6 +330,7 @@ private class FakeSettingsRepoForSearch : ISettingsRepo {
     override fun setStationPosition(latitude: Double, longitude: Double, altitude: Double): Boolean = true
     override fun setStationPosition(): Boolean = true
     override fun setStationPosition(locator: String): Boolean = true
+    override fun getCurrentGrid(): String? = null
     override fun getSatelliteTypesIds(types: List<String>): List<Int> =
         types.flatMap { typeIds[it].orEmpty() }.distinct()
 

@@ -25,9 +25,10 @@ import com.rtbishop.look4sat.core.domain.repository.ILoTWUploadRepository
 import com.rtbishop.look4sat.core.domain.repository.IMainContainer
 import com.rtbishop.look4sat.core.domain.repository.ISettingsRepo
 import com.rtbishop.look4sat.core.domain.repository.LoTWOperationException
+import com.rtbishop.look4sat.core.domain.repository.LoTWPositionWarning
 import com.rtbishop.look4sat.core.domain.repository.LoTWUploadPreview
-import com.rtbishop.look4sat.core.domain.repository.LoTWGridWarning
 import com.rtbishop.look4sat.core.domain.repository.LoTWUploadResult
+import com.rtbishop.look4sat.core.domain.repository.positionWarning
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -67,9 +68,12 @@ data class LogUiState(
     /** ARRL satellite names (config.tq6) — the only names a record may be signed with. */
     val satelliteCatalog: List<String> = emptyList(),
     val preview: LoTWUploadPreview? = null,
-    /** Roaming guard: the prepared batch holds records whose own grids fall outside the
-     *  station-location grids — shown as a dialog before the preview opens. */
-    val uploadGridWarning: LoTWGridWarning? = null,
+    /** Roaming guard: the current position grid is outside the station grids the prepared
+     *  batch would be signed with — shown as a dialog before the preview opens. */
+    val uploadPositionWarning: LoTWPositionWarning? = null,
+    /** Roaming hint on the log page: current position grid outside the station grids
+     *  (null when covered or unknown). Tapping it jumps to the station location. */
+    val stationMismatch: LoTWPositionWarning? = null,
     /** User-facing upload / record message ("" when none). */
     val message: String = "",
     val postText: String? = null,
@@ -107,6 +111,10 @@ class LogViewModel(
                     satelliteCatalog = catalog
                 )
             }
+        }
+        // The roaming hint tracks the freshest position data: refresh on init and every fix.
+        viewModelScope.launch {
+            settingsRepo.stationPosition.collect { refreshPositionHintNow() }
         }
     }
 
@@ -268,7 +276,13 @@ class LogViewModel(
                 // Only the records that actually made it into the TQ8 may be
                 // marked uploaded later — never the whole candidate list.
                 lastUploadedIds = preview.submittedIds
-                _uiState.update { it.copy(busy = false, preview = preview, uploadGridWarning = preview.gridWarning) }
+                _uiState.update {
+                    it.copy(
+                        busy = false,
+                        preview = preview,
+                        uploadPositionWarning = positionWarning(settingsRepo.getCurrentGrid(), preview.grids)
+                    )
+                }
             } catch (e: LoTWOperationException) {
                 _uiState.update { it.copy(busy = false, message = "Upload unavailable: ${e.reason}") }
             } catch (_: Exception) {
@@ -300,14 +314,32 @@ class LogViewModel(
 
     fun dismissPreview() = _uiState.update { it.copy(preview = null) }
 
-    /** Operator chose "ignore" on the grid check: keep the prepared preview. */
-    fun ignoreGridWarning() = _uiState.update { it.copy(uploadGridWarning = null) }
+    /** Operator chose "ignore" on the position check: keep the prepared preview. */
+    fun ignorePositionWarning() = _uiState.update { it.copy(uploadPositionWarning = null) }
 
     /** Operator chose to fix the station grid first: drop the prepared preview and leave. */
     fun abandonForGridFix() {
         lotwUploadRepository.discardPreview()
         lastUploadedIds = emptyList()
-        _uiState.update { it.copy(uploadGridWarning = null, preview = null) }
+        _uiState.update { it.copy(uploadPositionWarning = null, preview = null) }
+    }
+
+    /** Recompute the log-page roaming hint from the freshest station/position data. */
+    fun refreshPositionHint() = viewModelScope.launch { refreshPositionHintNow() }
+
+    private suspend fun refreshPositionHintNow() {
+        val station = runCatching { lotwUploadRepository.station() }.getOrNull()
+        if (station == null) {
+            _uiState.update { it.copy(stationMismatch = null) }
+            return
+        }
+        val grids = station.grid.split(',').map(String::trim).filter(String::isNotBlank)
+        _uiState.update {
+            it.copy(
+                stationMismatch = positionWarning(settingsRepo.getCurrentGrid(), grids),
+                stationGrid = station.grid
+            )
+        }
     }
 
     fun clearMessage() = _uiState.update { it.copy(message = "") }

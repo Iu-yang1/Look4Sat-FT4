@@ -115,6 +115,7 @@ class FakeSettingsRepo(
     override fun setStationPosition(latitude: Double, longitude: Double, altitude: Double): Boolean = TODO()
     override fun setStationPosition(): Boolean = TODO()
     override fun setStationPosition(locator: String): Boolean = TODO()
+    override fun getCurrentGrid(): String? = TODO()
     override fun getSatelliteTypesIds(types: List<String>): List<Int> = TODO()
     override fun setSatelliteTypeIds(type: String, ids: List<Int>) = TODO()
     override fun updateDatabaseState(state: DatabaseState) = TODO()

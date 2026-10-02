@@ -468,6 +468,34 @@ class SettingsRepo(
         return true
     }
 
+    override fun getCurrentGrid(): String? {
+        val station = _stationPosition.value
+        val now = System.currentTimeMillis()
+        // Only trust a location fix that is both recent (≤ 24 h) and newer than the stored
+        // station, so a stale fix can never override a position the operator just set.
+        val fix = lastKnownGridFix()?.takeIf { now - it.second <= 24 * 3_600_000L }
+        val chosen = if (fix != null && fix.second >= station.timestamp) fix.first else station.qthLocator
+        return chosen.takeIf(String::isNotBlank)
+    }
+
+    /** Last known GPS/NETWORK fix converted to a locator; read-only, null without permission. */
+    private fun lastKnownGridFix(): Pair<String, Long>? {
+        return try {
+            val provider = when {
+                LocationManagerCompat.hasProvider(locationManager, providerGps) -> providerGps
+                LocationManagerCompat.hasProvider(locationManager, providerNet) -> providerNet
+                else -> return null
+            }
+            val location = locationManager.getLastKnownLocation(provider) ?: return null
+            val locator = positionToQth(location.latitude, location.longitude) ?: return null
+            locator to location.time
+        } catch (_: SecurityException) {
+            null
+        } catch (_: IllegalArgumentException) {
+            null
+        }
+    }
+
     private fun getStationPosition(): GeoPos {
         val latitude = (preferences.getString(keyStationLatitude, null) ?: "0.0").toDouble()
         val longitude = (preferences.getString(keyStationLongitude, null) ?: "0.0").toDouble()

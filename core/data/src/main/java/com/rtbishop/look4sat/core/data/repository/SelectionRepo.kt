@@ -51,7 +51,15 @@ class SelectionRepo(
             null // null = no filtering
         } else {
             val ids = resolveTypeIds(types)
-            if (ids.isEmpty()) emptySet() else ids.toHashSet()
+            when {
+                ids.isNotEmpty() -> ids.toHashSet()
+                // "All" is the CelesTrak active group, i.e. the whole catalogue: an empty
+                // persisted list must mean "no filtering" (show every satellite), not an
+                // empty list. Its list can be empty simply because CelesTrak answered 403
+                // to a repeated download inside the 2-hour update window.
+                Sources.allSourceType in types -> null
+                else -> emptySet()
+            }
         }
         currentItems.map { items ->
             if (catnumSet == null) items else items.filter { it.catnum in catnumSet }

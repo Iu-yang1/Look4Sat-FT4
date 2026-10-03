@@ -23,6 +23,7 @@ import com.rtbishop.look4sat.core.domain.predict.OrbitalObject
 import com.rtbishop.look4sat.core.domain.repository.ISelectionRepo
 import com.rtbishop.look4sat.core.domain.repository.ISettingsRepo
 import com.rtbishop.look4sat.core.domain.source.ILocalSource
+import com.rtbishop.look4sat.core.domain.source.Sources
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -239,6 +240,26 @@ class SelectionRepoSearchTest {
         repo.setTypes(listOf("All"))
         val results = repo.getEntriesFlow().first()
         assertEquals(sampleItems.map { it.catnum }.toSet(), results.map { it.catnum }.toSet())
+    }
+
+    @Test
+    fun `All with empty persisted ids falls back to no filtering`() = runTest {
+        // CelesTrak answers 403 to a repeated download inside its 2-hour update window,
+        // so the persisted "All" id list can be empty. Selecting All then means "all
+        // satellites" (no filtering) instead of blanking the list.
+        val repo = createRepo(sampleItems)
+        repo.setTypes(listOf(Sources.allSourceType))
+        val results = repo.getEntriesFlow().first()
+        assertEquals(sampleItems.map { it.catnum }.toSet(), results.map { it.catnum }.toSet())
+    }
+
+    @Test
+    fun `other source type with empty persisted ids still shows empty`() = runTest {
+        // Only "All" falls back to no filtering; a regular source without persisted ids
+        // keeps the previous behaviour (empty list).
+        val repo = createRepo(sampleItems)
+        repo.setTypes(listOf("Amateur"))
+        assertTrue(repo.getEntriesFlow().first().isEmpty())
     }
 
     @Test

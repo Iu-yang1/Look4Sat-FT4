@@ -56,11 +56,35 @@ fun wavelogResultMessage(result: WavelogUploadOutcome): String = when (result) {
             append("All ${result.markIds.size} record(s) already in Wavelog")
         } else {
             append("Uploaded ${result.imported} QSO(s) to Wavelog")
+            if (result.duplicates > 0) append(" — ${result.duplicates} already there")
         }
-        if (result.duplicates > 0) append(" — ${result.duplicates} already there")
         if (result.skipped > 0) append(" — ${result.skipped} skipped by Wavelog")
     }
     is WavelogUploadOutcome.Rejected -> result.message
     is WavelogUploadOutcome.Failed -> result.message
     WavelogUploadOutcome.Expired -> "Preview expired — tap upload again"
 }
+
+/**
+ * Message for the piggybacked Wavelog side when nothing can be submitted —
+ * null when there is nothing to say (fully caught up, no held-back records).
+ */
+fun wavelogIdleSegment(preview: WavelogUploadPreview): String? = when {
+    preview.blockedBy != null -> "Wavelog: ${preview.blockedBy.label()}"
+    preview.skipped > 0 -> "Wavelog: ${wavelogSkipSummary(preview)}"
+    else -> null
+}
+
+/**
+ * Message for a finished piggybacked Wavelog upload: the server outcome plus
+ * the records held back before the POST (e.g. grids outside the station profile).
+ */
+fun wavelogConfirmedSegment(outcome: WavelogUploadOutcome, preview: WavelogUploadPreview): String {
+    val base = wavelogResultMessage(outcome)
+    val head = if (outcome is WavelogUploadOutcome.Imported) base else "Wavelog: $base"
+    val skip = wavelogSkipSummary(preview)
+    return if (skip.isNotBlank()) "$head\n$skip" else head
+}
+
+/** Message when the piggybacked upload threw outright — records stay unmarked for retry. */
+fun wavelogTransportFailureSegment(): String = "Wavelog: upload failed — it will retry with your next upload"

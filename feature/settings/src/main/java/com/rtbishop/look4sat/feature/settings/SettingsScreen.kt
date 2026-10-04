@@ -319,13 +319,7 @@ private fun SettingsScreen(
             onToggleSelection = { onAction(SettingsAction.ToggleLogbookSelection(it)) },
             onExitSelection = { onAction(SettingsAction.ExitLogbookSelection) },
             onResubmitSelected = { onAction(SettingsAction.ResubmitSelectedLogbook) },
-            wavelogBusy = uiState.wavelogUploadBusy,
-            wavelogPreview = uiState.wavelogPreview,
-            wavelogMessage = uiState.wavelogUploadMessage.orEmpty(),
-            onWavelogUpload = { onAction(SettingsAction.PrepareWavelogUpload) },
-            onConfirmWavelogUpload = { onAction(SettingsAction.ConfirmWavelogUpload) },
-            onDismissWavelogPreview = { onAction(SettingsAction.DismissWavelogPreview) },
-            onDismissWavelogMessage = { onAction(SettingsAction.ClearWavelogUploadMessage) }
+            wavelogCount = uiState.wavelogPending?.count ?: 0
         )
     }
     if (dialogs.lotwUpload) {

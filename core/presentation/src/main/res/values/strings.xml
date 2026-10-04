@@ -240,8 +240,7 @@
     <string name="prefs_logbook_selected">%1$d selected</string>
     <string name="prefs_logbook_select_hint">Long-press a row to re-upload corrected records</string>
     <string name="prefs_logbook_resubmit_note">Existing contacts will be updated in place — a grid already used for an award may be rejected.</string>
-    <string name="prefs_logbook_wavelog_upload">Upload to Wavelog</string>
-    <string name="prefs_logbook_wavelog_upload_confirm">Upload</string>
+    <string name="prefs_logbook_wavelog_sync">Also syncs to Wavelog: %1$d QSO(s)</string>
     <string name="lotw_upload_grid_title">Upload check</string>
     <string name="lotw_upload_grid_fix">Fix station location</string>
     <string name="lotw_upload_grid_ignore">Ignore</string>

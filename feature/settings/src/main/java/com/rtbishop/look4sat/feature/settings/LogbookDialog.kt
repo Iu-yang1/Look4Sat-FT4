@@ -105,13 +105,8 @@ fun LogbookDialog(
     onToggleSelection: (Long) -> Unit = {},
     onExitSelection: () -> Unit = {},
     onResubmitSelected: () -> Unit = {},
-    wavelogBusy: Boolean = false,
-    wavelogPreview: com.rtbishop.look4sat.core.domain.repository.WavelogUploadPreview? = null,
-    wavelogMessage: String = "",
-    onWavelogUpload: () -> Unit = {},
-    onConfirmWavelogUpload: () -> Unit = {},
-    onDismissWavelogPreview: () -> Unit = {},
-    onDismissWavelogMessage: () -> Unit = {}
+    /** Submit count of the Wavelog batch riding this upload (0 hides the note). */
+    wavelogCount: Int = 0
 ) {
     val swipeController = rememberSwipeController()
     // Entering selection mode closes any row left swiped open — reveals are off there.
@@ -173,14 +168,6 @@ fun LogbookDialog(
                     }
                 }
             }
-            Row(
-                horizontalArrangement = Arrangement.End,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                TextButton(onClick = onWavelogUpload, enabled = !wavelogBusy) {
-                    Text(stringResource(R.string.prefs_logbook_wavelog_upload))
-                }
-            }
         }
     }
 
@@ -196,6 +183,7 @@ fun LogbookDialog(
         LogbookUploadPreviewDialog(
             preview = preview,
             busy = uploadBusy,
+            wavelogCount = wavelogCount,
             onConfirm = onConfirmUpload,
             onDismiss = onDismissPreview
         )
@@ -209,27 +197,6 @@ fun LogbookDialog(
             text = { Text(uploadMessage) },
             confirmButton = {
                 TextButton(onClick = onDismissMessage) { Text("OK") }
-            }
-        )
-    }
-
-    wavelogPreview?.let { preview ->
-        com.rtbishop.look4sat.core.presentation.WavelogUploadPreviewDialog(
-            preview = preview,
-            busy = wavelogBusy,
-            onConfirm = onConfirmWavelogUpload,
-            onDismiss = onDismissWavelogPreview
-        )
-    }
-    if (wavelogMessage.isNotBlank()) {
-        AlertDialog(
-            onDismissRequest = onDismissWavelogMessage,
-            shape = sheetDialogShape(),
-            containerColor = sheetDialogContainerColor(),
-            title = { SheetDialogTitle("Wavelog Upload") },
-            text = { Text(wavelogMessage) },
-            confirmButton = {
-                TextButton(onClick = onDismissWavelogMessage) { Text("OK") }
             }
         )
     }
@@ -251,6 +218,7 @@ fun LogbookDialog(
 private fun LogbookUploadPreviewDialog(
     preview: com.rtbishop.look4sat.core.domain.repository.LoTWUploadPreview,
     busy: Boolean,
+    wavelogCount: Int,
     onConfirm: () -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -287,6 +255,13 @@ private fun LogbookUploadPreviewDialog(
                     // locked in by award credits — say so before the operator commits.
                     Text(
                         stringResource(R.string.prefs_logbook_resubmit_note),
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+                if (wavelogCount > 0) {
+                    Text(
+                        stringResource(R.string.prefs_logbook_wavelog_sync, wavelogCount),
                         fontSize = 12.sp,
                         color = MaterialTheme.colorScheme.primary
                     )

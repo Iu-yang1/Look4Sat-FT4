@@ -67,8 +67,10 @@ data class SettingsState(
     val wavelogUploadStations: List<com.rtbishop.look4sat.core.domain.repository.WavelogStationInfo> = emptyList(),
     val wavelogUploadRights: String = "",
     val wavelogUploadProbeBusy: Boolean = false,
-    val wavelogPreview: com.rtbishop.look4sat.core.domain.repository.WavelogUploadPreview? = null,
-    val wavelogUploadBusy: Boolean = false,
+    /** Wavelog batch prepared alongside the logbook LoTW preview; uploaded when the
+     *  LoTW upload is confirmed (null when Wavelog is not ready). */
+    val wavelogPending: com.rtbishop.look4sat.core.domain.repository.WavelogUploadPreview? = null,
+    /** Config-block feedback (probe failures etc.); also shown inside the config dialog. */
     val wavelogUploadMessage: String? = null,
     val lotwSettings: com.rtbishop.look4sat.core.domain.model.LoTWSettings = com.rtbishop.look4sat.core.domain.model.LoTWSettings(),
     val lotwSyncing: Boolean = false,
@@ -163,10 +165,6 @@ sealed interface SettingsAction {
     data class UpdateWavelogUpload(val settings: WavelogUploadSettings) : SettingsAction
     data class FetchWavelogUploadStations(val url: String, val apiKey: String) : SettingsAction
     data class SelectWavelogUploadStation(val station: com.rtbishop.look4sat.core.domain.repository.WavelogStationInfo) : SettingsAction
-    data object PrepareWavelogUpload : SettingsAction
-    data object ConfirmWavelogUpload : SettingsAction
-    data object DismissWavelogPreview : SettingsAction
-    data object ClearWavelogUploadMessage : SettingsAction
 
     // LoTW confirmed grids
     data class UpdateLoTW(val settings: com.rtbishop.look4sat.core.domain.model.LoTWSettings) : SettingsAction

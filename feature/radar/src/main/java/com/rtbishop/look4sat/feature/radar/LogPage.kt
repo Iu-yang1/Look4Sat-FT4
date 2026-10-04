@@ -68,7 +68,6 @@ import com.rtbishop.look4sat.core.presentation.sheetDialogContainerColor
 import com.rtbishop.look4sat.core.presentation.sheetDialogShape
 import com.rtbishop.look4sat.core.presentation.gridsLabel
 import com.rtbishop.look4sat.core.presentation.LoTWPositionWarningDialog
-import com.rtbishop.look4sat.core.presentation.WavelogUploadPreviewDialog
 
 @Composable
 fun LogPage(
@@ -215,14 +214,7 @@ fun LogPage(
                 modifier = Modifier.weight(1f)
             ) { Text("上传 LoTW", fontSize = 13.sp) }
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
-            OutlinedButton(
-                onClick = logViewModel::prepareWavelogUpload,
-                enabled = !logUiState.busy && !logUiState.wavelogBusy,
-                modifier = Modifier.weight(1f)
-            ) { Text("上传 Wavelog", fontSize = 13.sp) }
-        }
-        if (logUiState.busy || logUiState.wavelogBusy) {
+        if (logUiState.busy) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 CircularProgressIndicator(modifier = Modifier.padding(4.dp), strokeWidth = 2.dp)
                 Text("Working…", fontSize = 13.sp)
@@ -268,19 +260,11 @@ fun LogPage(
             UploadPreviewDialog(
                 preview = preview,
                 busy = logUiState.busy,
+                wavelogCount = logUiState.wavelogPending?.count ?: 0,
                 onConfirm = logViewModel::confirmUpload,
                 onDismiss = logViewModel::dismissPreview
             )
         }
-    }
-
-    logUiState.wavelogPreview?.let { preview ->
-        WavelogUploadPreviewDialog(
-            preview = preview,
-            busy = logUiState.wavelogBusy,
-            onConfirm = logViewModel::confirmWavelogUpload,
-            onDismiss = logViewModel::dismissWavelogPreview
-        )
     }
 
     if (logUiState.message.isNotBlank()) {
@@ -292,19 +276,6 @@ fun LogPage(
             text = { Text(logUiState.message) },
             confirmButton = {
                 TextButton(onClick = logViewModel::clearMessage) { Text("OK") }
-            }
-        )
-    }
-
-    if (logUiState.wavelogMessage.isNotBlank()) {
-        AlertDialog(
-            onDismissRequest = logViewModel::clearWavelogMessage,
-            shape = sheetDialogShape(),
-            containerColor = sheetDialogContainerColor(),
-            title = { SheetDialogTitle("Wavelog Upload") },
-            text = { Text(logUiState.wavelogMessage) },
-            confirmButton = {
-                TextButton(onClick = logViewModel::clearWavelogMessage) { Text("OK") }
             }
         )
     }
@@ -436,6 +407,7 @@ private fun PostDialog(
 private fun UploadPreviewDialog(
     preview: com.rtbishop.look4sat.core.domain.repository.LoTWUploadPreview,
     busy: Boolean,
+    wavelogCount: Int = 0,
     onConfirm: () -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -483,6 +455,13 @@ private fun UploadPreviewDialog(
                         )
                     }
                     Text(parts.joinToString(" · "), fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
+                }
+                if (wavelogCount > 0) {
+                    Text(
+                        "同时同步 Wavelog：$wavelogCount 条",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.primary
+                    )
                 }
                 Text(preview.contacts.joinToString("\n") { it }, fontSize = 12.sp, maxLines = 8)
             }

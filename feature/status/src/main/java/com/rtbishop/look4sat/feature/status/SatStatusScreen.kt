@@ -400,6 +400,7 @@ private fun ReportDialog(
     onDismiss: () -> Unit
 ) {
     val dayReports = day.slots.flatMap { it.reportIds }.mapNotNull { reports[it] }
+    val conflictedIds = day.slots.filter { it.isConflicted }.flatMap { it.reportIds }.toSet()
     InfoDialog(
         title = "$statusName · ${day.dateLabel}",
         onDismiss = onDismiss,
@@ -448,6 +449,10 @@ private fun ReportDialog(
                             )
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(text = report.statusText, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                            if (report.id in conflictedIds) {
+                                Spacer(modifier = Modifier.width(8.dp))
+                                ConflictBadge()
+                            }
                         }
                         Text(
                             text = "${report.call}  ${report.dateUtc}  ${report.timeUtc}" +
@@ -460,6 +465,23 @@ private fun ReportDialog(
                 }
             }
         }
+    }
+}
+
+/** Orange "冲突" tag on reports whose 2h slot has no strict majority (Conflicting reports). */
+@Composable
+private fun ConflictBadge() {
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(4.dp))
+            .background(Color(0xFFFE6100).copy(alpha = 0.15f))
+            .padding(horizontal = 5.dp, vertical = 1.dp)
+    ) {
+        Text(
+            text = stringResource(id = R.string.amsat_conflict),
+            fontSize = 11.sp,
+            color = Color(0xFFFE6100)
+        )
     }
 }
 

@@ -30,9 +30,10 @@ data class SatReport(
 
 /** State of one 2-hour slot */
 data class SatSlot(
-    val statusColor: Long,   // ARGB 状态色(-1 = 无报告)
-    val count: Int,          // 报告数量(0 = 无)
-    val reportIds: List<String> = emptyList() // 该槽报告 ID 列表
+    val statusColor: Long,   // ARGB 状态色（灰=无报告；判定见 AmSatRepository.slotStatusOf）
+    val count: Int,          // 官网页口径：多数方计数（冲突槽/异常槽=总条数；0 = 无）
+    val reportIds: List<String> = emptyList(), // 该槽报告 ID 列表
+    val isConflicted: Boolean = false // 官网页"Conflicting reports"：该槽无严格多数（弹窗据此标注）
 )
 
 /** One satellite day (12 two-hour slots) */

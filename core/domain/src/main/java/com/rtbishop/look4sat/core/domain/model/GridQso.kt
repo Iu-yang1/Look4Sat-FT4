@@ -131,3 +131,13 @@ fun GridQso.stationGridSetKey(): String? =
  */
 fun List<GridQso>.scopedToStation(stationId: String?): List<GridQso> =
     if (stationId == null) this else filter { it.stationGridSetKey() == stationId }
+
+/**
+ * For every grid in the store, the callsign of the earliest QSO — scoped to the
+ * operated-grid selector's choice first, so a specific 台址 labels each worked
+ * cell with ITS first contact; null ("All") keeps the global first call.
+ */
+fun Map<String, List<GridQso>>.firstCallsByGrid(stationId: String?): Map<String, String> =
+    mapNotNull { (grid, qsos) ->
+        qsos.scopedToStation(stationId).minByOrNull { it.epochMs }?.let { grid to it.call }
+    }.toMap()

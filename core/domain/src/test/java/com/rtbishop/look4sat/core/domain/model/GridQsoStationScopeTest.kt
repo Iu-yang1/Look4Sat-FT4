@@ -94,4 +94,35 @@ class GridQsoStationScopeTest {
         val list = listOf(qso("A", myGrid = "OL62"))
         assertEquals(emptyList<GridQso>(), list.scopedToStation("PM01"))
     }
+
+    // --- firstCallsByGrid ---
+
+    @Test
+    fun `first call per grid picks the earliest of the scoped records`() {
+        val store = mapOf(
+            "OL62" to listOf(
+                qso("OTHER", myGrid = "PM01").copy(epochMs = 10),
+                qso("MINE", myGrid = "OL62").copy(epochMs = 20)
+            ),
+            "PM95" to listOf(qso("MINE2", myGrid = "OL62").copy(epochMs = 30))
+        )
+        assertEquals(mapOf("OL62" to "MINE", "PM95" to "MINE2"), store.firstCallsByGrid("OL62"))
+    }
+
+    @Test
+    fun `first call per grid with All uses every record`() {
+        val store = mapOf(
+            "OL62" to listOf(
+                qso("OTHER", myGrid = "PM01").copy(epochMs = 10),
+                qso("MINE", myGrid = "OL62").copy(epochMs = 20)
+            )
+        )
+        assertEquals(mapOf("OL62" to "OTHER"), store.firstCallsByGrid(null))
+    }
+
+    @Test
+    fun `grids without scoped records get no first call`() {
+        val store = mapOf("OL62" to listOf(qso("A", myGrid = "PM01")))
+        assertEquals(emptyMap<String, String>(), store.firstCallsByGrid("OL62"))
+    }
 }

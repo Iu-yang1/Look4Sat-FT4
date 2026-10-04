@@ -85,6 +85,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.rtbishop.look4sat.core.domain.model.AwardCalculator
 import com.rtbishop.look4sat.core.domain.model.AwardProgress
 import com.rtbishop.look4sat.core.domain.model.AwardType
+import com.rtbishop.look4sat.core.domain.model.firstCallsByGrid
 import com.rtbishop.look4sat.core.domain.model.MapSource
 import com.rtbishop.look4sat.core.domain.model.myStationGrids
 import com.rtbishop.look4sat.core.domain.model.scopedToStation
@@ -306,13 +307,6 @@ private fun MapScreen(
     // Selected award filter. Lives in an Activity-scoped ViewModel so it
     // survives page switches; defaults to VUCC only once per process (cold start).
     var selectedAward by mapFilterViewModel.selectedAward
-    // First callsign worked in each grid (earliest QSO by time), used by the
-    // "首通呼号" label mode — derived from the same QSO store as the worked fills.
-    val firstCallsByGrid: Map<String, String> = remember(uiState.workedGridQsos) {
-        uiState.workedGridQsos.mapNotNull { (grid, qsos) ->
-            qsos.minByOrNull { it.epochMs }?.let { grid to it.call }
-        }.toMap()
-    }
     // 台址名单: QSOs grouped by the 台址's GRID SET. A station location (台址)
     // can span several grids (MY_GRIDSQUARE + MY_VUCC_GRIDS), and QSOs whose
     // location covers the same grid set belong to the same 台址; groups with an
@@ -352,6 +346,13 @@ private fun MapScreen(
     val workedGrids = remember(uiState.workedGrids, stationGroups, selectedStationId) {
         if (selectedStationId == null) uiState.workedGrids
         else stationGroups.firstOrNull { it.id == selectedStationId }?.worked ?: emptySet()
+    }
+    // First callsign worked in each grid (earliest QSO by time), used by the
+    // "首通呼号" label mode. Scoped to the selected 台址 like the fills: with a
+    // specific operated grid chosen, the label must show ITS first contact, not
+    // another 台址's (user decision 2026-10-05); "All" = global first call.
+    val firstCallsByGrid: Map<String, String> = remember(uiState.workedGridQsos, selectedStationId) {
+        uiState.workedGridQsos.firstCallsByGrid(selectedStationId)
     }
     val isGridMode = uiState.isGridMode
     // True when this composition restored a saved viewport. Only grid mode

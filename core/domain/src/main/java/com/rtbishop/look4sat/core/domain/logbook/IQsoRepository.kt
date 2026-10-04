@@ -23,6 +23,10 @@ interface IQsoRepository {
      * logbook row can show which grids the QSO went out under.
      */
     suspend fun markUploaded(ids: List<Long>, grids: List<String> = emptyList())
+
+    /** Marks the batch as uploaded to Wavelog (independent of the LoTW upload state). */
+    suspend fun markWavelogUploaded(ids: List<Long>)
+
     suspend fun exportAdi(ids: Set<Long>? = null, includeIncomplete: Boolean = false): String
     suspend fun importAdi(content: String): AdifImportResult
     suspend fun mergeConfirmed(records: List<QsoRecord>): AdifImportResult

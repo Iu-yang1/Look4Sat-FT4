@@ -295,6 +295,27 @@ class QsoRepositoryTest {
         assertEquals(1, dao.getAll().size)
     }
 
+    @Test
+    fun markWavelogUploaded_setsOnlyTheWavelogFlag() = runBlocking {
+        val id = dao.save(loggedInApp("SO-50", lotwUploaded = false).toEntity())
+
+        repository.markWavelogUploaded(listOf(id))
+
+        val row = dao.getAll().single()
+        assertTrue(row.wavelogUploaded)
+        assertFalse(row.lotwUploaded)
+    }
+
+    @Test
+    fun save_editingAWavelogUploadedRecordCreatesANewRecord() = runBlocking {
+        val id = dao.save(loggedInApp("SO-50", lotwUploaded = false).copy(wavelogUploaded = true).toEntity())
+
+        repository.save(loggedInApp("SO-50", lotwUploaded = false).copy(id = id, theirCallsign = "BG5JVM"))
+
+        assertEquals(2, dao.getAll().size)
+        assertEquals(1, dao.getAll().count { it.wavelogUploaded })
+    }
+
     /** A record as the log page creates it: tracker name, repeater pair, uplink band. */
     private fun loggedInApp(satelliteName: String, lotwUploaded: Boolean) = QsoRecord(
         startUtcMillis = qsoStart,
@@ -355,6 +376,7 @@ class QsoRepositoryTest {
         propagationMode = propagationMode,
         lotwConfirmed = lotwConfirmed,
         lotwUploaded = lotwUploaded,
+        wavelogUploaded = wavelogUploaded,
         lotwReceived = lotwReceived,
         lotwQslDate = lotwQslDate,
         vuccGrids = vuccGrids.joinToString(","),
@@ -392,6 +414,10 @@ class QsoRepositoryTest {
 
         override suspend fun markUploaded(ids: List<Long>) {
             ids.forEach { id -> rows[id]?.let { rows[id] = it.copy(lotwUploaded = true) } }
+        }
+
+        override suspend fun markWavelogUploaded(ids: List<Long>) {
+            ids.forEach { id -> rows[id]?.let { rows[id] = it.copy(wavelogUploaded = true) } }
         }
     }
 }

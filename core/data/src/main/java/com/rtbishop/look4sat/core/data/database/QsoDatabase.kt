@@ -20,7 +20,7 @@ import com.rtbishop.look4sat.core.data.database.entity.QsoEntity
  * upload receipts). Kept apart from [Look4SatDb] so existing installations
  * never need a migration of the satellite database.
  */
-@Database(entities = [QsoEntity::class], version = 3, exportSchema = false)
+@Database(entities = [QsoEntity::class], version = 4, exportSchema = false)
 abstract class QsoDatabase : RoomDatabase() {
     abstract fun qsoDao(): QsoDao
 }
@@ -36,5 +36,12 @@ val MIGRATION_QSO_1_2 = object : Migration(1, 2) {
 val MIGRATION_QSO_2_3 = object : Migration(2, 3) {
     override fun migrate(db: SupportSQLiteDatabase) {
         db.execSQL("ALTER TABLE qso_records ADD COLUMN theirVuccGrids TEXT NOT NULL DEFAULT ''")
+    }
+}
+
+/** v3 → v4: track whether a QSO was uploaded to Wavelog (independent of the LoTW state). */
+val MIGRATION_QSO_3_4 = object : Migration(3, 4) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE qso_records ADD COLUMN wavelogUploaded INTEGER NOT NULL DEFAULT 0")
     }
 }

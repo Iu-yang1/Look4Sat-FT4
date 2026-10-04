@@ -104,3 +104,30 @@ data class GridQso(
         else -> band.trim().uppercase()
     }
 }
+
+/**
+ * Every MY-side grid of this QSO: [myGrids] (MY_GRIDSQUARE + MY_VUCC_GRIDS)
+ * with a single-grid fallback to [myGrid] for records synced before
+ * multi-grid support. Empty when the record carries no MY-side grid at all.
+ */
+fun GridQso.myStationGrids(): Set<String> =
+    myGrids.ifEmpty { myGrid?.let { setOf(it) }.orEmpty() }
+
+/**
+ * Station-location (台址) grouping key: the QSO's MY grid set, sorted and
+ * comma-joined ("OL62", "OM60,PM01"). Records covering the same grid set
+ * belong to the same 台址 — they are VUCC-equivalent. Null when the record
+ * carries no MY-side grid. Backs both the map's operated-grid selector and
+ * its per-台址 grid-detail filtering, so the two scope by one identity.
+ */
+fun GridQso.stationGridSetKey(): String? =
+    myStationGrids().takeIf { it.isNotEmpty() }?.sorted()?.joinToString(",")
+
+/**
+ * Scopes a per-grid QSO list to the operated-grid selector's choice:
+ * [stationId] == null ("All") keeps the list as-is, otherwise only records
+ * whose [stationGridSetKey] matches stay. Records without a MY-side grid
+ * belong to no 台址 and are dropped under any specific scope.
+ */
+fun List<GridQso>.scopedToStation(stationId: String?): List<GridQso> =
+    if (stationId == null) this else filter { it.stationGridSetKey() == stationId }

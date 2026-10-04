@@ -86,6 +86,9 @@ import com.rtbishop.look4sat.core.domain.model.AwardCalculator
 import com.rtbishop.look4sat.core.domain.model.AwardProgress
 import com.rtbishop.look4sat.core.domain.model.AwardType
 import com.rtbishop.look4sat.core.domain.model.MapSource
+import com.rtbishop.look4sat.core.domain.model.myStationGrids
+import com.rtbishop.look4sat.core.domain.model.scopedToStation
+import com.rtbishop.look4sat.core.domain.model.stationGridSetKey
 import com.rtbishop.look4sat.core.domain.predict.GeoPos
 import com.rtbishop.look4sat.core.domain.predict.OrbitalObject
 import com.rtbishop.look4sat.core.domain.predict.OrbitalPos
@@ -321,10 +324,8 @@ private fun MapScreen(
         val byGridSet = LinkedHashMap<String, Pair<Set<String>, MutableSet<String>>>()
         for ((grid, qsos) in uiState.workedGridQsos) {
             for (q in qsos) {
-                val gs = q.myGrids.ifEmpty { q.myGrid?.let { setOf(it) }.orEmpty() }
-                if (gs.isEmpty()) continue
-                val key = gs.sorted().joinToString(",")
-                byGridSet.getOrPut(key) { gs to mutableSetOf() }.second.add(grid)
+                val key = q.stationGridSetKey() ?: continue
+                byGridSet.getOrPut(key) { q.myStationGrids() to mutableSetOf() }.second.add(grid)
             }
         }
         byGridSet.map { (key, v) -> StationGroup(id = key, grids = v.first, worked = v.second) }
@@ -539,7 +540,11 @@ private fun MapScreen(
     selectedGrid?.let { grid ->
         WorkedGridQsoDialog(
             grid = grid,
-            qsos = uiState.workedGridQsos[grid].orEmpty().sortedBy { it.epochMs },
+            // Scope to the selected 台址 (null = All): a specific station location
+            // must not show other locations' QSOs (bug report 2026-10-05).
+            qsos = uiState.workedGridQsos[grid].orEmpty()
+                .scopedToStation(selectedStationId)
+                .sortedBy { it.epochMs },
             marked = uiState.markedGrids[grid].orEmpty(),
             isUtc = uiState.isUtc,
             matchCalculating = matchCalculating,

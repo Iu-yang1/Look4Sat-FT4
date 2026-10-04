@@ -346,6 +346,9 @@ private class FakeSettingsRepoForSearch : ISettingsRepo {
     )
     override val wavelogSettings: StateFlow<com.rtbishop.look4sat.core.domain.model.WavelogSettings> =
         MutableStateFlow(com.rtbishop.look4sat.core.domain.model.WavelogSettings())
+    override val wavelogUploadSettings: StateFlow<com.rtbishop.look4sat.core.domain.model.WavelogUploadSettings> =
+        MutableStateFlow(com.rtbishop.look4sat.core.domain.model.WavelogUploadSettings())
+    override fun updateWavelogUploadSettings(settings: com.rtbishop.look4sat.core.domain.model.WavelogUploadSettings) = Unit
     override val lotwSettings: StateFlow<com.rtbishop.look4sat.core.domain.model.LoTWSettings> =
         MutableStateFlow(com.rtbishop.look4sat.core.domain.model.LoTWSettings())
 

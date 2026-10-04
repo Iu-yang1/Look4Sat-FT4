@@ -260,6 +260,7 @@ fun LogPage(
             UploadPreviewDialog(
                 preview = preview,
                 busy = logUiState.busy,
+                wavelogCount = logUiState.wavelogPending?.count ?: 0,
                 onConfirm = logViewModel::confirmUpload,
                 onDismiss = logViewModel::dismissPreview
             )
@@ -406,6 +407,7 @@ private fun PostDialog(
 private fun UploadPreviewDialog(
     preview: com.rtbishop.look4sat.core.domain.repository.LoTWUploadPreview,
     busy: Boolean,
+    wavelogCount: Int = 0,
     onConfirm: () -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -453,6 +455,13 @@ private fun UploadPreviewDialog(
                         )
                     }
                     Text(parts.joinToString(" · "), fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
+                }
+                if (wavelogCount > 0) {
+                    Text(
+                        "同时同步 Wavelog：$wavelogCount 条",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.primary
+                    )
                 }
                 Text(preview.contacts.joinToString("\n") { it }, fontSize = 12.sp, maxLines = 8)
             }

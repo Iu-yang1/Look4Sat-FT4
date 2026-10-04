@@ -31,6 +31,7 @@ import com.rtbishop.look4sat.core.domain.model.PassesSettings
 import com.rtbishop.look4sat.core.domain.model.RCSettings
 import com.rtbishop.look4sat.core.domain.model.RadioControlSettings
 import com.rtbishop.look4sat.core.domain.model.WavelogSettings
+import com.rtbishop.look4sat.core.domain.model.WavelogUploadSettings
 import com.rtbishop.look4sat.core.domain.predict.GeoPos
 import com.rtbishop.look4sat.core.domain.repository.ISettingsRepo
 import com.rtbishop.look4sat.core.domain.utility.positionToQth
@@ -384,6 +385,40 @@ class SettingsRepo(
 
     override fun setLastLotwSyncCallsign(callsign: String) =
         preferences.edit { putString(keyLastLotwSyncCallsign, callsign.trim().uppercase()) }
+    //endregion
+
+    //region # Wavelog upload settings
+    private val keyWavelogUploadUrl = "wavelogUploadUrl"
+    private val keyWavelogUploadApiKey = "wavelogUploadApiKey"
+    private val keyWavelogUploadStationId = "wavelogUploadStationId"
+    private val keyWavelogUploadStationName = "wavelogUploadStationName"
+    private val keyWavelogUploadStationCallsign = "wavelogUploadStationCallsign"
+    private val keyWavelogUploadStationGrid = "wavelogUploadStationGrid"
+
+    private val _wavelogUploadSettings = MutableStateFlow(getWavelogUploadSettings())
+    override val wavelogUploadSettings: StateFlow<WavelogUploadSettings> = _wavelogUploadSettings
+
+    override fun updateWavelogUploadSettings(settings: WavelogUploadSettings) {
+        val trimmed = settings.copy(url = settings.url.trim(), apiKey = settings.apiKey.trim())
+        preferences.edit {
+            putString(keyWavelogUploadUrl, trimmed.url)
+            putString(keyWavelogUploadApiKey, trimmed.apiKey)
+            putString(keyWavelogUploadStationId, trimmed.stationId)
+            putString(keyWavelogUploadStationName, trimmed.stationName)
+            putString(keyWavelogUploadStationCallsign, trimmed.stationCallsign)
+            putString(keyWavelogUploadStationGrid, trimmed.stationGrid)
+        }
+        _wavelogUploadSettings.value = trimmed
+    }
+
+    private fun getWavelogUploadSettings(): WavelogUploadSettings = WavelogUploadSettings(
+        url = preferences.getString(keyWavelogUploadUrl, null).orEmpty(),
+        apiKey = preferences.getString(keyWavelogUploadApiKey, null).orEmpty(),
+        stationId = preferences.getString(keyWavelogUploadStationId, null).orEmpty(),
+        stationName = preferences.getString(keyWavelogUploadStationName, null).orEmpty(),
+        stationCallsign = preferences.getString(keyWavelogUploadStationCallsign, null).orEmpty(),
+        stationGrid = preferences.getString(keyWavelogUploadStationGrid, null).orEmpty()
+    )
     //endregion
 
     //region # Transceivers settings

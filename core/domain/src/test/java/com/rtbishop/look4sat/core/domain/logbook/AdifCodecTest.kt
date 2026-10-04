@@ -83,4 +83,20 @@ class AdifCodecTest {
         assertTrue(record.lotwConfirmed)
         assertTrue(record.isSatellite)
     }
+
+    @Test
+    fun encodeOmitsStationCallsignForWavelog() {
+        val record = QsoRecord(
+            startUtcMillis = 1_700_000_000_000L,
+            theirCallsign = "N0CALL",
+            myCallsign = "BA7OPF",
+            txFrequencyHz = 145_850_000L,
+            band = "2M",
+            satelliteName = "SO-50"
+        )
+        val adif = AdifCodec.encode(listOf(record), includeStationCallsign = false)
+        assertTrue(!adif.contains("<STATION_CALLSIGN"))
+        assertTrue(adif.contains("<CALL:6>N0CALL"))
+        assertTrue(adif.contains("<SAT_NAME:5>SO-50"))
+    }
 }

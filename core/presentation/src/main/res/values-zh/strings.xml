@@ -166,6 +166,16 @@
     <string name="prefs_wavelog_hint">已同步网格数：%1$d。格式：API key:日志ID。填好直接点同步，会自动保存并拉取。</string>
     <string name="prefs_wavelog_sync">立即同步</string>
     <string name="prefs_wavelog_syncing">同步中…</string>
+    <string name="prefs_wavelog_upload_title">Wavelog 日志上传</string>
+    <string name="prefs_wavelog_upload_not_configured">未配置 — 把本机通联记录上传到 Wavelog</string>
+    <string name="prefs_wavelog_upload_configured">站点 %1$s — 可以上传</string>
+    <string name="prefs_wavelog_upload_apikey">API key（读写权限）</string>
+    <string name="prefs_wavelog_upload_fetch">获取站点</string>
+    <string name="prefs_wavelog_upload_probing">检测中…</string>
+    <string name="prefs_wavelog_upload_station_none">未选择站点 — 点「获取站点」</string>
+    <string name="prefs_wavelog_upload_rights_rw">密钥：读写 — 可上传</string>
+    <string name="prefs_wavelog_upload_rights_r">密钥只读 — 请在 Wavelog → API 生成「读写」密钥</string>
+    <string name="prefs_wavelog_upload_hint">点「获取站点」选择上传使用的台站档案；密钥需要「读写」权限。</string>
     <string name="prefs_lotw_title">LoTW 已确认网格</string>
     <string name="prefs_lotw_callsign">LoTW 呼号</string>
     <string name="prefs_lotw_password">LoTW 密码</string>
@@ -201,6 +211,7 @@
     <string name="prefs_logbook_selected">已选 %1$d 条</string>
     <string name="prefs_logbook_select_hint">长按记录行可多选重传</string>
     <string name="prefs_logbook_resubmit_note">已上传记录将按当前台址就地更新；已被奖项使用的旧网格可能被拒绝。</string>
+    <string name="prefs_logbook_wavelog_sync">同时同步 Wavelog：%1$d 条</string>
     <string name="lotw_upload_grid_title">上传前核对</string>
     <string name="lotw_upload_grid_fix">修改台址</string>
     <string name="lotw_upload_grid_ignore">忽略</string>

@@ -18,7 +18,7 @@ import java.util.TimeZone
 object AdifCodec {
     private val utc = TimeZone.getTimeZone("UTC")
 
-    fun encode(records: List<QsoRecord>): String = buildString {
+    fun encode(records: List<QsoRecord>, includeStationCallsign: Boolean = true): String = buildString {
         append(field("ADIF_VER", "3.1.7"))
         append(field("PROGRAMID", "Look4Sat"))
         append("<EOH>\r\n")
@@ -32,7 +32,7 @@ object AdifCodec {
                 append(field("TIME_OFF", format(it, "HHmmss")))
             }
             append(field("CALL", record.theirCallsign))
-            append(field("STATION_CALLSIGN", record.myCallsign))
+            if (includeStationCallsign) append(field("STATION_CALLSIGN", record.myCallsign))
             appendOptional("MODE", record.mode)
             appendOptional("SUBMODE", record.submode)
             appendOptional("GRIDSQUARE", record.theirGrid)

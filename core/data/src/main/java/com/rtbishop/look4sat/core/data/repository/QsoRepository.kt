@@ -51,12 +51,14 @@ class QsoRepository(
             // place: that contact already exists on LoTW under the old values. The original row
             // keeps its upload/confirmation state, and the edited content is saved as a NEW
             // record (without any LoTW state, so it can be uploaded again).
-            if (previous != null && (previous.lotwUploaded || previous.lotwConfirmed) &&
+            if (previous != null &&
+                (previous.lotwUploaded || previous.lotwConfirmed || previous.wavelogUploaded) &&
                 !record.sameEditableContentAs(previous)
             ) {
                 dao.save(record.copy(
                     id = 0L,
                     lotwUploaded = false, lotwConfirmed = false, lotwReceived = false,
+                    wavelogUploaded = false,
                     lotwQslDate = "", vuccGrids = emptyList(), theirVuccGrids = emptyList(),
                     dxcc = null, country = "", cqZone = null, region = ""
                 ).toEntity())
@@ -91,6 +93,11 @@ class QsoRepository(
             dao.find(id)?.toDomain()?.takeIf { it.vuccGrids != normalized }?.copy(vuccGrids = normalized)
         }
         if (stamped.isNotEmpty()) dao.saveBatch(stamped.map { it.toEntity() })
+    }
+
+    override suspend fun markWavelogUploaded(ids: List<Long>) = withContext(dispatcher) {
+        if (ids.isEmpty()) return@withContext
+        importMutex.withLock { dao.markWavelogUploaded(ids) }
     }
 
     override suspend fun exportAdi(ids: Set<Long>?, includeIncomplete: Boolean): String = withContext(dispatcher) {
@@ -286,6 +293,7 @@ private fun QsoEntity.toDomain() = QsoRecord(
     propagationMode = propagationMode,
     lotwConfirmed = lotwConfirmed,
     lotwUploaded = lotwUploaded,
+    wavelogUploaded = wavelogUploaded,
     lotwReceived = lotwReceived,
     lotwQslDate = lotwQslDate,
     vuccGrids = vuccGrids.split(',').filter(String::isNotBlank),
@@ -323,6 +331,7 @@ private fun QsoRecord.toEntity() = QsoEntity(
     propagationMode = propagationMode.ifBlank { if (satelliteName.isNotBlank()) "SAT" else "" },
     lotwConfirmed = lotwConfirmed,
     lotwUploaded = lotwUploaded,
+    wavelogUploaded = wavelogUploaded,
     lotwReceived = lotwReceived,
     lotwQslDate = lotwQslDate,
     vuccGrids = vuccGrids.joinToString(","),

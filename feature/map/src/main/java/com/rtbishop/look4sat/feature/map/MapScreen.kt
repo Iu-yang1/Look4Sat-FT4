@@ -85,7 +85,11 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.rtbishop.look4sat.core.domain.model.AwardCalculator
 import com.rtbishop.look4sat.core.domain.model.AwardProgress
 import com.rtbishop.look4sat.core.domain.model.AwardType
+import com.rtbishop.look4sat.core.domain.model.firstCallsByGrid
 import com.rtbishop.look4sat.core.domain.model.MapSource
+import com.rtbishop.look4sat.core.domain.model.myStationGrids
+import com.rtbishop.look4sat.core.domain.model.scopedToStation
+import com.rtbishop.look4sat.core.domain.model.stationGridSetKey
 import com.rtbishop.look4sat.core.domain.predict.GeoPos
 import com.rtbishop.look4sat.core.domain.predict.OrbitalObject
 import com.rtbishop.look4sat.core.domain.predict.OrbitalPos
@@ -303,13 +307,6 @@ private fun MapScreen(
     // Selected award filter. Lives in an Activity-scoped ViewModel so it
     // survives page switches; defaults to VUCC only once per process (cold start).
     var selectedAward by mapFilterViewModel.selectedAward
-    // First callsign worked in each grid (earliest QSO by time), used by the
-    // "首通呼号" label mode — derived from the same QSO store as the worked fills.
-    val firstCallsByGrid: Map<String, String> = remember(uiState.workedGridQsos) {
-        uiState.workedGridQsos.mapNotNull { (grid, qsos) ->
-            qsos.minByOrNull { it.epochMs }?.let { grid to it.call }
-        }.toMap()
-    }
     // 台址名单: QSOs grouped by the 台址's GRID SET. A station location (台址)
     // can span several grids (MY_GRIDSQUARE + MY_VUCC_GRIDS), and QSOs whose
     // location covers the same grid set belong to the same 台址; groups with an
@@ -321,10 +318,8 @@ private fun MapScreen(
         val byGridSet = LinkedHashMap<String, Pair<Set<String>, MutableSet<String>>>()
         for ((grid, qsos) in uiState.workedGridQsos) {
             for (q in qsos) {
-                val gs = q.myGrids.ifEmpty { q.myGrid?.let { setOf(it) }.orEmpty() }
-                if (gs.isEmpty()) continue
-                val key = gs.sorted().joinToString(",")
-                byGridSet.getOrPut(key) { gs to mutableSetOf() }.second.add(grid)
+                val key = q.stationGridSetKey() ?: continue
+                byGridSet.getOrPut(key) { q.myStationGrids() to mutableSetOf() }.second.add(grid)
             }
         }
         byGridSet.map { (key, v) -> StationGroup(id = key, grids = v.first, worked = v.second) }
@@ -351,6 +346,13 @@ private fun MapScreen(
     val workedGrids = remember(uiState.workedGrids, stationGroups, selectedStationId) {
         if (selectedStationId == null) uiState.workedGrids
         else stationGroups.firstOrNull { it.id == selectedStationId }?.worked ?: emptySet()
+    }
+    // First callsign worked in each grid (earliest QSO by time), used by the
+    // "首通呼号" label mode. Scoped to the selected 台址 like the fills: with a
+    // specific operated grid chosen, the label must show ITS first contact, not
+    // another 台址's (user decision 2026-10-05); "All" = global first call.
+    val firstCallsByGrid: Map<String, String> = remember(uiState.workedGridQsos, selectedStationId) {
+        uiState.workedGridQsos.firstCallsByGrid(selectedStationId)
     }
     val isGridMode = uiState.isGridMode
     // True when this composition restored a saved viewport. Only grid mode
@@ -539,7 +541,11 @@ private fun MapScreen(
     selectedGrid?.let { grid ->
         WorkedGridQsoDialog(
             grid = grid,
-            qsos = uiState.workedGridQsos[grid].orEmpty().sortedBy { it.epochMs },
+            // Scope to the selected 台址 (null = All): a specific station location
+            // must not show other locations' QSOs (bug report 2026-10-05).
+            qsos = uiState.workedGridQsos[grid].orEmpty()
+                .scopedToStation(selectedStationId)
+                .sortedBy { it.epochMs },
             marked = uiState.markedGrids[grid].orEmpty(),
             isUtc = uiState.isUtc,
             matchCalculating = matchCalculating,

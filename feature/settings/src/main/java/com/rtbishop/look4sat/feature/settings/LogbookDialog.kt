@@ -104,7 +104,9 @@ fun LogbookDialog(
     onStartSelection: (Long) -> Unit = {},
     onToggleSelection: (Long) -> Unit = {},
     onExitSelection: () -> Unit = {},
-    onResubmitSelected: () -> Unit = {}
+    onResubmitSelected: () -> Unit = {},
+    /** Submit count of the Wavelog batch riding this upload (0 hides the note). */
+    wavelogCount: Int = 0
 ) {
     val swipeController = rememberSwipeController()
     // Entering selection mode closes any row left swiped open — reveals are off there.
@@ -181,6 +183,7 @@ fun LogbookDialog(
         LogbookUploadPreviewDialog(
             preview = preview,
             busy = uploadBusy,
+            wavelogCount = wavelogCount,
             onConfirm = onConfirmUpload,
             onDismiss = onDismissPreview
         )
@@ -215,6 +218,7 @@ fun LogbookDialog(
 private fun LogbookUploadPreviewDialog(
     preview: com.rtbishop.look4sat.core.domain.repository.LoTWUploadPreview,
     busy: Boolean,
+    wavelogCount: Int,
     onConfirm: () -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -251,6 +255,13 @@ private fun LogbookUploadPreviewDialog(
                     // locked in by award credits — say so before the operator commits.
                     Text(
                         stringResource(R.string.prefs_logbook_resubmit_note),
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+                if (wavelogCount > 0) {
+                    Text(
+                        stringResource(R.string.prefs_logbook_wavelog_sync, wavelogCount),
                         fontSize = 12.sp,
                         color = MaterialTheme.colorScheme.primary
                     )

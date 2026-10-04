@@ -31,6 +31,7 @@ import com.rtbishop.look4sat.core.data.database.MIGRATION_1_2
 import com.rtbishop.look4sat.core.data.database.MIGRATION_2_3
 import com.rtbishop.look4sat.core.data.database.MIGRATION_QSO_1_2
 import com.rtbishop.look4sat.core.data.database.MIGRATION_QSO_2_3
+import com.rtbishop.look4sat.core.data.database.MIGRATION_QSO_3_4
 import com.rtbishop.look4sat.core.data.database.QsoDatabase
 import com.rtbishop.look4sat.core.data.framework.BluetoothReporter
 import com.rtbishop.look4sat.core.data.framework.Ft817Controller
@@ -49,6 +50,7 @@ import com.rtbishop.look4sat.core.data.repository.UpdateRepository
 import com.rtbishop.look4sat.core.data.repository.LoTWRepository
 import com.rtbishop.look4sat.core.data.repository.LocationRepo
 import com.rtbishop.look4sat.core.data.repository.WavelogRepository
+import com.rtbishop.look4sat.core.data.repository.WavelogUploadRepository
 import com.rtbishop.look4sat.core.data.source.LocalSource
 import com.rtbishop.look4sat.core.data.source.RemoteSource
 import com.rtbishop.look4sat.core.data.usecase.AddToCalendar
@@ -70,6 +72,7 @@ import com.rtbishop.look4sat.core.domain.repository.ISelectionRepo
 import com.rtbishop.look4sat.core.domain.repository.ISensorsRepo
 import com.rtbishop.look4sat.core.domain.repository.ISettingsRepo
 import com.rtbishop.look4sat.core.domain.repository.IWavelogRepository
+import com.rtbishop.look4sat.core.domain.repository.IWavelogUploadRepository
 import com.rtbishop.look4sat.core.domain.repository.MutualPassData
 import com.rtbishop.look4sat.core.domain.source.ILocalSource
 import com.rtbishop.look4sat.core.domain.source.IRemoteSource
@@ -101,10 +104,11 @@ class MainContainer(private val context: Context) : IMainContainer {
     override val amSatRepo by lazy { AmSatRepository(remoteSource, appScope) }
     override val updateRepo by lazy { UpdateRepository(remoteSource) }
     override val wavelogRepo: IWavelogRepository by lazy { WavelogRepository() }
+    override val wavelogUploadRepository: IWavelogUploadRepository by lazy { WavelogUploadRepository() }
     override val lotwRepo: ILoTWRepository by lazy { LoTWRepository() }
     override val qsoRepository: IQsoRepository by lazy {
         val database = Room.databaseBuilder(context, QsoDatabase::class.java, "Look4SatQsoDB")
-            .addMigrations(MIGRATION_QSO_1_2, MIGRATION_QSO_2_3)
+            .addMigrations(MIGRATION_QSO_1_2, MIGRATION_QSO_2_3, MIGRATION_QSO_3_4)
             .build()
         QsoRepository(database.qsoDao(), Dispatchers.IO)
     }

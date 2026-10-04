@@ -458,6 +458,11 @@ private class FakeSettingsRepo(dataSources: DataSourcesSettings = defaultDataSou
 
     override fun updateWavelogSettings(settings: com.rtbishop.look4sat.core.domain.model.WavelogSettings) = Unit
 
+    override val wavelogUploadSettings: StateFlow<com.rtbishop.look4sat.core.domain.model.WavelogUploadSettings> =
+        MutableStateFlow(com.rtbishop.look4sat.core.domain.model.WavelogUploadSettings())
+
+    override fun updateWavelogUploadSettings(settings: com.rtbishop.look4sat.core.domain.model.WavelogUploadSettings) = Unit
+
     override fun getWorkedGrids(): Set<String> = emptySet()
 
     private val workedGrids = MutableStateFlow(emptySet<String>())

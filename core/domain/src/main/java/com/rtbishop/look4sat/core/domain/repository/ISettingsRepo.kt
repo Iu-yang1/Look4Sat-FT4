@@ -24,6 +24,7 @@ import com.rtbishop.look4sat.core.domain.model.PassesSettings
 import com.rtbishop.look4sat.core.domain.model.RCSettings
 import com.rtbishop.look4sat.core.domain.model.RadioControlSettings
 import com.rtbishop.look4sat.core.domain.model.WavelogSettings
+import com.rtbishop.look4sat.core.domain.model.WavelogUploadSettings
 import com.rtbishop.look4sat.core.domain.predict.GeoPos
 import kotlinx.coroutines.flow.StateFlow
 
@@ -122,6 +123,11 @@ interface ISettingsRepo {
      *  whole grid clears automatically once it becomes worked. */
     fun getMarkedGridStations(): Map<String, List<com.rtbishop.look4sat.core.domain.model.MarkedStation>>
     fun setMarkedGridStations(stations: Map<String, List<com.rtbishop.look4sat.core.domain.model.MarkedStation>>)
+    //endregion
+
+    //region # Wavelog upload settings
+    val wavelogUploadSettings: StateFlow<WavelogUploadSettings>
+    fun updateWavelogUploadSettings(settings: WavelogUploadSettings)
     //endregion
 
     //region # LoTW confirmed-grids settings

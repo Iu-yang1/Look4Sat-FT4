@@ -28,6 +28,7 @@ import com.rtbishop.look4sat.core.domain.model.RCSettings
 import com.rtbishop.look4sat.core.domain.model.RadioControlSettings
 import com.rtbishop.look4sat.core.domain.model.SatRadio
 import com.rtbishop.look4sat.core.domain.model.WavelogSettings
+import com.rtbishop.look4sat.core.domain.model.WavelogUploadSettings
 import com.rtbishop.look4sat.core.domain.predict.GeoPos
 import com.rtbishop.look4sat.core.domain.predict.OrbitalObject
 import com.rtbishop.look4sat.core.domain.predict.OrbitalPass
@@ -107,6 +108,8 @@ class FakeSettingsRepo(
         RadioControlSettings(false, RadioControlSettings.MODEL_YAESU_FT817, "", "", "", "", 9600)
     )
     override val wavelogSettings: StateFlow<WavelogSettings> = MutableStateFlow(WavelogSettings())
+    override val wavelogUploadSettings: StateFlow<WavelogUploadSettings> = MutableStateFlow(WavelogUploadSettings())
+    override fun updateWavelogUploadSettings(settings: WavelogUploadSettings) = Unit
     override val lotwSettings: StateFlow<LoTWSettings> = MutableStateFlow(LoTWSettings())
 
     override fun setSelectedIds(ids: List<Int>) = TODO()

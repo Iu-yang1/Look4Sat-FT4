@@ -109,6 +109,19 @@ data class WavelogSettings(
     val isConfigured: Boolean get() = url.isNotBlank() && token.isNotBlank()
 }
 
+/** Wavelog QSO-upload configuration (a separate block from the worked-grids sync). */
+data class WavelogUploadSettings(
+    val url: String = "",
+    val apiKey: String = "",
+    val stationId: String = "",
+    val stationName: String = "",
+    val stationCallsign: String = "",
+    val stationGrid: String = ""
+) {
+    val isConfigured: Boolean get() = url.isNotBlank() && apiKey.isNotBlank()
+    val isReady: Boolean get() = isConfigured && stationId.isNotBlank()
+}
+
 data class LoTWSettings(
     val callsign: String = "",
     val password: String = ""

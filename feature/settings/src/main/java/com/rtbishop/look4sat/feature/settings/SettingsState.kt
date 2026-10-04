@@ -23,6 +23,7 @@ import com.rtbishop.look4sat.core.domain.model.OtherSettings
 import com.rtbishop.look4sat.core.domain.model.RCSettings
 import com.rtbishop.look4sat.core.domain.model.RadioControlSettings
 import com.rtbishop.look4sat.core.domain.model.WavelogSettings
+import com.rtbishop.look4sat.core.domain.model.WavelogUploadSettings
 import com.rtbishop.look4sat.core.domain.predict.GeoPos
 import com.rtbishop.look4sat.core.domain.repository.CompassAccuracy
 import com.rtbishop.look4sat.core.domain.repository.LoTWSyncMode
@@ -61,6 +62,14 @@ data class SettingsState(
     val workedGridsCount: Int = 0,
     val wavelogSyncing: Boolean = false,
     val wavelogMessage: String? = null,
+    /** Wavelog upload: its own config block + probe/upload transient state. */
+    val wavelogUploadSettings: WavelogUploadSettings = WavelogUploadSettings(),
+    val wavelogUploadStations: List<com.rtbishop.look4sat.core.domain.repository.WavelogStationInfo> = emptyList(),
+    val wavelogUploadRights: String = "",
+    val wavelogUploadProbeBusy: Boolean = false,
+    val wavelogPreview: com.rtbishop.look4sat.core.domain.repository.WavelogUploadPreview? = null,
+    val wavelogUploadBusy: Boolean = false,
+    val wavelogUploadMessage: String? = null,
     val lotwSettings: com.rtbishop.look4sat.core.domain.model.LoTWSettings = com.rtbishop.look4sat.core.domain.model.LoTWSettings(),
     val lotwSyncing: Boolean = false,
     val lotwSyncMode: LoTWSyncMode? = null,
@@ -149,6 +158,15 @@ sealed interface SettingsAction {
     // Wavelog worked grids
     data class UpdateWavelog(val settings: WavelogSettings) : SettingsAction
     data class SyncWorkedGrids(val settings: WavelogSettings) : SettingsAction
+
+    // Wavelog upload (separate config block + upload flow)
+    data class UpdateWavelogUpload(val settings: WavelogUploadSettings) : SettingsAction
+    data class FetchWavelogUploadStations(val url: String, val apiKey: String) : SettingsAction
+    data class SelectWavelogUploadStation(val station: com.rtbishop.look4sat.core.domain.repository.WavelogStationInfo) : SettingsAction
+    data object PrepareWavelogUpload : SettingsAction
+    data object ConfirmWavelogUpload : SettingsAction
+    data object DismissWavelogPreview : SettingsAction
+    data object ClearWavelogUploadMessage : SettingsAction
 
     // LoTW confirmed grids
     data class UpdateLoTW(val settings: com.rtbishop.look4sat.core.domain.model.LoTWSettings) : SettingsAction

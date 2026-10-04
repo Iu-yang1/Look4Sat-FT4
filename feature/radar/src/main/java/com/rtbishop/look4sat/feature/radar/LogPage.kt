@@ -68,6 +68,7 @@ import com.rtbishop.look4sat.core.presentation.sheetDialogContainerColor
 import com.rtbishop.look4sat.core.presentation.sheetDialogShape
 import com.rtbishop.look4sat.core.presentation.gridsLabel
 import com.rtbishop.look4sat.core.presentation.LoTWPositionWarningDialog
+import com.rtbishop.look4sat.core.presentation.WavelogUploadPreviewDialog
 
 @Composable
 fun LogPage(
@@ -214,7 +215,14 @@ fun LogPage(
                 modifier = Modifier.weight(1f)
             ) { Text("上传 LoTW", fontSize = 13.sp) }
         }
-        if (logUiState.busy) {
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
+            OutlinedButton(
+                onClick = logViewModel::prepareWavelogUpload,
+                enabled = !logUiState.busy && !logUiState.wavelogBusy,
+                modifier = Modifier.weight(1f)
+            ) { Text("上传 Wavelog", fontSize = 13.sp) }
+        }
+        if (logUiState.busy || logUiState.wavelogBusy) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 CircularProgressIndicator(modifier = Modifier.padding(4.dp), strokeWidth = 2.dp)
                 Text("Working…", fontSize = 13.sp)
@@ -266,6 +274,15 @@ fun LogPage(
         }
     }
 
+    logUiState.wavelogPreview?.let { preview ->
+        WavelogUploadPreviewDialog(
+            preview = preview,
+            busy = logUiState.wavelogBusy,
+            onConfirm = logViewModel::confirmWavelogUpload,
+            onDismiss = logViewModel::dismissWavelogPreview
+        )
+    }
+
     if (logUiState.message.isNotBlank()) {
         AlertDialog(
             onDismissRequest = logViewModel::clearMessage,
@@ -275,6 +292,19 @@ fun LogPage(
             text = { Text(logUiState.message) },
             confirmButton = {
                 TextButton(onClick = logViewModel::clearMessage) { Text("OK") }
+            }
+        )
+    }
+
+    if (logUiState.wavelogMessage.isNotBlank()) {
+        AlertDialog(
+            onDismissRequest = logViewModel::clearWavelogMessage,
+            shape = sheetDialogShape(),
+            containerColor = sheetDialogContainerColor(),
+            title = { SheetDialogTitle("Wavelog Upload") },
+            text = { Text(logUiState.wavelogMessage) },
+            confirmButton = {
+                TextButton(onClick = logViewModel::clearWavelogMessage) { Text("OK") }
             }
         )
     }

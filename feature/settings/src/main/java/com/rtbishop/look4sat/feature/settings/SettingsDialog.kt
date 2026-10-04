@@ -226,6 +226,117 @@ fun WavelogDialog(
 }
 
 @Composable
+fun WavelogUploadDialog(
+    initialSettings: com.rtbishop.look4sat.core.domain.model.WavelogUploadSettings,
+    stations: List<com.rtbishop.look4sat.core.domain.repository.WavelogStationInfo>,
+    rights: String,
+    probeBusy: Boolean,
+    message: String?,
+    dismiss: () -> Unit,
+    onSave: (com.rtbishop.look4sat.core.domain.model.WavelogUploadSettings) -> Unit,
+    onFetchStations: (url: String, apiKey: String) -> Unit,
+    onSelectStation: (com.rtbishop.look4sat.core.domain.repository.WavelogStationInfo) -> Unit
+) {
+    val url = rememberSaveable { mutableStateOf(initialSettings.url) }
+    val apiKey = rememberSaveable { mutableStateOf(initialSettings.apiKey) }
+    SharedDialog(
+        title = stringResource(R.string.prefs_wavelog_upload_title),
+        onCancel = dismiss,
+        onAccept = {
+            onSave(initialSettings.copy(url = url.value, apiKey = apiKey.value))
+            dismiss()
+        }
+    ) {
+        OutlinedTextField(
+            value = url.value,
+            onValueChange = { url.value = it },
+            label = { Text(text = stringResource(id = R.string.prefs_wavelog_url)) },
+            placeholder = { Text(text = "http://100.x.x.x/wavelog") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = LocalSpacing.current.large),
+        )
+        OutlinedTextField(
+            value = apiKey.value,
+            onValueChange = { apiKey.value = it },
+            label = { Text(text = stringResource(id = R.string.prefs_wavelog_upload_apikey)) },
+            placeholder = { Text(text = "wl…") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = LocalSpacing.current.large),
+        )
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = LocalSpacing.current.large)
+        ) {
+            TextButton(onClick = { onFetchStations(url.value, apiKey.value) }, enabled = !probeBusy) {
+                Text(
+                    text = if (probeBusy) stringResource(R.string.prefs_wavelog_upload_probing)
+                    else stringResource(R.string.prefs_wavelog_upload_fetch)
+                )
+            }
+        }
+        if (rights.isNotBlank()) {
+            Text(
+                text = when (rights) {
+                    "rw" -> stringResource(R.string.prefs_wavelog_upload_rights_rw)
+                    else -> stringResource(R.string.prefs_wavelog_upload_rights_r)
+                },
+                color = if (rights == "rw") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(horizontal = LocalSpacing.current.large)
+            )
+        }
+        if (stations.isEmpty() && initialSettings.stationId.isBlank()) {
+            Text(
+                text = stringResource(R.string.prefs_wavelog_upload_station_none),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = LocalSpacing.current.large)
+            )
+        } else {
+            stations.forEach { station ->
+                val selected = station.id == initialSettings.stationId
+                Text(
+                    text = (if (selected) "● " else "○ ") + listOf(station.name, station.callsign, station.grid)
+                        .filter { it.isNotBlank() }.joinToString(" · "),
+                    color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onSelectStation(station) }
+                        .padding(horizontal = LocalSpacing.current.large, vertical = 2.dp)
+                )
+            }
+        }
+        if (initialSettings.stationId.isNotBlank()) {
+            Text(
+                text = stringResource(
+                    R.string.prefs_wavelog_upload_configured,
+                    listOf(initialSettings.stationName, initialSettings.stationCallsign, initialSettings.stationGrid)
+                        .filter { it.isNotBlank() }.joinToString(" · ")
+                ),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(horizontal = LocalSpacing.current.large)
+            )
+        }
+        if (message != null) {
+            Text(
+                text = message,
+                color = MaterialTheme.colorScheme.error,
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(horizontal = LocalSpacing.current.large)
+            )
+        }
+        Text(
+            text = stringResource(R.string.prefs_wavelog_upload_hint),
+            style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.padding(horizontal = LocalSpacing.current.large)
+        )
+        Spacer(modifier = Modifier.height(0.dp))
+    }
+}
+
+@Composable
 fun LoTWDialog(
     initialSettings: com.rtbishop.look4sat.core.domain.model.LoTWSettings,
     workedGridsCount: Int,

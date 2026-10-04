@@ -318,7 +318,14 @@ private fun SettingsScreen(
             onStartSelection = { onAction(SettingsAction.StartLogbookSelection(it)) },
             onToggleSelection = { onAction(SettingsAction.ToggleLogbookSelection(it)) },
             onExitSelection = { onAction(SettingsAction.ExitLogbookSelection) },
-            onResubmitSelected = { onAction(SettingsAction.ResubmitSelectedLogbook) }
+            onResubmitSelected = { onAction(SettingsAction.ResubmitSelectedLogbook) },
+            wavelogBusy = uiState.wavelogUploadBusy,
+            wavelogPreview = uiState.wavelogPreview,
+            wavelogMessage = uiState.wavelogUploadMessage.orEmpty(),
+            onWavelogUpload = { onAction(SettingsAction.PrepareWavelogUpload) },
+            onConfirmWavelogUpload = { onAction(SettingsAction.ConfirmWavelogUpload) },
+            onDismissWavelogPreview = { onAction(SettingsAction.DismissWavelogPreview) },
+            onDismissWavelogMessage = { onAction(SettingsAction.ClearWavelogUploadMessage) }
         )
     }
     if (dialogs.lotwUpload) {
@@ -337,6 +344,20 @@ private fun SettingsScreen(
             onImport = { bytes, password -> onAction(SettingsAction.ImportLoTWCertificate(bytes, password)) },
             onRemove = { onAction(SettingsAction.RemoveLoTWCertificate) },
             onSaveStation = { onAction(SettingsAction.SaveLoTWStation(it)) }
+        )
+    }
+
+    if (dialogs.wavelogUpload) {
+        WavelogUploadDialog(
+            initialSettings = uiState.wavelogUploadSettings,
+            stations = uiState.wavelogUploadStations,
+            rights = uiState.wavelogUploadRights,
+            probeBusy = uiState.wavelogUploadProbeBusy,
+            message = uiState.wavelogUploadMessage,
+            dismiss = { dialogs.wavelogUpload = false },
+            onSave = { onAction(SettingsAction.UpdateWavelogUpload(it)) },
+            onFetchStations = { url, apiKey -> onAction(SettingsAction.FetchWavelogUploadStations(url, apiKey)) },
+            onSelectStation = { onAction(SettingsAction.SelectWavelogUploadStation(it)) }
         )
     }
 
@@ -459,6 +480,12 @@ private fun SettingsScreen(
                     workedGridsCount = uiState.workedGridsCount,
                     lastSyncEpochMs = uiState.lotwLastSyncEpochMs,
                     showLoTWDialog = { dialogs.lotw = true }
+                )
+            }
+            item {
+                WavelogUploadCard(
+                    settings = uiState.wavelogUploadSettings,
+                    showDialog = { dialogs.wavelogUpload = true }
                 )
             }
             item {
@@ -884,6 +911,41 @@ private fun LoTWCard(
 }
 
 @Composable
+private fun WavelogUploadCard(
+    settings: com.rtbishop.look4sat.core.domain.model.WavelogUploadSettings,
+    showDialog: () -> Unit
+) {
+    ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) {
+            Text(
+                text = stringResource(id = R.string.prefs_wavelog_upload_title),
+                color = MaterialTheme.colorScheme.primary
+            )
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = if (settings.isReady) {
+                    stringResource(
+                        R.string.prefs_wavelog_upload_configured,
+                        listOf(settings.stationName, settings.stationCallsign, settings.stationGrid)
+                            .filter { it.isNotBlank() }.joinToString(" · ")
+                    )
+                } else {
+                    stringResource(R.string.prefs_wavelog_upload_not_configured)
+                },
+                style = MaterialTheme.typography.bodySmall,
+                maxLines = 2
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            CardButton(
+                onClick = showDialog,
+                text = stringResource(id = R.string.prefs_wavelog_configure),
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+    }
+}
+
+@Composable
 private fun formatUpdateTime(updateTime: Long): String {
     val timePattern = stringResource(id = R.string.prefs_updated_time)
     val placeholder = stringResource(id = R.string.pass_time_placeholder)
@@ -1029,6 +1091,7 @@ private class DialogVisibility {
     var compassCalibration by mutableStateOf(false)
     var logbook by mutableStateOf(false)
     var lotwUpload by mutableStateOf(false)
+    var wavelogUpload by mutableStateOf(false)
 }
 
 @Composable
@@ -1036,7 +1099,7 @@ private fun rememberDialogVisibility(): DialogVisibility {
     return rememberSaveable(saver = run {
         androidx.compose.runtime.saveable.Saver(
             save = {
-                listOf(it.position, it.locator, it.dataSources, it.network, it.bluetooth, it.radioControl, it.wavelog, it.lotw, it.compassCalibration, it.logbook, it.lotwUpload)
+                listOf(it.position, it.locator, it.dataSources, it.network, it.bluetooth, it.radioControl, it.wavelog, it.lotw, it.compassCalibration, it.logbook, it.lotwUpload, it.wavelogUpload)
             },
             restore = {
                 DialogVisibility().apply {
@@ -1046,6 +1109,7 @@ private fun rememberDialogVisibility(): DialogVisibility {
                     compassCalibration = it.getOrElse(8) { false }
                     logbook = it.getOrElse(9) { false }
                     lotwUpload = it.getOrElse(10) { false }
+                    wavelogUpload = it.getOrElse(11) { false }
                 }
             }
         )

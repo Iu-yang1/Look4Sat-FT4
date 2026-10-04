@@ -195,6 +195,16 @@
     <string name="prefs_wavelog_hint">Worked grids synced: %1$d. Format: API key, colon, logbook ID. Just tap Sync — credentials are saved automatically.</string>
     <string name="prefs_wavelog_sync">Sync now</string>
     <string name="prefs_wavelog_syncing">Syncing…</string>
+    <string name="prefs_wavelog_upload_title">Wavelog log upload</string>
+    <string name="prefs_wavelog_upload_not_configured">Not configured — upload your local QSO records to Wavelog</string>
+    <string name="prefs_wavelog_upload_configured">Station %1$s — ready to upload</string>
+    <string name="prefs_wavelog_upload_apikey">API key (read &amp; write)</string>
+    <string name="prefs_wavelog_upload_fetch">Fetch stations</string>
+    <string name="prefs_wavelog_upload_probing">Checking…</string>
+    <string name="prefs_wavelog_upload_station_none">No station selected — tap Fetch stations</string>
+    <string name="prefs_wavelog_upload_rights_rw">Key: read &amp; write — uploads enabled</string>
+    <string name="prefs_wavelog_upload_rights_r">Key is read-only — create a read &amp; write key in Wavelog → API</string>
+    <string name="prefs_wavelog_upload_hint">Tap Fetch stations to pick the station profile uploads go through. The key needs read &amp; write permission.</string>
     <string name="prefs_lotw_title">LoTW confirmed grids</string>
     <string name="prefs_lotw_callsign">LoTW callsign</string>
     <string name="prefs_lotw_password">LoTW password</string>
@@ -230,6 +240,8 @@
     <string name="prefs_logbook_selected">%1$d selected</string>
     <string name="prefs_logbook_select_hint">Long-press a row to re-upload corrected records</string>
     <string name="prefs_logbook_resubmit_note">Existing contacts will be updated in place — a grid already used for an award may be rejected.</string>
+    <string name="prefs_logbook_wavelog_upload">Upload to Wavelog</string>
+    <string name="prefs_logbook_wavelog_upload_confirm">Upload</string>
     <string name="lotw_upload_grid_title">Upload check</string>
     <string name="lotw_upload_grid_fix">Fix station location</string>
     <string name="lotw_upload_grid_ignore">Ignore</string>

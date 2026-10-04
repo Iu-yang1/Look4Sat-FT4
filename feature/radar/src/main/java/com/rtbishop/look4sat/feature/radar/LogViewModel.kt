@@ -18,16 +18,23 @@ import com.rtbishop.look4sat.core.domain.logbook.QsoRecord
 import com.rtbishop.look4sat.core.domain.logbook.QsoStatus
 import com.rtbishop.look4sat.core.domain.logbook.displayMode
 import com.rtbishop.look4sat.core.domain.logbook.frequencyBand
+import com.rtbishop.look4sat.core.domain.logbook.label
 import com.rtbishop.look4sat.core.domain.logbook.officialSatelliteName
 import com.rtbishop.look4sat.core.domain.logbook.satelliteIdentity
 import com.rtbishop.look4sat.core.domain.logbook.unavailableUploadSummary
+import com.rtbishop.look4sat.core.domain.logbook.wavelogResultMessage
+import com.rtbishop.look4sat.core.domain.logbook.wavelogSkipSummary
+import com.rtbishop.look4sat.core.domain.logbook.wavelogUploadCandidates
 import com.rtbishop.look4sat.core.domain.repository.ILoTWUploadRepository
 import com.rtbishop.look4sat.core.domain.repository.IMainContainer
 import com.rtbishop.look4sat.core.domain.repository.ISettingsRepo
+import com.rtbishop.look4sat.core.domain.repository.IWavelogUploadRepository
 import com.rtbishop.look4sat.core.domain.repository.LoTWOperationException
 import com.rtbishop.look4sat.core.domain.repository.LoTWPositionWarning
 import com.rtbishop.look4sat.core.domain.repository.LoTWUploadPreview
 import com.rtbishop.look4sat.core.domain.repository.LoTWUploadResult
+import com.rtbishop.look4sat.core.domain.repository.WavelogUploadOutcome
+import com.rtbishop.look4sat.core.domain.repository.WavelogUploadPreview
 import com.rtbishop.look4sat.core.domain.repository.positionWarning
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -78,6 +85,10 @@ data class LogUiState(
     val message: String = "",
     val postText: String? = null,
     val busy: Boolean = false,
+    /** Wavelog upload: prepared preview awaiting confirmation / user-facing message / busy flag. */
+    val wavelogPreview: WavelogUploadPreview? = null,
+    val wavelogMessage: String = "",
+    val wavelogBusy: Boolean = false,
     /** Out-of-window contact waiting for the operator's confirmation (null when closed). */
     val outOfWindowLog: OutOfWindowLog? = null
 )
@@ -85,6 +96,7 @@ data class LogUiState(
 class LogViewModel(
     private val qsoRepository: IQsoRepository,
     private val lotwUploadRepository: ILoTWUploadRepository,
+    private val wavelogUploadRepository: IWavelogUploadRepository,
     private val settingsRepo: ISettingsRepo
 ) : ViewModel() {
 
@@ -314,6 +326,52 @@ class LogViewModel(
 
     fun dismissPreview() = _uiState.update { it.copy(preview = null) }
 
+    fun prepareWavelogUpload() {
+        if (_uiState.value.wavelogBusy) return
+        viewModelScope.launch {
+            _uiState.update { it.copy(wavelogBusy = true, wavelogMessage = "") }
+            try {
+                val pending = wavelogUploadCandidates(qsoRepository.records.first())
+                val preview = wavelogUploadRepository.prepare(pending, settingsRepo.wavelogUploadSettings.value)
+                if (preview.count == 0) {
+                    val blocked = preview.blockedBy
+                    val message = when {
+                        blocked != null -> blocked.label()
+                        preview.skipped > 0 -> wavelogSkipSummary(preview)
+                        else -> "No pending QSOs to upload"
+                    }
+                    _uiState.update { it.copy(wavelogBusy = false, wavelogMessage = message) }
+                    return@launch
+                }
+                _uiState.update { it.copy(wavelogBusy = false, wavelogPreview = preview) }
+            } catch (_: Exception) {
+                _uiState.update { it.copy(wavelogBusy = false, wavelogMessage = "Upload failed") }
+            }
+        }
+    }
+
+    fun confirmWavelogUpload() {
+        val preview = _uiState.value.wavelogPreview ?: return
+        viewModelScope.launch {
+            _uiState.update { it.copy(wavelogBusy = true) }
+            try {
+                val result = wavelogUploadRepository.upload(preview, settingsRepo.wavelogUploadSettings.value)
+                if (result is WavelogUploadOutcome.Imported && result.markIds.isNotEmpty()) {
+                    qsoRepository.markWavelogUploaded(result.markIds)
+                }
+                _uiState.update {
+                    it.copy(wavelogBusy = false, wavelogPreview = null, wavelogMessage = wavelogResultMessage(result))
+                }
+            } catch (_: Exception) {
+                _uiState.update { it.copy(wavelogBusy = false, wavelogPreview = null, wavelogMessage = "Upload failed") }
+            }
+        }
+    }
+
+    fun dismissWavelogPreview() = _uiState.update { it.copy(wavelogPreview = null) }
+
+    fun clearWavelogMessage() = _uiState.update { it.copy(wavelogMessage = "") }
+
     /** Operator chose "ignore" on the position check: keep the prepared preview. */
     fun ignorePositionWarning() = _uiState.update { it.copy(uploadPositionWarning = null) }
 
@@ -347,7 +405,10 @@ class LogViewModel(
     companion object {
         fun factory(container: IMainContainer) = viewModelFactory {
             initializer {
-                LogViewModel(container.qsoRepository, container.lotwUploadRepository, container.settingsRepo)
+                LogViewModel(
+                    container.qsoRepository, container.lotwUploadRepository,
+                    container.wavelogUploadRepository, container.settingsRepo
+                )
             }
         }
     }

@@ -123,4 +123,83 @@ class AwardHitTestTest {
         assertEquals("176", hit(regions, -18.0, -175.0, 4.0)?.code)
         assertNull(hit(regions, -18.0, 165.0, 4.0))
     }
+
+    /** Two 0.2 x 0.2 deg island boxes [lon] apart, as one archipelago entity. */
+    private fun archipelago(code: String, lon1: Double, lon2: Double, lat: Double = -10.0) =
+        AwardRegion(
+            code = code,
+            name = code,
+            labelLon = (lon1 + lon2) / 2.0,
+            labelLat = lat,
+            rings = listOf(
+                listOf(
+                    doubleArrayOf(lon1 - 0.1, lat - 0.1), doubleArrayOf(lon1 + 0.1, lat - 0.1),
+                    doubleArrayOf(lon1 + 0.1, lat + 0.1), doubleArrayOf(lon1 - 0.1, lat + 0.1)
+                ),
+                listOf(
+                    doubleArrayOf(lon2 - 0.1, lat - 0.1), doubleArrayOf(lon2 + 0.1, lat - 0.1),
+                    doubleArrayOf(lon2 + 0.1, lat + 0.1), doubleArrayOf(lon2 - 0.1, lat + 0.1)
+                )
+            )
+        )
+
+    @Test
+    fun `sea archipelago is hit by its overall envelope between the islands`() {
+        // Two tiny islands 10 deg apart: at zoom 5 the bbox is ~230 px, so the
+        // per-region inflated target does not apply — the whole envelope does
+        // (user request 2026-10-06: 海上的群岛按照整体包络来判断 hit).
+        val regions = listOf(archipelago("191", -165.0, -155.0))
+        assertEquals("191", hit(regions, -10.0, -160.0, 5.0)?.code) // open sea in the middle
+        assertEquals("191", hit(regions, -10.0, -156.0, 5.0)?.code) // near the east island
+        assertNull(hit(regions, -10.0, -152.0, 5.0))                // ~2.8 deg past the envelope
+    }
+
+    @Test
+    fun `small entity inside the archipelago envelope keeps its own target`() {
+        val regions = listOf(
+            archipelago("191", -165.0, -155.0),
+            box("KS", -161.1, -9.6, -160.9, -9.4) // tiny standalone island in the gap
+        )
+        // Near KS the small target (80 px) wins over the archipelago envelope.
+        assertEquals("KS", hit(regions, -9.5, -160.4, 5.0)?.code)
+        // Away from it the open sea belongs to the archipelago.
+        assertEquals("191", hit(regions, -10.0, -156.0, 5.0)?.code)
+    }
+
+    @Test
+    fun `mainland country with a stray island is not envelope hit`() {
+        // Big mainland ring + one small island ring: sea inside the bbox is NOT
+        // a tap target (the group is not a scattered archipelago).
+        val regions = listOf(
+            AwardRegion(
+                code = "JP",
+                name = "JP",
+                labelLon = 133.0,
+                labelLat = 37.0,
+                rings = listOf(
+                    listOf(
+                        doubleArrayOf(130.0, 31.0), doubleArrayOf(135.0, 31.0),
+                        doubleArrayOf(135.0, 42.0), doubleArrayOf(130.0, 42.0)
+                    ),
+                    listOf(
+                        doubleArrayOf(138.0, 34.2), doubleArrayOf(138.3, 34.2),
+                        doubleArrayOf(138.3, 34.5), doubleArrayOf(138.0, 34.5)
+                    )
+                )
+            )
+        )
+        assertNull(hit(regions, 35.0, 137.0, 5.0))              // sea inside the bbox
+        assertEquals("JP", hit(regions, 37.0, 132.0, 5.0)?.code) // on the mainland
+        assertEquals("JP", hit(regions, 34.35, 138.15, 5.0)?.code) // on the island itself
+    }
+
+    @Test
+    fun `archipelago envelope crossing the antimeridian stays contiguous`() {
+        // Two islands straddling 180: the raw bbox is 357 deg wide, but the
+        // unwrapped envelope is a tight 3 deg box around the date line.
+        val regions = listOf(archipelago("FJ", 178.65, -178.65, lat = -18.0))
+        assertEquals("FJ", hit(regions, -18.0, 180.0, 5.0)?.code)  // sea gap at the date line
+        assertEquals("FJ", hit(regions, -18.0, -180.0, 5.0)?.code) // same, other sign
+        assertNull(hit(regions, -18.0, 176.0, 5.0))                // well west of the group
+    }
 }

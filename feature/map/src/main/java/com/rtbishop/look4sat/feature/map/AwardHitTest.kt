@@ -28,7 +28,7 @@ import kotlin.math.pow
  * user's finger in DXCC/WAPC/WAJA/WAZ/WAS view. Pure geometry (no osmdroid
  * types) so it is unit-testable; the overlay delegates to [hitRegion].
  *
- * Two hit shapes, mirroring how the overlay draws:
+ * Three hit shapes, mirroring how the overlay draws:
  *  - a small region (projects to <= [MIN_TAP_TARGET_PX] at the current zoom —
  *    including the dot-rendered ones) is hit by an inflated square target of
  *    [MIN_TAP_TARGET_PX] around its bbox centre, so finger taps land even on
@@ -36,6 +36,14 @@ import kotlin.math.pow
  *  - a normal region is hit by an even-odd point-in-polygon test on its rings.
  * Small targets win over polygon hits (Macao sits inside Guangdong's outline),
  * and among polygon hits the smallest region wins (Hong Kong over China).
+ *
+ *  - a scattered sea archipelago (>= 2 disjoint island rings, every island
+ *    small — see [ARCHIPELAGO_MAX_RING_DEG]) is additionally hit anywhere in
+ *    its overall envelope, so tapping open sea between the islands lands on
+ *    the entity (user request 2026-10-06: 海上的群岛按照整体包络来判断 hit).
+ * Priority: small target > land polygon > archipelago envelope — tapping the
+ * Spanish coast that happens to lie in the Balearic envelope still opens
+ * Spain; only sea inside the envelope belongs to the archipelago.
  */
 object AwardHitTest {
 
@@ -48,6 +56,12 @@ object AwardHitTest {
      *  size around its bbox centre (user request 2026-10-05 — small DXCCs
      *  like Hong Kong are hard to hit with a finger at their own size). */
     const val MIN_TAP_TARGET_PX = 80f
+
+    /** Largest per-island span (deg) for a region to count as a scattered sea
+     *  archipelago: every ring must be a small island, never a mainland
+     *  (Japan/UK/Indonesia stay polygon-only). Archipelago islands are
+     *  finger-proof at low zoom, so their hit region is the overall envelope. */
+    const val ARCHIPELAGO_MAX_RING_DEG = 2.5
 
     /**
      * The region under a tap at [tapLat]/[tapLon] on the map at [zoom], or
@@ -69,6 +83,8 @@ object AwardHitTest {
         var bestSmallDist = Double.MAX_VALUE
         var bestPoly: AwardRegion? = null
         var bestPolyArea = Double.MAX_VALUE
+        var bestArch: AwardRegion? = null
+        var bestArchArea = Double.MAX_VALUE
         for (i in regions.indices) {
             val b = bounds.getOrNull(i) ?: continue
             // Cheap bbox prefilter with the tap-target slack (longitudes wrap).
@@ -83,20 +99,93 @@ object AwardHitTest {
             val dx = dLon / lonDegPerPx
             val dy = (tapLat - cLat) / latDegPerPx
             val dist = hypot(dx, dy)
+            val region = regions[i]
             if (max(w, h) <= MIN_TAP_TARGET_PX) {
                 // Small region: hit by an inflated square target around the
                 // bbox centre — at least MIN_TAP_TARGET_PX on each side — so
                 // finger taps land even on dot-sized entities.
                 if (abs(dx) <= slack && abs(dy) <= slack && dist < bestSmallDist) {
-                    bestSmall = regions[i]
+                    bestSmall = region
                     bestSmallDist = dist
                 }
-            } else if (w * h < bestPolyArea && contains(regions[i], tapLat, tapLon)) {
-                bestPoly = regions[i]
-                bestPolyArea = w * h
+            } else if (contains(region, tapLat, tapLon)) {
+                // Land polygon hit: the smallest enclosing region wins.
+                if (w * h < bestPolyArea) {
+                    bestPoly = region
+                    bestPolyArea = w * h
+                }
+            } else if (isArchipelago(region)) {
+                // Scattered sea archipelago: the overall envelope is the hit
+                // region (open sea between the islands belongs to the entity).
+                // The envelope is measured in one unwrapped longitude frame so
+                // antimeridian groups (Fiji-style) keep a contiguous box.
+                val env = envelope(region)
+                val halfW = (env[2] - env[1]) / 2.0
+                val halfH = (env[4] - env[3]) / 2.0
+                val envLon = env[0] + wrap180(tapLon - env[0])
+                val inEnvelope =
+                    abs(envLon - (env[1] + env[2]) / 2.0) <= halfW + slack * lonDegPerPx &&
+                        abs(tapLat - (env[3] + env[4]) / 2.0) <= halfH + slack * latDegPerPx
+                val area = 4.0 * halfW * halfH
+                if (inEnvelope && area < bestArchArea) {
+                    bestArch = region
+                    bestArchArea = area
+                }
             }
         }
-        return bestSmall ?: bestPoly
+        return bestSmall ?: bestPoly ?: bestArch
+    }
+
+    /**
+     * Scattered sea archipelago: at least two disjoint island rings and every
+     * ring small (<= [ARCHIPELAGO_MAX_RING_DEG] in both lon and lat, measured
+     * in an unwrapped longitude frame) — no dominant mainland. Mainland
+     * countries with stray islands (Japan, UK, Indonesia) fail the size test
+     * and keep plain polygon hits.
+     */
+    fun isArchipelago(region: AwardRegion): Boolean {
+        if (region.rings.size < 2) return false
+        for (ring in region.rings) {
+            if (ring.isEmpty()) continue
+            val anchor = ring[0][0]
+            var minX = 0.0
+            var maxX = 0.0
+            var minY = ring[0][1]
+            var maxY = ring[0][1]
+            for (p in ring) {
+                val x = wrap180(p[0] - anchor)
+                if (x < minX) minX = x
+                if (x > maxX) maxX = x
+                if (p[1] < minY) minY = p[1]
+                if (p[1] > maxY) maxY = p[1]
+            }
+            if (max(maxX - minX, maxY - minY) > ARCHIPELAGO_MAX_RING_DEG) return false
+        }
+        return true
+    }
+
+    /**
+     * Envelope of all rings in one longitude frame anchored at the first ring's
+     * first point: `[anchorLon, minX, maxX, minY, maxY]`. Longitudes past ±180
+     * are unwrapped into the anchor's frame, keeping antimeridian groups whole.
+     */
+    private fun envelope(region: AwardRegion): DoubleArray {
+        val first = region.rings.firstOrNull { it.isNotEmpty() } ?: return doubleArrayOf(0.0, 0.0, 0.0, 0.0, 0.0)
+        val anchor = first[0][0]
+        var minX = 0.0
+        var maxX = 0.0
+        var minY = first[0][1]
+        var maxY = first[0][1]
+        for (ring in region.rings) {
+            for (p in ring) {
+                val x = wrap180(p[0] - anchor)
+                if (x < minX) minX = x
+                if (x > maxX) maxX = x
+                if (p[1] < minY) minY = p[1]
+                if (p[1] > maxY) maxY = p[1]
+            }
+        }
+        return doubleArrayOf(anchor, anchor + minX, anchor + maxX, minY, maxY)
     }
 
     /** Even-odd point-in-polygon across all rings (rings are disjoint parts). */

@@ -124,13 +124,23 @@ fun GridQso.stationGridSetKey(): String? =
     myStationGrids().takeIf { it.isNotEmpty() }?.sorted()?.joinToString(",")
 
 /**
- * Scopes a per-grid QSO list to the operated-grid selector's choice:
- * [stationId] == null ("All") keeps the list as-is, otherwise only records
- * whose [stationGridSetKey] matches stay. Records without a MY-side grid
- * belong to no 台址 and are dropped under any specific scope.
+ * Scopes a per-grid QSO list to the operated-grid selector's choice with
+ * COVERING semantics (2026-10-05): [stationId] is a grid-set key such as
+ * "OL62" or "OL62,OL63", and a record stays when its own [myStationGrids]
+ * COVER that key (record grid set ⊇ key set). So a multi-grid 台址 that
+ * covers a single-grid one (OL62/63 covers OL62) contributes its records to
+ * the single-grid scope's statistics — map fills, dialog lists and first-call
+ * labels all derive from this one rule. The reverse does NOT hold: records
+ * under a narrower 台址 never leak into a wider scope (single OL62 records
+ * stay out of the OL62/63 scope). Records without a MY-side grid belong to
+ * no 台址 and are dropped under any specific scope.
  */
 fun List<GridQso>.scopedToStation(stationId: String?): List<GridQso> =
-    if (stationId == null) this else filter { it.stationGridSetKey() == stationId }
+    if (stationId == null) this
+    else {
+        val scope = stationId.split(',').toSet()
+        filter { it.myStationGrids().containsAll(scope) }
+    }
 
 /**
  * For every grid in the store, the callsign of the earliest QSO — scoped to the

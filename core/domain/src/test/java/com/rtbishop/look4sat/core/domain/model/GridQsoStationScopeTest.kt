@@ -74,12 +74,32 @@ class GridQsoStationScopeTest {
     }
 
     @Test
-    fun `specific scope keeps only the matching station's records`() {
+    fun `specific scope keeps covering station's records too`() {
+        // 方案 A 覆盖语义: 选中单格台址 OL62 时，覆盖它的多格台址 (OL62,PM01)
+        // 的通联也计入；反向不泄漏。
         val multi = qso("A", myGrids = setOf("OL62", "PM01"))
         val single = qso("B", myGrid = "OL62")
         val list = listOf(multi, single)
         assertEquals(listOf(multi), list.scopedToStation("OL62,PM01"))
-        assertEquals(listOf(single), list.scopedToStation("OL62"))
+        assertEquals(listOf(multi, single), list.scopedToStation("OL62"))
+    }
+
+    @Test
+    fun `narrower station never leaks into a wider scope`() {
+        val single = qso("B", myGrid = "OL62")
+        val pair = qso("A", myGrids = setOf("OL62", "PM01"))
+        // 宽台址 (OL62,PM01) 选中时，单格 OL62 的记录不出现
+        assertEquals(emptyList<GridQso>(), listOf(single, pair).scopedToStation("OL62,PM01").filter { it === single })
+        assertEquals(listOf(pair), listOf(single, pair).scopedToStation("OL62,PM01"))
+    }
+
+    @Test
+    fun `covering is per-cell set containment not string equality`() {
+        // 多格台址的 key 是排序拼接，覆盖判定必须按网格集合而非字符串
+        val quad = qso("A", myGrids = setOf("OL62", "OL63", "OL64", "OL65"))
+        assertEquals(listOf(quad), listOf(quad).scopedToStation("OL63"))
+        assertEquals(listOf(quad), listOf(quad).scopedToStation("OL62,OL65"))
+        assertEquals(emptyList<GridQso>(), listOf(quad).scopedToStation("OL62,PM01"))
     }
 
     @Test

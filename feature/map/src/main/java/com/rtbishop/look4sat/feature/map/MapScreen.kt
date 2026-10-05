@@ -314,16 +314,24 @@ private fun MapScreen(
     // can differ between records of the same physical 台址 when LoTW omits
     // optional fields). Data synced before multi-grid support falls back to
     // one group per grid, preserving the old selector exactly.
+    // Each group's `worked` cells are derived through scopedToStation (the
+    // covering rule): a single-grid 台址 also counts the cells worked by any
+    // multi-grid 台址 covering it (OL62 ← OL62/63, 四格点同理) — the reverse
+    // never leaks (2026-10-05 用户定稿, 方案 A).
     val stationGroups: List<StationGroup> = remember(uiState.workedGridQsos) {
-        val byGridSet = LinkedHashMap<String, Pair<Set<String>, MutableSet<String>>>()
-        for ((grid, qsos) in uiState.workedGridQsos) {
+        val gridSets = LinkedHashMap<String, Set<String>>()
+        for ((_, qsos) in uiState.workedGridQsos) {
             for (q in qsos) {
                 val key = q.stationGridSetKey() ?: continue
-                byGridSet.getOrPut(key) { q.myStationGrids() to mutableSetOf() }.second.add(grid)
+                gridSets.getOrPut(key) { q.myStationGrids() }
             }
         }
-        byGridSet.map { (key, v) -> StationGroup(id = key, grids = v.first, worked = v.second) }
-            .sortedByDescending { it.workedCount }
+        gridSets.map { (key, grids) ->
+            val worked = uiState.workedGridQsos.filterValues { qsos ->
+                qsos.scopedToStation(key).isNotEmpty()
+            }.keys
+            StationGroup(id = key, grids = grids, worked = worked)
+        }.sortedByDescending { it.workedCount }
     }
     // Selected 台址 for VUCC counting; defaults to the group with the most
     // worked grids. Null = "All" (every 台址 combined). Empty when the store

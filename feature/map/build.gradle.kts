@@ -8,4 +8,6 @@ android {
 
 dependencies {
     implementation(libs.other.osmdroid)
+    // Real org.json for unit tests (android.jar stub throws "not mocked")
+    testImplementation(libs.test.json)
 }

@@ -242,6 +242,8 @@
     <string name="prefs_lotw_upload_remove">移除证书</string>
     <string name="prefs_lotw_upload_station_title">台址</string>
     <string name="prefs_lotw_upload_region_hint">未选择</string>
+    <string name="prefs_lotw_upload_region_label">省份</string>
+    <string name="prefs_lotw_upload_region_pending">导入证书后可选</string>
     <string name="prefs_lotw_upload_grid">网格（逗号分隔，可多格）</string>
     <string name="prefs_lotw_upload_save">保存</string>
     <string name="prefs_lotw_upload_close">关闭</string>

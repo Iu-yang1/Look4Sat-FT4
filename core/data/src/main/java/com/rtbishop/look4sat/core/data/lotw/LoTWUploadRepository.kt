@@ -114,6 +114,19 @@ class LoTWUploadRepository internal constructor(
         }
     }
 
+    override suspend fun previewCertificate(data: ByteArray, password: CharArray): LoTWCertificate = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            try {
+                if (data.isEmpty() || data.size > MAX_CERTIFICATE_BYTES) fail(LoTWProblem.CERTIFICATE_INVALID)
+                LoTWKeyMaterial.read(data, password, now()).info
+            } finally {
+                // Never keep the operator's password; the p12 bytes stay the caller's
+                // own copy (the dialog re-reads the file for every preview attempt).
+                password.fill('\u0000')
+            }
+        }
+    }
+
     override suspend fun saveCertificatePassword(password: CharArray): LoTWCertificate = withContext(Dispatchers.IO) {
         mutex.withLock {
             val stored = storage.read("certificate") ?: fail(LoTWProblem.CERTIFICATE_MISSING)

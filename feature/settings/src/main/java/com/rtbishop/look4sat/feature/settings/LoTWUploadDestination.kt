@@ -64,6 +64,9 @@ fun LoTWUploadDestination(navigateUp: () -> Unit) {
             onImport = { bytes, password ->
                 viewModel.onAction(SettingsAction.ImportLoTWCertificate(bytes, password))
             },
+            onPreview = { bytes, password ->
+                viewModel.onAction(SettingsAction.PreviewLoTWCertificate(bytes, password))
+            },
             onRemove = { viewModel.onAction(SettingsAction.RemoveLoTWCertificate) },
             onSaveStation = { viewModel.onAction(SettingsAction.SaveLoTWStation(it)) }
         )

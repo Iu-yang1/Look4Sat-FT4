@@ -25,6 +25,9 @@ interface ILoTWUploadRepository {
     suspend fun certificate(): LoTWCertificate?
     suspend fun station(): LoTWStation?
     suspend fun importCertificate(data: ByteArray, password: CharArray): LoTWCertificate
+    /** Parse a .p12 without persisting it — enough to learn the certificate's DXCC
+     *  entity so the station form can offer its region field before the import. */
+    suspend fun previewCertificate(data: ByteArray, password: CharArray): LoTWCertificate
     suspend fun saveCertificatePassword(password: CharArray): LoTWCertificate
     suspend fun saveStation(station: LoTWStation): LoTWStation
     suspend fun removeCertificate()

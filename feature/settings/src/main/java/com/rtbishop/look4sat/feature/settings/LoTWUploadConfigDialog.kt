@@ -59,6 +59,7 @@ import com.rtbishop.look4sat.core.presentation.CardButton
 import com.rtbishop.look4sat.core.presentation.LocalSpacing
 import com.rtbishop.look4sat.core.presentation.R
 import com.rtbishop.look4sat.core.presentation.SharedDialog
+import kotlinx.coroutines.delay
 
 @Composable
 fun LoTWUploadCard(
@@ -111,6 +112,7 @@ fun LoTWUploadConfigDialog(
     initialGrid: String = "",
     onDismiss: () -> Unit,
     onImport: (ByteArray, CharArray) -> Unit,
+    onPreview: (ByteArray, CharArray) -> Unit,
     onRemove: () -> Unit,
     onSaveStation: (LoTWStation) -> Unit
 ) {
@@ -154,6 +156,19 @@ fun LoTWUploadConfigDialog(
             if (cursor.moveToFirst()) cursor.getString(0) else null
         }
     }.getOrNull() ?: uri.lastPathSegment.orEmpty()
+
+    // Surface the certificate's region field before the import is confirmed: re-read
+    // the picked .p12 whenever file or password changes (debounced) and hand it to a
+    // silent preview — a wrong password simply keeps the pending hint, a successful
+    // parse fills the Province/State dropdown in the station form below.
+    LaunchedEffect(selectedFile, password) {
+        val uri = selectedFile ?: return@LaunchedEffect
+        delay(400)
+        val bytes = runCatching {
+            context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+        }.getOrNull()
+        if (bytes != null && bytes.isNotEmpty()) onPreview(bytes, password.toCharArray())
+    }
 
     SharedDialog(
         title = stringResource(R.string.prefs_lotw_upload_title),
@@ -254,12 +269,15 @@ fun LoTWUploadConfigDialog(
             keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(capitalization = KeyboardCapitalization.Characters),
             modifier = Modifier.fillMaxWidth()
         )
-        // Country-specific region field (US_STATE, CN_PROVINCE, …) shown only when
-        // the certificate's DXCC entity defines one; selecting it fills CQZ/ITUZ.
+        // Country-specific region field (US_STATE, CN_PROVINCE, …): the entry is part
+        // of the form from the first frame (pending hint while no DXCC is known), gets
+        // its options as soon as a certificate is previewed/imported, and a selection
+        // fills CQZ/ITUZ. Entities without a region field keep it hidden.
         // Drawn as a plain Box (not OutlinedTextField): a read-only text field's
         // internal gesture handler consumes the tap, so clickable never fires.
         // Options expand inline inside the sheet (no Popup/Dialog window stacking).
-        if (regionField != null) {
+        val regionPending = certificate == null && stationMeta == null
+        if (regionField != null || regionPending) {
             var regionExpanded by remember { mutableStateOf(false) }
             val fieldShape = MaterialTheme.shapes.extraSmall
             Box(
@@ -268,21 +286,25 @@ fun LoTWUploadConfigDialog(
                     .clip(fieldShape)
                     .background(MaterialTheme.colorScheme.surface)
                     .border(1.dp, MaterialTheme.colorScheme.outline, fieldShape)
-                    .clickable { regionExpanded = !regionExpanded }
+                    .clickable(enabled = regionField != null) { regionExpanded = !regionExpanded }
                     .padding(horizontal = 12.dp, vertical = 8.dp)
             ) {
                 Column {
-                    Text(regionField.label, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(
+                        text = regionField?.label ?: stringResource(R.string.prefs_lotw_upload_region_label),
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                     Spacer(modifier = Modifier.height(3.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
-                            text = if (region.isBlank()) {
-                                stringResource(R.string.prefs_lotw_upload_region_hint)
-                            } else {
-                                "$region — $selectedRegionName"
+                            text = when {
+                                regionPending -> stringResource(R.string.prefs_lotw_upload_region_pending)
+                                region.isBlank() -> stringResource(R.string.prefs_lotw_upload_region_hint)
+                                else -> "$region — $selectedRegionName"
                             },
                             fontSize = 16.sp,
-                            color = if (region.isBlank()) {
+                            color = if (regionPending || region.isBlank()) {
                                 MaterialTheme.colorScheme.onSurfaceVariant
                             } else {
                                 MaterialTheme.colorScheme.onSurface
@@ -299,9 +321,9 @@ fun LoTWUploadConfigDialog(
                     }
                 }
             }
-            AnimatedVisibility(visible = regionExpanded) {
+            AnimatedVisibility(visible = regionExpanded && regionField != null) {
                 LazyColumn(modifier = Modifier.fillMaxWidth().heightIn(max = 280.dp)) {
-                    items(regionField.options, key = { it.code }) { option ->
+                    items(regionField?.options.orEmpty(), key = { it.code }) { option ->
                         DropdownMenuItem(
                             text = { Text("${option.code} — ${option.name}", fontSize = 13.sp) },
                             onClick = {

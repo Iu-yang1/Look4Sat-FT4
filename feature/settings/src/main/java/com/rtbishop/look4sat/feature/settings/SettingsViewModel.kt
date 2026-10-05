@@ -267,6 +267,7 @@ class SettingsViewModel(
             // LoTW upload configuration
             SettingsAction.LoadLoTWUploadStatus -> loadLoTWUploadStatus()
             is SettingsAction.ImportLoTWCertificate -> importLoTWCertificate(action.bytes, action.password)
+            is SettingsAction.PreviewLoTWCertificate -> previewLoTWCertificate(action.bytes, action.password)
             SettingsAction.RemoveLoTWCertificate -> removeLoTWCertificate()
             is SettingsAction.SaveLoTWStation -> saveLoTWStation(action.station)
             // Update checker
@@ -788,7 +789,10 @@ class SettingsViewModel(
             _uiState.update { it.copy(lotwUploadBusy = true, lotwUploadError = null) }
             try {
                 val cert = lotwUploadRepository.importCertificate(bytes, password)
-                _uiState.update { it.copy(lotwCertificate = cert, lotwUploadBusy = false, lotwUploadError = null) }
+                // Publish the region field for the fresh certificate immediately —
+                // previously it only appeared after closing and reopening the dialog.
+                val meta = runCatching { lotwUploadRepository.stationMeta(cert.dxcc) }.getOrNull()
+                _uiState.update { it.copy(lotwCertificate = cert, lotwStationMeta = meta, lotwUploadBusy = false, lotwUploadError = null) }
             } catch (e: com.rtbishop.look4sat.core.domain.repository.LoTWOperationException) {
                 val error = when (e.reason) {
                     com.rtbishop.look4sat.core.domain.repository.LoTWProblem.CERTIFICATE_PASSWORD -> LoTWUploadError.PASSWORD
@@ -799,6 +803,24 @@ class SettingsViewModel(
                 _uiState.update { it.copy(lotwUploadBusy = false, lotwUploadError = error, lotwUploadErrorDetail = e.detail) }
             } catch (_: Exception) {
                 _uiState.update { it.copy(lotwUploadBusy = false, lotwUploadError = LoTWUploadError.UNKNOWN, lotwUploadErrorDetail = "") }
+            }
+        }
+    }
+
+    // Monotonic token so a slow stale preview never overwrites a newer one's meta.
+    private var certificatePreviewSeq = 0
+
+    private fun previewLoTWCertificate(bytes: ByteArray, password: CharArray) {
+        val seq = ++certificatePreviewSeq
+        viewModelScope.launch {
+            // Silent by design: a wrong password or a non-p12 file must not disturb
+            // the dialog — only a successful parse publishes the region field.
+            val meta = runCatching { lotwUploadRepository.previewCertificate(bytes, password) }.fold(
+                onSuccess = { cert -> runCatching { lotwUploadRepository.stationMeta(cert.dxcc) }.getOrNull() },
+                onFailure = { null }
+            )
+            if (meta != null && seq == certificatePreviewSeq) {
+                _uiState.update { it.copy(lotwStationMeta = meta) }
             }
         }
     }

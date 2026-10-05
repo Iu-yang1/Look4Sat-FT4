@@ -208,6 +208,8 @@ sealed interface SettingsAction {
     // LoTW upload configuration (certificate + station)
     data object LoadLoTWUploadStatus : SettingsAction
     data class ImportLoTWCertificate(val bytes: ByteArray, val password: CharArray) : SettingsAction
+    /** Pre-import .p12 parse (not persisted) so the region field appears before confirming. */
+    data class PreviewLoTWCertificate(val bytes: ByteArray, val password: CharArray) : SettingsAction
     data object RemoveLoTWCertificate : SettingsAction
     data class SaveLoTWStation(val station: com.rtbishop.look4sat.core.domain.repository.LoTWStation) : SettingsAction
 

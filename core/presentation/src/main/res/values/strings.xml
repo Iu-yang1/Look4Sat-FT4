@@ -271,6 +271,8 @@
     <string name="prefs_lotw_upload_remove">Remove certificate</string>
     <string name="prefs_lotw_upload_station_title">Station location</string>
     <string name="prefs_lotw_upload_region_hint">Not selected</string>
+    <string name="prefs_lotw_upload_region_label">Region</string>
+    <string name="prefs_lotw_upload_region_pending">Import certificate to select</string>
     <string name="prefs_lotw_upload_grid">Grid(s), comma-separated</string>
     <string name="prefs_lotw_upload_save">Save</string>
     <string name="prefs_lotw_upload_close">Close</string>

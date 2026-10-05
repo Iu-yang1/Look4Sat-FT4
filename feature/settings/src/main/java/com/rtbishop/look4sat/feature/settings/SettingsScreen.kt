@@ -343,6 +343,7 @@ private fun SettingsScreen(
                 onClearStationGridPrefill()
             },
             onImport = { bytes, password -> onAction(SettingsAction.ImportLoTWCertificate(bytes, password)) },
+            onPreview = { bytes, password -> onAction(SettingsAction.PreviewLoTWCertificate(bytes, password)) },
             onRemove = { onAction(SettingsAction.RemoveLoTWCertificate) },
             onSaveStation = { onAction(SettingsAction.SaveLoTWStation(it)) }
         )

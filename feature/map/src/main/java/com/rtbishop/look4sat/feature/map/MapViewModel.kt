@@ -94,27 +94,35 @@ class MapViewModel(
             }
         }
         viewModelScope.launch {
-            settingsRepo.wavelogSettings.collectLatest { _ ->
-                val workedGrids = settingsRepo.getWorkedGrids()
-                val markedGrids = settingsRepo.getMarkedGridStations()
-                // Marked stations auto-clear once their grid becomes worked:
-                // the reminder has served its purpose (user req: 网格变绿后标记自动清除).
-                val stale = markedGrids.keys.filter { it in workedGrids }
-                val activeMarks = if (stale.isEmpty()) markedGrids else markedGrids - stale.toSet()
-                if (stale.isNotEmpty()) settingsRepo.setMarkedGridStations(activeMarks)
-                _uiState.update {
-                    it.copy(
-                        workedGrids = workedGrids,
-                        workedGridQsos = settingsRepo.getWorkedGridQsos(),
-                        roamedGrids = settingsRepo.getRoamedGrids(),
-                        markedGrids = activeMarks
-                    )
-                }
+            // Grid + mark data reloads whenever the screen becomes visible (and once at
+            // init): the LoTW/Wavelog syncs run from Settings or the app start, so
+            // re-entering the map picks their results up.
+            isScreenVisible.collect { visible ->
+                if (visible) refreshMapGridData()
             }
         }
         val (selectedCatNum, _) = satelliteRepo.selectedPass.value
         selectDefaultSatellite(if (selectedCatNum != 0) selectedCatNum else -1)
         getStationPosition()
+    }
+
+    /** Loads the worked-grid / mark data into the map state (see the visibility collector). */
+    private fun refreshMapGridData() {
+        val workedGrids = settingsRepo.getWorkedGrids()
+        val markedGrids = settingsRepo.getMarkedGridStations()
+        // Marked stations auto-clear once their grid becomes worked:
+        // the reminder has served its purpose (user req: 网格变绿后标记自动清除).
+        val stale = markedGrids.keys.filter { it in workedGrids }
+        val activeMarks = if (stale.isEmpty()) markedGrids else markedGrids - stale.toSet()
+        if (stale.isNotEmpty()) settingsRepo.setMarkedGridStations(activeMarks)
+        _uiState.update {
+            it.copy(
+                workedGrids = workedGrids,
+                workedGridQsos = settingsRepo.getWorkedGridQsos(),
+                roamedGrids = settingsRepo.getRoamedGrids(),
+                markedGrids = activeMarks
+            )
+        }
     }
 
     fun onAction(action: MapAction) {

@@ -105,6 +105,9 @@ class MainApplication : Application(), IContainerProvider {
      */
     private suspend fun checkLoTWAutoSync(timeNow: Long = System.currentTimeMillis()) {
         val settingsRepo = container.settingsRepo
+        // One-of-two rule: while Wavelog is configured the app uploads/syncs through
+        // Wavelog only — the automatic LoTW sync stays off.
+        if (settingsRepo.wavelogUploadSettings.value.isReady) return
         val lotwSettings = settingsRepo.lotwSettings.value
         if (!shouldAutoSyncLoTW(
                 isConfigured = lotwSettings.isConfigured,

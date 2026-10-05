@@ -44,6 +44,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardCapitalization
@@ -63,10 +64,15 @@ import com.rtbishop.look4sat.core.presentation.SharedDialog
 fun LoTWUploadCard(
     hasCertificate: Boolean,
     stationGrid: String,
+    enabled: Boolean = true,
     showUploadConfigDialog: () -> Unit
 ) {
-    ElevatedCard(modifier = Modifier.fillMaxWidth().clickable { showUploadConfigDialog() }) {
-        Column(modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) {
+    ElevatedCard(modifier = Modifier.fillMaxWidth().clickable(enabled = enabled) { showUploadConfigDialog() }) {
+        Column(
+            modifier = Modifier
+                .padding(horizontal = 8.dp, vertical = 4.dp)
+                .alpha(if (enabled) 1f else 0.5f)
+        ) {
             Text(
                 text = stringResource(R.string.prefs_lotw_upload_title),
                 color = MaterialTheme.colorScheme.primary
@@ -81,6 +87,15 @@ fun LoTWUploadCard(
                 style = MaterialTheme.typography.bodySmall,
                 maxLines = 2
             )
+            if (!enabled) {
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = stringResource(R.string.prefs_lotw_disabled_wavelog),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2
+                )
+            }
         }
     }
 }
@@ -200,6 +215,11 @@ fun LoTWUploadConfigDialog(
                     visualTransformation = PasswordVisualTransformation(),
                     modifier = Modifier.fillMaxWidth()
                 )
+                Text(
+                    text = stringResource(R.string.prefs_lotw_upload_password_hint),
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
                 CardButton(
                     onClick = {
                         val bytes = runCatching {
@@ -212,7 +232,9 @@ fun LoTWUploadConfigDialog(
                         }
                     },
                     text = stringResource(R.string.prefs_lotw_upload_import_confirm),
-                    isEnabled = password.isNotBlank() && !busy,
+                    // An empty field is a legitimate attempt: certificates exported
+                    // without a password import with a blank password.
+                    isEnabled = !busy,
                     modifier = Modifier.fillMaxWidth()
                 )
             }

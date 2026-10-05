@@ -42,6 +42,10 @@ data class QsoRecord(
     val lotwUploaded: Boolean = false,
     /** Internal: set after a successful Wavelog upload; keeps the pending filter small. Not shown in any list. */
     val wavelogUploaded: Boolean = false,
+    /** Wavelog station profile (台址) this QSO belongs to: the profile it was uploaded
+     *  through, or the profile a sync pulled it from. Empty for records the app never
+     *  involved with Wavelog — the logbook's 台址 selector shows those under "All" only. */
+    val wavelogStation: String = "",
     val lotwReceived: Boolean = false,
     val lotwQslDate: String = "",
     val vuccGrids: List<String> = emptyList(),

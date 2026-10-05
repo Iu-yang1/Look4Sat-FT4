@@ -48,6 +48,6 @@ interface QsoDao {
     @Query("UPDATE qso_records SET lotwUploaded = 1 WHERE id IN (:ids)")
     suspend fun markUploaded(ids: List<Long>)
 
-    @Query("UPDATE qso_records SET wavelogUploaded = 1 WHERE id IN (:ids)")
-    suspend fun markWavelogUploaded(ids: List<Long>)
+    @Query("UPDATE qso_records SET wavelogUploaded = 1, wavelogStation = CASE WHEN :stationId = '' THEN wavelogStation ELSE :stationId END WHERE id IN (:ids)")
+    suspend fun markWavelogUploaded(ids: List<Long>, stationId: String)
 }

@@ -33,8 +33,8 @@ interface IMainContainer {
     val databaseRepo: IDatabaseRepo
     val amSatRepo: IAmSatRepository
     val updateRepo: IUpdateRepository
-    val wavelogRepo: IWavelogRepository
     val wavelogUploadRepository: IWavelogUploadRepository
+    val wavelogSyncRepository: IWavelogSyncRepository
     val lotwRepo: com.rtbishop.look4sat.core.domain.repository.ILoTWRepository
     val qsoRepository: IQsoRepository
     val lotwUploadRepository: ILoTWUploadRepository

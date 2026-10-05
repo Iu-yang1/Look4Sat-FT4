@@ -13,6 +13,7 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -23,6 +24,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -54,6 +57,7 @@ import com.rtbishop.look4sat.core.presentation.sheetDialogContainerColor
 import com.rtbishop.look4sat.core.presentation.sheetDialogShape
 import com.rtbishop.look4sat.core.presentation.gridsLabel
 import com.rtbishop.look4sat.core.presentation.LoTWPositionWarningDialog
+import com.rtbishop.look4sat.core.presentation.WavelogUploadPreviewDialog
 import com.rtbishop.look4sat.core.presentation.R
 import com.rtbishop.look4sat.core.presentation.SharedDialog
 import com.rtbishop.look4sat.core.presentation.SwipeController
@@ -105,8 +109,14 @@ fun LogbookDialog(
     onToggleSelection: (Long) -> Unit = {},
     onExitSelection: () -> Unit = {},
     onResubmitSelected: () -> Unit = {},
-    /** Submit count of the Wavelog batch riding this upload (0 hides the note). */
-    wavelogCount: Int = 0
+    /** Wavelog mode: the prepared batch awaiting confirmation (null otherwise). */
+    wavelogPreview: com.rtbishop.look4sat.core.domain.repository.WavelogUploadPreview? = null,
+    /** True when uploads route through Wavelog — titles and previews follow the mode. */
+    wavelogMode: Boolean = false,
+    /** Wavelog station profiles for the 台址 selector (empty hides the selector). */
+    stationOptions: List<com.rtbishop.look4sat.core.domain.repository.WavelogStationInfo> = emptyList(),
+    stationFilter: String? = null,
+    onStationFilterChange: (String?) -> Unit = {}
 ) {
     val swipeController = rememberSwipeController()
     // Entering selection mode closes any row left swiped open — reveals are off there.
@@ -147,6 +157,51 @@ fun LogbookDialog(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
+                if (stationOptions.isNotEmpty()) {
+                    // 台址 selector: filters the list to one Wavelog station profile
+                    // (its QSOs) — "All" keeps everything. The menu scrolls natively.
+                    var stationMenuOpen by remember { mutableStateOf(false) }
+                    val currentLabel = stationOptions.firstOrNull { it.id == stationFilter }?.let { station ->
+                        listOf(station.name, station.callsign).filter { it.isNotBlank() }.joinToString(" · ")
+                    } ?: stringResource(R.string.prefs_logbook_station_all)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Text(stringResource(R.string.prefs_logbook_station_label), fontSize = 12.sp)
+                        Box {
+                            TextButton(onClick = { stationMenuOpen = true }) {
+                                Text(currentLabel, fontSize = 12.sp)
+                            }
+                            DropdownMenu(
+                                expanded = stationMenuOpen,
+                                onDismissRequest = { stationMenuOpen = false }
+                            ) {
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.prefs_logbook_station_all)) },
+                                    onClick = {
+                                        onStationFilterChange(null)
+                                        stationMenuOpen = false
+                                    }
+                                )
+                                stationOptions.forEach { station ->
+                                    DropdownMenuItem(
+                                        text = {
+                                            Text(
+                                                listOf(station.name, station.callsign, station.grid)
+                                                    .filter { it.isNotBlank() }.joinToString(" · ")
+                                            )
+                                        },
+                                        onClick = {
+                                            onStationFilterChange(station.id)
+                                            stationMenuOpen = false
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
                 LazyColumn(
                     modifier = Modifier.fillMaxWidth().heightIn(max = 420.dp),
                     verticalArrangement = Arrangement.spacedBy(2.dp)
@@ -179,11 +234,17 @@ fun LogbookDialog(
             onFixStation = { onFixGrid(listOf(positionWarning.currentGrid)) },
             onIgnore = onIgnorePositionWarning
         )
+    } else if (wavelogPreview != null) {
+        WavelogUploadPreviewDialog(
+            preview = wavelogPreview,
+            busy = uploadBusy,
+            onConfirm = onConfirmUpload,
+            onDismiss = onDismissPreview
+        )
     } else if (preview != null) {
         LogbookUploadPreviewDialog(
             preview = preview,
             busy = uploadBusy,
-            wavelogCount = wavelogCount,
             onConfirm = onConfirmUpload,
             onDismiss = onDismissPreview
         )
@@ -193,7 +254,7 @@ fun LogbookDialog(
             onDismissRequest = onDismissMessage,
             shape = sheetDialogShape(),
             containerColor = sheetDialogContainerColor(),
-            title = { SheetDialogTitle("LoTW Upload") },
+            title = { SheetDialogTitle(if (wavelogMode) "Wavelog Upload" else "LoTW Upload") },
             text = { Text(uploadMessage) },
             confirmButton = {
                 TextButton(onClick = onDismissMessage) { Text("OK") }
@@ -218,7 +279,6 @@ fun LogbookDialog(
 private fun LogbookUploadPreviewDialog(
     preview: com.rtbishop.look4sat.core.domain.repository.LoTWUploadPreview,
     busy: Boolean,
-    wavelogCount: Int,
     onConfirm: () -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -255,13 +315,6 @@ private fun LogbookUploadPreviewDialog(
                     // locked in by award credits — say so before the operator commits.
                     Text(
                         stringResource(R.string.prefs_logbook_resubmit_note),
-                        fontSize = 12.sp,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                }
-                if (wavelogCount > 0) {
-                    Text(
-                        stringResource(R.string.prefs_logbook_wavelog_sync, wavelogCount),
                         fontSize = 12.sp,
                         color = MaterialTheme.colorScheme.primary
                     )

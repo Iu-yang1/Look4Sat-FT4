@@ -23,7 +23,6 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.rtbishop.look4sat.core.domain.repository.IDatabaseRepo
-import com.rtbishop.look4sat.core.domain.model.WavelogSettings
 import com.rtbishop.look4sat.core.domain.model.WavelogUploadSettings
 import com.rtbishop.look4sat.core.domain.repository.IMainContainer
 import com.rtbishop.look4sat.core.domain.repository.ISensorsRepo
@@ -36,8 +35,12 @@ import com.rtbishop.look4sat.core.domain.repository.lotwCursorApi
 import com.rtbishop.look4sat.core.domain.repository.lotwCursorEpochMs
 import com.rtbishop.look4sat.core.domain.repository.resolveLoTWSyncMode
 import com.rtbishop.look4sat.core.domain.repository.positionWarning
-import com.rtbishop.look4sat.core.domain.repository.IWavelogRepository
 import com.rtbishop.look4sat.core.domain.repository.IWavelogUploadRepository
+import com.rtbishop.look4sat.core.domain.repository.IWavelogSyncRepository
+import com.rtbishop.look4sat.core.domain.repository.WavelogSyncFetch
+import com.rtbishop.look4sat.core.domain.repository.WavelogSyncMode
+import com.rtbishop.look4sat.core.domain.repository.applyWavelogSyncResult
+import com.rtbishop.look4sat.core.domain.repository.resolveWavelogSyncMode
 import com.rtbishop.look4sat.core.domain.repository.WavelogStationInfo
 import com.rtbishop.look4sat.core.domain.repository.WavelogUploadOutcome
 import com.rtbishop.look4sat.core.domain.repository.WavelogUploadPreview
@@ -62,7 +65,7 @@ class SettingsViewModel(
     private val databaseRepo: IDatabaseRepo,
     private val settingsRepo: ISettingsRepo,
     private val updateRepo: IUpdateRepository,
-    private val wavelogRepo: IWavelogRepository,
+    private val wavelogSyncRepository: IWavelogSyncRepository,
     private val wavelogUploadRepository: IWavelogUploadRepository,
     private val lotwRepo: com.rtbishop.look4sat.core.domain.repository.ILoTWRepository,
     private val qsoRepository: com.rtbishop.look4sat.core.domain.logbook.IQsoRepository,
@@ -88,8 +91,9 @@ class SettingsViewModel(
             radioControlSettings = settingsRepo.radioControlSettings.value,
             dataSourcesSettings = settingsRepo.dataSourcesSettings.value,
             dataSourcesStatus = settingsRepo.dataSourcesStatus.value,
-            wavelogSettings = settingsRepo.wavelogSettings.value,
             wavelogUploadSettings = settingsRepo.wavelogUploadSettings.value,
+            wavelogUploadStations = settingsRepo.getWavelogStations(),
+            wavelogLastSyncEpochMs = settingsRepo.getLastWavelogSyncEpochMs(),
             workedGridsCount = settingsRepo.getWorkedGrids().size,
             compassAccuracy = sensorsRepo.compassAccuracy.value,
             compassHeadingDegrees = correctedCompassHeading(),
@@ -163,11 +167,6 @@ class SettingsViewModel(
             }
         }
         viewModelScope.launch {
-            settingsRepo.wavelogSettings.collect { settings ->
-                _uiState.update { it.copy(wavelogSettings = settings) }
-            }
-        }
-        viewModelScope.launch {
             settingsRepo.wavelogUploadSettings.collect { settings ->
                 _uiState.update { it.copy(wavelogUploadSettings = settings) }
             }
@@ -238,13 +237,15 @@ class SettingsViewModel(
             is SettingsAction.UpdateRC -> settingsRepo.updateRCSettings(action.settings)
             is SettingsAction.UpdateRadioControl -> settingsRepo.updateRadioControlSettings(action.settings)
             is SettingsAction.UpdateDataSources -> settingsRepo.updateDataSourcesSettings(action.settings)
-            // Wavelog worked grids
-            is SettingsAction.UpdateWavelog -> settingsRepo.updateWavelogSettings(action.settings)
-            is SettingsAction.SyncWorkedGrids -> syncWorkedGrids(action.settings)
-            // Wavelog upload config (the upload itself rides the LoTW logbook flow)
-            is SettingsAction.UpdateWavelogUpload -> settingsRepo.updateWavelogUploadSettings(action.settings)
+            // Wavelog configuration (single block; LoTW and Wavelog are mutually exclusive)
+            is SettingsAction.UpdateWavelogUpload -> applyWavelogUploadSettings(action.settings)
             is SettingsAction.FetchWavelogUploadStations -> fetchWavelogUploadStations(action.url, action.apiKey)
-            is SettingsAction.SelectWavelogUploadStation -> selectWavelogUploadStation(action.station)
+            is SettingsAction.SelectWavelogUploadStation -> applyWavelogUploadStation(action.station)
+            is SettingsAction.SyncWavelog -> syncWavelog(action.mode)
+            SettingsAction.ConfirmWavelogSwitch -> confirmWavelogSwitch()
+            SettingsAction.CancelWavelogSwitch -> cancelWavelogSwitch()
+            SettingsAction.ClearWavelogConfig -> clearWavelogConfig()
+            is SettingsAction.SetLogbookStationFilter -> _uiState.update { it.copy(logbookStationFilter = action.stationId) }
             // LoTW confirmed grids
             is SettingsAction.UpdateLoTW -> settingsRepo.updateLoTWSettings(action.settings)
             is SettingsAction.SyncLoTWGrids -> syncLoTWGrids(action.settings, action.mode)
@@ -277,30 +278,62 @@ class SettingsViewModel(
         }
     }
 
-    // region Wavelog worked grids
+    // Wavelog configuration + sync
 
-    private fun syncWorkedGrids(settings: WavelogSettings) {
-        if (!settings.isConfigured) {
-            _uiState.update { it.copy(wavelogMessage = "Wavelog URL/token not configured") }
+    /** A switch that needs the LoTW→Wavelog hand-over confirmation before it applies. */
+    private var pendingWavelogSwitch: (() -> Unit)? = null
+
+    private fun currentLoTWConfigured(): Boolean =
+        settingsRepo.lotwSettings.value.isConfigured || _uiState.value.lotwCertificate != null
+
+    /**
+     * Applies a Wavelog config change. Completing the configuration (the block turning
+     * ready) while LoTW is configured pauses for the operator's confirmation: from then
+     * on uploads and syncs go through Wavelog only and the LoTW sides stay unavailable
+     * (the one-of-two rule). A half-filled config changes nothing about the routing.
+     */
+    private fun applyWavelogUploadSettings(settings: WavelogUploadSettings) {
+        val current = settingsRepo.wavelogUploadSettings.value
+        if (!current.isReady && settings.isReady && currentLoTWConfigured()) {
+            pendingWavelogSwitch = { settingsRepo.updateWavelogUploadSettings(settings) }
+            _uiState.update { it.copy(wavelogSwitchWarning = true) }
             return
         }
-        // Persist the credentials first, then sync with the freshly-typed values.
-        settingsRepo.updateWavelogSettings(settings)
-        _uiState.update { it.copy(wavelogSyncing = true, wavelogMessage = null) }
-        viewModelScope.launch {
-            val grids = wavelogRepo.fetchWorkedGrids(settings.url, settings.token)
-            _uiState.update {
-                if (grids != null) {
-                    settingsRepo.setWorkedGrids(grids)
-                    it.copy(wavelogSyncing = false, workedGridsCount = grids.size, wavelogMessage = null)
-                } else {
-                    it.copy(wavelogSyncing = false, wavelogMessage = "Sync failed — check URL/token/network")
-                }
-            }
-        }
+        settingsRepo.updateWavelogUploadSettings(settings)
     }
 
-    // Wavelog upload (separate config block + upload flow)
+    private fun applyWavelogUploadStation(station: WavelogStationInfo) {
+        val current = settingsRepo.wavelogUploadSettings.value
+        val updated = current.copy(
+            stationId = station.id,
+            stationName = station.name,
+            stationCallsign = station.callsign,
+            stationGrid = station.grid
+        )
+        if (!current.isReady && updated.isReady && currentLoTWConfigured()) {
+            pendingWavelogSwitch = { settingsRepo.updateWavelogUploadSettings(updated) }
+            _uiState.update { it.copy(wavelogSwitchWarning = true) }
+            return
+        }
+        settingsRepo.updateWavelogUploadSettings(updated)
+    }
+
+    private fun confirmWavelogSwitch() {
+        pendingWavelogSwitch?.invoke()
+        pendingWavelogSwitch = null
+        _uiState.update { it.copy(wavelogSwitchWarning = false) }
+    }
+
+    private fun cancelWavelogSwitch() {
+        pendingWavelogSwitch = null
+        _uiState.update { it.copy(wavelogSwitchWarning = false) }
+    }
+
+    /** Wipe the configuration — routing falls back to LoTW on the next check. */
+    private fun clearWavelogConfig() {
+        settingsRepo.updateWavelogUploadSettings(WavelogUploadSettings())
+        _uiState.update { it.copy(logbookStationFilter = null, logbookWavelogPreview = null) }
+    }
 
     private fun fetchWavelogUploadStations(url: String, apiKey: String) {
         if (_uiState.value.wavelogUploadProbeBusy) return
@@ -316,6 +349,9 @@ class SettingsViewModel(
                 }
                 return@launch
             }
+            // Persist the full list: the logbook's 台址 selector and the sync use it,
+            // not just the dialog that fetched it.
+            settingsRepo.setWavelogStations(probe.stations)
             _uiState.update {
                 it.copy(
                     wavelogUploadProbeBusy = false,
@@ -328,36 +364,87 @@ class SettingsViewModel(
             val current = settingsRepo.wavelogUploadSettings.value
             val savedStillPresent = current.stationId.isNotBlank() && probe.stations.any { it.id == current.stationId }
             val auto = if (probe.stations.size == 1 && !savedStillPresent) probe.stations.single() else null
-            if (auto != null) selectWavelogUploadStation(auto)
+            if (auto != null) applyWavelogUploadStation(auto)
         }
     }
 
-    private fun selectWavelogUploadStation(station: WavelogStationInfo) {
-        val current = settingsRepo.wavelogUploadSettings.value
-        settingsRepo.updateWavelogUploadSettings(
-            current.copy(
-                stationId = station.id,
-                stationName = station.name,
-                stationCallsign = station.callsign,
-                stationGrid = station.grid
-            )
-        )
+    /**
+     * Downloads QSOs from Wavelog and folds them into the logbook + map grid data.
+     * Incremental resumes from the per-station cursors; the full mode re-pulls each
+     * station from the start (healing anything a cursor missed) — neither ever deletes
+     * data the app already has.
+     */
+    private fun syncWavelog(requested: WavelogSyncMode) {
+        if (_uiState.value.wavelogSyncing) return
+        val settings = settingsRepo.wavelogUploadSettings.value
+        if (!settings.isConfigured) {
+            _uiState.update { it.copy(wavelogUploadMessage = "Wavelog URL/key not configured") }
+            return
+        }
+        val stations = settingsRepo.getWavelogStations()
+        if (stations.isEmpty()) {
+            _uiState.update { it.copy(wavelogUploadMessage = "Fetch stations first — no station profile known") }
+            return
+        }
+        val mode = resolveWavelogSyncMode(settingsRepo.getWavelogSyncUrl(), settings.url, requested)
+        _uiState.update { it.copy(wavelogSyncing = true, wavelogUploadMessage = null) }
+        viewModelScope.launch {
+            try {
+                val fetch = wavelogSyncRepository.fetchNewRecords(
+                    settings.url,
+                    settings.apiKey,
+                    stations,
+                    settingsRepo.getWavelogSyncCursors(),
+                    full = mode == WavelogSyncMode.Full
+                )
+                if (fetch == null) {
+                    _uiState.update {
+                        it.copy(wavelogSyncing = false, wavelogUploadMessage = "Wavelog sync failed — check URL/key/network")
+                    }
+                    return@launch
+                }
+                val merge = if (fetch.records.isEmpty()) {
+                    com.rtbishop.look4sat.core.domain.logbook.AdifImportResult(0, 0, 0)
+                } else {
+                    qsoRepository.mergeWavelog(fetch.records)
+                }
+                // Stations that failed keep their previous cursor; fetched ones advance.
+                val cursors = settingsRepo.getWavelogSyncCursors() + fetch.cursors
+                applyWavelogSyncResult(settingsRepo, fetch.records, cursors, settings.url)
+                _uiState.update {
+                    it.copy(
+                        wavelogSyncing = false,
+                        workedGridsCount = settingsRepo.getWorkedGrids().size,
+                        wavelogLastSyncEpochMs = settingsRepo.getLastWavelogSyncEpochMs(),
+                        wavelogUploadMessage = wavelogSyncSummary(mode, fetch, merge, stations.size)
+                    )
+                }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                _uiState.update {
+                    it.copy(wavelogSyncing = false, wavelogUploadMessage = "Wavelog sync failed — check URL/key/network")
+                }
+            }
+        }
     }
 
-    /** Prepares the Wavelog batch riding the LoTW upload (null when Wavelog is not ready). */
-    private suspend fun prepareWavelogPiggyback(
-        records: List<com.rtbishop.look4sat.core.domain.logbook.QsoRecord>
-    ): WavelogUploadPreview? {
-        val settings = settingsRepo.wavelogUploadSettings.value
-        if (!settings.isReady) return null
-        return runCatching {
-            wavelogUploadRepository.prepare(wavelogUploadCandidates(records), settings)
-        }.getOrNull()
+    private fun wavelogSyncSummary(
+        mode: WavelogSyncMode,
+        fetch: WavelogSyncFetch,
+        merge: com.rtbishop.look4sat.core.domain.logbook.AdifImportResult,
+        totalStations: Int
+    ): String {
+        val head = if (mode == WavelogSyncMode.Full) "Full Wavelog sync" else "Incremental Wavelog sync"
+        val base = "$head — ${merge.imported} new, ${merge.skipped} already there"
+        return if (fetch.failedStations.isEmpty()) base
+        else "$base · ${fetch.failedStations.size}/$totalStations station(s) failed"
     }
 
     /**
-     * Uploads one prepared Wavelog batch (piggyback) and marks what the server
-     * accepted. Returns the operator-facing message segment for this upload.
+     * Uploads one prepared Wavelog batch and marks what the server accepted (stamped
+     * with the station profile the batch went out through). Returns the operator-facing
+     * message for this upload.
      */
     private suspend fun uploadWavelogNow(
         preview: WavelogUploadPreview,
@@ -365,7 +452,7 @@ class SettingsViewModel(
     ): String = try {
         val outcome = wavelogUploadRepository.upload(preview, settings)
         if (outcome is WavelogUploadOutcome.Imported && outcome.markIds.isNotEmpty()) {
-            qsoRepository.markWavelogUploaded(outcome.markIds)
+            qsoRepository.markWavelogUploaded(outcome.markIds, settings.stationId)
         }
         wavelogConfirmedSegment(outcome, preview)
     } catch (_: Exception) {
@@ -477,13 +564,16 @@ class SettingsViewModel(
             _uiState.update { it.copy(logbookUploadBusy = true, logbookUploadMessage = "") }
             try {
                 val all = qsoRepository.records.first()
+                val wavelogSettings = settingsRepo.wavelogUploadSettings.value
+                if (wavelogSettings.isReady) {
+                    // Wavelog mode: the logbook upload goes to Wavelog only.
+                    prepareLogbookWavelogUpload(all, wavelogSettings)
+                    return@launch
+                }
                 // Only local (non-confirmed) records are candidates for upload;
                 // LoTW-imported confirmations are the feedback side.
                 val pending = all.filter { !it.lotwConfirmed && !it.lotwUploaded && it.status == com.rtbishop.look4sat.core.domain.logbook.QsoStatus.COMPLETE }
                 val audit = lotwUploadRepository.audit(pending)
-                // Wavelog piggyback (option A): prepare its batch while we are here, so
-                // the logbook preview can show the count and confirm can post it directly.
-                val wavelogPreview = prepareWavelogPiggyback(all)
                 if (audit.pending == 0) {
                     val msg = when {
                         audit.unavailable > 0 -> com.rtbishop.look4sat.core.domain.logbook.unavailableUploadSummary(
@@ -493,17 +583,7 @@ class SettingsViewModel(
                         audit.unknown > 0 -> "${audit.unknown} QSO(s) had an unknown upload result — not retried automatically"
                         else -> "No pending QSOs to upload"
                     }
-                    // No LoTW work to do — still flush the Wavelog backlog (catch-up): a
-                    // freshly configured Wavelog syncs without waiting for new QSOs.
-                    val wavelogMsg = wavelogPreview?.let {
-                        if (it.count > 0) uploadWavelogNow(it, settingsRepo.wavelogUploadSettings.value) else wavelogIdleSegment(it)
-                    }
-                    _uiState.update {
-                        it.copy(
-                            logbookUploadBusy = false,
-                            logbookUploadMessage = listOfNotNull(msg, wavelogMsg).joinToString("\n")
-                        )
-                    }
+                    _uiState.update { it.copy(logbookUploadBusy = false, logbookUploadMessage = msg) }
                     return@launch
                 }
                 val preview = lotwUploadRepository.prepare(pending, false)
@@ -514,7 +594,6 @@ class SettingsViewModel(
                     it.copy(
                         logbookUploadBusy = false,
                         logbookPreview = preview,
-                        wavelogPending = wavelogPreview,
                         logbookPositionWarning = positionWarning(settingsRepo.getCurrentGrid(), preview.grids)
                     )
                 }
@@ -526,7 +605,42 @@ class SettingsViewModel(
         }
     }
 
+    /** Wavelog-mode branch of [prepareLogbookUpload]: prepare the batch, then confirm. */
+    private suspend fun prepareLogbookWavelogUpload(
+        all: List<com.rtbishop.look4sat.core.domain.logbook.QsoRecord>,
+        settings: WavelogUploadSettings
+    ) {
+        val preview = runCatching {
+            wavelogUploadRepository.prepare(wavelogUploadCandidates(all), settings)
+        }.getOrNull()
+        if (preview == null) {
+            _uiState.update {
+                it.copy(logbookUploadBusy = false, logbookUploadMessage = "Wavelog upload failed to prepare — check the configuration")
+            }
+            return
+        }
+        if (preview.count == 0) {
+            _uiState.update {
+                it.copy(
+                    logbookUploadBusy = false,
+                    logbookUploadMessage = wavelogIdleSegment(preview) ?: "No pending QSOs to upload to Wavelog"
+                )
+            }
+            return
+        }
+        _uiState.update { it.copy(logbookUploadBusy = false, logbookWavelogPreview = preview) }
+    }
+
     private fun confirmLogbookUpload() {
+        val wavelogPreview = _uiState.value.logbookWavelogPreview
+        if (wavelogPreview != null) {
+            viewModelScope.launch {
+                _uiState.update { it.copy(logbookUploadBusy = true) }
+                val msg = uploadWavelogNow(wavelogPreview, settingsRepo.wavelogUploadSettings.value)
+                _uiState.update { it.copy(logbookUploadBusy = false, logbookWavelogPreview = null, logbookUploadMessage = msg) }
+            }
+            return
+        }
         val preview = _uiState.value.logbookPreview ?: return
         viewModelScope.launch {
             _uiState.update { it.copy(logbookUploadBusy = true) }
@@ -542,19 +656,11 @@ class SettingsViewModel(
                 com.rtbishop.look4sat.core.domain.repository.LoTWUploadResult.Unknown -> "Unknown result — will not auto-retry"
                 com.rtbishop.look4sat.core.domain.repository.LoTWUploadResult.ExpiredPreview -> "Preview expired — tap upload again"
             }
-            // Wavelog piggyback: rides the same confirmation, independent of the LoTW
-            // outcome — a Wavelog failure leaves records unmarked for the next upload.
-            val wavelogPending = _uiState.value.wavelogPending
-            val wavelogMsg = wavelogPending?.let { wl ->
-                if (wl.count > 0) uploadWavelogNow(wl, settingsRepo.wavelogUploadSettings.value)
-                else wavelogIdleSegment(wl)
-            }
             _uiState.update {
                 it.copy(
                     logbookUploadBusy = false,
                     logbookPreview = null,
-                    wavelogPending = null,
-                    logbookUploadMessage = listOfNotNull(msg, wavelogMsg).joinToString("\n"),
+                    logbookUploadMessage = msg,
                     // An accepted resubmit is done — drop the checks; a failed one keeps
                     // them so retrying stays one tap away.
                     logbookSelectionMode = if (accepted) false else it.logbookSelectionMode,
@@ -564,7 +670,7 @@ class SettingsViewModel(
         }
     }
 
-    private fun dismissLogbookPreview() = _uiState.update { it.copy(logbookPreview = null, wavelogPending = null) }
+    private fun dismissLogbookPreview() = _uiState.update { it.copy(logbookPreview = null, logbookWavelogPreview = null) }
 
     /** Operator chose "ignore" on the position check: keep the prepared preview. */
     private fun ignoreLogbookPositionWarning() = _uiState.update { it.copy(logbookPositionWarning = null) }
@@ -573,7 +679,7 @@ class SettingsViewModel(
     private fun abandonLogbookForGridFix() {
         lotwUploadRepository.discardPreview()
         lastLogbookUploadIds = emptyList()
-        _uiState.update { it.copy(logbookPositionWarning = null, logbookPreview = null, wavelogPending = null) }
+        _uiState.update { it.copy(logbookPositionWarning = null, logbookPreview = null) }
     }
 
     /** Long-press entry: selection mode with the pressed record checked. */
@@ -601,6 +707,39 @@ class SettingsViewModel(
             _uiState.update { it.copy(logbookUploadBusy = true, logbookUploadMessage = "") }
             try {
                 val all = qsoRepository.records.first()
+                val wavelogSettings = settingsRepo.wavelogUploadSettings.value
+                if (wavelogSettings.isReady) {
+                    // Wavelog mode: re-send the checked records through Wavelog (the
+                    // server dedupes what is already there).
+                    val selected = all.filter {
+                        it.id in _uiState.value.logbookSelectedIds &&
+                            it.status == com.rtbishop.look4sat.core.domain.logbook.QsoStatus.COMPLETE
+                    }
+                    if (selected.isEmpty()) {
+                        _uiState.update { it.copy(logbookUploadBusy = false, logbookUploadMessage = "No complete QSOs in the selection") }
+                        return@launch
+                    }
+                    val preview = runCatching {
+                        wavelogUploadRepository.prepare(selected, wavelogSettings)
+                    }.getOrNull()
+                    if (preview == null) {
+                        _uiState.update {
+                            it.copy(logbookUploadBusy = false, logbookUploadMessage = "Wavelog upload failed to prepare — check the configuration")
+                        }
+                        return@launch
+                    }
+                    if (preview.count == 0) {
+                        _uiState.update {
+                            it.copy(
+                                logbookUploadBusy = false,
+                                logbookUploadMessage = wavelogIdleSegment(preview) ?: "No QSOs to resubmit"
+                            )
+                        }
+                        return@launch
+                    }
+                    _uiState.update { it.copy(logbookUploadBusy = false, logbookWavelogPreview = preview) }
+                    return@launch
+                }
                 val selected = resubmitCandidates(all, _uiState.value.logbookSelectedIds)
                 if (selected.isEmpty()) {
                     _uiState.update { it.copy(logbookUploadBusy = false, logbookUploadMessage = "No complete QSOs in the selection") }
@@ -617,13 +756,10 @@ class SettingsViewModel(
                     return@launch
                 }
                 lastLogbookUploadIds = preview.submittedIds
-                // Wavelog piggyback: the resubmit confirmation syncs the backlog too.
-                val wavelogPending = prepareWavelogPiggyback(all)
                 _uiState.update {
                     it.copy(
                         logbookUploadBusy = false,
                         logbookPreview = preview,
-                        wavelogPending = wavelogPending,
                         logbookPositionWarning = positionWarning(settingsRepo.getCurrentGrid(), preview.grids)
                     )
                 }
@@ -821,7 +957,7 @@ class SettingsViewModel(
                     databaseRepo = container.databaseRepo,
                     settingsRepo = container.settingsRepo,
                     updateRepo = container.updateRepo,
-                    wavelogRepo = container.wavelogRepo,
+                    wavelogSyncRepository = container.wavelogSyncRepository,
                     wavelogUploadRepository = container.wavelogUploadRepository,
                     lotwRepo = container.lotwRepo,
                     qsoRepository = container.qsoRepository,

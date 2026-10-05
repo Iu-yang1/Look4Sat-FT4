@@ -24,13 +24,25 @@ interface IQsoRepository {
      */
     suspend fun markUploaded(ids: List<Long>, grids: List<String> = emptyList())
 
-    /** Marks the batch as uploaded to Wavelog (independent of the LoTW upload state). */
-    suspend fun markWavelogUploaded(ids: List<Long>)
+    /**
+     * Marks the batch as uploaded to Wavelog (independent of the LoTW upload state) and
+     * stamps the station profile (台址) the batch went out through, so the logbook's
+     * 台址 selector can group the records. An empty [stationId] leaves the stamp as-is.
+     */
+    suspend fun markWavelogUploaded(ids: List<Long>, stationId: String = "")
 
     suspend fun exportAdi(ids: Set<Long>? = null, includeIncomplete: Boolean = false): String
     suspend fun importAdi(content: String): AdifImportResult
     suspend fun mergeConfirmed(records: List<QsoRecord>): AdifImportResult
     suspend fun mergeLoTW(records: List<QsoRecord>): AdifImportResult
+
+    /**
+     * Merges QSO records pulled from Wavelog by a sync (the download direction):
+     * matches by the same stable identity as every other import, tags matched and
+     * freshly inserted rows with their Wavelog station profile, and marks them as
+     * already uploaded so a later upload never sends them straight back.
+     */
+    suspend fun mergeWavelog(records: List<QsoRecord>): AdifImportResult
 
     /**
      * Folds LoTW confirmations that were imported as their own rows back into the local

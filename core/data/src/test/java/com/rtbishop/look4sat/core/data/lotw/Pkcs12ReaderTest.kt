@@ -131,4 +131,40 @@ class Pkcs12ReaderTest {
             Pkcs12Reader.read("not a p12 file at all".toByteArray(), "x".toCharArray())
         }
     }
+
+    @Test
+    fun readsEmptyPasswordCertpbeNoneLayout() {
+        // Certificates exported without a password must import with an empty char
+        // array — the reader must decrypt, not demand a password.
+        val (key, cert) = Pkcs12Reader.read(fixture("test_pbes2_empty.p12"), charArrayOf())
+        assertEquals("RSA", key.algorithm)
+        assertTrue("key/cert pair", keyMatches(key, cert))
+    }
+
+    @Test
+    fun readsEmptyPasswordEncryptedCertLayout() {
+        val (key, cert) = Pkcs12Reader.read(fixture("test_pbes2_empty_enc.p12"), charArrayOf())
+        assertEquals("RSA", key.algorithm)
+        assertTrue("key/cert pair", keyMatches(key, cert))
+    }
+
+    @Test
+    fun emptyPasswordOnProtectedFileFailsAsDecrypt() {
+        // Blank input on a password-protected file must fail as a decryption error
+        // (mapped to "password" upstream) — never silently succeed.
+        val e = assertThrows(Exception::class.java) {
+            Pkcs12Reader.read(fixture(), charArrayOf())
+        }
+        assertTrue("BadPadding", e is javax.crypto.BadPaddingException)
+    }
+
+    @Test
+    fun platformKeystoreAcceptsEmptyPassword() {
+        // LoTWKeyMaterial first tries the platform PKCS12 KeyStore: verify the
+        // empty-password load/getKey call convention this fix relies on.
+        val ks = java.security.KeyStore.getInstance("PKCS12")
+        ks.load(fixture("test_pbes2_empty.p12").inputStream(), charArrayOf())
+        val alias = ks.aliases().nextElement()
+        assertNotNull(ks.getKey(alias, charArrayOf()))
+    }
 }

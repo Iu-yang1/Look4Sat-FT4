@@ -54,6 +54,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.painterResource
@@ -69,11 +70,12 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.rtbishop.look4sat.core.domain.model.DataSourcesSettings
 import com.rtbishop.look4sat.core.domain.model.OtherSettings
 import com.rtbishop.look4sat.core.domain.model.RadioControlSettings
-import com.rtbishop.look4sat.core.domain.model.WavelogSettings
+
 import com.rtbishop.look4sat.core.domain.predict.GeoPos
 import com.rtbishop.look4sat.core.domain.repository.CompassAccuracy
 import com.rtbishop.look4sat.core.domain.repository.IContainerProvider
 import com.rtbishop.look4sat.core.domain.repository.LoTWSyncMode
+import com.rtbishop.look4sat.core.domain.repository.WavelogSyncMode
 import com.rtbishop.look4sat.core.presentation.CardButton
 import com.rtbishop.look4sat.core.presentation.SharedDialog
 import com.rtbishop.look4sat.core.presentation.IconCard
@@ -286,8 +288,9 @@ private fun SettingsScreen(
         )
     }
     if (dialogs.logbook) {
+        val stationFilter = uiState.logbookStationFilter
         LogbookDialog(
-            records = uiState.logbookRecords,
+            records = uiState.logbookRecords.filter { stationFilter == null || it.wavelogStation == stationFilter },
             satelliteCandidates = uiState.satelliteCatalog,
             uploadBusy = uiState.logbookUploadBusy,
             uploadMessage = uiState.logbookUploadMessage,
@@ -319,7 +322,11 @@ private fun SettingsScreen(
             onToggleSelection = { onAction(SettingsAction.ToggleLogbookSelection(it)) },
             onExitSelection = { onAction(SettingsAction.ExitLogbookSelection) },
             onResubmitSelected = { onAction(SettingsAction.ResubmitSelectedLogbook) },
-            wavelogCount = uiState.wavelogPending?.count ?: 0
+            wavelogPreview = uiState.logbookWavelogPreview,
+            wavelogMode = uiState.wavelogUploadSettings.isReady,
+            stationOptions = if (uiState.wavelogUploadSettings.isReady) uiState.wavelogUploadStations else emptyList(),
+            stationFilter = uiState.logbookStationFilter,
+            onStationFilterChange = { onAction(SettingsAction.SetLogbookStationFilter(it)) }
         )
     }
     if (dialogs.lotwUpload) {
@@ -347,11 +354,22 @@ private fun SettingsScreen(
             stations = uiState.wavelogUploadStations,
             rights = uiState.wavelogUploadRights,
             probeBusy = uiState.wavelogUploadProbeBusy,
+            isSyncing = uiState.wavelogSyncing,
+            lastSyncEpochMs = uiState.wavelogLastSyncEpochMs,
             message = uiState.wavelogUploadMessage,
             dismiss = { dialogs.wavelogUpload = false },
             onSave = { onAction(SettingsAction.UpdateWavelogUpload(it)) },
             onFetchStations = { url, apiKey -> onAction(SettingsAction.FetchWavelogUploadStations(url, apiKey)) },
-            onSelectStation = { onAction(SettingsAction.SelectWavelogUploadStation(it)) }
+            onSelectStation = { onAction(SettingsAction.SelectWavelogUploadStation(it)) },
+            onSyncIncremental = { onAction(SettingsAction.SyncWavelog(WavelogSyncMode.Incremental)) },
+            onSyncFull = { onAction(SettingsAction.SyncWavelog(WavelogSyncMode.Full)) },
+            onClear = { onAction(SettingsAction.ClearWavelogConfig) }
+        )
+    }
+    if (uiState.wavelogSwitchWarning) {
+        WavelogSwitchWarningDialog(
+            onConfirm = { onAction(SettingsAction.ConfirmWavelogSwitch) },
+            onCancel = { onAction(SettingsAction.CancelWavelogSwitch) }
         )
     }
 
@@ -423,6 +441,7 @@ private fun SettingsScreen(
         }
     ) { _ ->
         val isVerticalLayout = isVerticalLayout()
+        val wavelogMode = uiState.wavelogUploadSettings.isReady
         LazyVerticalGrid(
             columns = GridCells.Fixed(if (isVerticalLayout) 1 else 2),
             horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -465,6 +484,7 @@ private fun SettingsScreen(
                 LoTWUploadCard(
                     hasCertificate = uiState.lotwCertificate != null,
                     stationGrid = uiState.lotwStation?.grid.orEmpty(),
+                    enabled = !wavelogMode,
                     showUploadConfigDialog = { onAction(SettingsAction.LoadLoTWUploadStatus); dialogs.lotwUpload = true }
                 )
             }
@@ -473,12 +493,14 @@ private fun SettingsScreen(
                     settings = uiState.lotwSettings,
                     workedGridsCount = uiState.workedGridsCount,
                     lastSyncEpochMs = uiState.lotwLastSyncEpochMs,
+                    enabled = !wavelogMode,
                     showLoTWDialog = { dialogs.lotw = true }
                 )
             }
             item {
                 WavelogUploadCard(
                     settings = uiState.wavelogUploadSettings,
+                    lastSyncEpochMs = uiState.wavelogLastSyncEpochMs,
                     showDialog = { dialogs.wavelogUpload = true }
                 )
             }
@@ -486,6 +508,7 @@ private fun SettingsScreen(
                 OtherCard(
                     settings = uiState.otherSettings,
                     onCompassCalibration = { dialogs.compassCalibration = true },
+                    loTWEnabled = !wavelogMode,
                     onAction = onAction
                 )
             }
@@ -710,6 +733,7 @@ private fun MapSettingsCard(onClick: () -> Unit) {
 private fun OtherCard(
     settings: OtherSettings,
     onCompassCalibration: () -> Unit,
+    loTWEnabled: Boolean = true,
     onAction: (SettingsAction) -> Unit
 ) {
     ElevatedCard(
@@ -728,7 +752,11 @@ private fun OtherCard(
             SwitchRow(R.string.prefs_other_switch_update, settings.stateOfAutoUpdate) {
                 onAction(SettingsAction.ToggleUpdate(it))
             }
-            SwitchRow(R.string.prefs_other_switch_lotw_sync, settings.stateOfAutoLotwSync) {
+            SwitchRow(
+                R.string.prefs_other_switch_lotw_sync,
+                settings.stateOfAutoLotwSync,
+                enabled = loTWEnabled
+            ) {
                 onAction(SettingsAction.ToggleAutoLotwSync(it))
             }
             SwitchRow(R.string.prefs_other_switch_sweep, settings.stateOfSweep) {
@@ -868,10 +896,15 @@ private fun LoTWCard(
     settings: com.rtbishop.look4sat.core.domain.model.LoTWSettings,
     workedGridsCount: Int,
     lastSyncEpochMs: Long,
+    enabled: Boolean = true,
     showLoTWDialog: () -> Unit
 ) {
     ElevatedCard(modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) {
+        Column(
+            modifier = Modifier
+                .padding(horizontal = 8.dp, vertical = 4.dp)
+                .alpha(if (enabled) 1f else 0.5f)
+        ) {
             Text(
                 text = stringResource(id = R.string.prefs_lotw_title),
                 color = MaterialTheme.colorScheme.primary
@@ -894,10 +927,20 @@ private fun LoTWCard(
                     style = MaterialTheme.typography.bodySmall
                 )
             }
+            if (!enabled) {
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = stringResource(R.string.prefs_lotw_disabled_wavelog),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2
+                )
+            }
             Spacer(modifier = Modifier.height(4.dp))
             CardButton(
                 onClick = showLoTWDialog,
                 text = stringResource(id = R.string.prefs_wavelog_configure),
+                isEnabled = enabled,
                 modifier = Modifier.fillMaxWidth()
             )
         }
@@ -907,6 +950,7 @@ private fun LoTWCard(
 @Composable
 private fun WavelogUploadCard(
     settings: com.rtbishop.look4sat.core.domain.model.WavelogUploadSettings,
+    lastSyncEpochMs: Long,
     showDialog: () -> Unit
 ) {
     ElevatedCard(modifier = Modifier.fillMaxWidth()) {
@@ -914,6 +958,13 @@ private fun WavelogUploadCard(
             Text(
                 text = stringResource(id = R.string.prefs_wavelog_upload_title),
                 color = MaterialTheme.colorScheme.primary
+            )
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = stringResource(R.string.prefs_wavelog_exclusive),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 2
             )
             Spacer(modifier = Modifier.height(2.dp))
             Text(
@@ -929,6 +980,13 @@ private fun WavelogUploadCard(
                 style = MaterialTheme.typography.bodySmall,
                 maxLines = 2
             )
+            if (lastSyncEpochMs != 0L) {
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = formatUpdateTime(updateTime = lastSyncEpochMs),
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
             Spacer(modifier = Modifier.height(4.dp))
             CardButton(
                 onClick = showDialog,

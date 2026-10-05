@@ -296,14 +296,15 @@ class QsoRepositoryTest {
     }
 
     @Test
-    fun markWavelogUploaded_setsOnlyTheWavelogFlag() = runBlocking {
+    fun markWavelogUploaded_setsTheFlagAndTheStationStamp() = runBlocking {
         val id = dao.save(loggedInApp("SO-50", lotwUploaded = false).toEntity())
 
-        repository.markWavelogUploaded(listOf(id))
+        repository.markWavelogUploaded(listOf(id), "3")
 
         val row = dao.getAll().single()
         assertTrue(row.wavelogUploaded)
         assertFalse(row.lotwUploaded)
+        assertEquals("3", row.wavelogStation)
     }
 
     @Test
@@ -314,6 +315,46 @@ class QsoRepositoryTest {
 
         assertEquals(2, dao.getAll().size)
         assertEquals(1, dao.getAll().count { it.wavelogUploaded })
+    }
+
+    @Test
+    fun mergeWavelog_insertsNewRecordsAlreadyMarkedAndStationTagged() = runBlocking {
+        val result = repository.mergeWavelog(
+            listOf(loggedInApp("SO-50", lotwUploaded = false).copy(wavelogStation = "2"))
+        )
+
+        assertEquals(1, result.imported)
+        val row = dao.getAll().single()
+        assertTrue(row.wavelogUploaded)
+        assertEquals("2", row.wavelogStation)
+        assertFalse(row.lotwUploaded)
+    }
+
+    @Test
+    fun mergeWavelog_matchesALocalRowInsteadOfDuplicating() = runBlocking {
+        val id = dao.save(loggedInApp("SAUDISAT 1C", lotwUploaded = false).copy(wavelogUploaded = true).toEntity())
+
+        repository.mergeWavelog(
+            listOf(loggedInApp("SAUDISAT 1C", lotwUploaded = false).copy(wavelogStation = "1", theirGrid = "EN52"))
+        )
+
+        val rows = dao.getAll()
+        assertEquals(1, rows.size)
+        assertEquals(id, rows.first().id)
+        assertEquals("1", rows.first().wavelogStation)
+        assertEquals("EN52", rows.first().theirGrid)
+        // The row joins the ARRL spelling like every other import path.
+        assertEquals("SO-50", rows.first().satelliteName)
+    }
+
+    @Test
+    fun mergeWavelog_isIdempotentAcrossSyncs() = runBlocking {
+        val records = listOf(loggedInApp("SO-50", lotwUploaded = false).copy(wavelogStation = "1"))
+
+        repository.mergeWavelog(records)
+        repository.mergeWavelog(records)
+
+        assertEquals(1, dao.getAll().size)
     }
 
     /** A record as the log page creates it: tracker name, repeater pair, uplink band. */
@@ -377,6 +418,7 @@ class QsoRepositoryTest {
         lotwConfirmed = lotwConfirmed,
         lotwUploaded = lotwUploaded,
         wavelogUploaded = wavelogUploaded,
+        wavelogStation = wavelogStation,
         lotwReceived = lotwReceived,
         lotwQslDate = lotwQslDate,
         vuccGrids = vuccGrids.joinToString(","),
@@ -416,8 +458,15 @@ class QsoRepositoryTest {
             ids.forEach { id -> rows[id]?.let { rows[id] = it.copy(lotwUploaded = true) } }
         }
 
-        override suspend fun markWavelogUploaded(ids: List<Long>) {
-            ids.forEach { id -> rows[id]?.let { rows[id] = it.copy(wavelogUploaded = true) } }
+        override suspend fun markWavelogUploaded(ids: List<Long>, stationId: String) {
+            ids.forEach { id ->
+                rows[id]?.let {
+                    rows[id] = it.copy(
+                        wavelogUploaded = true,
+                        wavelogStation = if (stationId.isBlank()) it.wavelogStation else stationId
+                    )
+                }
+            }
         }
     }
 }

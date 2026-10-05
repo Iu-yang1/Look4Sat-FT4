@@ -30,7 +30,7 @@ import com.rtbishop.look4sat.core.domain.model.OtherSettings
 import com.rtbishop.look4sat.core.domain.model.PassesSettings
 import com.rtbishop.look4sat.core.domain.model.RCSettings
 import com.rtbishop.look4sat.core.domain.model.RadioControlSettings
-import com.rtbishop.look4sat.core.domain.model.WavelogSettings
+
 import com.rtbishop.look4sat.core.domain.model.WavelogUploadSettings
 import com.rtbishop.look4sat.core.domain.predict.GeoPos
 import com.rtbishop.look4sat.core.domain.repository.ISettingsRepo
@@ -148,26 +148,8 @@ class SettingsRepo(
     }
     //endregion
 
-    //region # Wavelog worked-grids settings
-    private val keyWavelogUrl = "wavelogUrl"
-    private val keyWavelogToken = "wavelogToken"
+    //region # Worked-grid data (written by the LoTW / Wavelog syncs)
     private val keyWorkedGrids = "workedGrids"
-
-    private val _wavelogSettings = MutableStateFlow(getWavelogSettings())
-    override val wavelogSettings: StateFlow<WavelogSettings> = _wavelogSettings
-
-    override fun updateWavelogSettings(settings: WavelogSettings) {
-        preferences.edit {
-            putString(keyWavelogUrl, settings.url.trim())
-            putString(keyWavelogToken, settings.token.trim())
-        }
-        _wavelogSettings.value = settings.copy(url = settings.url.trim(), token = settings.token.trim())
-    }
-
-    private fun getWavelogSettings(): WavelogSettings = WavelogSettings(
-        url = preferences.getString(keyWavelogUrl, null).orEmpty(),
-        token = preferences.getString(keyWavelogToken, null).orEmpty()
-    )
 
     override fun getWorkedGrids(): Set<String> {
         val json = preferences.getString(keyWorkedGrids, null).orEmpty()
@@ -419,6 +401,78 @@ class SettingsRepo(
         stationCallsign = preferences.getString(keyWavelogUploadStationCallsign, null).orEmpty(),
         stationGrid = preferences.getString(keyWavelogUploadStationGrid, null).orEmpty()
     )
+    //endregion
+
+    //region # Wavelog sync bookkeeping
+    private val keyWavelogStations = "wavelogStations"
+    private val keyWavelogSyncCursors = "wavelogSyncCursors"
+    private val keyWavelogSyncUrl = "wavelogSyncUrl"
+    private val keyLastWavelogSyncEpochMs = "wavelogLastSyncEpochMs"
+
+    override fun getWavelogStations(): List<com.rtbishop.look4sat.core.domain.repository.WavelogStationInfo> {
+        val json = preferences.getString(keyWavelogStations, null).orEmpty()
+        if (json.isBlank()) return emptyList()
+        return try {
+            val array = org.json.JSONArray(json)
+            (0 until array.length()).mapNotNull { i ->
+                val o = array.optJSONObject(i) ?: return@mapNotNull null
+                val id = o.optString("id").ifBlank { return@mapNotNull null }
+                com.rtbishop.look4sat.core.domain.repository.WavelogStationInfo(
+                    id = id,
+                    name = o.optString("name"),
+                    callsign = o.optString("call"),
+                    grid = o.optString("grid"),
+                    active = o.optBoolean("active", true)
+                )
+            }
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
+    override fun setWavelogStations(stations: List<com.rtbishop.look4sat.core.domain.repository.WavelogStationInfo>) {
+        val array = org.json.JSONArray()
+        stations.forEach { station ->
+            array.put(
+                org.json.JSONObject()
+                    .put("id", station.id)
+                    .put("name", station.name)
+                    .put("call", station.callsign)
+                    .put("grid", station.grid)
+                    .put("active", station.active)
+            )
+        }
+        preferences.edit { putString(keyWavelogStations, array.toString()) }
+    }
+
+    override fun getWavelogSyncCursors(): Map<String, Long> {
+        val json = preferences.getString(keyWavelogSyncCursors, null).orEmpty()
+        if (json.isBlank()) return emptyMap()
+        return try {
+            val root = org.json.JSONObject(json)
+            root.keys().asSequence().associateWith { key -> root.optLong(key, 0L) }
+        } catch (_: Exception) {
+            emptyMap()
+        }
+    }
+
+    override fun setWavelogSyncCursors(cursors: Map<String, Long>) {
+        val root = org.json.JSONObject()
+        cursors.forEach { (stationId, cursor) -> root.put(stationId, cursor) }
+        preferences.edit { putString(keyWavelogSyncCursors, root.toString()) }
+    }
+
+    override fun getWavelogSyncUrl(): String =
+        preferences.getString(keyWavelogSyncUrl, null).orEmpty()
+
+    override fun setWavelogSyncUrl(url: String) =
+        preferences.edit { putString(keyWavelogSyncUrl, url) }
+
+    override fun getLastWavelogSyncEpochMs(): Long =
+        preferences.getLong(keyLastWavelogSyncEpochMs, 0L)
+
+    override fun setLastWavelogSyncEpochMs(value: Long) =
+        preferences.edit { putLong(keyLastWavelogSyncEpochMs, value) }
     //endregion
 
     //region # Transceivers settings

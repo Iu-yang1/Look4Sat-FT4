@@ -68,6 +68,7 @@ import com.rtbishop.look4sat.core.presentation.sheetDialogContainerColor
 import com.rtbishop.look4sat.core.presentation.sheetDialogShape
 import com.rtbishop.look4sat.core.presentation.gridsLabel
 import com.rtbishop.look4sat.core.presentation.LoTWPositionWarningDialog
+import com.rtbishop.look4sat.core.presentation.WavelogUploadPreviewDialog
 
 @Composable
 fun LogPage(
@@ -212,7 +213,7 @@ fun LogPage(
                 onClick = logViewModel::prepareUpload,
                 enabled = !logUiState.busy,
                 modifier = Modifier.weight(1f)
-            ) { Text("上传 LoTW", fontSize = 13.sp) }
+            ) { Text(if (logUiState.wavelogMode) "上传 Wavelog" else "上传 LoTW", fontSize = 13.sp) }
         }
         if (logUiState.busy) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -260,11 +261,19 @@ fun LogPage(
             UploadPreviewDialog(
                 preview = preview,
                 busy = logUiState.busy,
-                wavelogCount = logUiState.wavelogPending?.count ?: 0,
                 onConfirm = logViewModel::confirmUpload,
                 onDismiss = logViewModel::dismissPreview
             )
         }
+    }
+
+    logUiState.wavelogPreview?.let { preview ->
+        WavelogUploadPreviewDialog(
+            preview = preview,
+            busy = logUiState.busy,
+            onConfirm = logViewModel::confirmWavelogUpload,
+            onDismiss = logViewModel::dismissWavelogPreview
+        )
     }
 
     if (logUiState.message.isNotBlank()) {
@@ -272,7 +281,7 @@ fun LogPage(
             onDismissRequest = logViewModel::clearMessage,
             shape = sheetDialogShape(),
             containerColor = sheetDialogContainerColor(),
-            title = { SheetDialogTitle("LoTW Upload") },
+            title = { SheetDialogTitle(if (logUiState.wavelogMode) "Wavelog Upload" else "LoTW Upload") },
             text = { Text(logUiState.message) },
             confirmButton = {
                 TextButton(onClick = logViewModel::clearMessage) { Text("OK") }
@@ -407,7 +416,6 @@ private fun PostDialog(
 private fun UploadPreviewDialog(
     preview: com.rtbishop.look4sat.core.domain.repository.LoTWUploadPreview,
     busy: Boolean,
-    wavelogCount: Int = 0,
     onConfirm: () -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -455,13 +463,6 @@ private fun UploadPreviewDialog(
                         )
                     }
                     Text(parts.joinToString(" · "), fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
-                }
-                if (wavelogCount > 0) {
-                    Text(
-                        "同时同步 Wavelog：$wavelogCount 条",
-                        fontSize = 12.sp,
-                        color = MaterialTheme.colorScheme.primary
-                    )
                 }
                 Text(preview.contacts.joinToString("\n") { it }, fontSize = 12.sp, maxLines = 8)
             }

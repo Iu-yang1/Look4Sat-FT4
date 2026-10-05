@@ -23,7 +23,7 @@ import com.rtbishop.look4sat.core.domain.model.OtherSettings
 import com.rtbishop.look4sat.core.domain.model.PassesSettings
 import com.rtbishop.look4sat.core.domain.model.RCSettings
 import com.rtbishop.look4sat.core.domain.model.RadioControlSettings
-import com.rtbishop.look4sat.core.domain.model.WavelogSettings
+
 import com.rtbishop.look4sat.core.domain.model.WavelogUploadSettings
 import com.rtbishop.look4sat.core.domain.predict.GeoPos
 import kotlinx.coroutines.flow.StateFlow
@@ -107,9 +107,7 @@ interface ISettingsRepo {
     fun setAmSatCallsign(callsign: String)
     //endregion
 
-    //region # Wavelog worked-grids settings
-    val wavelogSettings: StateFlow<WavelogSettings>
-    fun updateWavelogSettings(settings: WavelogSettings)
+    //region # Worked-grid data (written by the LoTW / Wavelog syncs)
     fun getWorkedGrids(): Set<String>
     fun setWorkedGrids(grids: Set<String>)
     /** Confirmed satellite QSOs grouped by worked 4-char gridsquare (map tap detail). */
@@ -128,6 +126,21 @@ interface ISettingsRepo {
     //region # Wavelog upload settings
     val wavelogUploadSettings: StateFlow<WavelogUploadSettings>
     fun updateWavelogUploadSettings(settings: WavelogUploadSettings)
+    //endregion
+
+    //region # Wavelog sync bookkeeping
+    /** Station profiles as last reported by the server — labels for the 台址 selector and targets for sync. */
+    fun getWavelogStations(): List<WavelogStationInfo>
+    fun setWavelogStations(stations: List<WavelogStationInfo>)
+    /** stationId -> lastfetchedid cursors of the last successful sync (per station profile). */
+    fun getWavelogSyncCursors(): Map<String, Long>
+    fun setWavelogSyncCursors(cursors: Map<String, Long>)
+    /** Wavelog base URL the stored cursors belong to (empty when never synced). */
+    fun getWavelogSyncUrl(): String
+    fun setWavelogSyncUrl(url: String)
+    /** Epoch ms of the last successful Wavelog sync (0 when never synced). */
+    fun getLastWavelogSyncEpochMs(): Long
+    fun setLastWavelogSyncEpochMs(value: Long)
     //endregion
 
     //region # LoTW confirmed-grids settings

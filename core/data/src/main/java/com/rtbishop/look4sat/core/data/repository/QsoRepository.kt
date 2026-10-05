@@ -59,6 +59,7 @@ class QsoRepository(
                     id = 0L,
                     lotwUploaded = false, lotwConfirmed = false, lotwReceived = false,
                     wavelogUploaded = false,
+                    wavelogStation = "",
                     lotwQslDate = "", vuccGrids = emptyList(), theirVuccGrids = emptyList(),
                     dxcc = null, country = "", cqZone = null, region = ""
                 ).toEntity())
@@ -95,9 +96,9 @@ class QsoRepository(
         if (stamped.isNotEmpty()) dao.saveBatch(stamped.map { it.toEntity() })
     }
 
-    override suspend fun markWavelogUploaded(ids: List<Long>) = withContext(dispatcher) {
+    override suspend fun markWavelogUploaded(ids: List<Long>, stationId: String) = withContext(dispatcher) {
         if (ids.isEmpty()) return@withContext
-        importMutex.withLock { dao.markWavelogUploaded(ids) }
+        importMutex.withLock { dao.markWavelogUploaded(ids, stationId) }
     }
 
     override suspend fun exportAdi(ids: Set<Long>?, includeIncomplete: Boolean): String = withContext(dispatcher) {
@@ -122,6 +123,19 @@ class QsoRepository(
 
     override suspend fun mergeLoTW(records: List<QsoRecord>): AdifImportResult = withContext(dispatcher) {
         importMutex.withLock { mergeRecords(records, fromLoTW = true) }
+    }
+
+    /**
+     * Merges QSO records pulled from Wavelog (the sync/download direction).
+     *
+     * Matching uses the same [stableQsoKey] identity as every other import, so a record
+     * already recorded locally (typically uploaded from this app) is not duplicated — it
+     * simply learns its Wavelog station profile and, where the local row is missing them,
+     * the opposite-station fields the server kept. Fresh records are inserted already
+     * marked as uploaded, so a later upload never sends them straight back.
+     */
+    override suspend fun mergeWavelog(records: List<QsoRecord>): AdifImportResult = withContext(dispatcher) {
+        importMutex.withLock { mergeWavelogRecords(records) }
     }
 
     override suspend fun consolidateConfirmations(): Int = withContext(dispatcher) {
@@ -216,6 +230,56 @@ class QsoRepository(
         return AdifImportResult(imported, skipped, updated)
     }
 
+    private suspend fun mergeWavelogRecords(records: List<QsoRecord>): AdifImportResult {
+        val working = dao.getAll().map(QsoEntity::toDomain).toMutableList()
+        // Rows imported under a tracking-source name join the ARRL name first, so the
+        // lookup below sees one identity for both sides of a match.
+        val renames = rewriteOfficialNames(working)
+        val indexByKey = HashMap<String, Int>(working.size)
+        working.indices.forEach { index -> indexByKey.putIfAbsent(stableQsoKey(working[index]), index) }
+        val changes = linkedMapOf<Int, QsoRecord>().apply { putAll(renames) }
+        var imported = 0
+        var updated = renames.size
+        var skipped = 0
+        val seenKeys = hashSetOf<String>()
+        records.forEach { remote ->
+            val key = stableQsoKey(remote)
+            if (!seenKeys.add(key)) {
+                skipped++
+                return@forEach
+            }
+            val index = indexByKey[key]
+            if (index == null) {
+                val added = remote.copy(
+                    id = 0L,
+                    wavelogUploaded = true,
+                    satelliteName = officialSatelliteName(remote.satelliteName)
+                )
+                changes[working.size] = added
+                indexByKey[stableQsoKey(added)] = working.size
+                working += added
+                imported++
+            } else {
+                val previous = working[index]
+                val merged = previous.copy(
+                    wavelogUploaded = true,
+                    wavelogStation = remote.wavelogStation.ifBlank { previous.wavelogStation },
+                    theirGrid = previous.theirGrid.ifBlank { remote.theirGrid },
+                    theirVuccGrids = previous.theirVuccGrids.ifEmpty { remote.theirVuccGrids }
+                )
+                if (merged != previous) {
+                    working[index] = merged
+                    changes[index] = merged
+                    updated++
+                } else {
+                    skipped++
+                }
+            }
+        }
+        dao.saveBatch(changes.values.map { it.toEntity() })
+        return AdifImportResult(imported, skipped, updated)
+    }
+
     /** Result of folding already-split rows back together. */
     private data class Consolidation(
         /** index in the stored list -> the record to save (local row + its confirmation). */
@@ -294,6 +358,7 @@ private fun QsoEntity.toDomain() = QsoRecord(
     lotwConfirmed = lotwConfirmed,
     lotwUploaded = lotwUploaded,
     wavelogUploaded = wavelogUploaded,
+    wavelogStation = wavelogStation,
     lotwReceived = lotwReceived,
     lotwQslDate = lotwQslDate,
     vuccGrids = vuccGrids.split(',').filter(String::isNotBlank),
@@ -332,6 +397,7 @@ private fun QsoRecord.toEntity() = QsoEntity(
     lotwConfirmed = lotwConfirmed,
     lotwUploaded = lotwUploaded,
     wavelogUploaded = wavelogUploaded,
+    wavelogStation = wavelogStation.trim(),
     lotwReceived = lotwReceived,
     lotwQslDate = lotwQslDate,
     vuccGrids = vuccGrids.joinToString(","),

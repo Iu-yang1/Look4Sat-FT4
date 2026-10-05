@@ -45,6 +45,7 @@ data class QsoEntity(
     @ColumnInfo(defaultValue = "0") val lotwConfirmed: Boolean = false,
     @ColumnInfo(defaultValue = "0") val lotwUploaded: Boolean = false,
     @ColumnInfo(defaultValue = "0") val wavelogUploaded: Boolean = false,
+    @ColumnInfo(defaultValue = "''") val wavelogStation: String = "",
     @ColumnInfo(defaultValue = "0") val lotwReceived: Boolean = false,
     @ColumnInfo(defaultValue = "''") val lotwQslDate: String = "",
     @ColumnInfo(defaultValue = "''") val vuccGrids: String = "",

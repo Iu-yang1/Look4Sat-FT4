@@ -86,9 +86,10 @@ data class LogUiState(
     val message: String = "",
     val postText: String? = null,
     val busy: Boolean = false,
-    /** Wavelog piggyback: batch prepared alongside the LoTW preview (see prepareUpload);
-     *  uploaded right after a confirmed LoTW upload. Null when Wavelog is not ready. */
-    val wavelogPending: WavelogUploadPreview? = null,
+    /** True when uploads route through Wavelog (Wavelog configured — LoTW paused). */
+    val wavelogMode: Boolean = false,
+    /** Wavelog mode: the prepared batch awaiting the operator's confirmation. */
+    val wavelogPreview: WavelogUploadPreview? = null,
     /** Out-of-window contact waiting for the operator's confirmation (null when closed). */
     val outOfWindowLog: OutOfWindowLog? = null
 )
@@ -122,6 +123,13 @@ class LogViewModel(
                     stationGrid = station?.grid.orEmpty(),
                     satelliteCatalog = catalog
                 )
+            }
+        }
+        // Upload routing follows the Wavelog configuration: once it is ready the log
+        // page uploads through Wavelog and skips LoTW entirely (the one-of-two rule).
+        viewModelScope.launch {
+            settingsRepo.wavelogUploadSettings.collect { settings ->
+                _uiState.update { it.copy(wavelogMode = settings.isReady) }
             }
         }
         // The roaming hint tracks the freshest position data: refresh on init and every fix.
@@ -268,20 +276,16 @@ class LogViewModel(
             _uiState.update { it.copy(busy = true, message = "") }
             try {
                 val all = qsoRepository.records.first()
+                val wavelogSettings = settingsRepo.wavelogUploadSettings.value
+                if (wavelogSettings.isReady) {
+                    // Wavelog mode: the upload goes to Wavelog only (LoTW stays out).
+                    prepareWavelogUpload(all, wavelogSettings)
+                    return@launch
+                }
                 // Only local (non-confirmed) records are candidates for upload;
                 // LoTW-imported confirmations are the feedback side.
                 val pending = all.filter { !it.lotwConfirmed && !it.lotwUploaded && it.status == QsoStatus.COMPLETE }
                 val audit = lotwUploadRepository.audit(pending)
-                // Wavelog piggyback (option A): prepare its batch while we are here, so
-                // the LoTW preview can show the count and confirm can post it directly.
-                val wavelogSettings = settingsRepo.wavelogUploadSettings.value
-                val wavelogPreview = if (wavelogSettings.isReady) {
-                    runCatching {
-                        wavelogUploadRepository.prepare(wavelogUploadCandidates(all), wavelogSettings)
-                    }.getOrNull()
-                } else {
-                    null
-                }
                 if (audit.pending == 0) {
                     val msg = when {
                         audit.unavailable > 0 -> unavailableUploadSummary(
@@ -291,14 +295,7 @@ class LogViewModel(
                         audit.unknown > 0 -> "${audit.unknown} QSO(s) had an unknown upload result — not retried automatically"
                         else -> "No pending QSOs to upload"
                     }
-                    // No LoTW work to do — still flush the Wavelog backlog (catch-up): a
-                    // freshly configured Wavelog syncs without waiting for new QSOs.
-                    val wavelogMsg = wavelogPreview?.let {
-                        if (it.count > 0) uploadWavelogNow(it, wavelogSettings) else wavelogIdleSegment(it)
-                    }
-                    _uiState.update {
-                        it.copy(busy = false, message = listOfNotNull(msg, wavelogMsg).joinToString("\n"))
-                    }
+                    _uiState.update { it.copy(busy = false, message = msg) }
                     return@launch
                 }
                 val preview = lotwUploadRepository.prepare(pending, false)
@@ -309,7 +306,6 @@ class LogViewModel(
                     it.copy(
                         busy = false,
                         preview = preview,
-                        wavelogPending = wavelogPreview,
                         uploadPositionWarning = positionWarning(settingsRepo.getCurrentGrid(), preview.grids)
                     )
                 }
@@ -319,6 +315,24 @@ class LogViewModel(
                 _uiState.update { it.copy(busy = false, message = "Upload failed") }
             }
         }
+    }
+
+    /** Wavelog-mode branch of [prepareUpload]: prepare the batch and ask for confirmation. */
+    private suspend fun prepareWavelogUpload(all: List<QsoRecord>, settings: WavelogUploadSettings) {
+        val preview = runCatching {
+            wavelogUploadRepository.prepare(wavelogUploadCandidates(all), settings)
+        }.getOrNull()
+        if (preview == null) {
+            _uiState.update { it.copy(busy = false, message = "Wavelog upload failed to prepare — check the configuration") }
+            return
+        }
+        if (preview.count == 0) {
+            _uiState.update {
+                it.copy(busy = false, message = wavelogIdleSegment(preview) ?: "No pending QSOs to upload to Wavelog")
+            }
+            return
+        }
+        _uiState.update { it.copy(busy = false, wavelogPreview = preview) }
     }
 
     fun confirmUpload() {
@@ -338,27 +352,28 @@ class LogViewModel(
                 LoTWUploadResult.Unknown -> "Unknown result — will not auto-retry"
                 LoTWUploadResult.ExpiredPreview -> "Preview expired — tap upload again"
             }
-            // Wavelog piggyback: rides the same confirmation, independent of the LoTW
-            // outcome — a Wavelog failure leaves records unmarked for the next upload.
-            val wavelogPending = _uiState.value.wavelogPending
-            val wavelogMsg = wavelogPending?.let { wl ->
-                if (wl.count > 0) uploadWavelogNow(wl, settingsRepo.wavelogUploadSettings.value)
-                else wavelogIdleSegment(wl)
-            }
-            _uiState.update {
-                it.copy(
-                    busy = false, preview = null, wavelogPending = null,
-                    message = listOfNotNull(msg, wavelogMsg).joinToString("\n")
-                )
-            }
+            _uiState.update { it.copy(busy = false, preview = null, message = msg) }
         }
     }
 
-    fun dismissPreview() = _uiState.update { it.copy(preview = null, wavelogPending = null) }
+    /** Confirms the Wavelog-mode batch prepared by [prepareUpload]. */
+    fun confirmWavelogUpload() {
+        val preview = _uiState.value.wavelogPreview ?: return
+        viewModelScope.launch {
+            _uiState.update { it.copy(busy = true) }
+            val msg = uploadWavelogNow(preview, settingsRepo.wavelogUploadSettings.value)
+            _uiState.update { it.copy(busy = false, wavelogPreview = null, message = msg) }
+        }
+    }
+
+    fun dismissPreview() = _uiState.update { it.copy(preview = null) }
+
+    fun dismissWavelogPreview() = _uiState.update { it.copy(wavelogPreview = null) }
 
     /**
-     * Uploads one prepared Wavelog batch (piggyback) and marks what the server
-     * accepted. Returns the operator-facing message segment for this upload.
+     * Uploads one prepared Wavelog batch and marks what the server accepted (stamped
+     * with the station profile the batch went out through). Returns the operator-facing
+     * message for this upload.
      */
     private suspend fun uploadWavelogNow(
         preview: WavelogUploadPreview,
@@ -366,7 +381,7 @@ class LogViewModel(
     ): String = try {
         val outcome = wavelogUploadRepository.upload(preview, settings)
         if (outcome is WavelogUploadOutcome.Imported && outcome.markIds.isNotEmpty()) {
-            qsoRepository.markWavelogUploaded(outcome.markIds)
+            qsoRepository.markWavelogUploaded(outcome.markIds, settings.stationId)
         }
         wavelogConfirmedSegment(outcome, preview)
     } catch (_: Exception) {
@@ -380,7 +395,7 @@ class LogViewModel(
     fun abandonForGridFix() {
         lotwUploadRepository.discardPreview()
         lastUploadedIds = emptyList()
-        _uiState.update { it.copy(uploadPositionWarning = null, preview = null, wavelogPending = null) }
+        _uiState.update { it.copy(uploadPositionWarning = null, preview = null) }
     }
 
     /** Recompute the log-page roaming hint from the freshest station/position data. */

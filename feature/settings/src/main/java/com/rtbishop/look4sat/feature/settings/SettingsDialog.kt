@@ -28,6 +28,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.scrollBy
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -39,6 +41,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -46,6 +49,7 @@ import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
@@ -69,6 +73,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.toMutableStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -158,72 +163,6 @@ fun LocatorDialog(qthLocator: String, dismiss: () -> Unit, save: (String) -> Uni
     }
 }
 
-@Composable
-fun WavelogDialog(
-    initialSettings: com.rtbishop.look4sat.core.domain.model.WavelogSettings,
-    workedGridsCount: Int,
-    isSyncing: Boolean,
-    message: String?,
-    dismiss: () -> Unit,
-    onSave: (com.rtbishop.look4sat.core.domain.model.WavelogSettings) -> Unit,
-    onSync: (com.rtbishop.look4sat.core.domain.model.WavelogSettings) -> Unit
-) {
-    val url = rememberSaveable { mutableStateOf(initialSettings.url) }
-    val token = rememberSaveable { mutableStateOf(initialSettings.token) }
-    SharedDialog(
-        title = stringResource(R.string.prefs_wavelog_title),
-        onCancel = dismiss,
-        onAccept = {
-            onSave(com.rtbishop.look4sat.core.domain.model.WavelogSettings(url.value, token.value))
-            dismiss()
-        }
-    ) {
-        OutlinedTextField(
-            value = url.value,
-            onValueChange = { url.value = it },
-            label = { Text(text = stringResource(id = R.string.prefs_wavelog_url)) },
-            placeholder = { Text(text = "http://192.168.1.10") },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth().padding(horizontal = LocalSpacing.current.large),
-        )
-        OutlinedTextField(
-            value = token.value,
-            onValueChange = { token.value = it },
-            label = { Text(text = stringResource(id = R.string.prefs_wavelog_token)) },
-            placeholder = { Text(text = "abcdef123456:1") },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth().padding(horizontal = LocalSpacing.current.large),
-        )
-        Text(
-            text = stringResource(R.string.prefs_wavelog_hint, workedGridsCount),
-            style = MaterialTheme.typography.bodySmall,
-            modifier = Modifier.padding(horizontal = LocalSpacing.current.large)
-        )
-        if (message != null) {
-            Text(
-                text = message,
-                color = MaterialTheme.colorScheme.error,
-                style = MaterialTheme.typography.bodySmall,
-                modifier = Modifier.padding(horizontal = LocalSpacing.current.large)
-            )
-        }
-        // Sync uses the values typed in the fields directly — saving and syncing
-        // happen in one step, no need to close and reopen the dialog.
-        Row(
-            horizontalArrangement = Arrangement.End,
-            modifier = Modifier.fillMaxWidth().padding(horizontal = LocalSpacing.current.large)
-        ) {
-            TextButton(
-                onClick = { onSync(com.rtbishop.look4sat.core.domain.model.WavelogSettings(url.value, token.value)) },
-                enabled = !isSyncing
-            ) {
-                Text(text = if (isSyncing) stringResource(R.string.prefs_wavelog_syncing)
-                else stringResource(R.string.prefs_wavelog_sync))
-            }
-        }
-        Spacer(modifier = Modifier.height(0.dp))
-    }
-}
 
 @Composable
 fun WavelogUploadDialog(
@@ -231,14 +170,20 @@ fun WavelogUploadDialog(
     stations: List<com.rtbishop.look4sat.core.domain.repository.WavelogStationInfo>,
     rights: String,
     probeBusy: Boolean,
+    isSyncing: Boolean,
+    lastSyncEpochMs: Long,
     message: String?,
     dismiss: () -> Unit,
     onSave: (com.rtbishop.look4sat.core.domain.model.WavelogUploadSettings) -> Unit,
     onFetchStations: (url: String, apiKey: String) -> Unit,
-    onSelectStation: (com.rtbishop.look4sat.core.domain.repository.WavelogStationInfo) -> Unit
+    onSelectStation: (com.rtbishop.look4sat.core.domain.repository.WavelogStationInfo) -> Unit,
+    onSyncIncremental: () -> Unit,
+    onSyncFull: () -> Unit,
+    onClear: () -> Unit
 ) {
     val url = rememberSaveable { mutableStateOf(initialSettings.url) }
     val apiKey = rememberSaveable { mutableStateOf(initialSettings.apiKey) }
+    var showClearConfirm by remember { mutableStateOf(false) }
     SharedDialog(
         title = stringResource(R.string.prefs_wavelog_upload_title),
         onCancel = dismiss,
@@ -293,18 +238,27 @@ fun WavelogUploadDialog(
                 modifier = Modifier.padding(horizontal = LocalSpacing.current.large)
             )
         } else {
-            stations.forEach { station ->
-                val selected = station.id == initialSettings.stationId
-                Text(
-                    text = (if (selected) "● " else "○ ") + listOf(station.name, station.callsign, station.grid)
-                        .filter { it.isNotBlank() }.joinToString(" · "),
-                    color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-                    style = MaterialTheme.typography.bodyMedium,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { onSelectStation(station) }
-                        .padding(horizontal = LocalSpacing.current.large, vertical = 2.dp)
-                )
+            // Many station profiles must stay reachable: the list scrolls inside a
+            // bounded height instead of stretching (or clipping) the dialog.
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 240.dp)
+                    .verticalScroll(rememberScrollState())
+            ) {
+                stations.forEach { station ->
+                    val selected = station.id == initialSettings.stationId
+                    Text(
+                        text = (if (selected) "● " else "○ ") + listOf(station.name, station.callsign, station.grid)
+                            .filter { it.isNotBlank() }.joinToString(" · "),
+                        color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onSelectStation(station) }
+                            .padding(horizontal = LocalSpacing.current.large, vertical = 2.dp)
+                    )
+                }
             }
         }
         if (initialSettings.stationId.isNotBlank()) {
@@ -316,6 +270,43 @@ fun WavelogUploadDialog(
                 ),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(horizontal = LocalSpacing.current.large)
+            )
+        }
+        if (lastSyncEpochMs != 0L) {
+            val timePattern = stringResource(R.string.prefs_updated_time)
+            val lastSyncText = remember(lastSyncEpochMs) {
+                java.text.SimpleDateFormat(timePattern, java.util.Locale.getDefault())
+                    .format(java.util.Date(lastSyncEpochMs))
+            }
+            Text(
+                text = stringResource(R.string.prefs_updated_title, lastSyncText),
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(horizontal = LocalSpacing.current.large)
+            )
+        }
+        // Sync pulls the server's QSOs (and the grid data the map highlights) — the
+        // incremental button resumes from the stored cursor, the full one re-pulls.
+        Row(
+            horizontalArrangement = Arrangement.SpaceBetween,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = LocalSpacing.current.large)
+        ) {
+            CardButton(
+                onClick = onSyncFull,
+                text = stringResource(R.string.prefs_wavelog_sync_full),
+                isEnabled = !isSyncing && !probeBusy
+            )
+            CardButton(
+                onClick = onSyncIncremental,
+                text = stringResource(R.string.prefs_wavelog_sync_incremental),
+                isEnabled = !isSyncing && !probeBusy
+            )
+        }
+        if (isSyncing) {
+            Text(
+                text = stringResource(R.string.prefs_wavelog_syncing),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(horizontal = LocalSpacing.current.large)
             )
         }
@@ -332,8 +323,49 @@ fun WavelogUploadDialog(
             style = MaterialTheme.typography.bodySmall,
             modifier = Modifier.padding(horizontal = LocalSpacing.current.large)
         )
+        TextButton(
+            onClick = { showClearConfirm = true },
+            modifier = Modifier.padding(horizontal = LocalSpacing.current.large)
+        ) {
+            Text(text = stringResource(R.string.prefs_wavelog_clear), color = MaterialTheme.colorScheme.error)
+        }
         Spacer(modifier = Modifier.height(0.dp))
     }
+    if (showClearConfirm) {
+        AlertDialog(
+            onDismissRequest = { showClearConfirm = false },
+            title = { Text(stringResource(R.string.prefs_wavelog_clear_title)) },
+            text = { Text(stringResource(R.string.prefs_wavelog_clear_message)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    showClearConfirm = false
+                    onClear()
+                }) { Text(stringResource(R.string.btn_accept)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showClearConfirm = false }) { Text(stringResource(R.string.btn_cancel)) }
+            }
+        )
+    }
+}
+
+/** LoTW→Wavelog hand-over guard: shown when completing the Wavelog config would switch the mode. */
+@Composable
+fun WavelogSwitchWarningDialog(
+    onConfirm: () -> Unit,
+    onCancel: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onCancel,
+        title = { Text(stringResource(R.string.prefs_wavelog_switch_title)) },
+        text = { Text(stringResource(R.string.prefs_wavelog_switch_message)) },
+        confirmButton = {
+            TextButton(onClick = onConfirm) { Text(stringResource(R.string.prefs_wavelog_switch_continue)) }
+        },
+        dismissButton = {
+            TextButton(onClick = onCancel) { Text(stringResource(R.string.btn_cancel)) }
+        }
+    )
 }
 
 @Composable

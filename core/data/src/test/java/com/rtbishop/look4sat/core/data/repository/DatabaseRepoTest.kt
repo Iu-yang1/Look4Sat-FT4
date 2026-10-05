@@ -453,10 +453,9 @@ private class FakeSettingsRepo(dataSources: DataSourcesSettings = defaultDataSou
 
     override fun setAmSatCallsign(callsign: String) = Unit
 
-    override val wavelogSettings: StateFlow<com.rtbishop.look4sat.core.domain.model.WavelogSettings> =
-        MutableStateFlow(com.rtbishop.look4sat.core.domain.model.WavelogSettings())
 
-    override fun updateWavelogSettings(settings: com.rtbishop.look4sat.core.domain.model.WavelogSettings) = Unit
+
+
 
     override val wavelogUploadSettings: StateFlow<com.rtbishop.look4sat.core.domain.model.WavelogUploadSettings> =
         MutableStateFlow(com.rtbishop.look4sat.core.domain.model.WavelogUploadSettings())
@@ -479,6 +478,14 @@ private class FakeSettingsRepo(dataSources: DataSourcesSettings = defaultDataSou
     override fun setLastLotwSyncDate(date: String) = Unit
     override fun getLastLotwSyncCallsign(): String = ""
     override fun setLastLotwSyncCallsign(callsign: String) = Unit
+    override fun getWavelogStations(): List<com.rtbishop.look4sat.core.domain.repository.WavelogStationInfo> = emptyList()
+    override fun setWavelogStations(stations: List<com.rtbishop.look4sat.core.domain.repository.WavelogStationInfo>) = Unit
+    override fun getWavelogSyncCursors(): Map<String, Long> = emptyMap()
+    override fun setWavelogSyncCursors(cursors: Map<String, Long>) = Unit
+    override fun getWavelogSyncUrl(): String = ""
+    override fun setWavelogSyncUrl(url: String) = Unit
+    override fun getLastWavelogSyncEpochMs(): Long = 0L
+    override fun setLastWavelogSyncEpochMs(value: Long) = Unit
 
     override fun getWorkedGridQsos(): Map<String, List<com.rtbishop.look4sat.core.domain.model.GridQso>> = emptyMap()
 

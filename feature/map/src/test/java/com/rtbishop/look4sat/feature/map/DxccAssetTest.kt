@@ -100,6 +100,46 @@ class DxccAssetTest {
     }
 
     @Test
+    fun `island and microstate batch is present`() {
+        // 2026-10 additions (Natural Earth 1:10m admin-0 map units): common
+        // island / microstate DXCC entities that 1:110m never carried, so a
+        // worked entity like Singapore (381) could not light up at all.
+        val regions = loadRegions()
+        val codes = regions.map { it.getInt("code") }
+        val batch = listOf(
+            381, 304,                                   // Singapore / Bahrain
+            203, 260, 278, 251, 295, 233,               // European microstates + Gibraltar
+            257, 21, 29, 149, 256, 222, 114, 122, 106,  // Malta / Balearic / Canary / Azores / Madeira / Faroe / Man / Jersey / Guernsey
+            62, 64, 65, 285, 69, 89, 91, 517, 79, 84,   // Caribbean
+            94, 95, 97, 77, 98, 249, 96,
+            103, 166, 9, 190, 160, 175, 191, 234        // Pacific
+        )
+        batch.forEach { code -> assertTrue("missing code $code", code in codes) }
+        assertEquals("Singapore", regions.byCode(381).getString("name"))
+        assertEquals("Canary Is.", regions.byCode(29).getString("name"))
+    }
+
+    @Test
+    fun `B-plan island batch is present`() {
+        // 2026-10 B plan: every remaining DXCC entity that has a REAL Natural
+        // Earth 1:10m polygon (own feature or a ring window split out of a
+        // parent: Rodrigues/Agalega of Mauritius, Ducie of Pitcairn, South
+        // Georgia/Sandwich, the St. Helena family). Atoll/reef entities
+        // without land polygons stay missing by design.
+        val regions = loadRegions()
+        val codes = regions.map { it.getInt("code") }
+        val batch = listOf(
+            4, 5, 12, 20, 22, 24, 35, 36, 38, 105, 111, 118, 123, 157, 159,
+            165, 168, 169, 172, 173, 174, 182, 188, 189, 197, 205, 207,
+            213, 219, 235, 240, 247, 250, 259, 270, 274, 277, 282, 297,
+            298, 379, 409, 411, 453, 506, 513, 516, 518, 522
+        )
+        batch.forEach { code -> assertTrue("missing code $code", code in codes) }
+        assertEquals("Wake I.", regions.byCode(297).getString("name"))
+        assertEquals("Rodrigues I.", regions.byCode(207).getString("name"))
+    }
+
+    @Test
     fun `no region uses an ADIF-deleted entity code`() {
         // ADIF 3.1.7 deleted DXCC codes. A polygon keyed to a deleted code
         // never matches LoTW exports (they carry the active code, e.g.

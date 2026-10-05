@@ -32,6 +32,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -304,6 +305,10 @@ private fun MapScreen(
     // Tapped worked grid -> centered QSO dialog. Local UI state: the map is the
     // only consumer and it resets when leaving the page.
     var selectedGrid by remember { mutableStateOf<String?>(null) }
+    // Tapped award region (DXCC/WAPC/WAJA/WAZ/WAS) -> its QSO detail dialog,
+    // paired with the award type it was tapped under. Local UI state like the
+    // grid selection above: the map is the only consumer.
+    var selectedRegion by remember { mutableStateOf<Pair<AwardType, AwardRegion>?>(null) }
     // Selected award filter. Lives in an Activity-scoped ViewModel so it
     // survives page switches; defaults to VUCC only once per process (cold start).
     var selectedAward by mapFilterViewModel.selectedAward
@@ -375,6 +380,20 @@ private fun MapScreen(
         val receiver = object : org.osmdroid.events.MapEventsReceiver {
             override fun singleTapConfirmedHelper(p: GeoPoint?): Boolean {
                 if (!isGridMode || p == null) return false
+                // Award views (DXCC/WAPC/WAJA/WAZ/WAS): the tap resolves to the
+                // boundary region under the finger and opens its QSO detail
+                // dialog. No zoom gate here — unlike the grid path below — so
+                // tiny islands stay reachable while zoomed out (Tianditu tiles
+                // have no zoom cap, so "just zoom in" is not an answer).
+                val awardMode = selectedAward?.takeIf { it != AwardType.VUCC }
+                if (awardMode != null) {
+                    val overlay = mapView.overlays.getOrNull(OVERLAY_GRID) as? AwardBoundaryOverlay
+                        ?: return false
+                    val region = overlay.regionAt(p.latitude, p.longitude, mapView.zoomLevelDouble)
+                        ?: return false
+                    selectedRegion = awardMode to region
+                    return true
+                }
                 val zoom = mapView.zoomLevelDouble
                 // Allow tapping worked cells as soon as the 4-char grid LINES
                 // appear (GRID_ZOOM_SUB); grid labels now appear at that zoom too.
@@ -395,6 +414,12 @@ private fun MapScreen(
     // Keep the overlay's selected highlight in sync with the dialog.
     LaunchedEffect(selectedGrid) {
         (mapView.overlays.getOrNull(OVERLAY_GRID) as? MaidenheadGridOverlay)?.selectedGrid = selectedGrid
+        mapView.invalidate()
+    }
+    // Same for the award boundary overlay's selected region.
+    LaunchedEffect(selectedRegion) {
+        (mapView.overlays.getOrNull(OVERLAY_GRID) as? AwardBoundaryOverlay)?.selectedCode =
+            selectedRegion?.second?.code
         mapView.invalidate()
     }
     LaunchedEffect(uiState.track) {
@@ -564,6 +589,22 @@ private fun MapScreen(
             onPinMark = { call -> onAction(MapAction.PinMarkedStation(grid, call)) }
         )
     }
+    // Region detail dialog for a tapped award region. Read-only: the Match
+    // button and station marks are grid-scoped and stay hidden here. The list
+    // is the GLOBAL one (all 台址) — the non-VUCC awards count and fill the
+    // map globally, so their detail lists use the same scope.
+    selectedRegion?.let { (type, region) ->
+        val regionQsos = remember(uiState.workedGridQsos, type, region) {
+            AwardCalculator.regionQsos(uiState.workedGridQsos, type, region.code)
+        }
+        RegionQsoDialog(
+            type = type,
+            region = region,
+            qsos = regionQsos,
+            isUtc = uiState.isUtc,
+            onDismiss = { selectedRegion = null }
+        )
+    }
 }
 
 // region Worked-grid QSO dialog
@@ -718,6 +759,110 @@ private fun WorkedGridQsoDialog(
             }
         )
     }
+}
+
+/**
+ * Centered dialog listing the confirmed satellite QSOs counted for a tapped
+ * award region (DXCC/WAPC/WAJA/WAZ/WAS). Read-only variant of the worked-grid
+ * dialog: the header shows the region name + code, and the same expandable
+ * callsign rows. Match / station marks are grid-scoped and stay hidden.
+ * Dismissed by tapping outside. An unworked region opens with an empty list.
+ */
+@Composable
+private fun RegionQsoDialog(
+    type: AwardType,
+    region: AwardRegion,
+    qsos: List<com.rtbishop.look4sat.core.domain.model.GridQso>,
+    isUtc: Boolean,
+    onDismiss: () -> Unit
+) {
+    // WAZ regions are named by their bare zone number in the asset, so the
+    // title gets the full "CQ ZONE 24" wording (user request 2026-10-05) and
+    // the code is not repeated in the subtitle. DXCC carries its award prefix
+    // in the subtitle ("DXCC 318", same request); other awards keep the bare
+    // code.
+    val isZone = type == AwardType.WAZ
+    val codeLabel = when {
+        isZone -> ""
+        type == AwardType.DXCC -> "DXCC ${region.code} · "
+        else -> "${region.code} · "
+    }
+    androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
+        Card(
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+            modifier = Modifier.fillMaxWidth(0.88f)
+        ) {
+            Column {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .padding(start = 16.dp, end = 8.dp, top = 4.dp, bottom = 4.dp)
+                        // Match the grid dialog header height exactly: its Match button
+                        // enforces a 48dp minimum touch target, inflating the row and
+                        // lowering the title to 6dp from the dialog edge.
+                        .defaultMinSize(minHeight = 48.dp)
+                ) {
+                    // Header mirrors the worked-grid dialog exactly (same font,
+                    // same paddings, same weight layout) — user request
+                    // 2026-10-05: 标题字体/位置与 VUCC 的统一.
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            text = if (isZone) "CQ ZONE ${region.code}" else regionDisplayName(region),
+                            style = MaterialTheme.typography.titleLarge,
+                            color = MaterialTheme.colorScheme.primary,
+                            fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+                        )
+                        Text(
+                            text = codeLabel + stringResource(
+                                R.string.grid_qso_calls_count,
+                                qsos.map { it.call }.distinct().size,
+                                qsos.size
+                            ),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+                androidx.compose.material3.HorizontalDivider()
+                Column(
+                    Modifier
+                        .heightIn(max = 380.dp)
+                        .verticalScroll(rememberScrollState())
+                ) {
+                    if (qsos.isEmpty()) {
+                        Text(
+                            text = stringResource(R.string.region_qso_empty),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(16.dp)
+                        )
+                    } else {
+                        // Same grouping as the worked-grid dialog: by callsign
+                        // preserving first-contact order (list is oldest-first).
+                        val grouped = remember(qsos) {
+                            qsos.groupBy { it.call }.entries.sortedBy { it.value.first().epochMs }
+                        }
+                        grouped.forEach { (call, callQsos) ->
+                            WorkedGridCallRow(call, callQsos = callQsos, isUtc = isUtc)
+                            androidx.compose.material3.HorizontalDivider(
+                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** Region display label, same language rule as the overlay's map labels. */
+@Composable
+private fun regionDisplayName(region: AwardRegion): String {
+    val useEnglish =
+        androidx.compose.ui.platform.LocalConfiguration.current.locales[0].language != "zh"
+    return if (useEnglish) region.nameEn ?: region.name else region.name
 }
 
 @Composable

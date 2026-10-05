@@ -138,6 +138,14 @@ class AwardBoundaryOverlay : Overlay() {
         style = Paint.Style.FILL
         color = Color.argb(90, 76, 217, 100)
     }
+    private val dotPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.FILL
+        color = Color.argb(230, 64, 68, 76)
+    }
+    private val workedDotPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.FILL
+        color = Color.argb(230, 76, 217, 100)
+    }
 
     /**
      * Recolor the amber boundary/label paints for the active map theme (dark amber + white halo on
@@ -171,6 +179,15 @@ class AwardBoundaryOverlay : Overlay() {
 
     /** Codes of worked regions -> green fill. */
     var workedCodes: Set<String> = emptySet()
+
+    /** Code of the tapped region whose detail dialog is open -> thicker outline. */
+    var selectedCode: String? = null
+
+    /** The region under a tap at the given geo point on the map at [zoom],
+     *  or null when the tap lands on empty space. Delegates to [AwardHitTest]
+     *  so the tap tolerance matches the tiny-region dots drawn in [draw]. */
+    fun regionAt(latitude: Double, longitude: Double, zoom: Double): AwardRegion? =
+        AwardHitTest.hitRegion(regions, regionBounds, latitude, longitude, zoom)
 
     /** Bounding boxes (computed on region assignment) for cheap culling. */
     private val regionBounds = mutableListOf<DoubleArray>() // [minLon,minLat,maxLon,maxLat]
@@ -211,6 +228,14 @@ class AwardBoundaryOverlay : Overlay() {
             if (b[1] > topLat || b[3] < bottomLat) continue
             if (b[0] > rightLon || b[2] < leftLon) continue
             val worked = region.code in workedCodes
+            val selected = region.code == selectedCode
+
+            // Projected bbox size: decides between the region's own shape and
+            // the minimum-size dot below, and gates the label.
+            val regionW = abs((b[2] - b[0]) / 360.0 * worldWidthPx).toFloat()
+            val regionH =
+                abs((projectionToY(projection, b[3]) ?: 0f) - (projectionToY(projection, b[1]) ?: 0f))
+            val tiny = max(regionW, regionH) <= AwardHitTest.MIN_SHAPE_PX
 
             val path = Path()
             var pathHasPoints = false
@@ -237,10 +262,30 @@ class AwardBoundaryOverlay : Overlay() {
                     pathHasPoints = traceSegment(path, segment, projection, centerLon, worldWidthPx, closeRing) || pathHasPoints
                 }
             }
-            if (!pathHasPoints) continue
+            if (!pathHasPoints && !tiny) continue
 
             if (worked) canvas.drawPath(path, workedPaint)
+            linePaint.strokeWidth = if (selected) LINE_WIDTH_SELECTED else LINE_WIDTH
             canvas.drawPath(path, linePaint)
+            linePaint.strokeWidth = LINE_WIDTH
+
+            // Tiny-region fallback (Macao, island DXCCs at low zoom): the own
+            // shape is sub-pixel and invisible, so draw a minimum-size dot at
+            // the bbox centre — green when worked — and let it carry the
+            // region. AwardHitTest gives small regions (dot-sized included) an
+            // inflated MIN_TAP_TARGET_PX square hit area at the same centre,
+            // so the dot is reliably tappable at any zoom (Tianditu tiles have
+            // no zoom cap, so "just zoom in" is not a workable answer for
+            // finding these).
+            if (tiny) {
+                val cx = projectionToX(projection, normalizeLon((b[0] + b[2]) / 2.0), centerLon, worldWidthPx)
+                val cy = projectionToY(projection, (b[1] + b[3]) / 2.0)
+                if (cx != null && cy != null) {
+                    val r = if (selected) DOT_RADIUS_PX + 3f else DOT_RADIUS_PX
+                    canvas.drawCircle(cx, cy, r, if (worked) workedDotPaint else dotPaint)
+                    canvas.drawCircle(cx, cy, r, linePaint)
+                }
+            }
 
             // Label: draw when its anchor is on screen and the region is big
             // enough on screen to hold the text (avoid clutter at low zoom).
@@ -250,11 +295,10 @@ class AwardBoundaryOverlay : Overlay() {
             val lx = projectionToX(projection, labelLonNorm, centerLon, worldWidthPx) ?: continue
             val ly = projectionToY(projection, region.labelLat) ?: continue
             // Screen-size gate: the label only when the region spans enough px.
-            // force_label regions (HK / Macau) always draw — their tiny land
-            // bbox would otherwise stay below the gate forever, and their label
-            // anchor sits out on the sea where there is room for the text.
-            val regionH = (projectionToY(projection, b[3]) ?: 0f) - (projectionToY(projection, b[1]) ?: 0f)
-            if (abs(regionH) < MIN_LABEL_REGION_PX && !region.forceLabel) continue
+            // force_label regions (HK / Macau) and tiny regions always draw —
+            // their bbox would otherwise stay below the gate forever, and they
+            // are exactly the ones that would otherwise be unfindable.
+            if (abs(regionH) < MIN_LABEL_REGION_PX && !region.forceLabel && !tiny) continue
             val label = if (useEnglishLabels) region.nameEn ?: region.name else region.name
             canvas.drawText(label, lx, ly - textHalfHeight, labelPaint)
         }
@@ -424,5 +468,8 @@ class AwardBoundaryOverlay : Overlay() {
     private companion object {
         const val MIN_LABEL_REGION_PX = 42f
         const val MAX_MERCATOR_LAT = 85.05113 // Web Mercator latitude limit
+        const val LINE_WIDTH = 1.5f
+        const val LINE_WIDTH_SELECTED = 3f
+        const val DOT_RADIUS_PX = 6f
     }
 }

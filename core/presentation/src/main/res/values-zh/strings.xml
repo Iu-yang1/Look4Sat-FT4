@@ -125,6 +125,7 @@
     <string name="map_visibility">能见度：%s</string>
     <!-- Worked-grid QSO dialog -->
     <string name="grid_qso_calls_count" formatted="false">%d 个呼号 · %d 次通联</string>
+    <string name="region_qso_empty">该区域暂无已确认通联</string>
     <string name="grid_qso_count_one">%d QSO</string>
     <string name="grid_qso_count_many">%d QSOs</string>
     <string name="grid_qso_first">首通</string>

@@ -145,6 +145,7 @@
     <string name="map_visibility">Visibility: %s</string>
     <!-- Worked-grid QSO dialog -->
     <string name="grid_qso_calls_count" formatted="false">%d callsigns · %d QSOs</string>
+    <string name="region_qso_empty">No confirmed QSOs in this region yet</string>
     <string name="grid_qso_count_one">%d QSO</string>
     <string name="grid_qso_count_many">%d QSOs</string>
     <string name="grid_qso_first">First</string>

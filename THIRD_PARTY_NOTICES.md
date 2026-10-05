@@ -60,8 +60,11 @@ SOFTWARE.
 
 ## Natural Earth
 
-- Source: https://www.naturalearthdata.com (1:110m countries, 1:10m rivers)
+- Source: https://www.naturalearthdata.com (1:110m countries, 1:10m admin-0
+  map units, 1:10m rivers)
 - License: Public domain — https://www.naturalearthdata.com/about/terms-of-use/
 - Used for: the country/region polygons of the award boundary assets under
-  `feature/map/src/main/assets/awards/`, and the Ural river centerline used
-  for the European/Asiatic Russia split.
+  `feature/map/src/main/assets/awards/` (including the island / microstate
+  DXCC entities — Singapore, Malta, Canary Is., ... — and the Balearic/Canary
+  rings split out of Spain's 1:10m multipolygon), and the Ural river centerline
+  used for the European/Asiatic Russia split.

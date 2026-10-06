@@ -308,6 +308,15 @@ private fun SettingsScreen(
             onConfirmUpload = { onAction(SettingsAction.ConfirmLogbookUpload) },
             onDismissPreview = { onAction(SettingsAction.DismissLogbookPreview) },
             onDismissMessage = { onAction(SettingsAction.ClearLogbookMessage) },
+            onRewriteCallsign = { onAction(SettingsAction.RewriteLogbookCallsigns) },
+            onSwitchCertificate = {
+                // The other callsign's certificate lives in the LoTW upload settings: leave the
+                // logbook and open that dialog.
+                onAction(SettingsAction.DismissLogbookPreview)
+                onAction(SettingsAction.ExitLogbookSelection)
+                dialogs.logbook = false
+                dialogs.lotwUpload = true
+            },
             onIgnorePositionWarning = { onAction(SettingsAction.IgnoreLogbookPositionWarning) },
             onFixGrid = { grids ->
                 onAction(SettingsAction.AbandonLogbookForGridFix)

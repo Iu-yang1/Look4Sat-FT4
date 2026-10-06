@@ -193,6 +193,7 @@ sealed interface SettingsAction {
     data object PrepareLogbookUpload : SettingsAction
     data object ConfirmLogbookUpload : SettingsAction
     data object DismissLogbookPreview : SettingsAction
+    data object RewriteLogbookCallsigns : SettingsAction
     /** The operator acknowledged the position mismatch and wants to upload anyway. */
     data object IgnoreLogbookPositionWarning : SettingsAction
     /** The operator chose to fix the station location first; the preview is discarded. */

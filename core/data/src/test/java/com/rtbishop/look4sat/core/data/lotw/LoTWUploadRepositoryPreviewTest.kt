@@ -17,8 +17,12 @@
  */
 package com.rtbishop.look4sat.core.data.lotw
 
+import com.rtbishop.look4sat.core.domain.logbook.QsoRecord
+import com.rtbishop.look4sat.core.domain.logbook.QsoStatus
 import com.rtbishop.look4sat.core.domain.repository.LoTWOperationException
 import com.rtbishop.look4sat.core.domain.repository.LoTWProblem
+import com.rtbishop.look4sat.core.domain.repository.LoTWStation
+import java.io.File
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -39,7 +43,9 @@ class LoTWUploadRepositoryPreviewTest {
 
     private class MemStorage : LoTWStorage {
         val files = mutableMapOf<String, ByteArray>()
-        override fun read(name: String): ByteArray? = files[name]
+        // Reads hand out their own copy, like the file-backed storage does: several call sites
+        // wipe what they read, and that must not corrupt the stored bytes.
+        override fun read(name: String): ByteArray? = files[name]?.copyOf()
         override fun write(name: String, data: ByteArray) { files[name] = data.copyOf() }
         override fun delete(name: String) { files.remove(name) }
     }
@@ -79,4 +85,55 @@ class LoTWUploadRepositoryPreviewTest {
             assertTrue("nothing written", storage.files.isEmpty())
         }
     }
+
+    /**
+     * Records logged before a certificate was installed (blank own callsign) or under another
+     * certificate are signed with the certificate's callsign instead of being refused, and the
+     * preview reports how many they were.
+     */
+    @Test
+    fun `records without a matching callsign upload under the certificate and are reported`() {
+        runBlocking {
+            val storage = MemStorage()
+            val repo = LoTWUploadRepository(
+                storage,
+                { LoTWConfig(File("src/main/assets/lotw/config.tq6").inputStream()) },
+                now = { System.currentTimeMillis() }
+            )
+            repo.importCertificate(fixture("test_tqsl_empty.p12"), charArrayOf())
+            repo.saveStation(LoTWStation(grid = "OL62TI"))
+            val start = 1_787_000_000_000L // 2026-08, inside the fixture certificate's QSO range
+            val preview = repo.prepare(
+                listOf(
+                    sampleRecord(start, "BH6RJD", ""),
+                    sampleRecord(start + 60_000L, "BG7QBL", "XX0YY"),
+                    sampleRecord(start + 120_000L, "BA8BLK", "BA7OPF")
+                ),
+                resubmit = false
+            )
+            // The blank record is signed with the certificate's callsign; the one naming another
+            // callsign is refused and offered up for a rewrite instead.
+            assertEquals(2, preview.count)
+            assertEquals(1, preview.missingCallsign)
+            assertEquals(listOf(start + 60_000L), preview.callsignConflicts)
+            assertEquals(1, preview.unavailableReasons[LoTWProblem.CALLSIGN_MISMATCH])
+        }
+    }
+
+    private fun sampleRecord(start: Long, call: String, myCallsign: String) = QsoRecord(
+        id = start,
+        startUtcMillis = start,
+        endUtcMillis = start,
+        theirCallsign = call,
+        myCallsign = myCallsign,
+        myGrid = "OL62TI",
+        txFrequencyHz = 145_850_000L,
+        rxFrequencyHz = 436_795_000L,
+        band = "2M",
+        rxBand = "70CM",
+        mode = "FM",
+        satelliteName = "SO-50",
+        propagationMode = "SAT",
+        status = QsoStatus.COMPLETE
+    )
 }

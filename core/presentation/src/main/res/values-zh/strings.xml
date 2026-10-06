@@ -216,6 +216,10 @@
     <string name="prefs_logbook_selected">已选 %1$d 条</string>
     <string name="prefs_logbook_select_hint">长按记录行可多选重传</string>
     <string name="prefs_logbook_resubmit_note">已上传记录将按当前台址就地更新；已被奖项使用的旧网格可能被拒绝。</string>
+    <string name="prefs_logbook_callsign_missing">其中 %1$d 条记录没有呼号，将按证书 %2$s 上传。</string>
+    <string name="prefs_logbook_callsign_different">%1$d 条记录登记的不是证书 %2$s 的呼号。</string>
+    <string name="prefs_logbook_callsign_rewrite">改写为 %1$s</string>
+    <string name="prefs_logbook_callsign_switch">换一张证书</string>
     <string name="prefs_logbook_station_label">台址</string>
     <string name="prefs_logbook_station_all">全部</string>
     <string name="prefs_logbook_upload_wavelog_title">上传到 Wavelog</string>

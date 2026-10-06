@@ -296,6 +296,36 @@ class QsoRepositoryTest {
     }
 
     @Test
+    fun markUploaded_fillsBlankCallsignsAndKeepsTheOthers() = runBlocking {
+        val blank = dao.save(loggedInApp("SO-50", lotwUploaded = false).copy(myCallsign = "").toEntity())
+        val named = dao.save(loggedInApp("SO-50", lotwUploaded = false).copy(myCallsign = "BH3HCF").toEntity())
+
+        repository.markUploaded(listOf(blank, named), emptyList(), "BA7OPF")
+
+        val rows = dao.getAll().associateBy { it.id }
+        // Records logged before a certificate existed get the certificate's callsign; a record that
+        // names another callsign is not touched (they are refused, not rewritten, by the uploader).
+        assertEquals("BA7OPF", rows[blank]!!.myCallsign)
+        assertEquals("BH3HCF", rows[named]!!.myCallsign)
+        assertTrue(rows[blank]!!.lotwUploaded)
+        assertTrue(rows[named]!!.lotwUploaded)
+    }
+
+    @Test
+    fun rewriteMyCallsign_rewritesTheConflictRecordsOnly() = runBlocking {
+        val conflict = dao.save(loggedInApp("SO-50", lotwUploaded = false).copy(myCallsign = "XX0YY").toEntity())
+        val kept = dao.save(loggedInApp("SO-50", lotwUploaded = false).copy(myCallsign = "BA7OPF").toEntity())
+
+        val changed = repository.rewriteMyCallsign(listOf(conflict, kept), "ba7opf")
+
+        assertEquals(1, changed)
+        val rows = dao.getAll().associateBy { it.id }
+        assertEquals("BA7OPF", rows[conflict]!!.myCallsign)
+        assertEquals("BA7OPF", rows[kept]!!.myCallsign)
+        assertFalse(rows[conflict]!!.lotwUploaded)
+    }
+
+    @Test
     fun markWavelogUploaded_setsTheFlagAndTheStationStamp() = runBlocking {
         val id = dao.save(loggedInApp("SO-50", lotwUploaded = false).toEntity())
 

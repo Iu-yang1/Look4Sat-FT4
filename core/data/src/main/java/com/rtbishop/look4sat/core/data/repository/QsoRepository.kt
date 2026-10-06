@@ -82,18 +82,39 @@ class QsoRepository(
 
     override suspend fun delete(id: Long) = withContext(dispatcher) { importMutex.withLock { dao.delete(id) } }
 
-    override suspend fun markUploaded(ids: List<Long>, grids: List<String>) = withContext(dispatcher) {
+    override suspend fun markUploaded(ids: List<Long>, grids: List<String>, certificateCallsign: String) = withContext(dispatcher) {
         if (ids.isEmpty()) return@withContext
         dao.markUploaded(ids)
         // Stamp the station grid set this batch went out under (a line/corner prefill from
         // the grid finder carries 2–4 grids). The logbook row shows it after the timestamp.
         val normalized = grids.map { it.trim().uppercase(Locale.US).take(4) }
             .filter { it.length >= 4 }.distinct().sorted()
-        if (normalized.isEmpty()) return@withContext
-        val stamped = ids.mapNotNull { id ->
-            dao.find(id)?.toDomain()?.takeIf { it.vuccGrids != normalized }?.copy(vuccGrids = normalized)
+        if (normalized.isNotEmpty()) {
+            val stamped = ids.mapNotNull { id ->
+                dao.find(id)?.toDomain()?.takeIf { it.vuccGrids != normalized }?.copy(vuccGrids = normalized)
+            }
+            if (stamped.isNotEmpty()) dao.saveBatch(stamped.map { it.toEntity() })
         }
-        if (stamped.isNotEmpty()) dao.saveBatch(stamped.map { it.toEntity() })
+        // Records logged while no certificate was installed carry no own callsign; they were just
+        // signed with the certificate's, so write it into them. Blanks only, and through save() so
+        // the stored dedupe key follows the new value.
+        if (certificateCallsign.isNotBlank()) {
+            ids.mapNotNull { id -> dao.find(id)?.toDomain()?.takeIf { it.myCallsign.isBlank() } }
+                .forEach { save(it.copy(myCallsign = certificateCallsign.trim().uppercase(Locale.US))) }
+        }
+    }
+
+    override suspend fun rewriteMyCallsign(ids: List<Long>, callsign: String): Int = withContext(dispatcher) {
+        val target = callsign.trim().uppercase(Locale.US)
+        if (ids.isEmpty() || target.isBlank()) return@withContext 0
+        var changed = 0
+        ids.forEach { id ->
+            val record = dao.find(id)?.toDomain() ?: return@forEach
+            if (record.myCallsign.trim().equals(target, true)) return@forEach
+            save(record.copy(myCallsign = target))
+            changed++
+        }
+        changed
     }
 
     override suspend fun markWavelogUploaded(ids: List<Long>, stationId: String) = withContext(dispatcher) {

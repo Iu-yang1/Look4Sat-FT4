@@ -257,6 +257,7 @@ class SettingsViewModel(
             SettingsAction.PrepareLogbookUpload -> prepareLogbookUpload()
             SettingsAction.ConfirmLogbookUpload -> confirmLogbookUpload()
             SettingsAction.DismissLogbookPreview -> dismissLogbookPreview()
+            SettingsAction.RewriteLogbookCallsigns -> rewriteLogbookCallsigns()
             SettingsAction.IgnoreLogbookPositionWarning -> ignoreLogbookPositionWarning()
             SettingsAction.AbandonLogbookForGridFix -> abandonLogbookForGridFix()
             is SettingsAction.StartLogbookSelection -> startLogbookSelection(action.id)
@@ -648,7 +649,7 @@ class SettingsViewModel(
             val result = lotwUploadRepository.upload(preview.id)
             val accepted = result is com.rtbishop.look4sat.core.domain.repository.LoTWUploadResult.Accepted
             if (accepted && lastLogbookUploadIds.isNotEmpty()) {
-                qsoRepository.markUploaded(lastLogbookUploadIds, preview.grids)
+                qsoRepository.markUploaded(lastLogbookUploadIds, preview.grids, preview.callsign)
                 lastLogbookUploadIds = emptyList()
             }
             val msg = when (result) {
@@ -672,6 +673,29 @@ class SettingsViewModel(
     }
 
     private fun dismissLogbookPreview() = _uiState.update { it.copy(logbookPreview = null, logbookWavelogPreview = null) }
+
+    /**
+     * Operator chose "rewrite" on the callsign conflict: the refused records get this certificate's
+     * callsign so the next upload can sign them. The batch is discarded — nothing was uploaded.
+     */
+    private fun rewriteLogbookCallsigns() {
+        val preview = _uiState.value.logbookPreview ?: return
+        val ids = preview.callsignConflicts
+        if (ids.isEmpty()) return
+        viewModelScope.launch {
+            _uiState.update { it.copy(logbookUploadBusy = true) }
+            val changed = qsoRepository.rewriteMyCallsign(ids, preview.callsign)
+            lotwUploadRepository.discardPreview()
+            lastLogbookUploadIds = emptyList()
+            _uiState.update {
+                it.copy(
+                    logbookUploadBusy = false,
+                    logbookPreview = null,
+                    logbookUploadMessage = "$changed record(s) rewritten to ${preview.callsign} — upload again"
+                )
+            }
+        }
+    }
 
     /** Operator chose "ignore" on the position check: keep the prepared preview. */
     private fun ignoreLogbookPositionWarning() = _uiState.update { it.copy(logbookPositionWarning = null) }

@@ -107,7 +107,13 @@ data class LoTWUploadPreview(
     val grids: List<String> = emptyList(),
     /** True when this batch is a resubmit: already-uploaded/confirmed records were allowed
      *  through so the corrected station location reaches LoTW as an update of the contact. */
-    val resubmit: Boolean = false
+    val resubmit: Boolean = false,
+    /** Records in this batch whose own callsign is blank (logged before a certificate was
+     *  installed). They are signed with [callsign]; a successful upload writes it into them. */
+    val missingCallsign: Int = 0,
+    /** Records refused because they name a different own callsign than [callsign]. The upload
+     *  flow offers either rewriting them with [callsign] or using the other certificate. */
+    val callsignConflicts: List<Long> = emptyList()
 )
 
 /** Pre-upload location check: the freshest known position grid is not covered by the

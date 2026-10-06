@@ -22,7 +22,14 @@ interface IQsoRepository {
      * signed with (1–4 gridsquares: inside a grid / on a line / on a corner), so the
      * logbook row can show which grids the QSO went out under.
      */
-    suspend fun markUploaded(ids: List<Long>, grids: List<String> = emptyList())
+    suspend fun markUploaded(ids: List<Long>, grids: List<String> = emptyList(), certificateCallsign: String = "")
+
+    /**
+     * Rewrites the operator's callsign on the given records. This is the answer to "these contacts
+     * were logged under another certificate — upload them under the one installed now". Returns the
+     * number of records that changed.
+     */
+    suspend fun rewriteMyCallsign(ids: List<Long>, callsign: String): Int
 
     /**
      * Marks the batch as uploaded to Wavelog (independent of the LoTW upload state) and

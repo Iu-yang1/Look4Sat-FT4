@@ -103,6 +103,10 @@ fun LogbookDialog(
     onDismissMessage: () -> Unit,
     onIgnorePositionWarning: () -> Unit = {},
     onFixGrid: (List<String>) -> Unit = {},
+    /** Rewrite the records whose own callsign differs from the certificate's. */
+    onRewriteCallsign: () -> Unit = {},
+    /** Leave the upload to import a different certificate instead. */
+    onSwitchCertificate: () -> Unit = {},
     selectionMode: Boolean = false,
     selectedIds: Set<Long> = emptySet(),
     onStartSelection: (Long) -> Unit = {},
@@ -246,7 +250,9 @@ fun LogbookDialog(
             preview = preview,
             busy = uploadBusy,
             onConfirm = onConfirmUpload,
-            onDismiss = onDismissPreview
+            onDismiss = onDismissPreview,
+            onRewriteCallsign = onRewriteCallsign,
+            onSwitchCertificate = onSwitchCertificate
         )
     }
     if (uploadMessage.isNotBlank()) {
@@ -280,7 +286,9 @@ private fun LogbookUploadPreviewDialog(
     preview: com.rtbishop.look4sat.core.domain.repository.LoTWUploadPreview,
     busy: Boolean,
     onConfirm: () -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    onRewriteCallsign: () -> Unit,
+    onSwitchCertificate: () -> Unit
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -318,6 +326,32 @@ private fun LogbookUploadPreviewDialog(
                         fontSize = 12.sp,
                         color = MaterialTheme.colorScheme.primary
                     )
+                }
+                if (preview.missingCallsign > 0) {
+                    // Logged while no certificate was installed; signed with the certificate's
+                    // callsign instead of being refused.
+                    Text(
+                        stringResource(R.string.prefs_logbook_callsign_missing, preview.missingCallsign, preview.callsign),
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+                if (preview.callsignConflicts.isNotEmpty()) {
+                    // These name another callsign than the certificate: the operator either rewrites
+                    // them with the certificate's callsign or uploads them under that other one.
+                    Text(
+                        stringResource(R.string.prefs_logbook_callsign_different, preview.callsignConflicts.size, preview.callsign),
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        TextButton(onClick = onRewriteCallsign, enabled = !busy) {
+                            Text(stringResource(R.string.prefs_logbook_callsign_rewrite, preview.callsign), fontSize = 12.sp)
+                        }
+                        TextButton(onClick = onSwitchCertificate, enabled = !busy) {
+                            Text(stringResource(R.string.prefs_logbook_callsign_switch), fontSize = 12.sp)
+                        }
+                    }
                 }
                 Text(preview.contacts.joinToString("\n") { it }, fontSize = 12.sp, maxLines = 8)
             }

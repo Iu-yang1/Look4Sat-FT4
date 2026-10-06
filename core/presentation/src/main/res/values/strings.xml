@@ -245,6 +245,10 @@
     <string name="prefs_logbook_selected">%1$d selected</string>
     <string name="prefs_logbook_select_hint">Long-press a row to re-upload corrected records</string>
     <string name="prefs_logbook_resubmit_note">Existing contacts will be updated in place — a grid already used for an award may be rejected.</string>
+    <string name="prefs_logbook_callsign_missing">%1$d record(s) have no callsign — signed with %2$s from the certificate.</string>
+    <string name="prefs_logbook_callsign_different">%1$d record(s) name another callsign than the certificate %2$s.</string>
+    <string name="prefs_logbook_callsign_rewrite">Rewrite with %1$s</string>
+    <string name="prefs_logbook_callsign_switch">Use another certificate</string>
     <string name="prefs_logbook_station_label">Station</string>
     <string name="prefs_logbook_station_all">All</string>
     <string name="prefs_logbook_upload_wavelog_title">Upload to Wavelog</string>

@@ -343,7 +343,7 @@ class LogViewModel(
             if (result is LoTWUploadResult.Accepted && lastUploadedIds.isNotEmpty()) {
                 // Mark the submitted QSOs as uploaded (distinct from confirmed) and stamp
                 // the station grids this batch went out under.
-                qsoRepository.markUploaded(lastUploadedIds, preview.grids)
+                qsoRepository.markUploaded(lastUploadedIds, preview.grids, preview.callsign)
                 lastUploadedIds = emptyList()
             }
             val msg = when (result) {
@@ -367,6 +367,34 @@ class LogViewModel(
     }
 
     fun dismissPreview() = _uiState.update { it.copy(preview = null) }
+
+    /**
+     * Operator chose "rewrite" on the callsign conflict: the refused records get this certificate's
+     * callsign so the next upload can sign them. The prepared batch is dropped — nothing was sent.
+     */
+    fun rewriteCallsignConflicts() {
+        val preview = _uiState.value.preview ?: return
+        val ids = preview.callsignConflicts
+        if (ids.isEmpty()) return
+        viewModelScope.launch {
+            _uiState.update { it.copy(busy = true) }
+            val changed = qsoRepository.rewriteMyCallsign(ids, preview.callsign)
+            lotwUploadRepository.discardPreview()
+            lastUploadedIds = emptyList()
+            _uiState.update {
+                it.copy(busy = false, preview = null, message = "$changed record(s) rewritten to ${preview.callsign} — upload again")
+            }
+        }
+    }
+
+    /** Operator chose "use another certificate": that certificate is imported on the settings page. */
+    fun switchCertificateForConflicts() {
+        lotwUploadRepository.discardPreview()
+        lastUploadedIds = emptyList()
+        _uiState.update {
+            it.copy(preview = null, message = "Import the other callsign's certificate in Settings → LoTW upload, then upload again")
+        }
+    }
 
     fun dismissWavelogPreview() = _uiState.update { it.copy(wavelogPreview = null) }
 

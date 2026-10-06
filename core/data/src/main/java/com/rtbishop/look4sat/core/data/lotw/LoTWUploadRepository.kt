@@ -267,16 +267,29 @@ class LoTWUploadRepository internal constructor(
             var duplicates = 0
             val unique = hashSetOf<String>()
             val reasons = mutableMapOf<LoTWProblem, Int>()
+            val certificateCallsign = signing.key.info.callsign
+            val substitutedIds = mutableSetOf<Long>()
+            val callsignConflicts = mutableListOf<Long>()
             val contacts = records.sortedBy { it.startUtcMillis }.mapNotNull { record ->
                 coroutineContext.ensureActive()
                 if (record.status != QsoStatus.COMPLETE || ((record.lotwReceived || record.lotwUploaded) && !resubmit)) { skipped++; return@mapNotNull null }
+                // A record logged while no certificate was installed carries no own callsign: sign
+                // it with the certificate's callsign (the preview says so, and an accepted upload
+                // writes the callsign into the record). A record naming a DIFFERENT callsign may be
+                // someone else's contact, so it stays refused — the conflict list lets the operator
+                // rewrite those records or import the other certificate.
+                val signable = if (record.myCallsign.isBlank()) {
+                    substitutedIds += record.id
+                    record.copy(myCallsign = certificateCallsign)
+                } else record
                 val contact = try {
-                    signing.signer.contact(record, signing.key, signing.location, now())
+                    signing.signer.contact(signable, signing.key, signing.location, now())
                 } catch (e: LoTWOperationException) {
                     // One un-signable record must not abort the whole batch:
                     // skip it, count the real reason, and let the rest upload.
                     unavailable++
                     reasons[e.reason] = (reasons[e.reason] ?: 0) + 1
+                    if (e.reason == LoTWProblem.CALLSIGN_MISMATCH) callsignConflicts += record.id
                     return@mapNotNull null
                 }
                 val previous = ledger[contact.fingerprint]
@@ -299,6 +312,7 @@ class LoTWUploadRepository internal constructor(
                 signing.location["MY_VUCC_GRIDS"]?.split(',')
                     ?.map(String::trim)?.filter(String::isNotBlank)?.let(::addAll)
             }.distinct()
+            val submittedIds = contacts.map { it.record.id }
             val preview = LoTWUploadPreview(
                 UUID.randomUUID().toString(), signing.key.info.callsign, signing.key.info.dxcc, signing.location.getValue("GRIDSQUARE"),
                 contacts.size, skipped,
@@ -309,9 +323,12 @@ class LoTWUploadRepository internal constructor(
                 unavailable,
                 reasons.toMap(),
                 duplicates,
-                contacts.map { it.record.id },
+                submittedIds,
                 locationGrids,
-                resubmit
+                resubmit,
+                // Only the callsign-filled records that actually made it into this batch are reported.
+                submittedIds.count { it in substitutedIds },
+                callsignConflicts
             )
             if (contacts.isNotEmpty()) pending = Pending(
                 preview,

@@ -778,13 +778,13 @@ private fun RegionQsoDialog(
 ) {
     // WAZ regions are named by their bare zone number in the asset, so the
     // title gets the full "CQ ZONE 24" wording (user request 2026-10-05) and
-    // the code is not repeated in the subtitle. DXCC carries its award prefix
-    // in the subtitle ("DXCC 318", same request); other awards keep the bare
-    // code.
+    // the code is not repeated in the subtitle. DXCC shows the entity's call
+    // prefix instead of the numeric code ("BY", user request 2026-10-06);
+    // other awards keep the bare code.
     val isZone = type == AwardType.WAZ
     val codeLabel = when {
         isZone -> ""
-        type == AwardType.DXCC -> "DXCC ${region.code} · "
+        type == AwardType.DXCC -> "${region.pfx.ifBlank { region.code }} · "
         else -> "${region.code} · "
     }
     androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {

@@ -49,6 +49,9 @@ data class AwardRegion(
     val labelLon: Double,
     val labelLat: Double,
     val rings: List<List<DoubleArray>>,
+    /** Entity call-sign prefix ("BY" for China, "K" for the USA) from the
+     *  Club Log cty.csv primary prefix; shown in the QSO detail dialog. */
+    val pfx: String = "",
     /** Optional fill geometry with separate child entities knocked out as
      *  even-odd holes (e.g. Lesotho inside South Africa, Hong Kong inside
      *  China). Used only for the worked green fill so a worked parent never
@@ -110,6 +113,7 @@ object AwardBoundaryData {
                         nameEn = o.optString("name_en").takeIf { it.isNotEmpty() },
                         labelLon = o.optDouble("label_lon", 0.0),
                         labelLat = o.optDouble("label_lat", 0.0),
+                        pfx = o.optString("pfx"),
                         rings = rings,
                         fillRings = o.optJSONArray("fill_rings")?.let { parseRings(it) } ?: emptyList(),
                         forceLabel = o.optBoolean("force_label", false)

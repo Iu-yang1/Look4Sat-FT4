@@ -226,6 +226,29 @@ class DxccAssetTest {
     }
 
     @Test
+    fun `every entity carries its primary call prefix`() {
+        // pfx = the ARRL DXCC entity prefix (Club Log cty.csv primary prefix),
+        // shown in the QSO detail dialog instead of the numeric code. When an
+        // entity owns several prefixes (China: BA/BG/BY..., USA: K/AA/W...) the
+        // entity prefix is the conventional one. cty rows may list sub-entities
+        // first (Vienna Intl Ctr before Austria under code 206), so the plain
+        // entity row wins.
+        val regions = loadRegions()
+        regions.forEach { region ->
+            assertTrue("${region.getString("name")}: blank pfx",
+                region.getString("pfx").isNotBlank())
+        }
+        val expected = mapOf(
+            318 to "BY", 291 to "K", 339 to "JA", 230 to "DL", 266 to "LA",
+            206 to "OE", 259 to "JW", 232 to "6O", 215 to "5B", 302 to "S0",
+            54 to "UA", 15 to "UA9", 126 to "UA2", 223 to "G"
+        )
+        for ((code, pfx) in expected) {
+            assertEquals("pfx for $code", pfx, regions.byCode(code).getString("pfx"))
+        }
+    }
+
+    @Test
     fun `merged map units are framed by their DXCC parent`() {
         // Natural Earth draws Somaliland and N. Cyprus as separate map units.
         // Both belong to their DXCC entity (6O Somalia / 5B Cyprus) and are

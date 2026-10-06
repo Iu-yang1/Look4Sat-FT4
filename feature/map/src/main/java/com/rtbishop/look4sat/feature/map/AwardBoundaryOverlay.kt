@@ -22,6 +22,7 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Path
+import org.json.JSONArray
 import org.json.JSONObject
 import org.osmdroid.views.MapView
 import org.osmdroid.views.Projection
@@ -48,6 +49,12 @@ data class AwardRegion(
     val labelLon: Double,
     val labelLat: Double,
     val rings: List<List<DoubleArray>>,
+    /** Optional fill geometry with separate child entities knocked out as
+     *  even-odd holes (e.g. Lesotho inside South Africa, Hong Kong inside
+     *  China). Used only for the worked green fill so a worked parent never
+     *  greens a different DXCC entity's territory; [rings] stay the stroke /
+     *  hit-test source. Empty means "fill = rings". */
+    val fillRings: List<List<DoubleArray>> = emptyList(),
     val forceLabel: Boolean = false
 )
 
@@ -60,6 +67,20 @@ data class AwardRegion(
 object AwardBoundaryData {
 
     private val cache = mutableMapOf<AwardAsset, List<AwardRegion>>()
+
+    private fun parseRings(array: JSONArray): List<List<DoubleArray>> {
+        val rings = mutableListOf<List<DoubleArray>>()
+        for (r in 0 until array.length()) {
+            val ring = array.optJSONArray(r) ?: continue
+            val points = mutableListOf<DoubleArray>()
+            for (p in 0 until ring.length()) {
+                val pt = ring.optJSONArray(p) ?: continue
+                if (pt.length() >= 2) points.add(doubleArrayOf(pt.getDouble(0), pt.getDouble(1)))
+            }
+            if (points.size >= 3) rings.add(points)
+        }
+        return rings
+    }
 
     enum class AwardAsset(val fileName: String) {
         WAPC("wapc.json"),
@@ -80,16 +101,7 @@ object AwardBoundaryData {
             for (i in 0 until array.length()) {
                 val o = array.optJSONObject(i) ?: continue
                 val ringsArray = o.optJSONArray("rings") ?: continue
-                val rings = mutableListOf<List<DoubleArray>>()
-                for (r in 0 until ringsArray.length()) {
-                    val ring = ringsArray.optJSONArray(r) ?: continue
-                    val points = mutableListOf<DoubleArray>()
-                    for (p in 0 until ring.length()) {
-                        val pt = ring.optJSONArray(p) ?: continue
-                        if (pt.length() >= 2) points.add(doubleArrayOf(pt.getDouble(0), pt.getDouble(1)))
-                    }
-                    if (points.size >= 3) rings.add(points)
-                }
+                val rings = parseRings(ringsArray)
                 if (rings.isEmpty()) continue
                 list.add(
                     AwardRegion(
@@ -99,6 +111,7 @@ object AwardBoundaryData {
                         labelLon = o.optDouble("label_lon", 0.0),
                         labelLat = o.optDouble("label_lat", 0.0),
                         rings = rings,
+                        fillRings = o.optJSONArray("fill_rings")?.let { parseRings(it) } ?: emptyList(),
                         forceLabel = o.optBoolean("force_label", false)
                     )
                 )
@@ -238,6 +251,14 @@ class AwardBoundaryOverlay : Overlay() {
             val tiny = max(regionW, regionH) <= AwardHitTest.MIN_SHAPE_PX
 
             val path = Path()
+            // The worked fill uses fillRings when present: the award asset stores
+            // fill geometry with separate child entities (Lesotho in South Africa,
+            // Hong Kong in China, ...) knocked out as even-odd holes, so working a
+            // parent never greens a different DXCC entity's territory. The stroke
+            // keeps using the plain rings — hole borders coincide with the child
+            // entity's own outline and must not be drawn twice.
+            val fillRings = region.fillRings.ifEmpty { region.rings }
+            val fillPath = if (worked) Path().apply { fillType = Path.FillType.EVEN_ODD } else null
             var pathHasPoints = false
             for (ring in region.rings) {
                 // Split each ring into consecutive segments at the antimeridian
@@ -262,9 +283,19 @@ class AwardBoundaryOverlay : Overlay() {
                     pathHasPoints = traceSegment(path, segment, projection, centerLon, worldWidthPx, closeRing) || pathHasPoints
                 }
             }
+            fillPath?.let { fp ->
+                for (ring in fillRings) {
+                    val segments = splitRingAtAntimeridian(ring)
+                    val closeRing = segments.size == 1
+                    for (segment in segments) {
+                        if (segment.isEmpty()) continue
+                        traceSegment(fp, segment, projection, centerLon, worldWidthPx, closeRing)
+                    }
+                }
+            }
             if (!pathHasPoints && !tiny) continue
 
-            if (worked) canvas.drawPath(path, workedPaint)
+            if (worked) fillPath?.let { canvas.drawPath(it, workedPaint) }
             linePaint.strokeWidth = if (selected) LINE_WIDTH_SELECTED else LINE_WIDTH
             canvas.drawPath(path, linePaint)
             linePaint.strokeWidth = LINE_WIDTH

@@ -18,8 +18,10 @@
 package com.rtbishop.look4sat.feature.map
 
 import java.io.File
+import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -60,8 +62,10 @@ class DxccAssetTest {
         first { it.getInt("code") == code }
 
     /** Even-odd ray casting across all rings of a region (rings are disjoint parts). */
-    private fun regionContains(region: JSONObject, lon: Double, lat: Double): Boolean {
-        val rings = region.getJSONArray("rings")
+    private fun regionContains(region: JSONObject, lon: Double, lat: Double): Boolean =
+        ringsContain(region.getJSONArray("rings"), lon, lat)
+
+    private fun ringsContain(rings: JSONArray, lon: Double, lat: Double): Boolean {
         var inside = false
         for (r in 0 until rings.length()) {
             val ring = rings.getJSONArray(r)
@@ -218,6 +222,102 @@ class DxccAssetTest {
                 regionContains(regions.byCode(c.inside), c.lon, c.lat))
             assertTrue("${c.name} should NOT be in ${c.outside}",
                 !regionContains(regions.byCode(c.outside), c.lon, c.lat))
+        }
+    }
+
+    @Test
+    fun `merged map units are framed by their DXCC parent`() {
+        // Natural Earth draws Somaliland and N. Cyprus as separate map units.
+        // Both belong to their DXCC entity (6O Somalia / 5B Cyprus) and are
+        // merged into the parent rings — without the merge the northern
+        // territories had no boundary at all (nothing drawn, never greened).
+        val regions = loadRegions()
+        val checks = listOf(
+            Triple("Hargeisa", 44.06 to 9.56, 232),
+            Triple("Berbera", 45.02 to 10.44, 232),
+            Triple("Garowe", 48.48 to 8.40, 232),
+            Triple("Kyrenia", 33.32 to 35.34, 215),
+            Triple("Nicosia", 33.38 to 35.19, 215)
+        )
+        for ((city, pos, code) in checks) {
+            assertTrue("$city should be inside $code",
+                regionContains(regions.byCode(code), pos.first, pos.second))
+        }
+    }
+
+    @Test
+    fun `Norway keeps only its mainland ring`() {
+        // Norway's Natural Earth geometry carries coarse Svalbard rings (7-17 pts).
+        // Svalbard (259) is a separate DXCC entity with its own detailed rings, so
+        // the coarse copies were deleted — they drew every island twice (a simple
+        // and a coast-fitting outline) and greening Norway also greened JW.
+        val norway = loadRegions().byCode(266)
+        val rings = norway.getJSONArray("rings")
+        assertEquals("Norway ring count", 1, rings.length())
+        for (r in 0 until rings.length()) {
+            val ring = rings.getJSONArray(r)
+            for (p in 0 until ring.length()) {
+                val lat = ring.getJSONArray(p).getDouble(1)
+                assertTrue("Norway vertex at $lat — Svalbard ring leftover", lat <= 73.0)
+            }
+        }
+    }
+
+    @Test
+    fun `worked fill knockouts cover the vetted parent child pairs`() {
+        // fill_rings = parent territory minus separate child DXCC entities, so a
+        // worked parent (e.g. South Africa 462) never greens a child entity
+        // (Lesotho 432) that has its own code. Pairs were vetted geometrically
+        // (child area >=50% inside the parent); this test pins them so future
+        // asset edits re-trigger the review.
+        val expected = mapOf(
+            462 to setOf(432),          // South Africa - Lesotho
+            318 to setOf(321),          // China - Hong Kong
+            299 to setOf(381),          // Malaysia - Singapore
+            227 to setOf(203, 260),     // France - Andorra, Monaco
+            248 to setOf(278, 295),     // Italy - San Marino, Vatican
+            206 to setOf(251),          // Austria - Liechtenstein
+            287 to setOf(251),          // Switzerland - Liechtenstein
+            281 to setOf(203, 233),     // Spain - Andorra, Gibraltar
+            70 to setOf(105)            // Cuba - Guantanamo Bay
+        )
+        val regions = loadRegions()
+        val withFill = regions.filter { it.has("fill_rings") }.map { it.getInt("code") }.toSet()
+        assertEquals("regions carrying fill_rings", expected.keys, withFill)
+        for ((parentCode, childCodes) in expected) {
+            val parent = regions.byCode(parentCode)
+            val fillRings = parent.getJSONArray("fill_rings")
+            assertTrue("${parent.getString("name")}: empty fill_rings", fillRings.length() >= 1)
+            // The parent's own anchor must survive the knockout (no over-cutting).
+            val pLon = parent.getDouble("label_lon")
+            val pLat = parent.getDouble("label_lat")
+            assertTrue("${parent.getString("name")}: anchor lost in fill",
+                ringsContain(fillRings, pLon, pLat))
+            for (childCode in childCodes) {
+                val child = regions.byCode(childCode)
+                val childRings = child.getJSONArray("rings")
+                // Probes: the label anchor plus each ring's centroid. Some anchors
+                // drift outside their own ring (Guantanamo Bay), so a probe only
+                // counts when it really sits inside the child's own geometry.
+                val probes = mutableListOf(
+                    child.getDouble("label_lon") to child.getDouble("label_lat")
+                )
+                for (r in 0 until childRings.length()) {
+                    val ring = childRings.getJSONArray(r)
+                    var sx = 0.0; var sy = 0.0
+                    for (p in 0 until ring.length()) {
+                        sx += ring.getJSONArray(p).getDouble(0)
+                        sy += ring.getJSONArray(p).getDouble(1)
+                    }
+                    probes.add(sx / ring.length() to sy / ring.length())
+                }
+                for ((cLon, cLat) in probes) {
+                    if (regionContains(child, cLon, cLat) && regionContains(parent, cLon, cLat)) {
+                        assertFalse("${parent.getString("name")} fill still covers ${child.getString("name")}",
+                            ringsContain(fillRings, cLon, cLat))
+                    }
+                }
+            }
         }
     }
 }

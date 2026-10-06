@@ -37,7 +37,12 @@ internal class LoTWSigner(private val config: LoTWConfig) {
         val call = record.theirCallsign.trim().uppercase(Locale.US)
         if (record.status != QsoStatus.COMPLETE || !call.matches(Regex("[A-Z0-9]+(/[A-Z0-9]+)*")) ||
             !call.any(Char::isLetter) || !call.any(Char::isDigit)) fail(LoTWProblem.INVALID_CONTACT, call)
-        if (!record.myCallsign.trim().equals(key.info.callsign, true)) fail(LoTWProblem.CALLSIGN_MISMATCH, call)
+        // Report the two callsigns the operator has to reconcile (record vs certificate). A generic
+        // sample — the opposite station's call — says nothing about which side is wrong, which is
+        // exactly what a "MY callsign does not match the certificate" message must tell.
+        if (!record.myCallsign.trim().equals(key.info.callsign, true)) {
+            fail(LoTWProblem.CALLSIGN_MISMATCH, "${record.myCallsign.trim()} ≠ ${key.info.callsign}")
+        }
         val date = utc(record.startUtcMillis, "yyyy-MM-dd")
         // A record dated after "now" gets its own message: it happens when the operator
         // logged against a pass that had not started yet (out-of-window flow), and "fix the

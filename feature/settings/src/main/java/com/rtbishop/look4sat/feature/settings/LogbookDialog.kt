@@ -299,7 +299,9 @@ private fun LogbookUploadPreviewDialog(
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text("${preview.callsign}  DXCC ${preview.dxcc}  Grid ${preview.grid}", fontSize = 13.sp)
                 Text(
-                    "${preview.count} QSO(s) · ${preview.firstUtc} – ${preview.lastUtc}",
+                    // A blocked batch (shown for its conflict actions) has no date range to show.
+                    if (preview.firstUtc.isBlank()) "${preview.count} QSO(s)"
+                    else "${preview.count} QSO(s) · ${preview.firstUtc} – ${preview.lastUtc}",
                     fontSize = 13.sp
                 )
                 if (preview.skipped > 0 || preview.unknownSkipped > 0 || preview.unavailableSkipped > 0) {
@@ -357,7 +359,9 @@ private fun LogbookUploadPreviewDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = onConfirm, enabled = !busy) {
+            // Nothing uploadable (a conflict-only batch): the actions above are the way out, so the
+            // upload button stays disabled instead of failing with an expired preview.
+            TextButton(onClick = onConfirm, enabled = !busy && preview.count > 0) {
                 Text(stringResource(R.string.prefs_logbook_upload_confirm))
             }
         },

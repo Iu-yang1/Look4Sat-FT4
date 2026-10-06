@@ -18,6 +18,7 @@
 package com.rtbishop.look4sat.core.domain.logbook
 
 import com.rtbishop.look4sat.core.domain.repository.LoTWProblem
+import com.rtbishop.look4sat.core.domain.repository.LoTWUploadAudit
 
 /**
  * Wording for the reasons a QSO cannot be signed for LoTW.
@@ -69,3 +70,14 @@ fun unavailableUploadSummary(
     val detail = parts.joinToString(", ").ifBlank { "check the logbook" }
     return "$subject — $detail"
 }
+
+/**
+ * True when a batch that has nothing uploadable still has to reach the preview dialog.
+ *
+ * The preview is the only place that carries the callsign-conflict actions (rewrite the records, or
+ * upload them under another certificate). Short-circuiting such a batch into the plain "can't be
+ * uploaded" message strands exactly the records the operator needs to act on — the message has no
+ * buttons to get out of, so those QSOs could never be uploaded.
+ */
+fun LoTWUploadAudit.needsPreviewForConflicts(): Boolean =
+    pending == 0 && (reasons[LoTWProblem.CALLSIGN_MISMATCH] ?: 0) > 0

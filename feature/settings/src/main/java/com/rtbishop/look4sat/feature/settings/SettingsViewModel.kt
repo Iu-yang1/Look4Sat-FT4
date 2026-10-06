@@ -46,6 +46,7 @@ import com.rtbishop.look4sat.core.domain.repository.WavelogUploadOutcome
 import com.rtbishop.look4sat.core.domain.repository.WavelogUploadPreview
 import com.rtbishop.look4sat.core.domain.usecase.IShowToast
 import com.rtbishop.look4sat.core.domain.utility.VersionComparator
+import com.rtbishop.look4sat.core.domain.logbook.needsPreviewForConflicts
 import com.rtbishop.look4sat.core.domain.logbook.resubmitCandidates
 import com.rtbishop.look4sat.core.domain.logbook.toConfirmedRecord
 import com.rtbishop.look4sat.core.domain.logbook.unavailableUploadSummary
@@ -576,7 +577,10 @@ class SettingsViewModel(
                 // LoTW-imported confirmations are the feedback side.
                 val pending = all.filter { !it.lotwConfirmed && !it.lotwUploaded && it.status == com.rtbishop.look4sat.core.domain.logbook.QsoStatus.COMPLETE }
                 val audit = lotwUploadRepository.audit(pending)
-                if (audit.pending == 0) {
+                // A batch held back only by callsign conflicts still gets the preview: that dialog
+                // carries the rewrite / use-another-certificate actions. Without this the operator
+                // gets a dead-end message and those records can never be uploaded.
+                if (audit.pending == 0 && !audit.needsPreviewForConflicts()) {
                     val msg = when {
                         audit.unavailable > 0 -> com.rtbishop.look4sat.core.domain.logbook.unavailableUploadSummary(
                             audit.unavailable, audit.reasons, audit.details, audit.duplicates, audit.incomplete

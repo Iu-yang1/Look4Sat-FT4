@@ -22,6 +22,7 @@ import com.rtbishop.look4sat.core.domain.logbook.QsoStatus
 import com.rtbishop.look4sat.core.domain.repository.LoTWOperationException
 import com.rtbishop.look4sat.core.domain.repository.LoTWProblem
 import com.rtbishop.look4sat.core.domain.repository.LoTWStation
+import com.rtbishop.look4sat.core.domain.repository.LoTWUploadResult
 import java.io.File
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
@@ -117,6 +118,55 @@ class LoTWUploadRepositoryPreviewTest {
             assertEquals(1, preview.missingCallsign)
             assertEquals(listOf(start + 60_000L), preview.callsignConflicts)
             assertEquals(1, preview.unavailableReasons[LoTWProblem.CALLSIGN_MISMATCH])
+        }
+    }
+
+    /** Nothing signable at all: the preview still comes back (count 0) with the conflicts listed,
+     *  so the UI can offer the rewrite / use-another-certificate actions instead of a dead end. */
+    @Test
+    fun `fully blocked batch still returns a preview with the conflicts`() {
+        runBlocking {
+            val storage = MemStorage()
+            val repo = LoTWUploadRepository(
+                storage,
+                { LoTWConfig(File("src/main/assets/lotw/config.tq6").inputStream()) },
+                now = { System.currentTimeMillis() }
+            )
+            repo.importCertificate(fixture("test_tqsl_empty.p12"), charArrayOf())
+            repo.saveStation(LoTWStation(grid = "OL62TI"))
+            val start = 1_787_000_000_000L
+            val preview = repo.prepare(
+                listOf(
+                    sampleRecord(start, "BH6RJD", "XX0YY"),
+                    sampleRecord(start + 60_000L, "BG7QBL", "XX0ZZ")
+                ),
+                resubmit = false
+            )
+            assertEquals(0, preview.count)
+            assertEquals(2, preview.unavailableSkipped)
+            assertEquals(listOf(start, start + 60_000L), preview.callsignConflicts)
+            assertEquals(2, preview.unavailableReasons[LoTWProblem.CALLSIGN_MISMATCH])
+            assertEquals(0, preview.missingCallsign)
+            // No payload was prepared: confirming this preview must fail as expired, not crash.
+            assertTrue(repo.upload(preview.id) is LoTWUploadResult.ExpiredPreview)
+        }
+    }
+
+    /** The mismatch reason names both callsigns (record vs certificate). The old detail showed the
+     *  opposite station's call, which told the operator nothing about which side to fix. */
+    @Test
+    fun `callsign mismatch detail names the record and the certificate callsign`() {
+        runBlocking {
+            val storage = MemStorage()
+            val repo = LoTWUploadRepository(
+                storage,
+                { LoTWConfig(File("src/main/assets/lotw/config.tq6").inputStream()) },
+                now = { System.currentTimeMillis() }
+            )
+            repo.importCertificate(fixture("test_tqsl_empty.p12"), charArrayOf())
+            repo.saveStation(LoTWStation(grid = "OL62TI"))
+            val audit = repo.audit(listOf(sampleRecord(1_787_000_000_000L, "BH6RJD", "XX0YY")))
+            assertEquals("XX0YY ≠ BA7OPF", audit.details[LoTWProblem.CALLSIGN_MISMATCH])
         }
     }
 

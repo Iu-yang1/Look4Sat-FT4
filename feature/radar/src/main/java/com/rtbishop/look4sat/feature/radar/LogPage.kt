@@ -431,7 +431,10 @@ private fun UploadPreviewDialog(
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text("${preview.callsign}  DXCC ${preview.dxcc}  Grid ${preview.grid}", fontSize = 13.sp)
-                Text("${preview.count} QSO(s) · ${
+                val range = if (preview.firstUtc.isBlank()) {
+                    // A blocked batch (shown for its conflict actions) has no date range to show.
+                    "${preview.count} QSO(s)"
+                } else "${preview.count} QSO(s) · ${
                     java.text.SimpleDateFormat("MM-dd HH:mm", java.util.Locale.US).apply {
                         timeZone = java.util.TimeZone.getTimeZone("UTC")
                     }.format(java.util.Date(preview.firstUtc.let {
@@ -447,7 +450,8 @@ private fun UploadPreviewDialog(
                             timeZone = java.util.TimeZone.getTimeZone("UTC")
                         }.parse(it).time }.getOrDefault(System.currentTimeMillis())
                     }))
-                }Z", fontSize = 13.sp)
+                }Z"
+                Text(range, fontSize = 13.sp)
                 if (preview.skipped > 0 || preview.unknownSkipped > 0 || preview.unavailableSkipped > 0) {
                     val parts = buildList {
                         // skipped counts every record left out of this batch: previously-uploaded
@@ -498,7 +502,8 @@ private fun UploadPreviewDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = onConfirm, enabled = !busy) { Text("确认上传") }
+            // Nothing uploadable (a conflict-only batch): the actions above are the way out.
+            TextButton(onClick = onConfirm, enabled = !busy && preview.count > 0) { Text("确认上传") }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("Cancel") }

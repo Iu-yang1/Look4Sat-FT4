@@ -19,6 +19,10 @@
     <string name="sat_search_clear">Vaciar</string>
     <string name="sat_clear_all">Vaciar todo</string>
     <string name="sat_select_all">Seleccionar todo</string>
+    <string name="sat_group_selected">Seleccionados</string>
+    <string name="sat_group_available">Disponibles</string>
+    <string name="sat_group_selected_count">Seleccionados (%1$d)</string>
+    <string name="sat_group_available_count">Disponibles (%1$d)</string>
     <string name="sat_empty_list_message">
         Asegúrese de que su consulta de búsqueda sea correcta y que la base de datos esté actualizada</string>
     <string name="sat_warning_title">Alarma\!</string>

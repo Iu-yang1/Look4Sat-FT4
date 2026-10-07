@@ -19,6 +19,10 @@
     <string name="sat_search_clear">Очистити</string>
     <string name="sat_clear_all">Очистити всі</string>
     <string name="sat_select_all">Вибрати всі</string>
+    <string name="sat_group_selected">Обрані</string>
+    <string name="sat_group_available">Доступні</string>
+    <string name="sat_group_selected_count">Обрані (%1$d)</string>
+    <string name="sat_group_available_count">Доступні (%1$d)</string>
     <string name="sat_empty_list_message">
         Переконайтеся, що ваш пошуковий запит правильний, а база даних оновлена</string>
     <string name="sat_warning_title">Увага\!</string>

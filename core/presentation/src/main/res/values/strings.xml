@@ -21,6 +21,10 @@
     <string name="sat_search_clear">Clear</string>
     <string name="sat_clear_all">Clear all</string>
     <string name="sat_select_all">Select all</string>
+    <string name="sat_group_selected">Selected</string>
+    <string name="sat_group_available">Available</string>
+    <string name="sat_group_selected_count">Selected (%1$d)</string>
+    <string name="sat_group_available_count">Available (%1$d)</string>
     <string name="sat_empty_list_message">"Make sure your search query is correct and the DB is updated"</string>
     <string name="sat_warning_title">Warning\!</string>
     <string name="sat_warning_message">

@@ -19,6 +19,10 @@
     <string name="sat_search_clear">පිරිසිදු ක°</string>
     <string name="sat_clear_all">සියල්ල පිරිසිදු ක°</string>
     <string name="sat_select_all">සියල්ල තෝරන්න</string>
+    <string name="sat_group_selected">තෝරාගත්</string>
+    <string name="sat_group_available">තිබෙන</string>
+    <string name="sat_group_selected_count">තෝරාගත් (%1$d)</string>
+    <string name="sat_group_available_count">තිබෙන (%1$d)</string>
     <string name="sat_empty_list_message">
         ඔබගේ සෙවුම් විමසුම නිවැරදි බවත් දත්ත සමුදාය යාවත්කාලීන කර ඇති බවත් සහතික කර ගන්න</string>
     <string name="sat_warning_title">අවවාදයයි\!</string>

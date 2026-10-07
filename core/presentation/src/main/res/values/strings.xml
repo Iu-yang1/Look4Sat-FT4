@@ -13,6 +13,7 @@
     <string name="nav_mutual">Match</string>
     <string name="nav_map">Map</string>
     <string name="nav_prefs">Settings</string>
+    <string name="nav_more">More</string>
 
     <!-- Satellites screen -->
     <string name="sat_type_hint">Type: %s</string>
@@ -55,7 +56,7 @@
     <string name="pass_whatsnew_message" translatable="false">Recent updates include improved pass calculations, normalized AOS and LOS times, CAT radio control for full-duplex satellite operation, mutual pass matching, and fixes for UTC pass times.</string>
 
     <!-- AMSAT Status screen -->
-    <string name="nav_amsat">AMSAT</string>
+    <string name="nav_amsat">AMSAT Status</string>
     <string name="amsat_title">AMSAT Satellite Status</string>
     <string name="amsat_refresh">Refresh</string>
     <string name="amsat_retry">Retry</string>

@@ -41,7 +41,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Icon
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteDefaults
@@ -52,7 +55,9 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -214,11 +219,13 @@ fun MainScreen(
 ) {
     val backStack = rememberNavBackStack(Screen.Passes)
     val currentKey = backStack.lastOrNull()
+    var showMoreSheet by rememberSaveable { mutableStateOf(false) }
     val navigateBack: () -> Unit = { backStack.removeLastOrNull() }
-    val navigateToMap: () -> Unit = {
+    val navigateToScreen: (Screen) -> Unit = { screen ->
         while (backStack.size > 1) backStack.removeAt(backStack.size - 1)
-        backStack.add(Screen.Map)
+        if (screen !is Screen.Passes) backStack.add(screen)
     }
+    val navigateToMap: () -> Unit = { navigateToScreen(Screen.Map) }
     LaunchedEffect(openMapRequest) {
         if (openMapRequest > 0) {
             navigateToMap()
@@ -229,12 +236,16 @@ fun MainScreen(
     val navItems = listOf(
         Screen.Satellites,
         Screen.Passes,
+        Screen.Logbook,
+        Screen.Ft4,
+        Screen.More
+    )
+    val moreItems = listOf(
         Screen.GridFinder,
         Screen.Map,
-        Screen.Logbook,
         Screen.Mutual,
-        Screen.Ft4,
-        Screen.Settings
+        Screen.Settings,
+        Screen.AMSAT
     )
 
     val context = LocalContext.current
@@ -281,33 +292,47 @@ fun MainScreen(
             high = otherSettings.highElevation
         )
     ) {
+        if (showMoreSheet) {
+            MoreDestinationsSheet(
+                destinations = moreItems,
+                currentScreen = currentKey as? Screen,
+                onDismiss = { showMoreSheet = false },
+                onDestinationSelected = { screen ->
+                    showMoreSheet = false
+                    if (currentKey != screen) navigateToScreen(screen)
+                }
+            )
+        }
         NavigationSuiteScaffold(
             navigationSuiteItems = {
                 navItems.forEach { screen ->
                     val isSelected = when (currentKey) {
                         is Screen.Satellites -> screen is Screen.Satellites
                         is Screen.Passes -> screen is Screen.Passes
-                        is Screen.Map -> screen is Screen.Map
-                        is Screen.GridFinder -> screen is Screen.GridFinder
-                        is Screen.AMSAT -> screen is Screen.Satellites
-                        is Screen.Mutual -> screen is Screen.Mutual
                         is Screen.Ft4 -> screen is Screen.Ft4
                         is Screen.Logbook -> screen is Screen.Logbook
-                        is Screen.Settings -> screen is Screen.Settings
+                        is Screen.Map,
+                        is Screen.GridFinder,
+                        is Screen.AMSAT,
+                        is Screen.Mutual,
+                        is Screen.Settings -> screen is Screen.More
                         else -> false
-                    }
+                    } || (screen is Screen.More && showMoreSheet)
                     item(
                         icon = { Icon(painterResource(screen.iconResId), stringResource(screen.titleResId)) },
                         label = { Text(stringResource(screen.titleResId)) },
                         selected = isSelected,
                         onClick = {
+                            if (screen is Screen.More) {
+                                showMoreSheet = true
+                                return@item
+                            }
                             if (isSelected) return@item
                             if (screen is Screen.Ft4) {
                                 navigateToFt4()
                                 return@item
                             }
-                            while (backStack.size > 1) backStack.removeAt(backStack.size - 1)
-                            if (screen !is Screen.Passes) backStack.add(screen)
+                            navigateToScreen(screen)
                         }
                     )
                 }
@@ -444,5 +469,47 @@ fun MainScreen(
                 }
             }
         }
+    }
+}
+
+@Composable
+@OptIn(ExperimentalMaterial3Api::class)
+private fun MoreDestinationsSheet(
+    destinations: List<Screen>,
+    currentScreen: Screen?,
+    onDismiss: () -> Unit,
+    onDestinationSelected: (Screen) -> Unit
+) {
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Text(
+            text = stringResource(R.string.nav_more),
+            style = MaterialTheme.typography.titleLarge,
+            modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp)
+        )
+        destinations.forEach { screen ->
+            val selected = currentScreen == screen
+            ListItem(
+                headlineContent = { Text(stringResource(screen.titleResId)) },
+                leadingContent = {
+                    Icon(
+                        painter = painterResource(screen.iconResId),
+                        contentDescription = null
+                    )
+                },
+                trailingContent = {
+                    if (selected) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_done),
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onDestinationSelected(screen) }
+            )
+        }
+        Spacer(modifier = Modifier.size(16.dp))
     }
 }

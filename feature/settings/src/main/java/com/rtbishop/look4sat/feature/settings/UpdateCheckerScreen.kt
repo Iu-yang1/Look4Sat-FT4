@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -43,9 +44,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -53,10 +52,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
 import com.rtbishop.look4sat.core.presentation.CardButton
-import com.rtbishop.look4sat.core.presentation.IconCard
 import com.rtbishop.look4sat.core.presentation.R
-import com.rtbishop.look4sat.core.presentation.ScreenColumn
-import com.rtbishop.look4sat.core.presentation.TopBar
+import com.rtbishop.look4sat.core.presentation.SharedDialog
 
 @Composable
 fun UpdateCheckerScreen(
@@ -82,27 +79,17 @@ fun UpdateCheckerScreen(
         onConsumeApk()
     }
 
-    ScreenColumn(
-        topBar = { isVerticalLayout ->
-            TopBar {
-                IconCard(
-                    action = onBack,
-                    resId = R.drawable.ic_arrow,
-                    modifier = Modifier.rotate(180f)
-                )
-                Text(
-                    text = stringResource(R.string.update_check_title),
-                    style = MaterialTheme.typography.titleMedium,
-                    modifier = Modifier.weight(1f)
-                )
-            }
-        }
-    ) {
+    SharedDialog(
+        title = stringResource(R.string.update_check_title),
+        onDismissRequest = onBack,
+        onCancel = onBack
+    ) { padding ->
         Column(
             verticalArrangement = Arrangement.spacedBy(10.dp),
             modifier = Modifier
-                .fillMaxSize()
-                .padding(10.dp)
+                .fillMaxWidth()
+                .fillMaxHeight(0.72f)
+                .padding(horizontal = padding, vertical = 8.dp)
         ) {
             ElevatedCard(modifier = Modifier.fillMaxWidth()) {
                 Column(

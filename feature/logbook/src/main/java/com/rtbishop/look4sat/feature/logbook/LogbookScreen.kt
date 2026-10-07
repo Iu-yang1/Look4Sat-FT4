@@ -60,6 +60,7 @@ import com.rtbishop.look4sat.core.presentation.CardButton
 import com.rtbishop.look4sat.core.presentation.IconCard
 import com.rtbishop.look4sat.core.presentation.R as CoreR
 import com.rtbishop.look4sat.core.presentation.ScreenColumn
+import com.rtbishop.look4sat.core.presentation.SharedDialog
 import com.rtbishop.look4sat.core.presentation.TopBar
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -135,21 +136,28 @@ fun LogbookScreenDestination(navigateUp: () -> Unit, navigateToMap: () -> Unit =
     }
 
     if (showExportOptions) {
-        AlertDialog(
+        SharedDialog(
+            title = stringResource(R.string.logbook_export),
             onDismissRequest = { showExportOptions = false },
-            title = { Text(stringResource(R.string.logbook_export)) },
-            text = { Text(stringResource(R.string.logbook_export_scope_description)) },
-            confirmButton = {
-                TextButton(onClick = { exportAdi(false) }) {
-                    Text(stringResource(R.string.logbook_export_complete_only))
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { exportAdi(true) }) {
-                    Text(stringResource(R.string.logbook_export_all))
-                }
+            onCancel = { showExportOptions = false }
+        ) { padding ->
+            Column(
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.padding(horizontal = padding, vertical = 8.dp)
+            ) {
+                Text(stringResource(R.string.logbook_export_scope_description))
+                CardButton(
+                    onClick = { exportAdi(false) },
+                    text = stringResource(R.string.logbook_export_complete_only),
+                    modifier = Modifier.fillMaxWidth()
+                )
+                CardButton(
+                    onClick = { exportAdi(true) },
+                    text = stringResource(R.string.logbook_export_all),
+                    modifier = Modifier.fillMaxWidth()
+                )
             }
-        )
+        }
     }
 
     LogbookScreen(

@@ -5,6 +5,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
@@ -43,6 +44,7 @@ import com.rtbishop.look4sat.core.domain.repository.LoTWPhase
 import com.rtbishop.look4sat.core.domain.repository.LoTWStation
 import com.rtbishop.look4sat.core.domain.repository.LoTWSyncMode
 import com.rtbishop.look4sat.core.domain.repository.LoTWUploadResult
+import com.rtbishop.look4sat.core.presentation.SharedDialog
 import com.rtbishop.look4sat.core.presentation.R as CoreR
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -118,11 +120,22 @@ internal fun LoTWUploadDialog(state: LogbookState, onAction: (LogbookAction) -> 
     val audit = state.lotwAudit
     val pendingCount = audit?.pending ?: 0
     val unavailable = stringResource(R.string.logbook_value_unavailable)
-    AlertDialog(
+    SharedDialog(
+        title = stringResource(R.string.lotw_upload),
         onDismissRequest = { if (!busy) onAction(LogbookAction.DismissLoTW) },
-        title = { Text(stringResource(R.string.lotw_upload)) },
-        text = {
-            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        onCancel = {
+            if (state.lotwSyncing) onAction(LogbookAction.CancelLoTW)
+            else if (!reading) onAction(LogbookAction.DismissLoTW)
+        }
+    ) { padding ->
+            Column(
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .fillMaxHeight(0.72f)
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = padding, vertical = 8.dp)
+            ) {
                 LoTWDownloadCard(
                     state = state,
                     callsign = accountCallsign,
@@ -280,14 +293,7 @@ internal fun LoTWUploadDialog(state: LogbookState, onAction: (LogbookAction) -> 
                     })
                 }
             }
-        },
-        confirmButton = {},
-        dismissButton = {
-            TextButton(onClick = {
-                if (state.lotwSyncing) onAction(LogbookAction.CancelLoTW) else if (!reading) onAction(LogbookAction.DismissLoTW)
-            }) { Text(stringResource(R.string.logbook_cancel)) }
-        }
-    )
+    }
     state.lotwPreview?.let { preview ->
         AlertDialog(
             onDismissRequest = { onAction(LogbookAction.DismissLoTWPreview) },

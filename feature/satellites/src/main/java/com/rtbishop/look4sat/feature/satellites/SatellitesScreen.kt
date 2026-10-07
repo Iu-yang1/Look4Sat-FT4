@@ -28,6 +28,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.text.BasicTextField
@@ -317,7 +318,7 @@ private fun Satellite(
             )
             Checkbox(
                 checked = item.isSelected,
-                onCheckedChange = null,
+                onCheckedChange = { onSelected(item.catnum, item.isSelected) },
                 modifier = Modifier.padding(start = 6.dp)
             )
         }
@@ -350,17 +351,36 @@ private fun SatellitesCard(items: List<SatItem>, onSelected: (Int, Boolean) -> U
         }
 
         if (selectedItems.isNotEmpty()) {
+            item(key = "selected_group", span = { GridItemSpan(maxLineSpan) }) {
+                GroupHeader(stringResource(R.string.sat_group_selected))
+            }
             items(items = selectedItems, key = { item -> item.catnum }) { entry ->
                 Satellite(entry, onSelected, Modifier.animateItem())
             }
         }
 
         if (availableItems.isNotEmpty()) {
+            item(key = "available_group", span = { GridItemSpan(maxLineSpan) }) {
+                GroupHeader(stringResource(R.string.sat_group_available))
+            }
             items(items = availableItems, key = { item -> item.catnum }) { entry ->
                 Satellite(entry, onSelected, Modifier.animateItem())
             }
         }
     }
+}
+
+@Composable
+private fun GroupHeader(text: String) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.labelLarge,
+        color = MaterialTheme.colorScheme.primary,
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.surfaceContainer)
+            .padding(horizontal = 12.dp, vertical = 6.dp)
+    )
 }
 
 @Composable

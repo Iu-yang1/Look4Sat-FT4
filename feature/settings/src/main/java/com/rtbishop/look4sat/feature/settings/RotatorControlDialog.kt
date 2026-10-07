@@ -25,20 +25,18 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -63,6 +61,7 @@ import com.rtbishop.look4sat.core.domain.rotator.RotatorTrackingPhase
 import com.rtbishop.look4sat.core.domain.rotator.RotatorTrackingState
 import com.rtbishop.look4sat.core.domain.rotator.RotatorTransport
 import com.rtbishop.look4sat.core.presentation.R
+import com.rtbishop.look4sat.core.presentation.SharedDialog
 
 @Composable
 fun RotatorControlDialog(
@@ -195,15 +194,20 @@ fun RotatorControlDialog(
         }
     }
 
-    AlertDialog(
+    SharedDialog(
+        title = stringResource(R.string.rotator_settings_title),
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.rotator_settings_title)) },
-        text = {
+        onCancel = onDismiss,
+        onAccept = { onSave(draft.normalized()) },
+        acceptText = stringResource(R.string.rotator_save),
+        acceptEnabled = editable && dirty && valid
+    ) { padding ->
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(max = 620.dp)
-                    .verticalScroll(rememberScrollState()),
+                    .fillMaxHeight(0.72f)
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = padding, vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 SwitchSettingRow(
@@ -541,17 +545,7 @@ fun RotatorControlDialog(
                     Text(stringResource(R.string.rotator_test_point))
                 }
             }
-        },
-        confirmButton = {
-            TextButton(
-                onClick = { onSave(draft.normalized()) },
-                enabled = editable && dirty && valid
-            ) { Text(stringResource(R.string.rotator_save)) }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text(stringResource(R.string.rotator_close)) }
-        }
-    )
+    }
 }
 
 @Composable

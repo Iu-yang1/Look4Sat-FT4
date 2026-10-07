@@ -128,7 +128,6 @@ private fun SettingsScreen(
             onDownload = { onAction(SettingsAction.DownloadUpdate) },
             onConsumeApk = { onAction(SettingsAction.ConsumeDownloadedApk) }
         )
-        return
     }
     val dialogs = rememberDialogVisibility()
     val pendingCustomSourcesGrant = remember { mutableStateOf<(() -> Unit)?>(null) }

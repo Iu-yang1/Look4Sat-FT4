@@ -301,6 +301,11 @@ class SelectionRepoSearchTest {
         val results = flow.first()
         assertEquals(listOf(40967, 25544, 44444), results.map { it.catnum })
         assertEquals(listOf(true, false, false), results.map { it.isSelected })
+
+        repo.setSelection(listOf(40967), false)
+        val deselected = flow.first()
+        assertEquals(listOf(25544, 40967, 44444), deselected.map { it.catnum })
+        assertTrue(deselected.none { it.isSelected })
     }
 
     private fun createRepo(

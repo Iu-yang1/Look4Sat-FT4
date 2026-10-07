@@ -66,8 +66,17 @@ class SelectionRepo(
         }
     }
 
+    // Selected satellites are pinned to the top (matches upstream); ordering
+    // within each group stays name/catnum. Sits on the reactive chain, so
+    // ticking an entry re-sorts the visible list immediately.
     private val itemsWithQuery = currentQuery.flatMapLatest { query ->
-        itemsWithTypes.map { items -> filterByQuery(items, query) }
+        itemsWithTypes.map { items ->
+            filterByQuery(items, query).sortedWith(
+                compareByDescending<SatItem> { it.isSelected }
+                    .thenBy { it.name }
+                    .thenBy { it.catnum }
+            )
+        }
     }
 
     override fun getCurrentTypes() = currentTypes.value

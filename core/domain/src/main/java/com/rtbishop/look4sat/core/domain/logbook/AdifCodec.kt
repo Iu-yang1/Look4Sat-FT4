@@ -14,9 +14,15 @@ import java.util.Date
 import java.util.Locale
 import java.util.TimeZone
 
-/** Small ADI codec for the logbook's actual field set (ADIF 3.1.7). */
+/**
+ * Small ADI codec for the logbook's actual field set (ADIF 3.1.7).
+ *
+ * Grid directions follow ADIF: the un-prefixed fields (GRIDSQUARE, VUCC_GRIDS) belong to
+ * the OPPOSITE station, the MY_* fields (MY_GRIDSQUARE, MY_VUCC_GRIDS) to the operator.
+ */
 object AdifCodec {
     private val utc = TimeZone.getTimeZone("UTC")
+    private val gridPattern = Regex("[A-R]{2}[0-9]{2}([A-X]{2}([0-9]{2})?)?")
 
     fun encode(records: List<QsoRecord>, includeStationCallsign: Boolean = true): String = buildString {
         append(field("ADIF_VER", "3.1.7"))
@@ -36,7 +42,17 @@ object AdifCodec {
             appendOptional("MODE", record.mode)
             appendOptional("SUBMODE", record.submode)
             appendOptional("GRIDSQUARE", record.theirGrid)
+            // The OPPOSITE station's multi-grid set (2+ grids: a grid line or corner).
+            // A single grid is carried by GRIDSQUARE; one value inside the VUCC field
+            // makes Wavelog flag the record in its QSO view.
+            if (record.theirVuccGrids.size > 1) {
+                appendOptional("VUCC_GRIDS", record.theirVuccGrids.joinToString(","))
+            }
             appendOptional("MY_GRIDSQUARE", record.myGrid)
+            // The grid set this qso went out under (own operated grids, stamped at
+            // upload). ADIF's MY_VUCC_GRIDS is its home — not VUCC_GRIDS, which belongs
+            // to the opposite station and drives Wavelog's grid/distance/QRB display.
+            appendOptional("MY_VUCC_GRIDS", record.vuccGrids.joinToString(","))
             appendOptional("RST_SENT", record.sentReport)
             appendOptional("RST_RCVD", record.receivedReport)
             record.txFrequencyHz?.let { append(field("FREQ", hzToMhz(it))) }
@@ -49,7 +65,6 @@ object AdifCodec {
             if (record.lotwConfirmed) append(field("LOTW_QSL_RCVD", "Y"))
             if (record.lotwReceived) append(field("LOTW_QSL_SENT", "Y"))
             appendOptional("LOTW_QSLRDATE", record.lotwQslDate)
-            appendOptional("VUCC_GRIDS", record.vuccGrids.joinToString(","))
             record.dxcc?.let { append(field("DXCC", it.toString())) }
             appendOptional("COUNTRY", record.country)
             record.cqZone?.let { append(field("CQZ", it.toString())) }
@@ -88,7 +103,9 @@ object AdifCodec {
             theirCallsign = call,
             myCallsign = values["STATION_CALLSIGN"].orEmpty().uppercase(Locale.US),
             theirGrid = values["GRIDSQUARE"].orEmpty().uppercase(Locale.US),
+            theirVuccGrids = decodeGrids(values["VUCC_GRIDS"]),
             myGrid = values["MY_GRIDSQUARE"].orEmpty().uppercase(Locale.US),
+            vuccGrids = decodeGrids(values["MY_VUCC_GRIDS"]),
             sentReport = values["RST_SENT"].orEmpty(),
             receivedReport = values["RST_RCVD"].orEmpty(),
             txFrequencyHz = mhzToHz(values["FREQ"]),
@@ -112,8 +129,6 @@ object AdifCodec {
             lotwConfirmed = values["LOTW_QSL_RCVD"].equals("Y", true),
             lotwReceived = values["LOTW_QSL_SENT"].equals("Y", true),
             lotwQslDate = values["LOTW_QSLRDATE"].orEmpty(),
-            vuccGrids = values["VUCC_GRIDS"].orEmpty().split(',').map { it.trim().uppercase(Locale.US) }
-                .filter { it.matches(Regex("[A-R]{2}[0-9]{2}([A-X]{2}([0-9]{2})?)?")) }.distinct(),
             dxcc = values["DXCC"]?.toIntOrNull(),
             country = values["COUNTRY"].orEmpty(),
             cqZone = values["CQZ"]?.toIntOrNull()?.takeIf { it in 1..40 },
@@ -151,6 +166,12 @@ object AdifCodec {
         }
         return records
     }
+
+    /** Splits an ADIF grid list on commas, keeping only valid 4/6/8-char locators. */
+    private fun decodeGrids(value: String?): List<String> = value.orEmpty().split(',')
+        .map { it.trim().uppercase(Locale.US) }
+        .filter { it.matches(gridPattern) }
+        .distinct()
 
     private fun StringBuilder.appendOptional(name: String, value: String) {
         if (value.isNotBlank()) append(field(name, value))

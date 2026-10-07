@@ -21,6 +21,10 @@
     <string name="sat_search_clear">清空</string>
     <string name="sat_clear_all">全部清空</string>
     <string name="sat_select_all">全选</string>
+    <string name="sat_group_selected">已选择</string>
+    <string name="sat_group_available">可用</string>
+    <string name="sat_group_selected_count">已选择（%1$d）</string>
+    <string name="sat_group_available_count">可用（%1$d）</string>
     <string name="sat_empty_list_message">请确保您的搜索查询正确且数据库已更新</string>
     <string name="sat_warning_title">警告\!</string>
     <string name="sat_warning_message">此应用收录了超过9000颗卫星信息\n同时追踪所有卫星并不现实\n建议始终通过搜索和分类筛选功能仅勾选您感兴趣的卫星</string>

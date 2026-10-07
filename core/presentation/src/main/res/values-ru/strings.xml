@@ -19,6 +19,10 @@
     <string name="sat_search_clear">Очистить</string>
     <string name="sat_clear_all">Очистить</string>
     <string name="sat_select_all">Выбрать</string>
+    <string name="sat_group_selected">Выбранные</string>
+    <string name="sat_group_available">Доступные</string>
+    <string name="sat_group_selected_count">Выбранные (%1$d)</string>
+    <string name="sat_group_available_count">Доступные (%1$d)</string>
     <string name="sat_empty_list_message">Убедитесь, что ваш поисковый запрос верен и база данных обновлена</string>
     <string name="sat_warning_title">Внимание\!</string>
     <string name="sat_warning_message">

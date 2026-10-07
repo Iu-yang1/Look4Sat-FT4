@@ -285,6 +285,24 @@ class SelectionRepoSearchTest {
         assertEquals(sampleItems.map { it.catnum }.toSet(), results.map { it.catnum }.toSet())
     }
 
+    @Test
+    fun `selected satellites are shown first`() = runTest {
+        // Pinning ported from upstream: ticked satellites sort above the rest,
+        // each group keeping the name order.
+        val repo = createRepo(
+            items = listOf(
+                SatItem(catnum = 44444, name = "Zeta"),
+                SatItem(catnum = 25544, name = "Alpha"),
+                SatItem(catnum = 40967, name = "Beta")
+            )
+        )
+        val flow = repo.getEntriesFlow()
+        repo.setSelection(listOf(40967), true)
+        val results = flow.first()
+        assertEquals(listOf(40967, 25544, 44444), results.map { it.catnum })
+        assertEquals(listOf(true, false, false), results.map { it.isSelected })
+    }
+
     private fun createRepo(
         items: List<SatItem>,
         sstvIds: List<Int> = emptyList()

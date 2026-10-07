@@ -338,9 +338,52 @@ private fun SatellitesPreview() {
 
 @Composable
 private fun SatellitesCard(items: List<SatItem>, onSelected: (Int, Boolean) -> Unit) {
+    val selectedItems = items.filter { it.isSelected }
+    val availableItems = items.filterNot { it.isSelected }
+
     LazyVerticalGrid(columns = GridCells.Adaptive(320.dp)) {
-        items(items = items, key = { item -> item.catnum }) { entry ->
-            Satellite(entry, onSelected, Modifier.animateItem())
+        stickyHeader(key = "sat_summary_header") {
+            SummaryHeader(
+                selectedText = stringResource(R.string.sat_group_selected_count, selectedItems.size),
+                availableText = stringResource(R.string.sat_group_available_count, availableItems.size)
+            )
         }
+
+        if (selectedItems.isNotEmpty()) {
+            items(items = selectedItems, key = { item -> item.catnum }) { entry ->
+                Satellite(entry, onSelected, Modifier.animateItem())
+            }
+        }
+
+        if (availableItems.isNotEmpty()) {
+            items(items = availableItems, key = { item -> item.catnum }) { entry ->
+                Satellite(entry, onSelected, Modifier.animateItem())
+            }
+        }
+    }
+}
+
+@Composable
+private fun SummaryHeader(selectedText: String, availableText: String) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween,
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.surfaceContainerHighest)
+            .padding(horizontal = 12.dp, vertical = 4.dp)
+    ) {
+        Text(
+            text = selectedText,
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Text(
+            text = availableText,
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }

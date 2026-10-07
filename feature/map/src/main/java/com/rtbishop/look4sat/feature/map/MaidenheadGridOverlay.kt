@@ -89,6 +89,24 @@ class MaidenheadGridOverlay : Overlay() {
         color = Color.argb(255, 76, 217, 100)
     }
 
+    /**
+     * Recolor the amber line/label paints for the active map theme: dark amber with a white halo
+     * on the light map, light amber with a black halo on the dark map. The worked / marked / roam /
+     * selected colors stay as they are — they read on both backgrounds.
+     */
+    fun applyTheme(isLightUi: Boolean) {
+        val line = if (isLightUi) Color.argb(200, 113, 92, 12) else Color.argb(160, 255, 224, 130)
+        val label = if (isLightUi) Color.argb(235, 30, 25, 5) else Color.argb(220, 255, 224, 130)
+        val halo = if (isLightUi) Color.WHITE else Color.BLACK
+        linePaint.color = line
+        // ownLine stays the same color as the normal grid lines (only thicker).
+        ownLinePaint.color = line
+        labelPaint.color = label
+        labelPaint.setShadowLayer(3f, 2f, 2f, halo)
+        firstCallPaint.color = label
+        firstCallPaint.setShadowLayer(3f, 2f, 2f, halo)
+    }
+
     /** Worked gridsquares (4-char, uppercase) to highlight, e.g. {"OL62", "PM95"}. */
     var workedGrids: Set<String> = emptySet()
 

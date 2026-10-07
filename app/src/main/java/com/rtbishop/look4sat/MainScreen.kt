@@ -76,15 +76,18 @@ import com.rtbishop.look4sat.core.domain.repository.IContainerProvider
 import com.rtbishop.look4sat.core.domain.repository.MutualPassData
 import com.rtbishop.look4sat.core.presentation.DeeplinkResolver
 import com.rtbishop.look4sat.core.presentation.ElevationThresholds
+import com.rtbishop.look4sat.core.presentation.GridFinderDestination as GridFinderRoute
 import com.rtbishop.look4sat.core.presentation.LocalElevationThresholds
 import com.rtbishop.look4sat.core.presentation.LogbookDestination
 import com.rtbishop.look4sat.core.presentation.R
-import com.rtbishop.look4sat.core.presentation.RadarDestination
+import com.rtbishop.look4sat.core.presentation.LoTWUploadDestination as LoTWUploadRoute
+import com.rtbishop.look4sat.core.presentation.RadarDestination as RadarRoute
 import com.rtbishop.look4sat.core.presentation.Screen
 import com.rtbishop.look4sat.core.presentation.hasEnoughHeight
 import com.rtbishop.look4sat.core.presentation.hasEnoughWidth
 import com.rtbishop.look4sat.feature.ft4.Ft4ShellDestination
 import com.rtbishop.look4sat.feature.logbook.LogbookScreenDestination
+import com.rtbishop.look4sat.feature.gridfinder.GridFinderDestination
 import com.rtbishop.look4sat.feature.map.MapDestination
 import com.rtbishop.look4sat.feature.map.MapFilterViewModel
 import com.rtbishop.look4sat.feature.mutual.MutualScreen
@@ -93,6 +96,7 @@ import com.rtbishop.look4sat.feature.passes.PassesDestination
 import com.rtbishop.look4sat.feature.radar.RadarDestination
 import com.rtbishop.look4sat.feature.satellites.SatellitesDestination
 import com.rtbishop.look4sat.feature.settings.SettingsDestination
+import com.rtbishop.look4sat.feature.settings.LoTWUploadDestination
 import com.rtbishop.look4sat.feature.status.SatStatusDestination
 
 @Composable
@@ -104,7 +108,7 @@ fun NavRoot(deeplink: String? = null) {
         deeplink?.let { rootBackStack.add(deeplinkResolver.resolve(it)) }
     }
     val navigateBack: () -> Unit = { rootBackStack.removeLastOrNull() }
-    val navigateToRadar: () -> Unit = { rootBackStack.add(RadarDestination) }
+    val navigateToRadar: () -> Unit = { rootBackStack.add(RadarRoute) }
     val navigateToFt4: () -> Unit = { rootBackStack.add(Screen.Ft4) }
     val navigateToLogbook: () -> Unit = { rootBackStack.add(LogbookDestination) }
     val navigateToMap: () -> Unit = {
@@ -114,6 +118,8 @@ fun NavRoot(deeplink: String? = null) {
     val context = LocalContext.current
     val container = (context.applicationContext as IContainerProvider).getMainContainer()
     val otherSettings by container.settingsRepo.otherSettings.collectAsStateWithLifecycle()
+    val navigateToGridFinder: () -> Unit = { rootBackStack.add(GridFinderRoute) }
+    val navigateToLoTWStation: () -> Unit = { rootBackStack.add(LoTWUploadRoute) }
     // Incoming screen slides in from the right, outgoing drifts left at 1/3 speed (API35+ style)
     val pushTransition = slideInHorizontally(tween(300)) { it } togetherWith
         slideOutHorizontally(tween(300)) { -it / 3 }
@@ -127,33 +133,57 @@ fun NavRoot(deeplink: String? = null) {
         )
     ) {
         NavDisplay(
-        modifier = Modifier.fillMaxSize(),
-        backStack = rootBackStack,
-        onBack = navigateBack,
-        transitionSpec = { pushTransition },
-        popTransitionSpec = { popTransition },
-        predictivePopTransitionSpec = { popTransition },
-        entryDecorators = listOf(
-            rememberSaveableStateHolderNavEntryDecorator(),
-            rememberViewModelStoreNavEntryDecorator()
-        ),
-        entryProvider = entryProvider {
-            entry<Screen.Passes> {
-                MainScreen(
-                    navigateToRadar = navigateToRadar,
-                    navigateToFt4 = navigateToFt4,
-                    openMapRequest = openMapRequest,
-                    onOpenMapRequestHandled = { openMapRequest = 0 }
-                )
-            }
-            entry<RadarDestination> {
-                Surface(
-                    modifier = Modifier.fillMaxSize(),
-                    color = MaterialTheme.colorScheme.background
-                ) {
-                    RadarDestination(navigateUp = navigateBack, navigateToMap = navigateToMap)
+            modifier = Modifier.fillMaxSize(),
+            backStack = rootBackStack,
+            onBack = navigateBack,
+            transitionSpec = { pushTransition },
+            popTransitionSpec = { popTransition },
+            predictivePopTransitionSpec = { popTransition },
+            entryDecorators = listOf(
+                rememberSaveableStateHolderNavEntryDecorator(),
+                rememberViewModelStoreNavEntryDecorator()
+            ),
+            entryProvider = entryProvider {
+                entry<Screen.Passes> {
+                    MainScreen(
+                        navigateToRadar = navigateToRadar,
+                        navigateToFt4 = navigateToFt4,
+                        navigateToGridFinder = navigateToGridFinder,
+                        openMapRequest = openMapRequest,
+                        onOpenMapRequestHandled = { openMapRequest = 0 }
+                    )
                 }
-            }
+                entry<RadarRoute> {
+                    Surface(
+                        modifier = Modifier.fillMaxSize(),
+                        color = MaterialTheme.colorScheme.background
+                    ) {
+                        RadarDestination(
+                            navigateUp = navigateBack,
+                            navigateToMap = navigateToMap,
+                            onOpenLoTWStation = navigateToLoTWStation
+                        )
+                    }
+                }
+                entry<GridFinderRoute> {
+                    Surface(
+                        modifier = Modifier.fillMaxSize(),
+                        color = MaterialTheme.colorScheme.background
+                    ) {
+                        GridFinderDestination(
+                            navigateUp = navigateBack,
+                            onOpenLoTWStation = navigateToLoTWStation
+                        )
+                    }
+                }
+                entry<LoTWUploadRoute> {
+                    Surface(
+                        modifier = Modifier.fillMaxSize(),
+                        color = MaterialTheme.colorScheme.background
+                    ) {
+                        LoTWUploadDestination(navigateUp = navigateBack)
+                    }
+                }
             entry<Screen.Ft4> {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
@@ -179,6 +209,7 @@ fun NavRoot(deeplink: String? = null) {
 fun MainScreen(
     navigateToRadar: () -> Unit = {},
     navigateToFt4: () -> Unit = {},
+    navigateToGridFinder: () -> Unit = {},
     openMapRequest: Int = 0,
     onOpenMapRequestHandled: () -> Unit = {}
 ) {
@@ -196,7 +227,16 @@ fun MainScreen(
         }
     }
     val fadeTransition = fadeIn(animationSpec = tween(350)) togetherWith fadeOut(animationSpec = tween(350))
-    val navItems = listOf(Screen.Satellites, Screen.Passes, Screen.Logbook, Screen.Mutual, Screen.Ft4, Screen.Settings)
+    val navItems = listOf(
+        Screen.Satellites,
+        Screen.Passes,
+        Screen.AMSAT,
+        Screen.Map,
+        Screen.Logbook,
+        Screen.Mutual,
+        Screen.Ft4,
+        Screen.Settings
+    )
 
     val context = LocalContext.current
     val container = (context.applicationContext as IContainerProvider).getMainContainer()
@@ -248,7 +288,7 @@ fun MainScreen(
                     val isSelected = when (currentKey) {
                         is Screen.Satellites -> screen is Screen.Satellites
                         is Screen.Passes -> screen is Screen.Passes
-                        is Screen.Map -> screen is Screen.Passes
+                        is Screen.Map -> screen is Screen.Map
                         is Screen.AMSAT -> screen is Screen.AMSAT
                         is Screen.Mutual -> screen is Screen.Mutual
                         is Screen.Ft4 -> screen is Screen.Ft4
@@ -261,7 +301,7 @@ fun MainScreen(
                         label = { Text(stringResource(screen.titleResId)) },
                         selected = isSelected,
                         onClick = {
-                            if (isSelected && !(currentKey is Screen.Map && screen is Screen.Passes)) return@item
+                            if (isSelected) return@item
                             if (screen is Screen.Ft4) {
                                 navigateToFt4()
                                 return@item
@@ -341,7 +381,7 @@ fun MainScreen(
                             LogbookScreenDestination(navigateUp = navigateBack, navigateToMap = navigateToMap)
                         }
                         entry<Screen.Settings> {
-                            SettingsDestination()
+                            SettingsDestination(onOpenGridFinder = navigateToGridFinder)
                         }
                     }
                 )

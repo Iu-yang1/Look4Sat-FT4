@@ -82,7 +82,6 @@
     <string name="map_visible">Видимый</string>
 
     <!-- Settings screen -->
-    <string name="prefs_donate_title">Поддержать</string>
     <string name="prefs_privacy_title">Политика конфиденциальности</string>
 
     <string name="prefs_updated_title">Обновлено: %s</string>
@@ -112,6 +111,8 @@
     <string name="prefs_data_update_success">Обновление прошло успешно</string>
 
     <string name="prefs_data_sources_title">Свои источники данных</string>
+    <string name="prefs_data_sources_sat_hint">Приоритет сверху: названия спутников</string>
+    <string name="prefs_data_sources_transceivers_hint">Приоритет сверху: данные трансиверов</string>
     <string name="prefs_data_import_satellites_error">No satellites imported. Select a valid TLE/3LE (.txt) or OMM (.csv) file.</string>
     <string name="prefs_data_import_transceivers_error">No transceivers imported. Select a valid SatNOGS (.json) file.</string>
     <string name="prefs_data_sources_url_title" translatable="false">URL</string>

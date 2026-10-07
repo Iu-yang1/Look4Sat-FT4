@@ -1,3 +1,21 @@
+/*
+ * Look4Sat-BA7OPF. Amateur radio satellite tracker and pass predictor.
+ * Copyright (C) 2026 BA7OPF.
+ * Based on Look4Sat by Arty Bishop and contributors.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
 package com.rtbishop.look4sat.core.data.lotw
 
 import com.rtbishop.look4sat.core.domain.logbook.QsoRecord
@@ -19,19 +37,23 @@ internal class LoTWSigner(private val config: LoTWConfig) {
         val call = record.theirCallsign.trim().uppercase(Locale.US)
         if (record.status != QsoStatus.COMPLETE || !call.matches(Regex("[A-Z0-9]+(/[A-Z0-9]+)*")) ||
             !call.any(Char::isLetter) || !call.any(Char::isDigit)) fail(LoTWProblem.INVALID_CONTACT, call)
-        if (!record.myCallsign.trim().equals(key.info.callsign, true)) fail(LoTWProblem.CALLSIGN_MISMATCH, call)
+        // Report the two callsigns the operator has to reconcile (record vs certificate). A generic
+        // sample — the opposite station's call — says nothing about which side is wrong, which is
+        // exactly what a "MY callsign does not match the certificate" message must tell.
+        if (!record.myCallsign.trim().equals(key.info.callsign, true)) {
+            fail(LoTWProblem.CALLSIGN_MISMATCH, "${record.myCallsign.trim()} ≠ ${key.info.callsign}")
+        }
         val date = utc(record.startUtcMillis, "yyyy-MM-dd")
-        if (date < key.info.firstQsoDate || (key.info.lastQsoDate.isNotBlank() && date > key.info.lastQsoDate) || record.startUtcMillis > now) {
+        // A record dated after "now" gets its own message: it happens when the operator
+        // logged against a pass that had not started yet (out-of-window flow), and "fix the
+        // time" is the actionable advice. Reporting it as "outside the certificate" sent one
+        // operator hunting the certificate while the culprit was the record's future time.
+        if (record.startUtcMillis > now) {
+            fail(LoTWProblem.QSO_FUTURE, "$call @ ${utc(record.startUtcMillis, "MM-dd HH:mm'Z'")}")
+        }
+        if (date < key.info.firstQsoDate || (key.info.lastQsoDate.isNotBlank() && date > key.info.lastQsoDate)) {
             fail(LoTWProblem.QSO_DATE, call)
         }
-        val grids = buildList {
-            addAll(station.getValue("GRIDSQUARE").split(',').map(String::trim))
-            station["MY_VUCC_GRIDS"]?.split(',')?.map(String::trim)?.let(::addAll)
-        }.filter(String::isNotBlank)
-        if (record.myGrid.isNotBlank() && grids.none { grid ->
-            val local = record.myGrid.trim().uppercase(Locale.US)
-            grid.startsWith(local) || local.startsWith(grid)
-        }) fail(LoTWProblem.LOCATION_MISMATCH, call)
         fun mhz(hz: Long?): String = hz?.let { BigDecimal.valueOf(it, 6).stripTrailingZeros().toPlainString() }.orEmpty()
         val fields = linkedMapOf(
             "BAND" to config.band(record.band, record.txFrequencyHz, true),
@@ -46,8 +68,12 @@ internal class LoTWSigner(private val config: LoTWConfig) {
             "SAT_NAME" to if (record.isSatellite) config.satellite(record.satelliteName, date) else ""
         ).filterValues { it.isNotBlank() }
         val signData = (config.stationOrder.map { station[it].orEmpty() } + config.contactOrder.map { fields[it].orEmpty() }).joinToString("")
+        // Fingerprint identifies the CONTACT only (call, date/time, band, mode,
+        // satellite, frequency). Station fields (grid, zones, county, IOTA) are
+        // deliberately excluded: changing the station location must not change
+        // the fingerprint, otherwise previously-uploaded contacts would lose
+        // their ledger entry and be re-uploaded (and rejected as duplicates).
         val identity = field("CALL", key.info.callsign) + field("DXCC", key.info.dxcc.toString()) +
-            station.toSortedMap().entries.joinToString("") { field(it.key, it.value) } +
             fields.entries.joinToString("") { field(it.key, it.value) }
         val hash = MessageDigest.getInstance("SHA-256").digest(identity.toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it) }
         return LoTWContact(record, fields, signData, hash)

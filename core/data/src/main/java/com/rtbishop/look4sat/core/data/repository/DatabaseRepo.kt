@@ -46,9 +46,9 @@ class DatabaseRepo(
     override suspend fun updateTLEFromFile(uri: String): Int = withContext(dispatcher) {
         var importedCount = 0
         remoteSource.getFileStream(uri)?.let { stream ->
-            val entries = parseSatelliteStream(uri, unwrapIfZipped(uri, stream))
+            val entries = mergeEntries(listOf(parseSatelliteStream(uri, unwrapIfZipped(uri, stream))))
             if (entries.isNotEmpty()) {
-                localSource.insertEntries(entries)
+                insertFresherEntries(entries)
                 settingsRepo.setSatelliteTypeIds(customSourceType, entries.map { it.catnum })
                 publishDatabaseContentChanged(System.currentTimeMillis())
                 importedCount = entries.size
@@ -97,8 +97,9 @@ class DatabaseRepo(
         settingsRepo.updateDataSourcesStatus(
             (tleResults + radioResults).associate { (url, result) -> url to result.code }
         )
-        // parse fetched data concurrently and associate known built-in URLs with existing type filters.
-        val importedEntries = tleResults.flatMap { (rawUrl, result) ->
+        // parse each source on its own: the type filters need every source's catnums, while the
+        // stored elements are merged across sources below by freshness.
+        val parsedPerSource = tleResults.map { (rawUrl, result) ->
             val normUrl = normalizeUrl(rawUrl)
             val entries = if (result.code in 200..299) {
                 result.stream?.let { parseSatelliteStream(normUrl, unwrapIfZipped(normUrl, it)) }.orEmpty()
@@ -111,7 +112,8 @@ class DatabaseRepo(
                 importedTypeIds.getOrPut(type) { mutableListOf() }.addAll(entries.map { it.catnum })
             }
             entries
-        }.distinctBy { it.catnum }
+        }
+        importedTypeIds.forEach { (type, ids) -> settingsRepo.setSatelliteTypeIds(type, ids.distinct()) }
         val importedRadios = radioResults.flatMap { (rawUrl, result) ->
             val normUrl = normalizeUrl(rawUrl)
             if (result.code in 200..299) {
@@ -121,21 +123,21 @@ class DatabaseRepo(
                 emptyList()
             }
         }.filter { it.uuid.isNotBlank() }.distinctBy { it.uuid }
-        // insert parsed data into the database
-        if (importedEntries.isNotEmpty()) {
-            localSource.insertEntries(importedEntries)
-            importedTypeIds.forEach { (type, ids) -> settingsRepo.setSatelliteTypeIds(type, ids.distinct()) }
-        }
+        // Transceivers are a full snapshot. Keep manually imported entries while replacing
+        // managed entries that disappeared from the enabled feeds.
         if (importedRadios.isNotEmpty()) {
             localSource.deleteManagedRadios()
             localSource.insertRadios(importedRadios)
         }
-        if (importedEntries.isNotEmpty() || importedRadios.isNotEmpty()) {
-            publishDatabaseContentChanged(
-                successfulEphemerisTimestamp = System.currentTimeMillis().takeIf {
-                    importedEntries.isNotEmpty()
-                }
-            )
+        // Elements always come from the freshest source for every satellite; only
+        // elements newer than the stored ones are written back.
+        insertFresherEntries(mergeEntries(parsedPerSource))
+        // Keep the previous ephemeris timestamp when every orbital source failed, so the next
+        // launch retries even if a transceiver source happened to succeed.
+        val hasEphemerisData = parsedPerSource.any { entries -> entries.isNotEmpty() }
+        if (hasEphemerisData) pruneStaleEntries()
+        if (hasEphemerisData || importedRadios.isNotEmpty()) {
+            publishDatabaseContentChanged(System.currentTimeMillis().takeIf { hasEphemerisData })
         }
     }
 
@@ -173,6 +175,62 @@ class DatabaseRepo(
         return line.contains("OBJECT_NAME", ignoreCase = true) ||
             line.contains("NORAD_CAT_ID", ignoreCase = true) ||
             line.count { it == ',' } >= 4
+    }
+
+    /**
+     * Merges the data of every source: orbital elements always come from the set with the newest
+     * epoch, while the name comes from the first source that provides it. Source order is thus a
+     * naming preference only, which also keeps names stable when sources leapfrog each other.
+     */
+    private fun mergeEntries(sourceEntries: List<List<OrbitalData>>): List<OrbitalData> {
+        val preferredNames = mutableMapOf<Int, String>()
+        val freshestEntries = mutableMapOf<Int, OrbitalData>()
+        sourceEntries.forEach { entries ->
+            entries.forEach { entry ->
+                val name = entry.name.trim()
+                if (name.isNotBlank()) preferredNames.getOrPut(entry.catnum) { name }
+                val current = freshestEntries[entry.catnum]
+                if (current == null || entry.epochDaynum > current.epochDaynum) {
+                    freshestEntries[entry.catnum] = entry
+                }
+            }
+        }
+        return freshestEntries.values.map { entry ->
+            val name = preferredNames[entry.catnum]
+            if (name == null || name == entry.name) entry else entry.copy(name = name)
+        }
+    }
+
+    /** Stores the entries that are newer than the ones already saved, renaming the rest in place. */
+    private suspend fun insertFresherEntries(entries: List<OrbitalData>) {
+        val storedEpochs = localSource.getEntriesEpochs()
+        val (fresherEntries, staleEntries) = entries.partition { entry ->
+            val storedEpoch = storedEpochs[entry.catnum]
+            storedEpoch == null || entry.epochDaynum > OrbitalData.epochToDaynum(storedEpoch)
+        }
+        localSource.insertEntries(fresherEntries)
+        // a reordered source list has to rename satellites right away, even the ones holding
+        // elements that are newer than the ones just parsed
+        if (staleEntries.isNotEmpty()) {
+            val storedNames = localSource.getEntriesNames()
+            val renamedEntries = staleEntries.filter { entry -> entry.name != storedNames[entry.catnum] }
+            if (renamedEntries.isNotEmpty()) {
+                localSource.renameEntries(renamedEntries.associate { it.catnum to it.name })
+            }
+        }
+    }
+
+    /**
+     * Drops satellites that no enabled source has refreshed for a month: they either decayed or
+     * disappeared from every catalog. Manually imported data ages out the same way, and every
+     * source republishes active satellites well within that window.
+     */
+    private suspend fun pruneStaleEntries() {
+        val currentDaynum = OrbitalData.timeToDaynum(System.currentTimeMillis())
+        val staleIds = localSource.getEntriesEpochs()
+            .filterValues { epoch -> currentDaynum - OrbitalData.epochToDaynum(epoch) > 30.0 }
+            .keys.toList()
+        if (staleIds.isNotEmpty()) localSource.deleteEntriesWithIds(staleIds)
     }
 
     private suspend fun publishDatabaseContentChanged(successfulEphemerisTimestamp: Long? = null) {

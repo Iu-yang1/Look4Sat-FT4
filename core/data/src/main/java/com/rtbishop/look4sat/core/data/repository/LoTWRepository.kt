@@ -344,7 +344,9 @@ class LoTWRepository : ILoTWRepository {
                 myGrid = myGrids.firstOrNull(),
                 myGrids = myGrids,
                 myCallsign = myCallsign,
-                stationKey = stationKey
+                stationKey = stationKey,
+                // Copy, never the live buffer — resetRecord() clears it.
+                theirGrids = gridsInRecord.distinct().toList()
             )
             for (grid in gridsInRecord) {
                 result.getOrPut(grid) { mutableListOf() }.add(qso)
@@ -381,9 +383,9 @@ class LoTWRepository : ILoTWRepository {
                 line.startsWith("<MODE:") ->
                     mode = adifValue(line)
                 line.startsWith("<BAND_RX:") ->
-                    bandUp = adifValue(line).uppercase()
-                line.startsWith("<BAND:") && !line.startsWith("<BAND_RX:") ->
                     bandDown = adifValue(line).uppercase()
+                line.startsWith("<BAND:") && !line.startsWith("<BAND_RX:") ->
+                    bandUp = adifValue(line).uppercase()
                 line.startsWith("<DXCC:") ->
                     dxcc = adifValue(line).toIntOrNull()
                 line.startsWith("<COUNTRY:") ->

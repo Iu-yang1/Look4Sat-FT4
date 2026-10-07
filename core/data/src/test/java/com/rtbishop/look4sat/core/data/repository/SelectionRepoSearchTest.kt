@@ -24,6 +24,7 @@ import com.rtbishop.look4sat.core.domain.predict.OrbitalObject
 import com.rtbishop.look4sat.core.domain.repository.ISelectionRepo
 import com.rtbishop.look4sat.core.domain.repository.ISettingsRepo
 import com.rtbishop.look4sat.core.domain.source.ILocalSource
+import com.rtbishop.look4sat.core.domain.source.Sources
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -243,6 +244,26 @@ class SelectionRepoSearchTest {
     }
 
     @Test
+    fun `All with empty persisted ids falls back to no filtering`() = runTest {
+        // CelesTrak answers 403 to a repeated download inside its 2-hour update window,
+        // so the persisted "All" id list can be empty. Selecting All then means "all
+        // satellites" (no filtering) instead of blanking the list.
+        val repo = createRepo(sampleItems)
+        repo.setTypes(listOf(Sources.allSourceType))
+        val results = repo.getEntriesFlow().first()
+        assertEquals(sampleItems.map { it.catnum }.toSet(), results.map { it.catnum }.toSet())
+    }
+
+    @Test
+    fun `other source type with empty persisted ids still shows empty`() = runTest {
+        // Only "All" falls back to no filtering; a regular source without persisted ids
+        // keeps the previous behaviour (empty list).
+        val repo = createRepo(sampleItems)
+        repo.setTypes(listOf("Amateur"))
+        assertTrue(repo.getEntriesFlow().first().isEmpty())
+    }
+
+    @Test
     fun `getTypesList excludes only the Other placeholder`() = runTest {
         val repo = createRepo(sampleItems)
         val types = repo.getTypesList()
@@ -283,6 +304,10 @@ private class FakeLocalSourceForSearch(
     override suspend fun getEntriesTotal(): Int = items.size
     override suspend fun getEntriesList(): List<SatItem> = items
     override suspend fun getEntriesWithIds(ids: List<Int>): List<OrbitalObject> = emptyList()
+    override suspend fun getEntriesEpochs(): Map<Int, Double> = emptyMap()
+    override suspend fun getEntriesNames(): Map<Int, String> = emptyMap()
+    override suspend fun renameEntries(names: Map<Int, String>) = Unit
+    override suspend fun deleteEntriesWithIds(ids: List<Int>) = Unit
     override suspend fun insertEntries(entries: List<OrbitalData>) = Unit
     override suspend fun deleteEntries() = Unit
     override suspend fun getIdsWithModes(modes: List<String>): List<Int> = sstvIds
@@ -324,8 +349,10 @@ private class FakeSettingsRepoForSearch : ISettingsRepo {
     override val radioControlSettings: StateFlow<RadioControlSettings> = MutableStateFlow(
         RadioControlSettings(false, RadioControlSettings.MODEL_YAESU_FT817, "", "", "", "", 9600)
     )
-    override val wavelogSettings: StateFlow<com.rtbishop.look4sat.core.domain.model.WavelogSettings> =
-        MutableStateFlow(com.rtbishop.look4sat.core.domain.model.WavelogSettings())
+
+    override val wavelogUploadSettings: StateFlow<com.rtbishop.look4sat.core.domain.model.WavelogUploadSettings> =
+        MutableStateFlow(com.rtbishop.look4sat.core.domain.model.WavelogUploadSettings())
+    override fun updateWavelogUploadSettings(settings: com.rtbishop.look4sat.core.domain.model.WavelogUploadSettings) = Unit
     override val lotwSettings: StateFlow<com.rtbishop.look4sat.core.domain.model.LoTWSettings> =
         MutableStateFlow(com.rtbishop.look4sat.core.domain.model.LoTWSettings())
 
@@ -335,6 +362,7 @@ private class FakeSettingsRepoForSearch : ISettingsRepo {
     override fun setStationPosition(latitude: Double, longitude: Double, altitude: Double): Boolean = true
     override fun setStationPosition(): Boolean = true
     override fun setStationPosition(locator: String): Boolean = true
+    override fun getCurrentGrid(): String? = null
     override fun getSatelliteTypesIds(types: List<String>): List<Int> =
         types.flatMap { typeIds[it].orEmpty() }.distinct()
 
@@ -357,7 +385,7 @@ private class FakeSettingsRepoForSearch : ISettingsRepo {
     override fun setSatelliteOffset(catnum: Int, offset: String) = Unit
     override fun getAmSatCallsign(): String = ""
     override fun setAmSatCallsign(callsign: String) = Unit
-    override fun updateWavelogSettings(settings: com.rtbishop.look4sat.core.domain.model.WavelogSettings) = Unit
+
     override fun getWorkedGrids(): Set<String> = emptySet()
     override fun setWorkedGrids(grids: Set<String>) = Unit
     override fun getWorkedGridQsos(): Map<String, List<com.rtbishop.look4sat.core.domain.model.GridQso>> = emptyMap()
@@ -371,4 +399,12 @@ private class FakeSettingsRepoForSearch : ISettingsRepo {
     override fun setLastLotwSyncDate(date: String) = Unit
     override fun getLastLotwSyncCallsign(): String = ""
     override fun setLastLotwSyncCallsign(callsign: String) = Unit
+    override fun getWavelogStations(): List<com.rtbishop.look4sat.core.domain.repository.WavelogStationInfo> = emptyList()
+    override fun setWavelogStations(stations: List<com.rtbishop.look4sat.core.domain.repository.WavelogStationInfo>) = Unit
+    override fun getWavelogSyncCursors(): Map<String, Long> = emptyMap()
+    override fun setWavelogSyncCursors(cursors: Map<String, Long>) = Unit
+    override fun getWavelogSyncUrl(): String = ""
+    override fun setWavelogSyncUrl(url: String) = Unit
+    override fun getLastWavelogSyncEpochMs(): Long = 0L
+    override fun setLastWavelogSyncEpochMs(value: Long) = Unit
 }

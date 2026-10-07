@@ -32,7 +32,7 @@ import com.rtbishop.look4sat.core.domain.model.PassesSettings
 import com.rtbishop.look4sat.core.domain.model.RCSettings
 import com.rtbishop.look4sat.core.domain.model.RadioControlSettings
 import com.rtbishop.look4sat.core.domain.model.supportedRadioBaudRates
-import com.rtbishop.look4sat.core.domain.model.WavelogSettings
+import com.rtbishop.look4sat.core.domain.model.WavelogUploadSettings
 import com.rtbishop.look4sat.core.domain.predict.GeoPos
 import com.rtbishop.look4sat.core.domain.repository.ISettingsRepo
 import com.rtbishop.look4sat.core.domain.rotator.RotatorAzimuthRange
@@ -187,26 +187,8 @@ class SettingsRepo(
     }
     //endregion
 
-    //region # Wavelog worked-grids settings
-    private val keyWavelogUrl = "wavelogUrl"
-    private val keyWavelogToken = "wavelogToken"
+    //region # Worked-grid data (written by the LoTW / Wavelog syncs)
     private val keyWorkedGrids = "workedGrids"
-
-    private val _wavelogSettings = MutableStateFlow(getWavelogSettings())
-    override val wavelogSettings: StateFlow<WavelogSettings> = _wavelogSettings
-
-    override fun updateWavelogSettings(settings: WavelogSettings) {
-        preferences.edit {
-            putString(keyWavelogUrl, settings.url.trim())
-            putString(keyWavelogToken, settings.token.trim())
-        }
-        _wavelogSettings.value = settings.copy(url = settings.url.trim(), token = settings.token.trim())
-    }
-
-    private fun getWavelogSettings(): WavelogSettings = WavelogSettings(
-        url = preferences.getString(keyWavelogUrl, null).orEmpty(),
-        token = preferences.getString(keyWavelogToken, null).orEmpty()
-    )
 
     override fun getWorkedGrids(): Set<String> {
         val json = preferences.getString(keyWorkedGrids, null).orEmpty()
@@ -427,6 +409,112 @@ class SettingsRepo(
         preferences.edit { putString(keyLastLotwSyncCallsign, callsign.trim().uppercase()) }
     //endregion
 
+    //region # Wavelog upload settings
+    private val keyWavelogUploadUrl = "wavelogUploadUrl"
+    private val keyWavelogUploadApiKey = "wavelogUploadApiKey"
+    private val keyWavelogUploadStationId = "wavelogUploadStationId"
+    private val keyWavelogUploadStationName = "wavelogUploadStationName"
+    private val keyWavelogUploadStationCallsign = "wavelogUploadStationCallsign"
+    private val keyWavelogUploadStationGrid = "wavelogUploadStationGrid"
+
+    private val _wavelogUploadSettings = MutableStateFlow(getWavelogUploadSettings())
+    override val wavelogUploadSettings: StateFlow<WavelogUploadSettings> = _wavelogUploadSettings
+
+    override fun updateWavelogUploadSettings(settings: WavelogUploadSettings) {
+        val trimmed = settings.copy(url = settings.url.trim(), apiKey = settings.apiKey.trim())
+        preferences.edit {
+            putString(keyWavelogUploadUrl, trimmed.url)
+            putString(keyWavelogUploadApiKey, trimmed.apiKey)
+            putString(keyWavelogUploadStationId, trimmed.stationId)
+            putString(keyWavelogUploadStationName, trimmed.stationName)
+            putString(keyWavelogUploadStationCallsign, trimmed.stationCallsign)
+            putString(keyWavelogUploadStationGrid, trimmed.stationGrid)
+        }
+        _wavelogUploadSettings.value = trimmed
+    }
+
+    private fun getWavelogUploadSettings(): WavelogUploadSettings = WavelogUploadSettings(
+        url = preferences.getString(keyWavelogUploadUrl, null).orEmpty(),
+        apiKey = preferences.getString(keyWavelogUploadApiKey, null).orEmpty(),
+        stationId = preferences.getString(keyWavelogUploadStationId, null).orEmpty(),
+        stationName = preferences.getString(keyWavelogUploadStationName, null).orEmpty(),
+        stationCallsign = preferences.getString(keyWavelogUploadStationCallsign, null).orEmpty(),
+        stationGrid = preferences.getString(keyWavelogUploadStationGrid, null).orEmpty()
+    )
+    //endregion
+
+    //region # Wavelog sync bookkeeping
+    private val keyWavelogStations = "wavelogStations"
+    private val keyWavelogSyncCursors = "wavelogSyncCursors"
+    private val keyWavelogSyncUrl = "wavelogSyncUrl"
+    private val keyLastWavelogSyncEpochMs = "wavelogLastSyncEpochMs"
+
+    override fun getWavelogStations(): List<com.rtbishop.look4sat.core.domain.repository.WavelogStationInfo> {
+        val json = preferences.getString(keyWavelogStations, null).orEmpty()
+        if (json.isBlank()) return emptyList()
+        return try {
+            val array = org.json.JSONArray(json)
+            (0 until array.length()).mapNotNull { i ->
+                val o = array.optJSONObject(i) ?: return@mapNotNull null
+                val id = o.optString("id").ifBlank { return@mapNotNull null }
+                com.rtbishop.look4sat.core.domain.repository.WavelogStationInfo(
+                    id = id,
+                    name = o.optString("name"),
+                    callsign = o.optString("call"),
+                    grid = o.optString("grid"),
+                    active = o.optBoolean("active", true)
+                )
+            }
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
+    override fun setWavelogStations(stations: List<com.rtbishop.look4sat.core.domain.repository.WavelogStationInfo>) {
+        val array = org.json.JSONArray()
+        stations.forEach { station ->
+            array.put(
+                org.json.JSONObject()
+                    .put("id", station.id)
+                    .put("name", station.name)
+                    .put("call", station.callsign)
+                    .put("grid", station.grid)
+                    .put("active", station.active)
+            )
+        }
+        preferences.edit { putString(keyWavelogStations, array.toString()) }
+    }
+
+    override fun getWavelogSyncCursors(): Map<String, Long> {
+        val json = preferences.getString(keyWavelogSyncCursors, null).orEmpty()
+        if (json.isBlank()) return emptyMap()
+        return try {
+            val root = org.json.JSONObject(json)
+            root.keys().asSequence().associateWith { key -> root.optLong(key, 0L) }
+        } catch (_: Exception) {
+            emptyMap()
+        }
+    }
+
+    override fun setWavelogSyncCursors(cursors: Map<String, Long>) {
+        val root = org.json.JSONObject()
+        cursors.forEach { (stationId, cursor) -> root.put(stationId, cursor) }
+        preferences.edit { putString(keyWavelogSyncCursors, root.toString()) }
+    }
+
+    override fun getWavelogSyncUrl(): String =
+        preferences.getString(keyWavelogSyncUrl, null).orEmpty()
+
+    override fun setWavelogSyncUrl(url: String) =
+        preferences.edit { putString(keyWavelogSyncUrl, url) }
+
+    override fun getLastWavelogSyncEpochMs(): Long =
+        preferences.getLong(keyLastWavelogSyncEpochMs, 0L)
+
+    override fun setLastWavelogSyncEpochMs(value: Long) =
+        preferences.edit { putLong(keyLastWavelogSyncEpochMs, value) }
+    //endregion
+
     //region # Transceivers settings
     private val _passesSettings = MutableStateFlow(getPassesSettings())
     override val passesSettings: StateFlow<PassesSettings> = _passesSettings
@@ -507,6 +595,34 @@ class SettingsRepo(
         val position = qthToPosition(locator) ?: return false
         setStationPosition(position.latitude, position.longitude, 0.0, locator)
         return true
+    }
+
+    override fun getCurrentGrid(): String? {
+        val station = _stationPosition.value
+        val now = System.currentTimeMillis()
+        // Only trust a location fix that is both recent (≤ 24 h) and newer than the stored
+        // station, so a stale fix can never override a position the operator just set.
+        val fix = lastKnownGridFix()?.takeIf { now - it.second <= 24 * 3_600_000L }
+        val chosen = if (fix != null && fix.second >= station.timestamp) fix.first else station.qthLocator
+        return chosen.takeIf(String::isNotBlank)
+    }
+
+    /** Last known GPS/NETWORK fix converted to a locator; read-only, null without permission. */
+    private fun lastKnownGridFix(): Pair<String, Long>? {
+        return try {
+            val provider = when {
+                LocationManagerCompat.hasProvider(locationManager, providerGps) -> providerGps
+                LocationManagerCompat.hasProvider(locationManager, providerNet) -> providerNet
+                else -> return null
+            }
+            val location = locationManager.getLastKnownLocation(provider) ?: return null
+            val locator = positionToQth(location.latitude, location.longitude) ?: return null
+            locator to location.time
+        } catch (_: SecurityException) {
+            null
+        } catch (_: IllegalArgumentException) {
+            null
+        }
     }
 
     private fun getStationPosition(): GeoPos {

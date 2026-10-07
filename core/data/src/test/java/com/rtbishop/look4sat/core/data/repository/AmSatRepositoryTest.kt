@@ -1,5 +1,24 @@
+/*
+ * Look4Sat-BA7OPF. Amateur radio satellite tracker and pass predictor.
+ * Copyright (C) 2026 BA7OPF.
+ * Based on Look4Sat by Arty Bishop and contributors.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
 package com.rtbishop.look4sat.core.data.repository
 
+import com.rtbishop.look4sat.core.domain.model.SatSlot
 import com.rtbishop.look4sat.core.domain.model.SatStatus
 import com.rtbishop.look4sat.core.domain.model.SatStatusPage
 import com.rtbishop.look4sat.core.domain.source.IRemoteSource
@@ -125,6 +144,123 @@ class AmSatRepositoryTest {
         val page = repository.fetchStatus()
         assertEquals(4, page?.statuses?.single()?.days?.get(0)?.streakCount)
     }
+
+    @Test
+    fun buildStatusesStrictMajorityTakesItsColorAndCount() = runTest {
+        val nowSec = System.currentTimeMillis() / 1000
+
+        val heardMost = firstSlotStatus(
+            report("h1", "AO-7", "Heard", nowSec - 3600),
+            report("h2", "AO-7", "Heard", nowSec - 4500),
+            report("t1", "AO-7", "Telemetry Only", nowSec - 5400)
+        )
+        assertEquals(0xFF648FFFL, heardMost?.statusColor) // blue
+        assertEquals(2, heardMost?.count) // majority count, not the block total
+
+        val telemetryMost = firstSlotStatus(
+            report("t1", "AO-7", "Telemetry Only", nowSec - 3600),
+            report("t2", "AO-7", "Telemetry Only", nowSec - 4500),
+            report("h1", "AO-7", "Heard", nowSec - 5400)
+        )
+        assertEquals(0xFFFFB000L, telemetryMost?.statusColor) // amber
+        assertEquals(2, telemetryMost?.count)
+
+        val notHeardMost = firstSlotStatus(
+            report("n1", "AO-7", "Not Heard", nowSec - 3600),
+            report("n2", "AO-7", "Not Heard", nowSec - 4500),
+            report("n3", "AO-7", "Not Heard", nowSec - 5400),
+            report("t1", "AO-7", "Telemetry Only", nowSec - 6000)
+        )
+        assertEquals(0xFFDC267FL, notHeardMost?.statusColor) // pink
+        assertEquals(3, notHeardMost?.count)
+
+        val single = firstSlotStatus(report("h1", "AO-7", "Heard", nowSec - 3600))
+        assertEquals(0xFF648FFFL, single?.statusColor)
+        assertEquals(1, single?.count)
+    }
+
+    @Test
+    fun buildStatusesShowsConflictWhenNoStrictMajority() = runTest {
+        val nowSec = System.currentTimeMillis() / 1000
+
+        val oneToOne = firstSlotStatus(
+            report("h1", "AO-7", "Heard", nowSec - 3600),
+            report("n1", "AO-7", "Not Heard", nowSec - 4500)
+        )
+        assertEquals(0xFFFE6100L, oneToOne?.statusColor) // conflicting
+        assertEquals(2, oneToOne?.count)
+
+        val twoToTwo = firstSlotStatus(
+            report("h1", "AO-7", "Heard", nowSec - 3600),
+            report("h2", "AO-7", "Heard", nowSec - 4500),
+            report("t1", "AO-7", "Telemetry Only", nowSec - 5400),
+            report("t2", "AO-7", "Telemetry Only", nowSec - 6000)
+        )
+        assertEquals(0xFFFE6100L, twoToTwo?.statusColor)
+
+        val threeWay = firstSlotStatus(
+            report("h1", "AO-7", "Heard", nowSec - 3600),
+            report("n1", "AO-7", "Not Heard", nowSec - 4500),
+            report("t1", "AO-7", "Telemetry Only", nowSec - 5400)
+        )
+        assertEquals(0xFFFE6100L, threeWay?.statusColor)
+    }
+
+    @Test
+    fun buildStatusesCrewActiveWinsWithCrewPlusHeardCount() = runTest {
+        val nowSec = System.currentTimeMillis() / 1000
+
+        val crewWithHeard = firstSlotStatus(
+            report("c1", "AO-7", "Crew Active", nowSec - 3600),
+            report("h1", "AO-7", "Heard", nowSec - 4500),
+            report("h2", "AO-7", "Heard", nowSec - 5400),
+            report("h3", "AO-7", "Heard", nowSec - 6000)
+        )
+        assertEquals(0xFF785EF0L, crewWithHeard?.statusColor) // purple
+        assertEquals(4, crewWithHeard?.count) // crew + heard
+
+        val crewAlone = firstSlotStatus(
+            report("c1", "AO-7", "Crew Active", nowSec - 3600),
+            report("n1", "AO-7", "Not Heard", nowSec - 4500),
+            report("n2", "AO-7", "Not Heard", nowSec - 5400)
+        )
+        assertEquals(0xFF785EF0L, crewAlone?.statusColor)
+        assertEquals(1, crewAlone?.count) // crew + heard (0)
+    }
+
+    @Test
+    fun buildStatusesMarksOnlyNoStrictMajoritySlotsAsConflicted() = runTest {
+        val nowSec = System.currentTimeMillis() / 1000
+
+        val majority = firstSlotStatus(
+            report("h1", "AO-7", "Heard", nowSec - 3600),
+            report("h2", "AO-7", "Heard", nowSec - 4500),
+            report("t1", "AO-7", "Telemetry Only", nowSec - 5400)
+        )
+        assertEquals(false, majority?.isConflicted)
+
+        val tie = firstSlotStatus(
+            report("h1", "AO-7", "Heard", nowSec - 3600),
+            report("t1", "AO-7", "Telemetry Only", nowSec - 4500)
+        )
+        assertEquals(true, tie?.isConflicted)
+
+        val crew = firstSlotStatus(
+            report("c1", "AO-7", "Crew Active", nowSec - 3600),
+            report("n1", "AO-7", "Not Heard", nowSec - 4500)
+        )
+        assertEquals(false, crew?.isConflicted)
+
+        val empty = firstSlotStatus()
+        assertEquals(false, empty?.isConflicted)
+    }
+}
+
+private suspend fun firstSlotStatus(vararg reports: String): SatSlot? {
+    val page = AmSatRepository(
+        FakeAmSatRemoteSource(reportsJson = amSatReportsJson(*reports))
+    ).fetchStatus()
+    return page?.statuses?.single()?.days?.get(0)?.slots?.get(0)
 }
 
 private fun AmSatRepository.seedStatusCache(page: SatStatusPage) {

@@ -123,6 +123,10 @@ private class TestLocalSource(
     override suspend fun getEntriesTotal() = 0
     override suspend fun getEntriesList() = emptyList<SatItem>()
     override suspend fun getEntriesWithIds(ids: List<Int>) = emptyList<OrbitalObject>()
+    override suspend fun getEntriesEpochs() = emptyMap<Int, Double>()
+    override suspend fun getEntriesNames() = emptyMap<Int, String>()
+    override suspend fun renameEntries(names: Map<Int, String>) = Unit
+    override suspend fun deleteEntriesWithIds(ids: List<Int>) = Unit
     override suspend fun insertEntries(entries: List<OrbitalData>) = Unit
     override suspend fun deleteEntries() = Unit
     override suspend fun getIdsWithModes(modes: List<String>) = this.modes(modes)

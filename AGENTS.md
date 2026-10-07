@@ -112,6 +112,17 @@ transition to OMM/CSV automatically.
 - `build-logic/convention/` contains all shared Gradle configuration — edit there, not in individual modules.
 - ProGuard is enabled for release builds — don't add reflection-based libs or any other dependencies without asking.
 
+## Release Notes Must Be Bilingual (BA7OPF fork convention)
+
+Every GitHub release body carries **two sections — English first, then Chinese** (`## <tag>` each),
+listing only that release's changes, in the same order with the same claims and the same numbers.
+Both sections end with the verification line (which unit tests ran, APK signature / ABI check).
+A single-language body is a defect: fix it before the release counts as done.
+
+中文规则：每次 release 的说明必须**中英双语，先英文后中文**，两段一一对应（同一顺序、同一结论、
+同一数字，不做自由意译），只列本版改动；两段末尾都写验证情况（跑了哪些单测、签名/ABI 校验）。
+只写一种语言视为缺陷，需补齐后再算发布完成。
+
 ## Copilot Working Mode: Code-Only
 
 - Default to code changes only. Provide explanations in chat only.

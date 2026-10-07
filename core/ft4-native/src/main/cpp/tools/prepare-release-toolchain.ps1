@@ -27,6 +27,18 @@ function Get-RequiredCommand([string]$Name) {
     return $command.Source
 }
 
+function Find-LlvmHostTools([string]$Root) {
+    if (-not (Test-Path -LiteralPath $Root)) { return $null }
+    $clangCandidates = Get-ChildItem -LiteralPath $Root -Filter 'clang-cl.exe' -File -Recurse -ErrorAction SilentlyContinue
+    foreach ($clang in $clangCandidates) {
+        $linker = Join-Path $clang.DirectoryName 'lld-link.exe'
+        if (Test-Path -LiteralPath $linker) {
+            return [pscustomobject]@{ Clang = $clang.FullName; Linker = $linker }
+        }
+    }
+    return $null
+}
+
 function Get-PinnedArchive(
     [string]$Url,
     [string]$Destination,
@@ -82,17 +94,19 @@ if (-not (Test-Path -LiteralPath (Join-Path $llvmSourceRoot 'llvm\CMakeLists.txt
     throw "LLVM source archive has an unexpected layout: $llvmArchive"
 }
 
-$clangCl = Join-Path $llvmHostRoot 'bin\clang-cl.exe'
-$lldLink = Join-Path $llvmHostRoot 'bin\lld-link.exe'
-if (-not (Test-Path -LiteralPath $clangCl) -or -not (Test-Path -LiteralPath $lldLink)) {
+$llvmHostTools = Find-LlvmHostTools $llvmHostRoot
+if ($null -eq $llvmHostTools) {
     $llvmHostInstaller = Join-Path $downloadRoot $llvmHostInstallerName
     Get-PinnedArchive $llvmHostInstallerUrl $llvmHostInstaller $llvmHostInstallerSha256
     & $llvmHostInstaller /S "/D=$llvmHostRoot"
     if ($LASTEXITCODE -ne 0) { throw 'Unable to install the pinned LLVM host compiler' }
+    $llvmHostTools = Find-LlvmHostTools $llvmHostRoot
 }
-if (-not (Test-Path -LiteralPath $clangCl) -or -not (Test-Path -LiteralPath $lldLink)) {
-    throw "Pinned LLVM host compiler has an unexpected layout: $llvmHostRoot"
+if ($null -eq $llvmHostTools) {
+    throw "Pinned LLVM host compiler is missing clang-cl.exe or lld-link.exe under: $llvmHostRoot"
 }
+$clangCl = $llvmHostTools.Clang
+$lldLink = $llvmHostTools.Linker
 
 $boostArchive = Join-Path $downloadRoot $boostArchiveName
 Get-PinnedArchive $boostArchiveUrl $boostArchive $boostArchiveSha256

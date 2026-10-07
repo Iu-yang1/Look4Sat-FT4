@@ -453,6 +453,7 @@ private fun problemText(problem: LoTWProblem): Int = when (problem) {
     LoTWProblem.EMPTY_SELECTION -> R.string.lotw_nothing_to_upload
     LoTWProblem.CALLSIGN_MISMATCH -> R.string.lotw_callsign_mismatch
     LoTWProblem.QSO_DATE -> R.string.lotw_qso_date_error
+    LoTWProblem.QSO_FUTURE -> R.string.lotw_qso_date_error
     LoTWProblem.STATION_GRID -> R.string.lotw_grid_error
     LoTWProblem.STATION_REGION -> R.string.lotw_region_error
     LoTWProblem.STATION_ZONE -> R.string.lotw_zone_error

@@ -20,7 +20,7 @@ import com.rtbishop.look4sat.core.data.database.entity.QsoEntity
  * upload receipts). Kept apart from [Look4SatDb] so existing installations
  * never need a migration of the satellite database.
  */
-@Database(entities = [QsoEntity::class], version = 5, exportSchema = false)
+@Database(entities = [QsoEntity::class], version = 6, exportSchema = false)
 abstract class QsoDatabase : RoomDatabase() {
     abstract fun qsoDao(): QsoDao
 }
@@ -65,5 +65,40 @@ val QSO_MIGRATION_2_3 = object : Migration(2, 3) {
 val QSO_MIGRATION_4_5 = object : Migration(4, 5) {
     override fun migrate(db: SupportSQLiteDatabase) {
         db.execSQL("ALTER TABLE qso_records ADD COLUMN lotwUploaded INTEGER NOT NULL DEFAULT 0")
+    }
+}
+
+/**
+ * v5 had two independently released schemas: the FT4 fork stored raw/session data,
+ * while upstream stored Wavelog state and the opposite station's VUCC grids.
+ * Converge either schema without overwriting columns or records already present.
+ */
+val QSO_MIGRATION_5_6 = object : Migration(5, 6) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.addColumnIfMissing("ft4AudioFrequencyHz", "INTEGER")
+        db.addColumnIfMissing("rawMessages", "TEXT NOT NULL DEFAULT ''")
+        db.addColumnIfMissing("sessionId", "TEXT NOT NULL DEFAULT ''")
+        db.addColumnIfMissing("messageEvents", "TEXT NOT NULL DEFAULT '[]'")
+        db.addColumnIfMissing("theirVuccGrids", "TEXT NOT NULL DEFAULT ''")
+        db.addColumnIfMissing("wavelogUploaded", "INTEGER NOT NULL DEFAULT 0")
+        db.addColumnIfMissing("wavelogStation", "TEXT NOT NULL DEFAULT ''")
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_qso_records_dedupeKey ON qso_records(dedupeKey)")
+    }
+}
+
+private fun SupportSQLiteDatabase.addColumnIfMissing(name: String, definition: String) {
+    val exists = query("PRAGMA table_info(qso_records)").use { cursor ->
+        val nameIndex = cursor.getColumnIndex("name")
+        var found = false
+        while (cursor.moveToNext()) {
+            if (cursor.getString(nameIndex) == name) {
+                found = true
+                break
+            }
+        }
+        found
+    }
+    if (!exists) {
+        execSQL("ALTER TABLE qso_records ADD COLUMN $name $definition")
     }
 }

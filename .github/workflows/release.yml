@@ -46,7 +46,7 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ${{ runner.temp }}\look4sat-toolchain
-          key: ft4-toolchain-windows-x64-v1-${{ hashFiles('core/ft4-native/src/main/cpp/tools/prepare-release-toolchain.ps1', 'core/ft4-native/src/main/cpp/tools/apply-flang-arm32-patch.ps1', 'core/ft4-native/src/main/cpp/tools/patches/flang-22.1-arm32-codegen.patch') }}
+          key: ft4-toolchain-windows-x64-v2-${{ hashFiles('core/ft4-native/src/main/cpp/tools/prepare-release-toolchain.ps1', 'core/ft4-native/src/main/cpp/tools/toolchain-common.ps1', 'core/ft4-native/src/main/cpp/tools/apply-flang-arm32-patch.ps1', 'core/ft4-native/src/main/cpp/tools/patches/flang-22.1-arm32-codegen.patch') }}
 
       - name: Prepare pinned FT4 toolchain
         shell: pwsh
@@ -139,7 +139,7 @@ jobs:
           } finally {
             $archive.Dispose()
           }
-          $expectedAbis = @('arm64-v8a', 'armeabi-v7a', 'x86_64')
+          $expectedAbis = @('arm64-v8a', 'armeabi-v7a')
           foreach ($abi in $expectedAbis) {
             if ("lib/$abi/liblook4sat_ft4.so" -notin $entries) {
               throw "Release APK is missing the official FT4 core for ABI $abi"

@@ -27,7 +27,8 @@ import com.rtbishop.look4sat.core.domain.model.OtherSettings
 import com.rtbishop.look4sat.core.domain.model.PassesSettings
 import com.rtbishop.look4sat.core.domain.model.RCSettings
 import com.rtbishop.look4sat.core.domain.model.RadioControlSettings
-import com.rtbishop.look4sat.core.domain.model.WavelogSettings
+
+import com.rtbishop.look4sat.core.domain.model.WavelogUploadSettings
 import com.rtbishop.look4sat.core.domain.predict.GeoPos
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -251,7 +252,8 @@ class LoTWGridSyncTest {
         override val radioControlSettings: StateFlow<RadioControlSettings> = MutableStateFlow(
             RadioControlSettings(false, RadioControlSettings.MODEL_YAESU_FT817, "", "", "", "", 9600)
         )
-        override val wavelogSettings: StateFlow<WavelogSettings> = MutableStateFlow(WavelogSettings())
+
+        override val wavelogUploadSettings: StateFlow<WavelogUploadSettings> = MutableStateFlow(WavelogUploadSettings())
         override val lotwSettings: StateFlow<LoTWSettings> = MutableStateFlow(LoTWSettings())
 
         private var workedGrids: Set<String> = emptySet()
@@ -274,12 +276,26 @@ class LoTWGridSyncTest {
         override fun getLastLotwSyncCallsign(): String = lastSyncCallsign
         override fun setLastLotwSyncCallsign(callsign: String) { lastSyncCallsign = callsign }
 
+        private var wavelogStations: List<com.rtbishop.look4sat.core.domain.repository.WavelogStationInfo> = emptyList()
+        private var wavelogSyncCursors: Map<String, Long> = emptyMap()
+        private var wavelogSyncUrl: String = ""
+        private var lastWavelogSyncEpochMs: Long = 0L
+        override fun getWavelogStations(): List<com.rtbishop.look4sat.core.domain.repository.WavelogStationInfo> = wavelogStations
+        override fun setWavelogStations(stations: List<com.rtbishop.look4sat.core.domain.repository.WavelogStationInfo>) { wavelogStations = stations }
+        override fun getWavelogSyncCursors(): Map<String, Long> = wavelogSyncCursors
+        override fun setWavelogSyncCursors(cursors: Map<String, Long>) { wavelogSyncCursors = cursors }
+        override fun getWavelogSyncUrl(): String = wavelogSyncUrl
+        override fun setWavelogSyncUrl(url: String) { wavelogSyncUrl = url }
+        override fun getLastWavelogSyncEpochMs(): Long = lastWavelogSyncEpochMs
+        override fun setLastWavelogSyncEpochMs(value: Long) { lastWavelogSyncEpochMs = value }
+
         override fun setSelectedIds(ids: List<Int>) = TODO()
         override fun setSelectedTypes(types: List<String>) = TODO()
         override fun setPassesSettings(settings: PassesSettings) = TODO()
         override fun setStationPosition(latitude: Double, longitude: Double, altitude: Double): Boolean = TODO()
         override fun setStationPosition(): Boolean = TODO()
         override fun setStationPosition(locator: String): Boolean = TODO()
+        override fun getCurrentGrid(): String? = TODO()
         override fun getSatelliteTypesIds(types: List<String>): List<Int> = TODO()
         override fun setSatelliteTypeIds(type: String, ids: List<Int>) = TODO()
         override fun updateDatabaseState(state: DatabaseState) = TODO()
@@ -298,7 +314,8 @@ class LoTWGridSyncTest {
         override fun setSatelliteOffset(catnum: Int, offset: String) = TODO()
         override fun getAmSatCallsign(): String = ""
         override fun setAmSatCallsign(callsign: String) = TODO()
-        override fun updateWavelogSettings(settings: WavelogSettings) = TODO()
+
+        override fun updateWavelogUploadSettings(settings: WavelogUploadSettings) = TODO()
         override fun updateLoTWSettings(settings: LoTWSettings) = TODO()
     }
 }

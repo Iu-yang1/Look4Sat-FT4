@@ -1,3 +1,21 @@
+/*
+ * Look4Sat-BA7OPF. Amateur radio satellite tracker and pass predictor.
+ * Copyright (C) 2026 BA7OPF.
+ * Based on Look4Sat by Arty Bishop and contributors.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
 package com.rtbishop.look4sat.core.data.repository
 
 import com.rtbishop.look4sat.core.domain.model.AmSatReportSubmission
@@ -33,6 +51,10 @@ private data class ApiReport(
     val gridSquare: String,
     val reportedTimeUtcSec: Long
 )
+
+/** One slot's verdict: ARGB colour, the count the page prints, and whether the slot
+ *  has no strict majority (= the page's "Conflicting reports" state). */
+private data class SlotStatus(val color: Long, val count: Int, val conflicted: Boolean)
 
 /** AMSAT status repository using RemoteSource (Clean Architecture: data layer handles HTTP). */
 class AmSatRepository(
@@ -196,7 +218,8 @@ class AmSatRepository(
         }
     }
 
-    /** Build one SatStatus (3 days x 12 slots) per catalog satellite, slotting reports by age. */
+    /** Build one SatStatus (3 days x 12 slots) per catalog satellite, slotting reports by age.
+     *  Each slot's colour/count follows the AMSAT status page rule — see [slotStatusOf]. */
     private fun buildStatuses(names: List<String>, reports: List<ApiReport>, nowSec: Long): List<SatStatus> {
         val byName = reports.groupBy { it.name }
         val utc = Calendar.getInstance(TimeZone.getTimeZone("UTC"))
@@ -212,11 +235,12 @@ class AmSatRepository(
                 if (inSlot.isEmpty()) {
                     SatSlot(statusColor = NO_REPORT_GRAY, count = 0)
                 } else {
-                    val newest = inSlot.maxByOrNull { it.reportedTimeUtcSec }!!
+                    val status = slotStatusOf(inSlot)
                     SatSlot(
-                        statusColor = statusColorOf(newest.report),
-                        count = inSlot.size,
-                        reportIds = inSlot.map { it.id }
+                        statusColor = status.color,
+                        count = status.count,
+                        reportIds = inSlot.map { it.id },
+                        isConflicted = status.conflicted
                     )
                 }
             }
@@ -269,12 +293,28 @@ class AmSatRepository(
         )
     }
 
-    /** Map status text to color value (for UI rendering). */
-    private fun statusColorOf(report: String): Long = when (report.lowercase()) {
-        "heard", "crew active" -> ACTIVE_BLUE
-        "telemetry only" -> TLM_ORANGE
-        "not heard" -> NOT_HEARD_PINK
-        else -> CONFLICT_DEEP_ORANGE
+    /**
+     * The AMSAT status page's per-block rule, mirrored from the official page source
+     * (gitlab.amsat.org/open-source/satellite-status, index.php):
+     *  - any Crew Active report wins: purple, count = crew + heard;
+     *  - otherwise one status must be a STRICT majority to take its colour, and the
+     *    count shown is the majority group's count (not the block total);
+     *  - any tie of the remaining statuses is the "Conflicting reports" state;
+     *  - a block whose reports all carry an unknown status stays blank.
+     */
+    private fun slotStatusOf(inSlot: List<ApiReport>): SlotStatus {
+        val heard = inSlot.count { it.report.equals("Heard", ignoreCase = true) }
+        val notHeard = inSlot.count { it.report.equals("Not Heard", ignoreCase = true) }
+        val telemetry = inSlot.count { it.report.equals("Telemetry Only", ignoreCase = true) }
+        val crew = inSlot.count { it.report.equals("Crew Active", ignoreCase = true) }
+        return when {
+            crew > 0 -> SlotStatus(CREW_PURPLE, crew + heard, conflicted = false)
+            heard > notHeard && heard > telemetry -> SlotStatus(ACTIVE_BLUE, heard, conflicted = false)
+            notHeard > heard && notHeard > telemetry -> SlotStatus(NOT_HEARD_PINK, notHeard, conflicted = false)
+            telemetry > notHeard && telemetry > heard -> SlotStatus(TLM_ORANGE, telemetry, conflicted = false)
+            telemetry + notHeard + heard >= 1 -> SlotStatus(CONFLICT_DEEP_ORANGE, inSlot.size, conflicted = true)
+            else -> SlotStatus(NO_REPORT_GRAY, inSlot.size, conflicted = false)
+        }
     }
 
     companion object {
@@ -283,6 +323,7 @@ class AmSatRepository(
         private const val TLM_ORANGE = 0xFFFFB000
         private const val NOT_HEARD_PINK = 0xFFDC267F
         private const val CONFLICT_DEEP_ORANGE = 0xFFFE6100
+        private const val CREW_PURPLE = 0xFF785EF0
         private const val NO_REPORT_GRAY = 0xFFC0C0C0
     }
 }

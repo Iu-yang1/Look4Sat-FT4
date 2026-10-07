@@ -20,7 +20,7 @@ import com.rtbishop.look4sat.core.domain.model.PassesSettings
 import com.rtbishop.look4sat.core.domain.model.RCSettings
 import com.rtbishop.look4sat.core.domain.model.RadioControlSettings
 import com.rtbishop.look4sat.core.domain.model.SatRadio
-import com.rtbishop.look4sat.core.domain.model.WavelogSettings
+import com.rtbishop.look4sat.core.domain.model.WavelogUploadSettings
 import com.rtbishop.look4sat.core.domain.predict.GeoPos
 import com.rtbishop.look4sat.core.domain.control.ControlDiagnosticsBuffer
 import com.rtbishop.look4sat.core.domain.control.IControlDiagnostics
@@ -1099,6 +1099,7 @@ private class FakeSettingsRepo(
     override fun setStationPosition(latitude: Double, longitude: Double, altitude: Double) = true
     override fun setStationPosition() = true
     override fun setStationPosition(locator: String) = true
+    override fun getCurrentGrid(): String? = stationPosition.value.qthLocator
     override fun getSatelliteTypesIds(types: List<String>) = emptyList<Int>()
     override fun setSatelliteTypeIds(type: String, ids: List<Int>) = Unit
     override fun updateDatabaseState(state: DatabaseState) { databaseState.value = state }
@@ -1128,8 +1129,16 @@ private class FakeSettingsRepo(
     override fun setSatelliteMode(catnum: Int, mode: String) = Unit
     override fun getAmSatCallsign() = ""
     override fun setAmSatCallsign(callsign: String) = Unit
-    override val wavelogSettings = MutableStateFlow(WavelogSettings())
-    override fun updateWavelogSettings(settings: WavelogSettings) = Unit
+    override val wavelogUploadSettings = MutableStateFlow(WavelogUploadSettings())
+    override fun updateWavelogUploadSettings(settings: WavelogUploadSettings) = Unit
+    override fun getWavelogStations(): List<com.rtbishop.look4sat.core.domain.repository.WavelogStationInfo> = emptyList()
+    override fun setWavelogStations(stations: List<com.rtbishop.look4sat.core.domain.repository.WavelogStationInfo>) = Unit
+    override fun getWavelogSyncCursors(): Map<String, Long> = emptyMap()
+    override fun setWavelogSyncCursors(cursors: Map<String, Long>) = Unit
+    override fun getWavelogSyncUrl(): String = ""
+    override fun setWavelogSyncUrl(url: String) = Unit
+    override fun getLastWavelogSyncEpochMs(): Long = 0L
+    override fun setLastWavelogSyncEpochMs(value: Long) = Unit
     override fun getWorkedGrids() = emptySet<String>()
     override fun setWorkedGrids(grids: Set<String>) = Unit
     override fun getWorkedGridQsos() = emptyMap<String, List<GridQso>>()

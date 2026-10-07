@@ -152,4 +152,49 @@ class AwardCalculatorTest {
         assertEquals(40, progress.first { it.type == AwardType.WAZ }.target)
         assertEquals(50, progress.first { it.type == AwardType.WAS }.target)
     }
+
+    @Test
+    fun `award key matches the region codes for every award type`() {
+        val cn = qso("BG7XYZ", dxcc = 318, cqz = 24, state = "GD")
+        assertEquals("318", AwardCalculator.awardKey(AwardType.DXCC, cn))
+        assertEquals("GD", AwardCalculator.awardKey(AwardType.WAPC, cn))
+        assertEquals("24", AwardCalculator.awardKey(AwardType.WAZ, cn))
+        // DXCC code falls back to a prefix guess when LoTW omitted the field
+        assertEquals("152", AwardCalculator.awardKey(AwardType.DXCC, qso("XX9A")))
+        assertEquals(null, AwardCalculator.awardKey(AwardType.DXCC, qso("ZS1ABC")))
+        // WAPC special entities
+        assertEquals("HK", AwardCalculator.awardKey(AwardType.WAPC, qso("VR2X", dxcc = 321)))
+        assertEquals("MO", AwardCalculator.awardKey(AwardType.WAPC, qso("XX9A", dxcc = 152)))
+        assertEquals("TW", AwardCalculator.awardKey(AwardType.WAPC, qso("BV2A", dxcc = 386)))
+        // WAJA: only Japanese prefecture numbers count
+        assertEquals("34", AwardCalculator.awardKey(AwardType.WAJA, qso("JH0ABC", dxcc = 339, state = "34")))
+        assertEquals(null, AwardCalculator.awardKey(AwardType.WAJA, qso("BG7XYZ", dxcc = 318, state = "34")))
+        assertEquals(null, AwardCalculator.awardKey(AwardType.WAJA, qso("JH0ABC", dxcc = 339, state = "GD")))
+        // WAS: only US states count
+        assertEquals("CA", AwardCalculator.awardKey(AwardType.WAS, qso("W1AW", dxcc = 291, state = "CA")))
+        assertEquals(null, AwardCalculator.awardKey(AwardType.WAS, qso("BG7XYZ", dxcc = 318, state = "CA")))
+        // out-of-range CQ zone and VUCC have no key
+        assertEquals(null, AwardCalculator.awardKey(AwardType.WAZ, qso("BG7XYZ", cqz = 41)))
+        assertEquals(null, AwardCalculator.awardKey(AwardType.VUCC, cn))
+    }
+
+    @Test
+    fun `region qsos dedupe multi-grid copies and sort oldest first`() {
+        val older = GridQso(
+            call = "BA7AAA", epochMs = 100L, satName = "SO-50", mode = "FM",
+            bandUp = "2M", bandDown = "70CM", dxcc = 318
+        )
+        val newer = GridQso(
+            call = "BA7BBB", epochMs = 200L, satName = "SO-50", mode = "FM",
+            bandUp = "2M", bandDown = "70CM", dxcc = 318
+        )
+        val store = mapOf(
+            "OL62" to listOf(newer, older),
+            "PM95" to listOf(older), // same QSO recorded under a second worked grid
+            "OL62,PM01" to listOf(qso("W1AW", dxcc = 291))
+        )
+        val result = AwardCalculator.regionQsos(store, AwardType.DXCC, "318")
+        assertEquals(listOf(older, newer), result)
+        assertEquals(emptyList<GridQso>(), AwardCalculator.regionQsos(store, AwardType.DXCC, "292"))
+    }
 }

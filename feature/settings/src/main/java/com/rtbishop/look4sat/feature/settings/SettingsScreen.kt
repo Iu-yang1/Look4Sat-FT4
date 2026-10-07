@@ -38,6 +38,8 @@ import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.FilterChip
+
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -55,6 +57,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.painterResource
@@ -73,11 +76,12 @@ import com.rtbishop.look4sat.core.domain.model.DataSourcesSettings
 import com.rtbishop.look4sat.core.domain.time.ClockSource
 import com.rtbishop.look4sat.core.domain.model.OtherSettings
 import com.rtbishop.look4sat.core.domain.model.RadioControlSettings
-import com.rtbishop.look4sat.core.domain.model.WavelogSettings
+
 import com.rtbishop.look4sat.core.domain.predict.GeoPos
 import com.rtbishop.look4sat.core.domain.repository.IContainerProvider
 import com.rtbishop.look4sat.core.domain.repository.CompassAccuracy
 import com.rtbishop.look4sat.core.domain.repository.LoTWSyncMode
+import com.rtbishop.look4sat.core.domain.repository.WavelogSyncMode
 import com.rtbishop.look4sat.core.presentation.CardButton
 import com.rtbishop.look4sat.core.presentation.IconCard
 import com.rtbishop.look4sat.core.presentation.MainTheme
@@ -93,19 +97,42 @@ import java.util.Date
 import java.util.Locale
 
 @Composable
-fun SettingsDestination() {
+fun SettingsDestination(onOpenGridFinder: () -> Unit = {}) {
     val context = LocalContext.current
     val container = (context.applicationContext as IContainerProvider).getMainContainer()
     val viewModel: SettingsViewModel = viewModel(factory = SettingsViewModel.factory(container, context))
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-    SettingsScreen(uiState, viewModel::onAction)
+    // Station-grid prefill for the "fix it" jump from the logbook grid check (single-use,
+    // mirrors the Grid Finder's "Set as LoTW station" hand-off).
+    val pendingStationGrid by container.pendingLoTWStationGrid.collectAsStateWithLifecycle()
+    SettingsScreen(
+        uiState = uiState,
+        onAction = viewModel::onAction,
+        onOpenGridFinder = onOpenGridFinder,
+        pendingStationGrid = pendingStationGrid.orEmpty(),
+        onFixStationGrid = { grids ->
+            if (grids.isNotEmpty()) container.setPendingLoTWStationGrid(grids.joinToString(","))
+        },
+        onClearStationGridPrefill = { container.setPendingLoTWStationGrid(null) }
+    )
 }
 
 @Composable
-private fun SettingsScreen(uiState: SettingsState, onAction: (SettingsAction) -> Unit) {
+private fun SettingsScreen(
+    uiState: SettingsState,
+    onAction: (SettingsAction) -> Unit,
+    onOpenGridFinder: () -> Unit,
+    pendingStationGrid: String = "",
+    onFixStationGrid: (List<String>) -> Unit = {},
+    onClearStationGridPrefill: () -> Unit = {}
+) {
     val context = LocalContext.current
     var showUpdateChecker by rememberSaveable { mutableStateOf(false) }
     var showMapSettings by rememberSaveable { mutableStateOf(false) }
+    var showProjectWiki by rememberSaveable { mutableStateOf(false) }
+    if (showProjectWiki) {
+        ProjectWikiDialog(onDismiss = { showProjectWiki = false })
+    }
     if (showUpdateChecker) {
         UpdateCheckerScreen(
             currentVersion = uiState.appVersionName,
@@ -289,12 +316,107 @@ private fun SettingsScreen(uiState: SettingsState, onAction: (SettingsAction) ->
             onSyncIncremental = { onAction(SettingsAction.SyncLoTWGrids(it, LoTWSyncMode.Incremental)) }
         )
     }
+
+    if (dialogs.logbook) {
+        val stationFilter = uiState.logbookStationFilter
+        LogbookDialog(
+            records = uiState.logbookRecords.filter { stationFilter == null || it.wavelogStation == stationFilter },
+            satelliteCandidates = uiState.satelliteCatalog,
+            uploadBusy = uiState.logbookUploadBusy,
+            uploadMessage = uiState.logbookUploadMessage,
+            preview = uiState.logbookPreview,
+            positionWarning = uiState.logbookPositionWarning,
+            onDismiss = {
+                // Leaving the logbook resets the resubmit selection: re-entering starts
+                // clean — the operator long-presses again to pick records.
+                onAction(SettingsAction.ExitLogbookSelection)
+                dialogs.logbook = false
+            },
+            onDelete = { onAction(SettingsAction.DeleteLogbookRecord(it)) },
+            onEdit = { onAction(SettingsAction.UpdateLogbookRecord(it)) },
+            onUpload = { onAction(SettingsAction.PrepareLogbookUpload) },
+            onConfirmUpload = { onAction(SettingsAction.ConfirmLogbookUpload) },
+            onDismissPreview = { onAction(SettingsAction.DismissLogbookPreview) },
+            onDismissMessage = { onAction(SettingsAction.ClearLogbookMessage) },
+            onRewriteCallsign = { onAction(SettingsAction.RewriteLogbookCallsigns) },
+            onSwitchCertificate = {
+                // The other callsign's certificate lives in the LoTW upload settings: leave the
+                // logbook and open that dialog.
+                onAction(SettingsAction.DismissLogbookPreview)
+                onAction(SettingsAction.ExitLogbookSelection)
+                dialogs.logbook = false
+                dialogs.lotwUpload = true
+            },
+            onIgnorePositionWarning = { onAction(SettingsAction.IgnoreLogbookPositionWarning) },
+            onFixGrid = { grids ->
+                onAction(SettingsAction.AbandonLogbookForGridFix)
+                onAction(SettingsAction.ExitLogbookSelection)
+                dialogs.logbook = false
+                onFixStationGrid(grids)
+                dialogs.lotwUpload = true
+            },
+            selectionMode = uiState.logbookSelectionMode,
+            selectedIds = uiState.logbookSelectedIds,
+            onStartSelection = { onAction(SettingsAction.StartLogbookSelection(it)) },
+            onToggleSelection = { onAction(SettingsAction.ToggleLogbookSelection(it)) },
+            onExitSelection = { onAction(SettingsAction.ExitLogbookSelection) },
+            onResubmitSelected = { onAction(SettingsAction.ResubmitSelectedLogbook) },
+            wavelogPreview = uiState.logbookWavelogPreview,
+            wavelogMode = uiState.wavelogUploadSettings.isReady,
+            stationOptions = if (uiState.wavelogUploadSettings.isReady) uiState.wavelogUploadStations else emptyList(),
+            stationFilter = uiState.logbookStationFilter,
+            onStationFilterChange = { onAction(SettingsAction.SetLogbookStationFilter(it)) }
+        )
+    }
+    if (dialogs.lotwUpload) {
+        LoTWUploadConfigDialog(
+            certificate = uiState.lotwCertificate,
+            station = uiState.lotwStation,
+            stationMeta = uiState.lotwStationMeta,
+            busy = uiState.lotwUploadBusy,
+            error = uiState.lotwUploadError,
+            errorDetail = uiState.lotwUploadErrorDetail,
+            initialGrid = pendingStationGrid,
+            onDismiss = {
+                dialogs.lotwUpload = false
+                onClearStationGridPrefill()
+            },
+            onImport = { bytes, password -> onAction(SettingsAction.ImportLoTWCertificate(bytes, password)) },
+            onPreview = { bytes, password -> onAction(SettingsAction.PreviewLoTWCertificate(bytes, password)) },
+            onRemove = { onAction(SettingsAction.RemoveLoTWCertificate) },
+            onSaveStation = { onAction(SettingsAction.SaveLoTWStation(it)) }
+        )
+    }
+
+    if (dialogs.wavelogUpload) {
+        WavelogUploadDialog(
+            initialSettings = uiState.wavelogUploadSettings,
+            stations = uiState.wavelogUploadStations,
+            rights = uiState.wavelogUploadRights,
+            probeBusy = uiState.wavelogUploadProbeBusy,
+            isSyncing = uiState.wavelogSyncing,
+            lastSyncEpochMs = uiState.wavelogLastSyncEpochMs,
+            message = uiState.wavelogUploadMessage,
+            dismiss = { dialogs.wavelogUpload = false },
+            onSave = { onAction(SettingsAction.UpdateWavelogUpload(it)) },
+            onFetchStations = { url, apiKey -> onAction(SettingsAction.FetchWavelogUploadStations(url, apiKey)) },
+            onSelectStation = { onAction(SettingsAction.SelectWavelogUploadStation(it)) },
+            onSyncIncremental = { onAction(SettingsAction.SyncWavelog(WavelogSyncMode.Incremental)) },
+            onSyncFull = { onAction(SettingsAction.SyncWavelog(WavelogSyncMode.Full)) },
+            onClear = { onAction(SettingsAction.ClearWavelogConfig) }
+        )
+    }
+    if (uiState.wavelogSwitchWarning) {
+        WavelogSwitchWarningDialog(
+            onConfirm = { onAction(SettingsAction.ConfirmWavelogSwitch) },
+            onCancel = { onAction(SettingsAction.CancelWavelogSwitch) }
+        )
+    }
+
     // URLs for top bar
     val uriHandler = LocalUriHandler.current
-    val appUrl = stringResource(R.string.prefs_app_url)
-    val donateUrl = stringResource(R.string.prefs_donate_url)
-    val fdroidTitle = stringResource(R.string.prefs_fdroid_title)
-    val fdroidUrl = stringResource(R.string.prefs_fdroid_url)
+    val upstreamTitle = stringResource(R.string.prefs_upstream_title)
+    val upstreamUrl = stringResource(R.string.prefs_upstream_url)
     val gitHubTitle = stringResource(R.string.prefs_github_title)
     val gitHubUrl = stringResource(R.string.prefs_github_url)
     val licenseUrl = stringResource(R.string.prefs_license_url)
@@ -308,18 +430,17 @@ private fun SettingsScreen(uiState: SettingsState, onAction: (SettingsAction) ->
             if (isVerticalLayout) {
                 TopBar {
                     TopCard(
-                        onClick = { safeOpenUri(appUrl) },
+                        onClick = { showUpdateChecker = true },
                         version = uiState.appVersionName,
                         modifier = Modifier.weight(1f)
                     )
-                    PrimaryIconCard(onClick = { safeOpenUri(donateUrl) }, resId = R.drawable.ic_pound)
                 }
                 TopBar {
                     Row(modifier = Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         BotCard(
-                            onClick = { safeOpenUri(fdroidUrl) },
-                            resId = R.drawable.ic_fdroid,
-                            text = fdroidTitle,
+                            onClick = { safeOpenUri(upstreamUrl) },
+                            resId = R.drawable.ic_github,
+                            text = upstreamTitle,
                             modifier = Modifier.weight(1f)
                         )
                         BotCard(
@@ -334,17 +455,16 @@ private fun SettingsScreen(uiState: SettingsState, onAction: (SettingsAction) ->
                 }
             } else {
                 TopBar {
-                    PrimaryIconCard(onClick = { safeOpenUri(donateUrl) }, resId = R.drawable.ic_pound)
                     TopCard(
-                        onClick = { safeOpenUri(appUrl) },
+                        onClick = { showUpdateChecker = true },
                         version = uiState.appVersionName,
                         modifier = Modifier.weight(1f)
                     )
                     Row(modifier = Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         BotCard(
-                            onClick = { safeOpenUri(fdroidUrl) },
-                            resId = R.drawable.ic_fdroid,
-                            text = fdroidTitle,
+                            onClick = { safeOpenUri(upstreamUrl) },
+                            resId = R.drawable.ic_github,
+                            text = upstreamTitle,
                             modifier = Modifier.weight(1f)
                         )
                         BotCard(
@@ -361,6 +481,7 @@ private fun SettingsScreen(uiState: SettingsState, onAction: (SettingsAction) ->
         }
     ) { _ ->
         val isVerticalLayout = isVerticalLayout()
+        val wavelogMode = uiState.wavelogUploadSettings.isReady
         LazyVerticalGrid(
             columns = GridCells.Fixed(if (isVerticalLayout) 1 else 2),
             horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -374,6 +495,7 @@ private fun SettingsScreen(uiState: SettingsState, onAction: (SettingsAction) ->
                     showPosDialog = { dialogs.position = true },
                     showLocDialog = { dialogs.locator = true },
                     dismissPosMessage = { onAction(SettingsAction.DismissPosMessages) },
+                    openGridFinder = onOpenGridFinder,
                     onAction = onAction
                 )
             }
@@ -404,22 +526,47 @@ private fun SettingsScreen(uiState: SettingsState, onAction: (SettingsAction) ->
                     onAction = onAction
                 )
             }
+
+            item {
+                LogbookCard(
+                    recordCount = uiState.logbookRecords.size,
+                    showLogbookDialog = { dialogs.logbook = true }
+                )
+            }
+            item {
+                LoTWUploadCard(
+                    hasCertificate = uiState.lotwCertificate != null,
+                    stationGrid = uiState.lotwStation?.grid.orEmpty(),
+                    enabled = !wavelogMode,
+                    showUploadConfigDialog = { onAction(SettingsAction.LoadLoTWUploadStatus); dialogs.lotwUpload = true }
+                )
+            }
             item {
                 LoTWCard(
                     settings = uiState.lotwSettings,
                     workedGridsCount = uiState.workedGridsCount,
                     lastSyncEpochMs = uiState.lotwLastSyncEpochMs,
+                    enabled = !wavelogMode,
                     showLoTWDialog = { dialogs.lotw = true }
+                )
+            }
+            item {
+                WavelogUploadCard(
+                    settings = uiState.wavelogUploadSettings,
+                    lastSyncEpochMs = uiState.wavelogLastSyncEpochMs,
+                    showDialog = { dialogs.wavelogUpload = true }
                 )
             }
             item {
                 OtherCard(
                     settings = uiState.otherSettings,
                     onCompassCalibration = { dialogs.compassCalibration = true },
+                    loTWEnabled = !wavelogMode,
                     onAction = onAction
                 )
             }
             item { MapSettingsCard(onClick = { showMapSettings = true }) }
+            item { ProjectWikiCard(onClick = { showProjectWiki = true }) }
             item { CardCredits() }
             item(span = { GridItemSpan(maxLineSpan) }) {
                 CardButton(
@@ -570,7 +717,7 @@ private fun Ft4SettingsCard(
 private fun LocationCardPreview() = MainTheme {
     val stationPos = GeoPos(0.0, 0.0, 0.0, "IO91vl", 0L)
     val settings = PositionSettings(true, stationPos, 0)
-    LocationCard(settings = settings, setGpsPos = {}, showPosDialog = {}, {}, {}) {}
+    LocationCard(settings = settings, setGpsPos = {}, showPosDialog = {}, {}, {}, {}) {}
 }
 
 @Composable
@@ -580,6 +727,7 @@ private fun LocationCard(
     showPosDialog: () -> Unit,
     showLocDialog: () -> Unit,
     dismissPosMessage: () -> Unit,
+    openGridFinder: () -> Unit,
     onAction: (SettingsAction) -> Unit
 ) {
     ElevatedCard(modifier = Modifier.fillMaxWidth()) {
@@ -622,6 +770,12 @@ private fun LocationCard(
                     modifier = Modifier.weight(1f)
                 )
             }
+            Spacer(modifier = Modifier.height(4.dp))
+            CardButton(
+                onClick = openGridFinder,
+                text = stringResource(id = R.string.gridfinder_title),
+                modifier = Modifier.fillMaxWidth()
+            )
         }
     }
     if (settings.messageResId != 0) {
@@ -794,12 +948,13 @@ private fun MapSettingsCard(onClick: () -> Unit) {
 private fun OtherCard(
     settings: OtherSettings,
     onCompassCalibration: () -> Unit,
+    loTWEnabled: Boolean = true,
     onAction: (SettingsAction) -> Unit
 ) {
     ElevatedCard(
         modifier = Modifier
             .fillMaxWidth()
-            .height(370.dp)
+            .height(420.dp) // 370dp + one switch row (light theme)
     ) {
         Column(modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) {
             Text(
@@ -812,7 +967,11 @@ private fun OtherCard(
             SwitchRow(R.string.prefs_other_switch_update, settings.stateOfAutoUpdate) {
                 onAction(SettingsAction.ToggleUpdate(it))
             }
-            SwitchRow(R.string.prefs_other_switch_lotw_sync, settings.stateOfAutoLotwSync) {
+            SwitchRow(
+                R.string.prefs_other_switch_lotw_sync,
+                settings.stateOfAutoLotwSync,
+                enabled = loTWEnabled
+            ) {
                 onAction(SettingsAction.ToggleAutoLotwSync(it))
             }
             SwitchRow(R.string.prefs_other_switch_sweep, settings.stateOfSweep) {
@@ -826,7 +985,16 @@ private fun OtherCard(
                 text = stringResource(R.string.prefs_compass_calibration_button),
                 modifier = Modifier.fillMaxWidth()
             )
-            SwitchRow(R.string.prefs_other_switch_night_mode, settings.stateOfNightMode) {
+            // Appearance: light theme + the red night filter (mutually exclusive —
+            // the night filter is disabled while the light theme is on).
+            SwitchRow(R.string.prefs_other_switch_light_theme, settings.stateOfLightTheme) {
+                onAction(SettingsAction.ToggleLightTheme(it))
+            }
+            SwitchRow(
+                R.string.prefs_other_switch_night_mode,
+                settings.stateOfNightMode,
+                enabled = !settings.stateOfLightTheme
+            ) {
                 onAction(SettingsAction.ToggleNightMode(it))
             }
         }
@@ -940,10 +1108,15 @@ private fun LoTWCard(
     settings: com.rtbishop.look4sat.core.domain.model.LoTWSettings,
     workedGridsCount: Int,
     lastSyncEpochMs: Long,
+    enabled: Boolean = true,
     showLoTWDialog: () -> Unit
 ) {
     ElevatedCard(modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) {
+        Column(
+            modifier = Modifier
+                .padding(horizontal = 8.dp, vertical = 4.dp)
+                .alpha(if (enabled) 1f else 0.5f)
+        ) {
             Text(
                 text = stringResource(id = R.string.prefs_lotw_title),
                 color = MaterialTheme.colorScheme.primary
@@ -966,9 +1139,69 @@ private fun LoTWCard(
                     style = MaterialTheme.typography.bodySmall
                 )
             }
+            if (!enabled) {
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = stringResource(R.string.prefs_lotw_disabled_wavelog),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2
+                )
+            }
             Spacer(modifier = Modifier.height(4.dp))
             CardButton(
                 onClick = showLoTWDialog,
+                text = stringResource(id = R.string.prefs_wavelog_configure),
+                enabled = enabled,
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+    }
+}
+
+@Composable
+private fun WavelogUploadCard(
+    settings: com.rtbishop.look4sat.core.domain.model.WavelogUploadSettings,
+    lastSyncEpochMs: Long,
+    showDialog: () -> Unit
+) {
+    ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) {
+            Text(
+                text = stringResource(id = R.string.prefs_wavelog_upload_title),
+                color = MaterialTheme.colorScheme.primary
+            )
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = stringResource(R.string.prefs_wavelog_exclusive),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 2
+            )
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = if (settings.isReady) {
+                    stringResource(
+                        R.string.prefs_wavelog_upload_configured,
+                        listOf(settings.stationName, settings.stationCallsign, settings.stationGrid)
+                            .filter { it.isNotBlank() }.joinToString(" · ")
+                    )
+                } else {
+                    stringResource(R.string.prefs_wavelog_upload_not_configured)
+                },
+                style = MaterialTheme.typography.bodySmall,
+                maxLines = 2
+            )
+            if (lastSyncEpochMs != 0L) {
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = formatUpdateTime(updateTime = lastSyncEpochMs),
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+            Spacer(modifier = Modifier.height(4.dp))
+            CardButton(
+                onClick = showDialog,
                 text = stringResource(id = R.string.prefs_wavelog_configure),
                 modifier = Modifier.fillMaxWidth()
             )
@@ -1001,33 +1234,55 @@ private fun UpdateIndicator(isUpdating: Boolean, modifier: Modifier = Modifier) 
     )
 }
 
+@Composable
+private fun ProjectWikiCard(onClick: () -> Unit, modifier: Modifier = Modifier) {
+    ElevatedCard(modifier = modifier.fillMaxWidth()) {
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(48.dp)
+                .clickable { onClick() }) {
+            Spacer(Modifier)
+            Icon(painter = painterResource(id = R.drawable.ic_policy), contentDescription = null)
+            Text(
+                text = stringResource(R.string.prefs_project_wiki),
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Medium
+            )
+        }
+    }
+}
+
 @Preview(showBackground = true)
 @Composable
 private fun CardCreditsPreview() = MainTheme { CardCredits() }
 
 @Composable
 private fun CardCredits(modifier: Modifier = Modifier) {
-    ElevatedCard(
-        modifier = modifier
-            .fillMaxWidth()
-            .height(268.dp)
-    ) {
+    ElevatedCard(modifier = modifier.fillMaxWidth()) {
         Column(
-            verticalArrangement = Arrangement.SpaceBetween,
-            modifier = Modifier
-                .padding(horizontal = 8.dp, vertical = 4.dp)
-                .fillMaxHeight()
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp)
         ) {
             Text(
                 text = stringResource(id = R.string.prefs_outro_title),
                 color = MaterialTheme.colorScheme.primary
             )
             Text(
-                text = stringResource(id = R.string.prefs_outro_thanks)
+                text = stringResource(id = R.string.prefs_outro_notice),
+                fontSize = 12.sp
+            )
+            HorizontalDivider()
+            Text(
+                text = stringResource(id = R.string.prefs_outro_thanks),
+                fontSize = 12.sp
             )
             Text(
                 text = stringResource(id = R.string.prefs_outro_license),
-                color = MaterialTheme.colorScheme.primary
+                color = MaterialTheme.colorScheme.primary,
+                fontSize = 12.sp
             )
         }
     }
@@ -1099,6 +1354,9 @@ private class DialogVisibility {
     var wavelog by mutableStateOf(false)
     var lotw by mutableStateOf(false)
     var rotatorControl by mutableStateOf(false)
+    var logbook by mutableStateOf(false)
+    var lotwUpload by mutableStateOf(false)
+    var wavelogUpload by mutableStateOf(false)
 }
 
 @Composable
@@ -1109,7 +1367,7 @@ private fun rememberDialogVisibility(): DialogVisibility {
                 listOf(
                     it.position, it.locator, it.dataSources, it.network, it.bluetooth,
                     it.radioControl, it.wavelog, it.lotw, it.compassCalibration,
-                    it.rotatorControl
+                    it.rotatorControl, it.logbook, it.lotwUpload, it.wavelogUpload
                 )
             },
             restore = {
@@ -1119,6 +1377,9 @@ private fun rememberDialogVisibility(): DialogVisibility {
                     lotw = it.getOrElse(7) { false }
                     compassCalibration = it.getOrElse(8) { false }
                     rotatorControl = it.getOrElse(9) { false }
+                    logbook = it.getOrElse(10) { false }
+                    lotwUpload = it.getOrElse(11) { false }
+                    wavelogUpload = it.getOrElse(12) { false }
                 }
             }
         )

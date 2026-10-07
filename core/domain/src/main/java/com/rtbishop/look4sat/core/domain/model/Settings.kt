@@ -111,11 +111,17 @@ data class DataSourcesSettings(
     fun isTransceiverEnabled(index: Int): Boolean = transceiversEnabled.getOrElse(index) { true }
 }
 
-data class WavelogSettings(
+/** Wavelog configuration — QSO upload both ways; one of LoTW or Wavelog (mutually exclusive). */
+data class WavelogUploadSettings(
     val url: String = "",
-    val token: String = ""
+    val apiKey: String = "",
+    val stationId: String = "",
+    val stationName: String = "",
+    val stationCallsign: String = "",
+    val stationGrid: String = ""
 ) {
-    val isConfigured: Boolean get() = url.isNotBlank() && token.isNotBlank()
+    val isConfigured: Boolean get() = url.isNotBlank() && apiKey.isNotBlank()
+    val isReady: Boolean get() = isConfigured && stationId.isNotBlank()
 }
 
 data class LoTWSettings(

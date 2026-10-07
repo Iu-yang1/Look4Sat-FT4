@@ -65,14 +65,13 @@ class LoTWSignerTest {
         fun hash(qso: QsoRecord) = signer.contact(qso, key, station, TEST_NOW).fingerprint
         assertEquals(hash(record), hash(record.copy(comment = "portable", rawMessages = listOf("FT4 detail"))))
         assertNotEquals(hash(record), hash(record.copy(txFrequencyHz = 145_901_000)))
-        assertNotEquals(hash(record), signer.contact(record, key, station + ("CQZ" to "23"), TEST_NOW).fingerprint)
+        assertEquals(hash(record), signer.contact(record, key, station + ("CQZ" to "23"), TEST_NOW).fingerprint)
     }
     @Test fun validatesCallsignDateGridBandModeAndSatelliteBeforeSigning() {
         val record = qsoFixture()
         listOf(
             LoTWProblem.CALLSIGN_MISMATCH to record.copy(myCallsign = "N0OTHER"),
-            LoTWProblem.QSO_DATE to record.copy(startUtcMillis = TEST_NOW + 60_000),
-            LoTWProblem.LOCATION_MISMATCH to record.copy(myGrid = "FN31AA"),
+            LoTWProblem.QSO_FUTURE to record.copy(startUtcMillis = TEST_NOW + 60_000),
             LoTWProblem.BAND to record.copy(band = "70CM"),
             LoTWProblem.MODE to record.copy(mode = "UNKNOWN", submode = ""),
             LoTWProblem.SATELLITE to record.copy(satelliteName = "NOT-A-SATELLITE"),

@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources xmlns:tools="http://schemas.android.com/tools" tools:ignore="MissingTranslation">
     <!-- Commmon -->
-    <string name="app_name" translatable="false">Look4Sat</string>
+    <string name="app_name" translatable="false">Look4Sat-BA7OPF</string>
     <string name="btn_accept">Accept</string>
     <string name="btn_cancel">Cancel</string>
     <string name="empty_list_message">No data to show</string>
@@ -52,7 +52,7 @@
         Make sure to set your position via GPS, Lat/Lon or QTH in Settings.
         \n\nPlease update the database at least weekly to get accurate predictions.</string>
     <string name="pass_whatsnew_title" translatable="false">What\'s new in Look4Sat</string>
-    <string name="pass_whatsnew_message">All changes since 4.4.6 (the 4.4.7 series):\n\n• Grid-mode map: LoTW confirmed grids in green, roamed grids with blue stripes, current grid highlighted; mode switch pill at the map\'s top-right.\n\n• First-call labels (VUCC view): show the first callsign worked in each green grid instead of the grid code; non-worked cells stay empty.\n\n• Worked grids filtered by operated grid (with an All option); tap a grid to see its QSO detail dialog; per-grid QSO counts.\n\n• Per-operated-grid VUCC counting; polar grid labels; antimeridian fixes; consistent roamed-stripe density.\n\n• WAPC/WAJA map labels follow the system language.\n\n• Grid-mode viewport and award filter survive page switches.\n\n• LoTW sync: direct login, full/incremental modes, live progress, cancel button, auto-sync on app start with its own toggle, last-sync time shown.\n\n• Pass history: filter can look back over past passes (Time before).\n\n• Compass calibration: figure-eight accuracy meter plus manual heading offset.\n\n• AMSAT status page: consecutive same-status report counts.\n\n• Passes/radar: UTC toggle recalculates passes; sunrise/sunset and elevation color fixes; satellite fuzzy search; mutual page keeps scroll, follows UTC, radar shortcut.\n\n• CW decoder for 32/64-bit devices; Android 17 (API 37) support.</string>
+    <string name="pass_whatsnew_message" translatable="false">Recent updates include improved pass calculations, normalized AOS and LOS times, CAT radio control for full-duplex satellite operation, mutual pass matching, and fixes for UTC pass times.</string>
 
     <!-- AMSAT Status screen -->
     <string name="nav_amsat">AMSAT</string>
@@ -91,6 +91,8 @@
 
     <!-- Radar screen -->
     <string name="radar_back">Back</string>
+    <string name="radar_use_large">Use large radar</string>
+    <string name="radar_use_small">Use small radar</string>
     <string name="radar_notify">Notify</string>
     <string name="radar_az_text">Azimuth</string>
     <string name="radar_az_value" translatable="false">%.1f°</string>
@@ -149,6 +151,8 @@
     <string name="map_visibility">Visibility: %s</string>
     <!-- Worked-grid QSO dialog -->
     <string name="grid_qso_calls_count" formatted="false">%1$d callsigns · %2$d QSOs</string>
+
+    <string name="region_qso_empty">No confirmed QSOs in this region yet</string>
     <string name="grid_qso_count_one">%d QSO</string>
     <string name="grid_qso_count_many">%d QSOs</string>
     <string name="grid_qso_first">First</string>
@@ -164,18 +168,16 @@
     <string name="map_visible">Visible</string>
 
     <!-- Settings screen -->
-    <string name="prefs_app_title" translatable="false">Look4Sat v%s</string>
-    <string name="prefs_app_url" translatable="false">https://play.google.com/store/apps/details?id=com.rtbishop.look4sat</string>
-    <string name="prefs_donate_title">Donate</string>
-    <string name="prefs_donate_url" translatable="false">https://ko-fi.com/rt_bishop</string>
-    <string name="prefs_fdroid_title" translatable="false">F-Droid</string>
-    <string name="prefs_fdroid_url" translatable="false">https://f-droid.org/en/packages/com.rtbishop.look4sat/</string>
+    <string name="prefs_app_title" translatable="false">Look4Sat-BA7OPF v%s</string>
+    <string name="prefs_app_url" translatable="false">https://github.com/atsunatsu/Look4Sat/releases</string>
     <string name="prefs_github_title" translatable="false">GitHub</string>
-    <string name="prefs_github_url" translatable="false">https://github.com/rt-bishop/Look4Sat/</string>
+    <string name="prefs_github_url" translatable="false">https://github.com/atsunatsu/Look4Sat</string>
     <string name="prefs_license_title" translatable="false">GPLv3</string>
     <string name="prefs_license_url" translatable="false">https://www.gnu.org/licenses/gpl-3.0.html</string>
     <string name="prefs_privacy_title">Privacy Policy</string>
     <string name="prefs_privacy_url" translatable="false">https://sites.google.com/view/look4sat-privacy-policy/home</string>
+    <string name="prefs_upstream_title" translatable="false">Upstream Project</string>
+    <string name="prefs_upstream_url" translatable="false">https://github.com/rt-bishop/Look4Sat</string>
 
     <string name="prefs_updated_title">Updated: %s</string>
     <string name="prefs_updated_time">d MMM yyyy - HH:mm:ss</string>
@@ -192,15 +194,29 @@
     <string name="prefs_station_lat_text">Set your ground station\'s latitude</string>
     <string name="prefs_station_lon_text">Set your ground station\'s longitude</string>
     <string name="prefs_locator_title">QTH locator settings</string>
-    <string name="prefs_wavelog_title">Wavelog worked grids</string>
     <string name="prefs_wavelog_configure">Configure</string>
-    <string name="prefs_wavelog_configured">Synced from Wavelog — %1$d grids worked</string>
-    <string name="prefs_wavelog_not_configured">Not configured — connect your Wavelog logbook to highlight worked grids on the map</string>
     <string name="prefs_wavelog_url">Wavelog URL</string>
-    <string name="prefs_wavelog_token">API key : logbook ID</string>
-    <string name="prefs_wavelog_hint">Worked grids synced: %1$d. Format: API key, colon, logbook ID. Just tap Sync — credentials are saved automatically.</string>
-    <string name="prefs_wavelog_sync">Sync now</string>
     <string name="prefs_wavelog_syncing">Syncing…</string>
+    <string name="prefs_wavelog_upload_title">Wavelog configuration</string>
+    <string name="prefs_wavelog_exclusive">Configure either LoTW or Wavelog — the two cannot be used together.</string>
+    <string name="prefs_wavelog_sync_incremental">Incremental sync</string>
+    <string name="prefs_wavelog_sync_full">Full sync</string>
+    <string name="prefs_wavelog_clear">Clear configuration</string>
+    <string name="prefs_wavelog_clear_title">Clear the Wavelog configuration?</string>
+    <string name="prefs_wavelog_clear_message">LoTW features become available again.</string>
+    <string name="prefs_wavelog_switch_title">Notice</string>
+    <string name="prefs_wavelog_switch_message">LoTW is already configured. With Wavelog configured, LoTW upload and sync in this app become unavailable (the two are mutually exclusive). Continue?</string>
+    <string name="prefs_wavelog_switch_continue">Continue</string>
+    <string name="prefs_lotw_disabled_wavelog">Unavailable while Wavelog is configured</string>
+    <string name="prefs_wavelog_upload_not_configured">Not configured — upload your local QSO records to Wavelog</string>
+    <string name="prefs_wavelog_upload_configured">Station %1$s — ready to upload</string>
+    <string name="prefs_wavelog_upload_apikey">API key (read &amp; write)</string>
+    <string name="prefs_wavelog_upload_fetch">Fetch stations</string>
+    <string name="prefs_wavelog_upload_probing">Checking…</string>
+    <string name="prefs_wavelog_upload_station_none">No station selected — tap Fetch stations</string>
+    <string name="prefs_wavelog_upload_rights_rw">Key: read &amp; write — uploads enabled</string>
+    <string name="prefs_wavelog_upload_rights_r">Key is read-only — create a read &amp; write key in Wavelog → API</string>
+    <string name="prefs_wavelog_upload_hint">Tap Fetch stations to pick the station profile uploads go through. The key needs read &amp; write permission.</string>
     <string name="prefs_lotw_title">LoTW confirmed grids</string>
     <string name="prefs_lotw_callsign">LoTW callsign</string>
     <string name="prefs_lotw_password">LoTW password</string>
@@ -226,6 +242,54 @@
 
     <string name="btn_delete">Delete</string>
 
+    <string name="prefs_logbook_title">Logbook</string>
+    <string name="prefs_logbook_count">%1$d records — local QSOs and LoTW confirmations</string>
+    <string name="prefs_logbook_empty">No records yet — record QSOs from the Radar Log tab</string>
+    <string name="prefs_logbook_close">Close</string>
+    <string name="prefs_logbook_upload">Upload</string>
+    <string name="prefs_logbook_upload_title">Upload to LoTW</string>
+    <string name="prefs_logbook_upload_confirm">Upload</string>
+    <string name="prefs_logbook_resubmit">Resubmit (%1$d)</string>
+    <string name="prefs_logbook_selected">%1$d selected</string>
+    <string name="prefs_logbook_select_hint">Long-press a row to re-upload corrected records</string>
+    <string name="prefs_logbook_resubmit_note">Existing contacts will be updated in place — a grid already used for an award may be rejected.</string>
+    <string name="prefs_logbook_callsign_missing">%1$d record(s) have no callsign — signed with %2$s from the certificate.</string>
+    <string name="prefs_logbook_callsign_different">%1$d record(s) name another callsign than the certificate %2$s.</string>
+    <string name="prefs_logbook_callsign_rewrite">Rewrite with %1$s</string>
+    <string name="prefs_logbook_callsign_switch">Use another certificate</string>
+    <string name="prefs_logbook_station_label">Station</string>
+    <string name="prefs_logbook_station_all">All</string>
+    <string name="prefs_logbook_upload_wavelog_title">Upload to Wavelog</string>
+    <string name="lotw_upload_grid_title">Upload check</string>
+    <string name="lotw_upload_grid_fix">Fix station location</string>
+    <string name="lotw_upload_grid_ignore">Ignore</string>
+    <string name="lotw_upload_grid_mismatch">Current position %1$s is outside the certificate station grids %2$s — if you are operating here, update the station location before uploading.</string>
+    <string name="lotw_upload_pos_hint">Current position %1$s is outside the station grids %2$s — tap to update</string>
+    <string name="prefs_lotw_upload_title">LoTW upload certificate</string>
+    <string name="prefs_lotw_upload_configured">Certificate imported · station grid %1$s</string>
+    <string name="prefs_lotw_upload_not_configured">Not configured — import your TrustedQSL certificate to upload QSOs</string>
+    <string name="prefs_lotw_upload_busy">Working…</string>
+    <string name="prefs_lotw_upload_cert_hint">Import your TrustedQSL .p12 certificate (same one you use in TQSL) to sign and upload QSOs. The password is stored encrypted on this device only.</string>
+    <string name="prefs_lotw_upload_password">Certificate password</string>
+    <string name="prefs_lotw_upload_password_hint">Leave blank if the certificate has no password</string>
+    <string name="prefs_lotw_upload_import">Choose .p12 file</string>
+    <string name="prefs_lotw_upload_import_confirm">Import</string>
+    <string name="prefs_lotw_upload_error_password">Incorrect certificate password. Check the password you set when exporting the .p12 from TQSL.</string>
+    <string name="prefs_lotw_upload_error_expired">Certificate is expired or not yet valid.</string>
+    <string name="prefs_lotw_upload_error_invalid">Not a valid LoTW certificate file.</string>
+    <string name="prefs_lotw_upload_error_format">Unsupported .p12 encryption. Re-export from TQSL and try again.</string>
+    <string name="prefs_lotw_upload_error_format_alg">Unsupported .p12 encryption (%1$s). Re-export from TQSL and try again.</string>
+    <string name="prefs_lotw_upload_error_unknown">Import failed. Try again.</string>
+    <string name="prefs_lotw_upload_cert_info">%1$s · DXCC %2$d · expires %3$s</string>
+    <string name="prefs_lotw_upload_remove">Remove certificate</string>
+    <string name="prefs_lotw_upload_station_title">Station location</string>
+    <string name="prefs_lotw_upload_region_hint">Not selected</string>
+    <string name="prefs_lotw_upload_region_label">Region</string>
+    <string name="prefs_lotw_upload_region_pending">Import certificate to select</string>
+    <string name="prefs_lotw_upload_grid">Grid(s), comma-separated</string>
+    <string name="prefs_lotw_upload_save">Save</string>
+    <string name="prefs_lotw_upload_close">Close</string>
+
     <string name="prefs_data_title">Satellite data</string>
     <string name="prefs_data_entries">Satellites: %s</string>
     <string name="prefs_data_radios">Transceivers: %s</string>
@@ -238,6 +302,8 @@
     <string name="prefs_data_import_transceivers_error">No transceivers imported. Select a valid SatNOGS (.json) file.</string>
 
     <string name="prefs_data_sources_title">Custom data sources</string>
+    <string name="prefs_data_sources_sat_hint">Orbital data takes the freshest elements; this order only affects satellite names</string>
+    <string name="prefs_data_sources_transceivers_hint">Top priority affects transceivers data</string>
     <string name="prefs_data_sources_restore">Restore default sources</string>
     <string name="prefs_data_sources_tle_switch">Custom TLE URL</string>
     <string name="prefs_data_sources_transceivers_switch">Custom transceivers URL</string>
@@ -438,6 +504,7 @@
     <string name="prefs_compass_offset">Manual heading offset (°)</string>
     <string name="prefs_compass_offset_support">Range −180° to +180°. Positive values rotate clockwise.</string>
     <string name="prefs_compass_offset_reset">Reset offset</string>
+    <string name="prefs_other_switch_light_theme">Light theme</string>
     <string name="prefs_other_switch_night_mode">Enable red night mode filter</string>
     <string name="prefs_other_switch_map_grid">Show Maidenhead grid on map</string>
 
@@ -446,7 +513,20 @@
     <string name="prefs_highlight_mid">Mid %1$d–%2$d°</string>
     <string name="prefs_highlight_high">High &gt; %1$d°</string>
 
-    <string name="prefs_outro_title">I would like to say thanks to</string>
+    <string name="prefs_outro_title">Credits &amp; Notices</string>
+    <string name="prefs_project_wiki">Project Wiki</string>
+    <string name="project_wiki_intro">Look4Sat-BA7OPF is a customized fork of Look4Sat. All upstream features, plus:</string>
+    <string name="project_wiki_section_logbook">Satellite Logbook &amp; LoTW</string>
+    <string name="project_wiki_logbook_1">Satellite logbook — one-tap logging of callsign, time, frequency, mode, report and grid.</string>
+    <string name="project_wiki_logbook_2">Direct LoTW upload — import your ARRL certificate and upload logs to LoTW right from the app, no PC needed.</string>
+    <string name="project_wiki_logbook_3">Confirmation sync — one-tap sync of LoTW confirmations, marked as uploaded/confirmed. Editing an uploaded entry creates a new one, leaving the original untouched.</string>
+    <string name="project_wiki_logbook_how">How: tap Record after a QSO → Upload on the log page → Sync in Settings.</string>
+    <string name="project_wiki_section_mutual">Mutual Pass Matching</string>
+    <string name="project_wiki_mutual_1">Enter your QTH and a friend\'s to find passes visible to both; tap a pass to open the radar.</string>
+    <string name="project_wiki_mutual_how">How: Match tab → set both stations → Query.</string>
+    <string name="project_wiki_section_grids">Worked-Grid Map</string>
+    <string name="project_wiki_grids_1">Grids synced from LoTW/Wavelog shown in green, with award boundaries and first-QSO callsign labels; tap a grid to see its QSOs and match a friend.</string>
+    <string name="project_wiki_grids_how">How: enable Grid mode on the map → sync LoTW/Wavelog in Settings.</string>
     <string name="prefs_outro_thanks" translatable="false">
         * Look4Sat users and contributors!
         \n* David A. B. Johnson (predict4java)
@@ -459,7 +539,9 @@
         \n* BH2VSQ BG5JSU (TianDiTu rendering support)
         \n* BG5JSU (LoTW upload support)
     </string>
-    <string name="prefs_outro_license">The app comes with no warranty</string>
+    <string name="prefs_outro_notice">Look4Sat-BA7OPF is an unofficial modified build based on Look4Sat (GPL-3.0), independently maintained by BA7OPF. It is not affiliated with or endorsed by the original Look4Sat project.
+Upstream: https://github.com/rt-bishop/Look4Sat</string>
+<string name="prefs_outro_license">Licensed under the GNU General Public License v3 · The app comes with no warranty</string>
 
     <!-- Mutual match page -->
     <string name="mutual_title">Pass Match</string>
@@ -699,4 +781,93 @@
     <string name="radar_tab_logs">Logs</string>
     <string name="map_grid_empty">Sync LoTW in Logbook to see confirmed grids and award progress.</string>
     <string name="map_boundaries_loading">Loading boundaries…</string>
+
+    <!-- QSO edit dialog -->
+    <string name="qso_edit_title">Edit QSO</string>
+    <string name="qso_edit_uploaded_notice">This QSO was already uploaded or confirmed. Saving keeps the original record unchanged and creates a new one.</string>
+    <string name="qso_edit_callsign">Callsign</string>
+    <string name="qso_edit_date">Date (UTC)</string>
+    <string name="qso_edit_time">Time (UTC)</string>
+    <string name="qso_edit_tx">Uplink (MHz)</string>
+    <string name="qso_edit_rx">Downlink (MHz)</string>
+    <string name="qso_edit_band">Band: %1$s</string>
+    <string name="qso_edit_mode">Mode</string>
+    <string name="qso_edit_satellite">Satellite</string>
+    <string name="qso_edit_hint_satellite">LoTW only accepts its official satellite name</string>
+    <string name="qso_edit_sent">Sent RST</string>
+    <string name="qso_edit_received">Received RST</string>
+    <string name="qso_edit_grid">Opposite grid</string>
+    <string name="qso_edit_comment">Comment</string>
+    <string name="qso_edit_save">Save</string>
+    <string name="qso_edit_cancel">Cancel</string>
+    <string name="log_out_window_title">Outside pass window</string>
+    <string name="log_out_window_message">The current time is outside this pass window. The contact will be logged at the pass midpoint %1$s by default; tap the record afterwards to change the time if needed.</string>
+    <string name="log_out_window_confirm">Log it</string>
+    <string name="qso_edit_err_callsign">Callsign is required</string>
+    <string name="qso_edit_err_datetime">Invalid date/time — use yyyy-MM-dd and HH:mm:ss (UTC)</string>
+    <string name="qso_edit_err_frequency">Invalid frequency — enter MHz, e.g. 145.850</string>
+    <string name="qso_edit_err_satellite">Not an ARRL satellite name — pick one from the list</string>
+    <string name="qso_edit_satellite_pick">Pick</string>
+    <string name="qso_edit_satellite_pick_title">ARRL satellite name</string>
+    <string name="qso_edit_satellite_search">Search name or catalogue alias</string>
+    <string name="qso_edit_satellite_official">Saved and signed as %1$s</string>
+    <string name="qso_edit_warn_no_freq">No uplink frequency: LoTW requires a band, so this QSO cannot be uploaded yet</string>
+
+    <!-- Grid Finder (VUCC grid line / corner field guide) -->
+    <string name="gridfinder_title">Grid Finder</string>
+    <string name="gridfinder_status_corner">ON GRID POINT</string>
+    <string name="gridfinder_status_line">ON GRID LINE</string>
+    <string name="gridfinder_status_inside">INSIDE GRID</string>
+    <string name="gridfinder_status_unknown">Position unavailable</string>
+    <string name="gridfinder_status_waiting">Waiting for a fix…</string>
+    <string name="gridfinder_status_blocked">Location permission required</string>
+    <string name="gridfinder_status_disabled">Location services are off on this device</string>
+    <string name="gridfinder_status_confirmed">Confirmed by %1$d consecutive fixes inside the 20 ft rule</string>
+    <string name="gridfinder_status_unconfirmed">Not confirmed yet: %1$d of %2$d consecutive fixes good to 6.1 m</string>
+    <string name="gridfinder_grant_permission">Grant location access</string>
+    <string name="gridfinder_card_location">Location</string>
+    <string name="gridfinder_card_corner">Guide to the nearest grid point</string>
+    <string name="gridfinder_card_line">Guide to the nearest grid line</string>
+    <string name="gridfinder_card_lines">Both boundary lines</string>
+    <string name="gridfinder_card_map">Close-up grid map</string>
+    <string name="gridfinder_card_fix">Fix quality</string>
+    <string name="gridfinder_card_compass">Compass</string>
+    <string name="gridfinder_label_claimable">VUCC grids here</string>
+    <string name="gridfinder_label_grid4">Grid (4)</string>
+    <string name="gridfinder_label_grid6">Grid (6)</string>
+    <string name="gridfinder_label_grid8">Grid (8)</string>
+    <string name="gridfinder_label_latitude">Latitude</string>
+    <string name="gridfinder_label_longitude">Longitude</string>
+    <string name="gridfinder_label_altitude">Altitude</string>
+    <string name="gridfinder_label_accuracy">Horizontal accuracy</string>
+    <string name="gridfinder_label_fix_age">Fix age</string>
+    <string name="gridfinder_label_provider">Location provider</string>
+    <string name="gridfinder_value_provider_on">On</string>
+    <string name="gridfinder_value_provider_off">Off</string>
+    <string name="gridfinder_label_distance">Distance</string>
+    <string name="gridfinder_label_bearing">Bearing</string>
+    <string name="gridfinder_label_direction">Direction</string>
+    <string name="gridfinder_label_grids">Grids</string>
+    <string name="gridfinder_label_lat_line">Latitude line</string>
+    <string name="gridfinder_label_lon_line">Longitude line</string>
+    <string name="gridfinder_line_value">%1$s to the %2$s</string>
+    <string name="gridfinder_line_latitude">This is the latitude boundary, which runs east to west</string>
+    <string name="gridfinder_line_longitude">This is the longitude boundary, which runs north to south</string>
+    <string name="gridfinder_label_heading">Heading</string>
+    <string name="gridfinder_label_compass_accuracy">Compass accuracy</string>
+    <string name="gridfinder_action_set_station">Set as my station</string>
+    <string name="gridfinder_action_station_saved">Station position updated — pass predictions now use this fix</string>
+    <string name="gridfinder_action_calibrate">Calibrate compass</string>
+    <string name="gridfinder_map_legend">The centre dot is you, dashed axes are north and east, the straight lines are the two grid boundaries, the green dot is the nearest grid point, the ring is the closest point of the nearest line and the red needle is your heading</string>
+    <string name="gridfinder_compass_disabled_hint">The compass is switched off in Settings, so the dials stay north-up. The bearing numbers still guide you</string>
+    <string name="gridfinder_compass_unavailable_hint">This device has no magnetic sensor — navigate with the bearing numbers</string>
+    <string name="gridfinder_compass_hint">Hold the phone flat; the arrow points the way to walk</string>
+    <string name="gridfinder_vucc_rule_note">VUCC 20 ft rule: %1$.1f m</string>
+    <string name="gridfinder_direction_north">north</string>
+    <string name="gridfinder_direction_south">south</string>
+    <string name="gridfinder_direction_east">east</string>
+    <string name="gridfinder_direction_west">west</string>
+    <string name="gridfinder_action_set_lotw_station">Set as LoTW station (%1$s)</string>
+    <string name="gridfinder_lotw_station_hint">Prefills the upload station grid — LoTW then records these squares (2 on a line, 4 on a corner). The certificate callsign stays unchanged.</string>
+
 </resources>

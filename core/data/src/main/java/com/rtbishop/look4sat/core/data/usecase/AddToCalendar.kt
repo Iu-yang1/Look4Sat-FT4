@@ -29,7 +29,7 @@ class AddToCalendar(private val context: Context) : IAddToCalendar {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             setData(CalendarContract.Events.CONTENT_URI)
             putExtra(CalendarContract.Events.TITLE, name)
-            putExtra(CalendarContract.Events.DESCRIPTION, "Look4Sat Pass")
+            putExtra(CalendarContract.Events.DESCRIPTION, "Look4Sat-BA7OPF Pass")
             putExtra(CalendarContract.EXTRA_EVENT_BEGIN_TIME, aosTime)
             putExtra(CalendarContract.EXTRA_EVENT_END_TIME, losTime)
         }

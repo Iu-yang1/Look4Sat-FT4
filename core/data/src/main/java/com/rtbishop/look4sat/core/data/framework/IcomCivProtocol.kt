@@ -465,6 +465,19 @@ object IcomCivProtocol {
         return number ushr 4 <= 9 && number and 0x0f <= 9
     }
 
+    /**
+     * Parse frequency + mode from a CMD_READ_FREQ reply payload.
+     * Payload layout after stripping command byte: [5 freq bytes]
+     * The IC-705 does not include a mode byte; if one is present it is parsed, otherwise mode is empty.
+     */
+    fun parseFreqModePayload(payload: ByteArray): Pair<Long, String>? {
+        if (payload.size < 5) return null
+        if (!payload.copyOfRange(0, 5).all(::isValidBcd)) return null
+        val freqHz = decodeFrequencyBcd(payload.copyOfRange(0, 5))
+        val mode   = if (payload.size > 5) BYTE_TO_MODE[payload[5]] ?: return null else ""
+        return freqHz to mode
+    }
+
     /** Hex dump of bytes, useful for debug logging. */
     fun toHex(bytes: ByteArray): String =
         bytes.joinToString(" ") { String.format(Locale.US, "%02X", it.toInt() and 0xFF) }

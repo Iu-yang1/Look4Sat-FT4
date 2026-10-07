@@ -1,7 +1,26 @@
+/*
+ * Look4Sat-BA7OPF. Amateur radio satellite tracker and pass predictor.
+ * Copyright (C) 2026 BA7OPF.
+ * Based on Look4Sat by Arty Bishop and contributors.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
 package com.rtbishop.look4sat.core.data.lotw
 
 import android.content.Context
 import com.rtbishop.look4sat.core.domain.logbook.QsoRecord
+import com.rtbishop.look4sat.core.domain.logbook.satelliteIdentity
 import com.rtbishop.look4sat.core.domain.logbook.QsoStatus
 import com.rtbishop.look4sat.core.domain.repository.ILoTWUploadRepository
 import com.rtbishop.look4sat.core.domain.repository.LoTWCertificate
@@ -95,6 +114,19 @@ class LoTWUploadRepository internal constructor(
         }
     }
 
+    override suspend fun previewCertificate(data: ByteArray, password: CharArray): LoTWCertificate = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            try {
+                if (data.isEmpty() || data.size > MAX_CERTIFICATE_BYTES) fail(LoTWProblem.CERTIFICATE_INVALID)
+                LoTWKeyMaterial.read(data, password, now()).info
+            } finally {
+                // Never keep the operator's password; the p12 bytes stay the caller's
+                // own copy (the dialog re-reads the file for every preview attempt).
+                password.fill('\u0000')
+            }
+        }
+    }
+
     override suspend fun saveCertificatePassword(password: CharArray): LoTWCertificate = withContext(Dispatchers.IO) {
         mutex.withLock {
             val stored = storage.read("certificate") ?: fail(LoTWProblem.CERTIFICATE_MISSING)
@@ -154,6 +186,24 @@ class LoTWUploadRepository internal constructor(
         config().stationMeta(dxcc)
     }
 
+    /** The ARRL satellite catalogue is static for the lifetime of the bundled config.tq6. */
+    private val satelliteNames: List<String> by lazy { config().satelliteNames() }
+
+    override suspend fun satelliteCatalog(): List<String> = withContext(Dispatchers.IO) { satelliteNames }
+
+    /**
+     * What makes two records the same contact for batch de-duplication: the opposite station,
+     * the satellite (resolved to its ARRL identity, so the tracker spelling and the official
+     * name are one) and the minute the QSO started. Frequency and mode are deliberately not
+     * part of the key — the same contact logged twice with slightly different tuning (or with
+     * the frequency fields empty) must still be caught before LoTW rejects the duplicate.
+     */
+    private fun duplicateKey(record: QsoRecord): String = listOf(
+        record.theirCallsign.trim().uppercase(Locale.US),
+        satelliteIdentity(record.satelliteName),
+        (record.startUtcMillis / 60_000L).toString()
+    ).joinToString("|")
+
     override suspend fun audit(records: List<QsoRecord>): LoTWUploadAudit = withContext(Dispatchers.IO) {
         mutex.withLock {
             val signing = signingContext()
@@ -163,20 +213,34 @@ class LoTWUploadRepository internal constructor(
             var uploaded = 0
             var unknown = 0
             var unavailable = 0
+            var duplicates = 0
+            var incomplete = 0
+            val reasons = mutableMapOf<LoTWProblem, Int>()
+            val details = mutableMapOf<LoTWProblem, String>()
             records.sortedBy { it.startUtcMillis }.forEach { record ->
                 coroutineContext.ensureActive()
                 when {
-                    record.status != QsoStatus.COMPLETE -> unavailable++
-                    record.lotwReceived -> uploaded++
+                    record.status != QsoStatus.COMPLETE -> {
+                        unavailable++
+                        incomplete++
+                    }
+
+                    record.lotwReceived || record.lotwUploaded -> uploaded++
                     else -> {
                         val contact = try {
                             signing.signer.contact(record, signing.key, signing.location, now())
-                        } catch (_: LoTWOperationException) {
+                        } catch (e: LoTWOperationException) {
                             unavailable++
+                            reasons[e.reason] = (reasons[e.reason] ?: 0) + 1
+                            if (e.detail.isNotBlank()) details.putIfAbsent(e.reason, e.detail)
                             null
                         }
                         if (contact != null) when {
-                            !unique.add(contact.fingerprint) -> unavailable++
+                            !unique.add(duplicateKey(contact.record)) -> {
+                                unavailable++
+                                duplicates++
+                            }
+
                             ledger[contact.fingerprint] == "accepted" -> uploaded++
                             ledger[contact.fingerprint] == "unknown" -> unknown++
                             else -> pendingCount++
@@ -184,7 +248,10 @@ class LoTWUploadRepository internal constructor(
                     }
                 }
             }
-            LoTWUploadAudit(records.size, pendingCount, uploaded, unknown, unavailable)
+            LoTWUploadAudit(
+                records.size, pendingCount, uploaded, unknown, unavailable,
+                reasons, details, duplicates, incomplete
+            )
         }
     }
 
@@ -196,25 +263,72 @@ class LoTWUploadRepository internal constructor(
             val ledger = ledger()
             var skipped = 0
             var unknown = 0
+            var unavailable = 0
+            var duplicates = 0
             val unique = hashSetOf<String>()
+            val reasons = mutableMapOf<LoTWProblem, Int>()
+            val certificateCallsign = signing.key.info.callsign
+            val substitutedIds = mutableSetOf<Long>()
+            val callsignConflicts = mutableListOf<Long>()
             val contacts = records.sortedBy { it.startUtcMillis }.mapNotNull { record ->
                 coroutineContext.ensureActive()
-                if (record.status != QsoStatus.COMPLETE || (record.lotwReceived && !resubmit)) { skipped++; return@mapNotNull null }
-                val contact = signing.signer.contact(record, signing.key, signing.location, now())
+                if (record.status != QsoStatus.COMPLETE || ((record.lotwReceived || record.lotwUploaded) && !resubmit)) { skipped++; return@mapNotNull null }
+                // A record logged while no certificate was installed carries no own callsign: sign
+                // it with the certificate's callsign (the preview says so, and an accepted upload
+                // writes the callsign into the record). A record naming a DIFFERENT callsign may be
+                // someone else's contact, so it stays refused — the conflict list lets the operator
+                // rewrite those records or import the other certificate.
+                val signable = if (record.myCallsign.isBlank()) {
+                    substitutedIds += record.id
+                    record.copy(myCallsign = certificateCallsign)
+                } else record
+                val contact = try {
+                    signing.signer.contact(signable, signing.key, signing.location, now())
+                } catch (e: LoTWOperationException) {
+                    // One un-signable record must not abort the whole batch:
+                    // skip it, count the real reason, and let the rest upload.
+                    unavailable++
+                    reasons[e.reason] = (reasons[e.reason] ?: 0) + 1
+                    if (e.reason == LoTWProblem.CALLSIGN_MISMATCH) callsignConflicts += record.id
+                    return@mapNotNull null
+                }
                 val previous = ledger[contact.fingerprint]
                 when {
-                    (previous == "accepted" && !resubmit) || !unique.add(contact.fingerprint) -> { skipped++; null }
+                    (previous == "accepted" && !resubmit) -> { skipped++; null }
+                    !unique.add(duplicateKey(contact.record)) -> {
+                        skipped++
+                        duplicates++
+                        null
+                    }
+
                     previous == "unknown" && !resubmit -> { skipped++; unknown++; null }
                     else -> contact
                 }
             }
+            // The station-location grids this batch is signed with: the primary grid plus the
+            // MY_VUCC_GRIDS set (1 inside a grid, 2 on a line, 4 on a corner — see [LoTWConfig]).
+            val locationGrids = buildList {
+                signing.location["GRIDSQUARE"]?.takeIf(String::isNotBlank)?.let(::add)
+                signing.location["MY_VUCC_GRIDS"]?.split(',')
+                    ?.map(String::trim)?.filter(String::isNotBlank)?.let(::addAll)
+            }.distinct()
+            val submittedIds = contacts.map { it.record.id }
             val preview = LoTWUploadPreview(
                 UUID.randomUUID().toString(), signing.key.info.callsign, signing.key.info.dxcc, signing.location.getValue("GRIDSQUARE"),
                 contacts.size, skipped,
                 contacts.firstOrNull()?.record?.let { utc(it.startUtcMillis, "yyyy-MM-dd HH:mm:ss") }.orEmpty(),
                 contacts.lastOrNull()?.record?.let { utc(it.startUtcMillis, "yyyy-MM-dd HH:mm:ss") }.orEmpty(),
                 contacts.map { "${utc(it.record.startUtcMillis, "MM-dd HH:mm")} ${it.record.theirCallsign} ${it.fields["MODE"]} ${it.fields["SAT_NAME"].orEmpty()}" },
-                unknown
+                unknown,
+                unavailable,
+                reasons.toMap(),
+                duplicates,
+                submittedIds,
+                locationGrids,
+                resubmit,
+                // Only the callsign-filled records that actually made it into this batch are reported.
+                submittedIds.count { it in substitutedIds },
+                callsignConflicts
             )
             if (contacts.isNotEmpty()) pending = Pending(
                 preview,

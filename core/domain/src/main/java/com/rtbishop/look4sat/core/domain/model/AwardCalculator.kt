@@ -83,52 +83,79 @@ object AwardCalculator {
         )
     }
 
+    /**
+     * The award unit one QSO counts toward for [type] — the match key of the
+     * award boundary assets' region "code" (WAPC -> "GD"/"HK", WAJA -> "34",
+     * WAZ -> "24", WAS -> "CA", DXCC -> "318"). Null when the QSO does not
+     * count toward that award (wrong entity or missing field). VUCC has no
+     * per-QSO key — its units are the store's grid keys — and returns null.
+     *
+     * Single source of truth shared by the progress counters above and the
+     * map's region-detail dialogs, so a tapped region lists exactly the QSOs
+     * that light it up.
+     */
+    fun awardKey(type: AwardType, q: GridQso): String? = when (type) {
+        AwardType.DXCC -> (q.dxcc ?: prefixEntityCode(q.call))?.toString()
+        AwardType.WAPC -> wapcKey(q)
+        AwardType.WAJA -> if (entityOf(q) == Entity.JAPAN) {
+            q.state?.trim()?.takeIf { it.length == 2 && it.all(Char::isDigit) }
+        } else null
+
+        AwardType.WAZ -> q.cqz?.takeIf { it in 1..40 }?.toString()
+        AwardType.WAS -> if (entityOf(q) == Entity.USA) {
+            q.state?.trim()?.uppercase()?.takeIf { it in US_STATES }
+        } else null
+
+        AwardType.VUCC -> null
+    }
+
+    /**
+     * Every confirmed QSO counted for award region [code] of [type], oldest
+     * first. The store keeps one entry per WORKED GRID, so a QSO spanning
+     * several grids arrives as several copies — [distinct] collapses them.
+     * Not scoped by 台址: the non-VUCC awards count (and fill the map)
+     * globally, so their detail lists do too.
+     */
+    fun regionQsos(
+        qsosByGrid: Map<String, List<GridQso>>,
+        type: AwardType,
+        code: String
+    ): List<GridQso> =
+        qsosByGrid.values.flatten()
+            .filter { awardKey(type, it) == code }
+            .distinct()
+            .sortedBy { it.epochMs }
+
+    private fun wapcKey(q: GridQso): String? = when (entityOf(q)) {
+        Entity.CHINA -> q.state?.trim()?.uppercase()?.takeIf { it in CN_STATES }
+        Entity.HONG_KONG -> HK_CODE
+        Entity.MACAO -> MO_CODE
+        Entity.TAIWAN -> TW_CODE
+        else -> null
+    }
+
     private fun calculateDxcc(all: List<GridQso>): AwardProgress {
-        val keys = mutableSetOf<String>()
-        for (q in all) {
-            val code = q.dxcc ?: prefixEntityCode(q.call)
-            if (code != null) keys.add(code.toString())
-        }
+        val keys = all.mapNotNull { awardKey(AwardType.DXCC, it) }.toSet()
         return AwardProgress(AwardType.DXCC, keys, keys.size, AwardTargets.DXCC)
     }
 
     private fun calculateWapc(all: List<GridQso>): AwardProgress {
-        val keys = mutableSetOf<String>()
-        for (q in all) {
-            when (entityOf(q)) {
-                Entity.CHINA -> q.state?.trim()?.uppercase()?.takeIf { it in CN_STATES }?.let { keys.add(it) }
-                Entity.HONG_KONG -> keys.add(HK_CODE)
-                Entity.MACAO -> keys.add(MO_CODE)
-                Entity.TAIWAN -> keys.add(TW_CODE)
-                else -> {}
-            }
-        }
+        val keys = all.mapNotNull { awardKey(AwardType.WAPC, it) }.toSet()
         return AwardProgress(AwardType.WAPC, keys, keys.size, AwardTargets.WAPC)
     }
 
     private fun calculateWaja(all: List<GridQso>): AwardProgress {
-        val keys = mutableSetOf<String>()
-        for (q in all) {
-            if (entityOf(q) != Entity.JAPAN) continue
-            q.state?.trim()?.takeIf { it.length == 2 && it.all(Char::isDigit) }?.let { keys.add(it) }
-        }
+        val keys = all.mapNotNull { awardKey(AwardType.WAJA, it) }.toSet()
         return AwardProgress(AwardType.WAJA, keys, keys.size, AwardTargets.WAJA)
     }
 
     private fun calculateWaz(all: List<GridQso>): AwardProgress {
-        val keys = mutableSetOf<String>()
-        for (q in all) {
-            q.cqz?.takeIf { it in 1..40 }?.let { keys.add(it.toString()) }
-        }
+        val keys = all.mapNotNull { awardKey(AwardType.WAZ, it) }.toSet()
         return AwardProgress(AwardType.WAZ, keys, keys.size, AwardTargets.WAZ)
     }
 
     private fun calculateWas(all: List<GridQso>): AwardProgress {
-        val keys = mutableSetOf<String>()
-        for (q in all) {
-            if (entityOf(q) != Entity.USA) continue
-            q.state?.trim()?.uppercase()?.takeIf { it in US_STATES }?.let { keys.add(it) }
-        }
+        val keys = all.mapNotNull { awardKey(AwardType.WAS, it) }.toSet()
         return AwardProgress(AwardType.WAS, keys, keys.size, AwardTargets.WAS)
     }
 

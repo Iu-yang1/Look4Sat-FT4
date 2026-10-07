@@ -118,7 +118,6 @@ fun NavRoot(deeplink: String? = null) {
     val context = LocalContext.current
     val container = (context.applicationContext as IContainerProvider).getMainContainer()
     val otherSettings by container.settingsRepo.otherSettings.collectAsStateWithLifecycle()
-    val navigateToGridFinder: () -> Unit = { rootBackStack.add(GridFinderRoute) }
     val navigateToLoTWStation: () -> Unit = { rootBackStack.add(LoTWUploadRoute) }
     // Incoming screen slides in from the right, outgoing drifts left at 1/3 speed (API35+ style)
     val pushTransition = slideInHorizontally(tween(300)) { it } togetherWith
@@ -148,7 +147,7 @@ fun NavRoot(deeplink: String? = null) {
                     MainScreen(
                         navigateToRadar = navigateToRadar,
                         navigateToFt4 = navigateToFt4,
-                        navigateToGridFinder = navigateToGridFinder,
+                        navigateToLoTWStation = navigateToLoTWStation,
                         openMapRequest = openMapRequest,
                         onOpenMapRequestHandled = { openMapRequest = 0 }
                     )
@@ -209,7 +208,7 @@ fun NavRoot(deeplink: String? = null) {
 fun MainScreen(
     navigateToRadar: () -> Unit = {},
     navigateToFt4: () -> Unit = {},
-    navigateToGridFinder: () -> Unit = {},
+    navigateToLoTWStation: () -> Unit = {},
     openMapRequest: Int = 0,
     onOpenMapRequestHandled: () -> Unit = {}
 ) {
@@ -230,7 +229,7 @@ fun MainScreen(
     val navItems = listOf(
         Screen.Satellites,
         Screen.Passes,
-        Screen.AMSAT,
+        Screen.GridFinder,
         Screen.Map,
         Screen.Logbook,
         Screen.Mutual,
@@ -289,7 +288,8 @@ fun MainScreen(
                         is Screen.Satellites -> screen is Screen.Satellites
                         is Screen.Passes -> screen is Screen.Passes
                         is Screen.Map -> screen is Screen.Map
-                        is Screen.AMSAT -> screen is Screen.AMSAT
+                        is Screen.GridFinder -> screen is Screen.GridFinder
+                        is Screen.AMSAT -> screen is Screen.Satellites
                         is Screen.Mutual -> screen is Screen.Mutual
                         is Screen.Ft4 -> screen is Screen.Ft4
                         is Screen.Logbook -> screen is Screen.Logbook
@@ -366,6 +366,12 @@ fun MainScreen(
                                 }
                             )
                         }
+                        entry<Screen.GridFinder> {
+                            GridFinderDestination(
+                                navigateUp = navigateBack,
+                                onOpenLoTWStation = navigateToLoTWStation
+                            )
+                        }
                         entry<Screen.Mutual> {
                             MutualScreen(
                                 viewModel = mutualViewModel,
@@ -381,7 +387,7 @@ fun MainScreen(
                             LogbookScreenDestination(navigateUp = navigateBack, navigateToMap = navigateToMap)
                         }
                         entry<Screen.Settings> {
-                            SettingsDestination(onOpenGridFinder = navigateToGridFinder)
+                            SettingsDestination()
                         }
                     }
                 )

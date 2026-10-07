@@ -33,6 +33,9 @@ sealed class Screen(val iconResId: Int, val titleResId: Int) : NavKey {
     data object Map : Screen(R.drawable.ic_map, R.string.nav_map)
 
     @Serializable
+    data object GridFinder : Screen(R.drawable.ic_grid_finder, R.string.gridfinder_title)
+
+    @Serializable
     data object Mutual : Screen(R.drawable.ic_match, R.string.nav_mutual)
 
     @Serializable

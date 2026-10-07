@@ -48,6 +48,8 @@ data class QsoRecord(
     val wavelogStation: String = "",
     val lotwReceived: Boolean = false,
     val lotwQslDate: String = "",
+    /** Own operated grid set this QSO went out under — uploaded as ADIF MY_VUCC_GRIDS
+     *  (never VUCC_GRIDS, which belongs to the opposite station). Stamped at upload. */
     val vuccGrids: List<String> = emptyList(),
     val dxcc: Int? = null,
     val country: String = "",

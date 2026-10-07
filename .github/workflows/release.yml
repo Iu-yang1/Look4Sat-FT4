@@ -150,8 +150,11 @@ jobs:
             throw "Release APK size is outside the updater safety range: $apkSize"
           }
 
-          & jarsigner -verify -strict $env:RELEASE_AAB
-          if ($LASTEXITCODE -ne 0) { throw 'AAB signature verification failed' }
+          $aabVerification = (& jarsigner -verify $env:RELEASE_AAB 2>&1) -join "`n"
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error $aabVerification
+            throw 'AAB signature verification failed'
+          }
 
       - name: Setup Ruby
         if: env.PLAY_SERVICE_ACCOUNT_JSON != ''

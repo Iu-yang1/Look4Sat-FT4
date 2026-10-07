@@ -931,7 +931,9 @@ class RadioTrackingService(
                         ?: transponder.downlinkLow)?.plus(offset)
                     val desiredTx = base?.let(position::getUplinkFreq)
                     val desiredRx = nominalRx?.let(position::getDownlinkFreq)
-                    if (dialFollowState.activeLeg == null) {
+                    // The FT4 lease preloads the slot-midpoint frequency. Hold both CAT legs
+                    // until the waveform ends so no synthesizer step occurs under modulation.
+                    if (!frozen && dialFollowState.activeLeg == null) {
                         val txWriteAllowed = current.pttState != PttState.ON ||
                             radioProfile(controlSettings.radioModel)
                                 .canSetTxFrequencyWhileTransmitting

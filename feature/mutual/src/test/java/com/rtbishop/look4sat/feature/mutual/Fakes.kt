@@ -1,3 +1,21 @@
+/*
+ * Look4Sat-BA7OPF. Amateur radio satellite tracker and pass predictor.
+ * Copyright (C) 2026 BA7OPF.
+ * Based on Look4Sat by Arty Bishop and contributors.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
 package com.rtbishop.look4sat.feature.mutual
 
 import com.rtbishop.look4sat.core.domain.model.DataSourcesSettings
@@ -10,7 +28,8 @@ import com.rtbishop.look4sat.core.domain.model.PassesSettings
 import com.rtbishop.look4sat.core.domain.model.RCSettings
 import com.rtbishop.look4sat.core.domain.model.RadioControlSettings
 import com.rtbishop.look4sat.core.domain.model.SatRadio
-import com.rtbishop.look4sat.core.domain.model.WavelogSettings
+
+import com.rtbishop.look4sat.core.domain.model.WavelogUploadSettings
 import com.rtbishop.look4sat.core.domain.predict.GeoPos
 import com.rtbishop.look4sat.core.domain.predict.OrbitalObject
 import com.rtbishop.look4sat.core.domain.predict.OrbitalPass
@@ -90,7 +109,9 @@ class FakeSettingsRepo(
     override val radioControlSettings: StateFlow<RadioControlSettings> = MutableStateFlow(
         RadioControlSettings(false, RadioControlSettings.MODEL_YAESU_FT817, "", "", "", "", 9600)
     )
-    override val wavelogSettings: StateFlow<WavelogSettings> = MutableStateFlow(WavelogSettings())
+
+    override val wavelogUploadSettings: StateFlow<WavelogUploadSettings> = MutableStateFlow(WavelogUploadSettings())
+    override fun updateWavelogUploadSettings(settings: WavelogUploadSettings) = Unit
     override val lotwSettings: StateFlow<LoTWSettings> = MutableStateFlow(LoTWSettings())
 
     override fun setSelectedIds(ids: List<Int>) = TODO()
@@ -99,6 +120,7 @@ class FakeSettingsRepo(
     override fun setStationPosition(latitude: Double, longitude: Double, altitude: Double): Boolean = TODO()
     override fun setStationPosition(): Boolean = TODO()
     override fun setStationPosition(locator: String): Boolean = TODO()
+    override fun getCurrentGrid(): String? = TODO()
     override fun getSatelliteTypesIds(types: List<String>): List<Int> = TODO()
     override fun setSatelliteTypeIds(type: String, ids: List<Int>) = TODO()
     override fun updateDatabaseState(state: DatabaseState) = TODO()
@@ -118,7 +140,7 @@ class FakeSettingsRepo(
     override fun setSatelliteMode(catnum: Int, mode: String) = TODO()
     override fun getAmSatCallsign(): String = ""
     override fun setAmSatCallsign(callsign: String) = TODO()
-    override fun updateWavelogSettings(settings: WavelogSettings) = TODO()
+
     override fun getWorkedGrids(): Set<String> = TODO()
     override fun setWorkedGrids(grids: Set<String>) = TODO()
     override fun getWorkedGridQsos(): Map<String, List<GridQso>> = TODO()
@@ -132,4 +154,12 @@ class FakeSettingsRepo(
     override fun setLastLotwSyncDate(date: String) = Unit
     override fun getLastLotwSyncCallsign(): String = ""
     override fun setLastLotwSyncCallsign(callsign: String) = Unit
+    override fun getWavelogStations(): List<com.rtbishop.look4sat.core.domain.repository.WavelogStationInfo> = emptyList()
+    override fun setWavelogStations(stations: List<com.rtbishop.look4sat.core.domain.repository.WavelogStationInfo>) = Unit
+    override fun getWavelogSyncCursors(): Map<String, Long> = emptyMap()
+    override fun setWavelogSyncCursors(cursors: Map<String, Long>) = Unit
+    override fun getWavelogSyncUrl(): String = ""
+    override fun setWavelogSyncUrl(url: String) = Unit
+    override fun getLastWavelogSyncEpochMs(): Long = 0L
+    override fun setLastWavelogSyncEpochMs(value: Long) = Unit
 }

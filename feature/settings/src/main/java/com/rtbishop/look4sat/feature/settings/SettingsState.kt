@@ -25,7 +25,7 @@ import com.rtbishop.look4sat.core.domain.model.LatestRelease
 import com.rtbishop.look4sat.core.domain.model.OtherSettings
 import com.rtbishop.look4sat.core.domain.model.RCSettings
 import com.rtbishop.look4sat.core.domain.model.RadioControlSettings
-import com.rtbishop.look4sat.core.domain.model.WavelogSettings
+import com.rtbishop.look4sat.core.domain.model.WavelogUploadSettings
 import com.rtbishop.look4sat.core.domain.predict.GeoPos
 import com.rtbishop.look4sat.core.domain.repository.LoTWSyncMode
 import com.rtbishop.look4sat.core.domain.repository.CompassAccuracy
@@ -67,10 +67,25 @@ data class SettingsState(
     val radioControlSettings: RadioControlSettings,
     val dataSourcesSettings: DataSourcesSettings,
     val dataSourcesStatus: Map<String, Int> = emptyMap(),
-    val wavelogSettings: WavelogSettings = WavelogSettings(),
     val workedGridsCount: Int = 0,
+    /** Wavelog configuration (one block; LoTW and Wavelog are mutually exclusive). */
+    val wavelogUploadSettings: WavelogUploadSettings = WavelogUploadSettings(),
+    val wavelogUploadStations: List<com.rtbishop.look4sat.core.domain.repository.WavelogStationInfo> = emptyList(),
+    val wavelogUploadRights: String = "",
+    val wavelogUploadProbeBusy: Boolean = false,
+    /** Config-block feedback (probe failures, sync results); also shown inside the config dialog. */
+    val wavelogUploadMessage: String? = null,
+    /** Wavelog sync (download of QSOs + grids). */
     val wavelogSyncing: Boolean = false,
-    val wavelogMessage: String? = null,
+    /** Epoch ms of the last successful Wavelog sync (0 = never). */
+    val wavelogLastSyncEpochMs: Long = 0L,
+    /** Mode-switch guard: a change that would hand the logbook over to Wavelog is
+     *  waiting for the operator's confirmation (LoTW is configured). */
+    val wavelogSwitchWarning: Boolean = false,
+    /** Logbook 台址 selector: selected Wavelog station id (null = 全部). */
+    val logbookStationFilter: String? = null,
+    /** Wavelog-mode logbook upload: prepared batch awaiting confirmation. */
+    val logbookWavelogPreview: com.rtbishop.look4sat.core.domain.repository.WavelogUploadPreview? = null,
     val lotwSettings: com.rtbishop.look4sat.core.domain.model.LoTWSettings = com.rtbishop.look4sat.core.domain.model.LoTWSettings(),
     val lotwSyncing: Boolean = false,
     val lotwSyncMode: LoTWSyncMode? = null,
@@ -78,6 +93,34 @@ data class SettingsState(
     val lotwError: LoTWError? = null,
     /** Epoch ms of the last successful LoTW sync (0 = never) — shown like the ephemeris update time. */
     val lotwLastSyncEpochMs: Long = 0L,
+
+    /** Logbook (QSO records + LoTW confirmations), newest first. */
+    val logbookRecords: List<com.rtbishop.look4sat.core.domain.logbook.QsoRecord> = emptyList(),
+    /** ARRL satellite names (config.tq6) — the only names a record may be signed with. */
+    val satelliteCatalog: List<String> = emptyList(),
+    /** Imported LoTW upload certificate (null when none). */
+    val lotwCertificate: com.rtbishop.look4sat.core.domain.repository.LoTWCertificate? = null,
+    /** LoTW upload station location (null when unset). */
+    val lotwStation: com.rtbishop.look4sat.core.domain.repository.LoTWStation? = null,
+    /** Region-field options and national zonemap for the certificate's DXCC entity. */
+    val lotwStationMeta: com.rtbishop.look4sat.core.domain.repository.LoTWStationMeta? = null,
+    val lotwUploadBusy: Boolean = false,
+    /** Last certificate import outcome; shown inside the upload config dialog. */
+    val lotwUploadError: LoTWUploadError? = null,
+    /** Parser detail for FORMAT errors (e.g. the unsupported algorithm name). */
+    val lotwUploadErrorDetail: String = "",
+    /** One-click logbook upload: prepared preview awaiting confirmation. */
+    val logbookPreview: com.rtbishop.look4sat.core.domain.repository.LoTWUploadPreview? = null,
+    /** Roaming guard: the current position grid is outside the station grids the prepared
+     *  batch would be signed with — shown as a dialog before the preview opens. */
+    val logbookPositionWarning: com.rtbishop.look4sat.core.domain.repository.LoTWPositionWarning? = null,
+    val logbookUploadBusy: Boolean = false,
+    /** User-facing upload message shown inside the logbook dialog ("" = none). */
+    val logbookUploadMessage: String = "",
+    /** Logbook multi-select mode (entered by long-pressing a row); checked records can be
+     *  re-uploaded so a corrected station location updates them on LoTW (resubmit). */
+    val logbookSelectionMode: Boolean = false,
+    val logbookSelectedIds: Set<Long> = emptySet(),
     /** 指南针校准精度等级 (校准对话框进度条). */
     val compassAccuracy: CompassAccuracy = CompassAccuracy.UNRELIABLE,
     val compassHeadingDegrees: Float = 0f,
@@ -85,6 +128,8 @@ data class SettingsState(
 )
 
 /** LoTW sync failure, kept as a translatable code until the UI renders it. */
+enum class LoTWUploadError { PASSWORD, EXPIRED, FORMAT, INVALID_FILE, UNKNOWN }
+
 sealed interface LoTWError {
     data object NotConfigured : LoTWError
     data object BadCredentials : LoTWError
@@ -134,9 +179,20 @@ sealed interface SettingsAction {
     // Data sources
     data class UpdateDataSources(val settings: DataSourcesSettings) : SettingsAction
 
-    // Wavelog worked grids
-    data class UpdateWavelog(val settings: WavelogSettings) : SettingsAction
-    data class SyncWorkedGrids(val settings: WavelogSettings) : SettingsAction
+    // Wavelog configuration (single block; LoTW and Wavelog are mutually exclusive)
+    data class UpdateWavelogUpload(val settings: WavelogUploadSettings) : SettingsAction
+    data class FetchWavelogUploadStations(val url: String, val apiKey: String) : SettingsAction
+    data class SelectWavelogUploadStation(val station: com.rtbishop.look4sat.core.domain.repository.WavelogStationInfo) : SettingsAction
+    /** Download QSOs (+ grids) from Wavelog. */
+    data class SyncWavelog(val mode: com.rtbishop.look4sat.core.domain.repository.WavelogSyncMode) : SettingsAction
+    /** Confirmed the LoTW→Wavelog mode switch warning. */
+    data object ConfirmWavelogSwitch : SettingsAction
+    /** Declined the switch warning — nothing changes. */
+    data object CancelWavelogSwitch : SettingsAction
+    /** Wipe the Wavelog config (back to LoTW mode). */
+    data object ClearWavelogConfig : SettingsAction
+    /** Logbook 台址 selector choice (null = 全部). */
+    data class SetLogbookStationFilter(val stationId: String?) : SettingsAction
 
     // LoTW confirmed grids
     data class UpdateLoTW(val settings: com.rtbishop.look4sat.core.domain.model.LoTWSettings) : SettingsAction
@@ -146,6 +202,36 @@ sealed interface SettingsAction {
     ) : SettingsAction
     /** Abort an in-flight LoTW sync (wrong button / changed mind). */
     data object CancelLoTWSync : SettingsAction
+
+
+    // Logbook (QSO records + LoTW confirmations)
+    data object RefreshLogbook : SettingsAction
+    data class DeleteLogbookRecord(val id: Long) : SettingsAction
+    /** Persist an edited record (frequency/callsign/time/…) from the logbook dialog. */
+    data class UpdateLogbookRecord(val record: com.rtbishop.look4sat.core.domain.logbook.QsoRecord) : SettingsAction
+    data object PrepareLogbookUpload : SettingsAction
+    data object ConfirmLogbookUpload : SettingsAction
+    data object DismissLogbookPreview : SettingsAction
+    data object RewriteLogbookCallsigns : SettingsAction
+    /** The operator acknowledged the position mismatch and wants to upload anyway. */
+    data object IgnoreLogbookPositionWarning : SettingsAction
+    /** The operator chose to fix the station location first; the preview is discarded. */
+    data object AbandonLogbookForGridFix : SettingsAction
+    /** Long-press on a row: enter selection mode with that record checked. */
+    data class StartLogbookSelection(val id: Long) : SettingsAction
+    data class ToggleLogbookSelection(val id: Long) : SettingsAction
+    data object ExitLogbookSelection : SettingsAction
+    /** Re-upload the checked records — uploaded/confirmed rows included (resubmit). */
+    data object ResubmitSelectedLogbook : SettingsAction
+    data object ClearLogbookMessage : SettingsAction
+
+    // LoTW upload configuration (certificate + station)
+    data object LoadLoTWUploadStatus : SettingsAction
+    data class ImportLoTWCertificate(val bytes: ByteArray, val password: CharArray) : SettingsAction
+    /** Pre-import .p12 parse (not persisted) so the region field appears before confirming. */
+    data class PreviewLoTWCertificate(val bytes: ByteArray, val password: CharArray) : SettingsAction
+    data object RemoveLoTWCertificate : SettingsAction
+    data class SaveLoTWStation(val station: com.rtbishop.look4sat.core.domain.repository.LoTWStation) : SettingsAction
 
     // Update checker
     data object CheckForUpdate : SettingsAction

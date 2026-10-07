@@ -1,6 +1,25 @@
+/*
+ * Look4Sat-BA7OPF. Amateur radio satellite tracker and pass predictor.
+ * Copyright (C) 2026 BA7OPF.
+ * Based on Look4Sat by Arty Bishop and contributors.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
 package com.rtbishop.look4sat.core.data.lotw
 
 import com.rtbishop.look4sat.core.domain.logbook.QsoRecord
+import com.rtbishop.look4sat.core.domain.logbook.LoTWSatelliteAliases
 import com.rtbishop.look4sat.core.domain.logbook.displayMode
 import com.rtbishop.look4sat.core.domain.repository.LoTWProblem
 import com.rtbishop.look4sat.core.domain.repository.LoTWRegionField
@@ -58,18 +77,23 @@ internal class LoTWConfig(input: InputStream) {
         return value
     }
 
+    /** Every satellite name ARRL's config.tq6 knows, sorted: the only names LoTW accepts. */
+    fun satelliteNames(): List<String> = satellites.keys.sorted()
+
+    /**
+     * Resolve a tracker name to the ARRL name, or null when it is not an ARRL satellite.
+     * Exact official name first, then the alias table ("SAUDISAT 1C" -> "SO-50",
+     * "ISS (ZARYA)" -> "ARISS"), then an official name contained in the tracker name.
+     */
+    fun resolveSatellite(name: String): String? = LoTWSatelliteAliases.resolve(name, satellites.keys)
+
     fun satellite(name: String, date: String): String {
         val normalized = name.trim().uppercase(Locale.US)
-        // Look4Sat satellite names come from SatNOGS (e.g. "SO-50 (SaudiOSCAR 50)");
-        // the bundled config only knows the official LoTW name ("SO-50"). Exact match
-        // first, then accept any satellite whose official name is a substring of the
-        // Look4Sat name (covers SO-50, AO-91, IO-86, CAS-7B …). Failing that the
-        // contact is unavailable for upload.
-        val sat = satellites[normalized]
-            ?: satellites.entries.firstOrNull { (official, _) ->
-                official.length > 1 && normalized.contains(official)
-            }?.value
-            ?: fail(LoTWProblem.SATELLITE, normalized)
+        // Tracker names differ from ARRL's: SatNOGS stores "SAUDISAT 1C" for "SO-50" and
+        // "ISS (ZARYA)" for "ARISS". resolveSatellite() checks the exact name, the alias
+        // table and finally substring containment; anything else is not uploadable.
+        val official = resolveSatellite(name) ?: fail(LoTWProblem.SATELLITE, normalized)
+        val sat = satellites.getValue(official)
         val first = sat.getAttribute("startDate")
         val last = sat.getAttribute("endDate")
         if ((first.isNotBlank() && date < first) || (last.isNotBlank() && date > last)) fail(LoTWProblem.SATELLITE, normalized)

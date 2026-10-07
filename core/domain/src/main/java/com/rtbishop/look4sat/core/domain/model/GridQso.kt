@@ -26,9 +26,12 @@ package com.rtbishop.look4sat.core.domain.model
  * @param epochMs   QSO date+time in UTC milliseconds
  * @param satName   satellite name (e.g. "FO-29")
  * @param mode      ADIF mode (FM / CW / SSB ...)
- * @param bandUp    uplink band as reported by LoTW (BAND_RX: "70CM", "2M", "10M"...)
- * @param bandDown  downlink band (BAND: "2M", "70CM"...) — may be empty when
- *                  LoTW did not include it
+ * @param bandUp    uplink band, the band of the transmitted frequency (ADIF BAND:
+ *                  "2M", "70CM", "10M"...). Measured against the live report of the
+ *                  user's own uploads: SO-50 arrives as BAND=2M/FREQ=145.85 with
+ *                  BAND_RX=70CM/FREQ_RX=436.8, i.e. BAND carries the uplink.
+ * @param bandDown  downlink band (ADIF BAND_RX) — may be empty when LoTW did not
+ *                  include it
  * @param dxcc      ARRL DXCC entity code of the opposite station (from ADIF
  *                  <DXCC>), or null when LoTW omitted it
  * @param country   DXCC entity name (ADIF <COUNTRY>), or null
@@ -69,7 +72,13 @@ data class GridQso(
      *  MY_STATE + MY_CQ_ZONE + MY_ITU_ZONE + MY_IOTA + MY_COUNTRY), so the
      *  operated-grid selector can group QSOs per 台址 and show each 台址 with
      *  its full grid set. Null for data synced before this field existed. */
-    val stationKey: String? = null
+    val stationKey: String? = null,
+    /** Every 4-char grid of the OPPOSITE station for this QSO — ADIF
+     *  <GRIDSQUARE> plus every field of <VUCC_GRIDS> (comma-separated when
+     *  the contact spans several squares; up to four in one QSO). The logbook
+     *  shows the set in the QSL slot of a confirmed row; [myGrids] is the
+     *  same thing for the user's own side. */
+    val theirGrids: List<String> = emptyList()
 ) {
     /** Short uplink/downlink band label ("U/V", "V/A"), or "" when unknown. */
     val bandLabel: String
@@ -95,3 +104,50 @@ data class GridQso(
         else -> band.trim().uppercase()
     }
 }
+
+/**
+ * Every MY-side grid of this QSO: [myGrids] (MY_GRIDSQUARE + MY_VUCC_GRIDS)
+ * with a single-grid fallback to [myGrid] for records synced before
+ * multi-grid support. Empty when the record carries no MY-side grid at all.
+ */
+fun GridQso.myStationGrids(): Set<String> =
+    myGrids.ifEmpty { myGrid?.let { setOf(it) }.orEmpty() }
+
+/**
+ * Station-location (台址) grouping key: the QSO's MY grid set, sorted and
+ * comma-joined ("OL62", "OM60,PM01"). Records covering the same grid set
+ * belong to the same 台址 — they are VUCC-equivalent. Null when the record
+ * carries no MY-side grid. Backs both the map's operated-grid selector and
+ * its per-台址 grid-detail filtering, so the two scope by one identity.
+ */
+fun GridQso.stationGridSetKey(): String? =
+    myStationGrids().takeIf { it.isNotEmpty() }?.sorted()?.joinToString(",")
+
+/**
+ * Scopes a per-grid QSO list to the operated-grid selector's choice with
+ * COVERING semantics (2026-10-05): [stationId] is a grid-set key such as
+ * "OL62" or "OL62,OL63", and a record stays when its own [myStationGrids]
+ * COVER that key (record grid set ⊇ key set). So a multi-grid 台址 that
+ * covers a single-grid one (OL62/63 covers OL62) contributes its records to
+ * the single-grid scope's statistics — map fills, dialog lists and first-call
+ * labels all derive from this one rule. The reverse does NOT hold: records
+ * under a narrower 台址 never leak into a wider scope (single OL62 records
+ * stay out of the OL62/63 scope). Records without a MY-side grid belong to
+ * no 台址 and are dropped under any specific scope.
+ */
+fun List<GridQso>.scopedToStation(stationId: String?): List<GridQso> =
+    if (stationId == null) this
+    else {
+        val scope = stationId.split(',').toSet()
+        filter { it.myStationGrids().containsAll(scope) }
+    }
+
+/**
+ * For every grid in the store, the callsign of the earliest QSO — scoped to the
+ * operated-grid selector's choice first, so a specific 台址 labels each worked
+ * cell with ITS first contact; null ("All") keeps the global first call.
+ */
+fun Map<String, List<GridQso>>.firstCallsByGrid(stationId: String?): Map<String, String> =
+    mapNotNull { (grid, qsos) ->
+        qsos.scopedToStation(stationId).minByOrNull { it.epochMs }?.let { grid to it.call }
+    }.toMap()

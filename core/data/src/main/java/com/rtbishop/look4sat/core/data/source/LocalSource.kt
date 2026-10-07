@@ -43,6 +43,16 @@ class LocalSource(private val look4SatDao: Look4SatDao) : ILocalSource {
         return selectedOrbitalObjects
     }
 
+    override suspend fun getEntriesEpochs() = look4SatDao.getEntriesEpochs()
+
+    override suspend fun getEntriesNames() = look4SatDao.getEntriesNames()
+
+    override suspend fun renameEntries(names: Map<Int, String>) =
+        names.forEach { (catnum, name) -> look4SatDao.renameEntry(catnum, name) }
+
+    override suspend fun deleteEntriesWithIds(ids: List<Int>) =
+        ids.chunked(999).forEach { idsPart -> look4SatDao.deleteEntriesWithIds(idsPart) }
+
     override suspend fun insertEntries(entries: List<OrbitalData>) = look4SatDao.insertEntries(entries.toEntity())
 
     override suspend fun deleteEntries() = look4SatDao.deleteEntries()

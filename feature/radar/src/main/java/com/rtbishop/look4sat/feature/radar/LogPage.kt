@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -31,13 +32,16 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
@@ -46,23 +50,38 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.rtbishop.look4sat.core.domain.logbook.QsoRecord
 import com.rtbishop.look4sat.core.domain.logbook.displayMode
+import com.rtbishop.look4sat.core.domain.logbook.satelliteIdentity
+import com.rtbishop.look4sat.core.domain.logbook.unavailableUploadSummary
 import com.rtbishop.look4sat.core.presentation.SwipeController
 import com.rtbishop.look4sat.core.presentation.SwipeRevealRow
 import com.rtbishop.look4sat.core.presentation.rememberSwipeController
 import com.rtbishop.look4sat.core.domain.utility.DopplerFrequencyCalculator
+import com.rtbishop.look4sat.core.domain.source.Sources
+import com.rtbishop.look4sat.core.domain.utility.downlinkHz
+import com.rtbishop.look4sat.core.domain.utility.uplinkHz
+import com.rtbishop.look4sat.core.domain.utility.voiceRepeater
 import com.rtbishop.look4sat.core.presentation.EmptyListCard
-
-private const val LOG_WINDOW_MS = 24 * 3_600_000L
+import com.rtbishop.look4sat.core.presentation.QsoEditDialog
+import com.rtbishop.look4sat.core.presentation.R
+import com.rtbishop.look4sat.core.presentation.SheetDialogTitle
+import com.rtbishop.look4sat.core.presentation.sheetDialogContainerColor
+import com.rtbishop.look4sat.core.presentation.sheetDialogShape
+import com.rtbishop.look4sat.core.presentation.gridsLabel
+import com.rtbishop.look4sat.core.presentation.LoTWPositionWarningDialog
+import com.rtbishop.look4sat.core.presentation.WavelogUploadPreviewDialog
 
 @Composable
 fun LogPage(
     uiState: RadarState,
     logViewModel: LogViewModel,
+    onFixGrid: (List<String>) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val logUiState by logViewModel.uiState.collectAsStateWithLifecycle()
     val records by logViewModel.records.collectAsStateWithLifecycle(initialValue = emptyList())
     val swipeController = rememberSwipeController()
+    // Record currently open in the edit dialog (null when closed).
+    var editTarget by remember { mutableStateOf<QsoRecord?>(null) }
 
     val selectedRadio = remember(uiState.transceivers.transmitters, uiState.transceivers.selectedUuid) {
         uiState.transceivers.transmitters.firstOrNull { it.uuid == uiState.transceivers.selectedUuid }
@@ -73,25 +92,50 @@ fun LogPage(
     val isLinear = uiState.transceivers.transmitters.any(DopplerFrequencyCalculator::isNamedLinearTransponder)
     val catnum = uiState.currentPass?.catNum ?: selectedRadio?.catnum ?: 0
     val satName = uiState.currentPass?.name?.trim().orEmpty()
+    // The satellite's FM voice repeater — the single-frequency transceiver the
+    // contact is actually made through. SatNOGS publishes its nominal pair, so a
+    // contact can never be logged without a frequency (which LoTW rejects as a
+    // missing BAND).
+    val voiceRepeater = remember(uiState.transceivers.transmitters) {
+        uiState.transceivers.transmitters.voiceRepeater()
+    }
+    // AMSAT Live FM satellites are always logged on that fixed nominal pair,
+    // even when the calculator happens to be tuned to something else.
+    val useRepeater = catnum in Sources.amSatFmCatnums
 
     LaunchedEffect(catnum) {
         if (catnum != 0) logViewModel.selectSatellite(catnum)
     }
 
-    val txHz = uiState.calculatorTxHz ?: remember(selectedRadio) {
-        selectedRadio?.uplinkLow?.let { low ->
-            selectedRadio.uplinkHigh?.let { high -> (low + high) / 2 } ?: low
-        }
+    // Refresh the roaming hint whenever the page re-enters composition (e.g. returning
+    // from the station-location fix jump).
+    LaunchedEffect(Unit) {
+        logViewModel.refreshPositionHint()
     }
-    val rxHz = uiState.calculatorRxHz ?: remember(selectedRadio) {
-        selectedRadio?.downlinkLow?.let { low ->
-            selectedRadio.downlinkHigh?.let { high -> (low + high) / 2 } ?: low
-        }
+
+    val selectedTxHz = remember(selectedRadio) { selectedRadio?.uplinkHz() }
+    val selectedRxHz = remember(selectedRadio) { selectedRadio?.downlinkHz() }
+    val repeaterTxHz = voiceRepeater?.uplinkHz()
+    val repeaterRxHz = voiceRepeater?.downlinkHz()
+    val txHz = if (useRepeater) {
+        repeaterTxHz ?: uiState.calculatorTxHz ?: selectedTxHz
+    } else {
+        uiState.calculatorTxHz ?: repeaterTxHz ?: selectedTxHz
+    }
+    val rxHz = if (useRepeater) {
+        repeaterRxHz ?: uiState.calculatorRxHz ?: selectedRxHz
+    } else {
+        uiState.calculatorRxHz ?: repeaterRxHz ?: selectedRxHz
     }
     val mode = if (isLinear) logUiState.selectedMode.ifBlank { "CW" } else "FM"
-    val now = System.currentTimeMillis()
+    val satIdentity = remember(satName) { satelliteIdentity(satName) }
+    val passWindow = remember(uiState.currentPass) {
+        uiState.currentPass?.let { it.aosTime..it.losTime }
+    }
     val recent = records
-        .filter { it.satelliteName.trim().equals(satName, true) && it.startUtcMillis > now - LOG_WINDOW_MS }
+        .filter { satelliteIdentity(it.satelliteName) == satIdentity }
+        // Only contacts inside the current pass window: the log page is the "this pass" sheet.
+        .filter { passWindow?.contains(it.startUtcMillis) == true }
         .sortedByDescending { it.startUtcMillis }
     val maxElev = uiState.currentPass?.maxElevation ?: 0.0
 
@@ -108,13 +152,27 @@ fun LogPage(
                     imeAction = ImeAction.Done
                 ),
                 keyboardActions = androidx.compose.foundation.text.KeyboardActions(onDone = {
-                    logViewModel.record(satName, mode, txHz, rxHz, logUiState.stationGrid)
+                    logViewModel.record(satName, mode, txHz, rxHz, logUiState.stationGrid, passWindow)
                 })
             )
             Button(
-                onClick = { logViewModel.record(satName, mode, txHz, rxHz, logUiState.stationGrid) },
+                onClick = { logViewModel.record(satName, mode, txHz, rxHz, logUiState.stationGrid, passWindow) },
                 enabled = logUiState.callsignInput.isNotBlank() && satName.isNotBlank()
             ) { Text("Log") }
+        }
+        logUiState.stationMismatch?.let { mismatch ->
+            Text(
+                text = "⚠ " + stringResource(
+                    R.string.lotw_upload_pos_hint,
+                    mismatch.currentGrid,
+                    gridsLabel(mismatch.stationGrids)
+                ),
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onFixGrid(listOf(mismatch.currentGrid)) }
+            )
         }
         if (isLinear) {
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -135,14 +193,19 @@ fun LogPage(
         } else {
             LazyColumn(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 items(recent, key = { it.id }) { record ->
-                    LogRecordRow(record, swipeController, onDelete = { logViewModel.delete(record.id) })
+                    LogRecordRow(
+                        record = record,
+                        swipeController = swipeController,
+                        onDelete = { logViewModel.delete(record.id) },
+                        onClick = { editTarget = record }
+                    )
                 }
             }
         }
 
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
             OutlinedButton(
-                onClick = { logViewModel.generatePost(satName, maxElev) },
+                onClick = { logViewModel.generatePost(satName, maxElev, passWindow) },
                 enabled = recent.isNotEmpty(),
                 modifier = Modifier.weight(1f)
             ) { Text("生成通联记录", fontSize = 13.sp) }
@@ -150,7 +213,7 @@ fun LogPage(
                 onClick = logViewModel::prepareUpload,
                 enabled = !logUiState.busy,
                 modifier = Modifier.weight(1f)
-            ) { Text("上传 LoTW", fontSize = 13.sp) }
+            ) { Text(if (logUiState.wavelogMode) "上传 Wavelog" else "上传 LoTW", fontSize = 13.sp) }
         }
         if (logUiState.busy) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -181,34 +244,108 @@ fun LogPage(
         )
     }
 
-    logUiState.preview?.let { preview ->
-        UploadPreviewDialog(
+    logUiState.uploadPositionWarning?.let { warning ->
+        LoTWPositionWarningDialog(
+            warning = warning,
+            onFixStation = {
+                logViewModel.abandonForGridFix()
+                onFixGrid(listOf(warning.currentGrid))
+            },
+            onIgnore = logViewModel::ignorePositionWarning
+        )
+    }
+
+    // The preview only opens once the position check is out of the way.
+    if (logUiState.uploadPositionWarning == null) {
+        logUiState.preview?.let { preview ->
+            UploadPreviewDialog(
+                preview = preview,
+                busy = logUiState.busy,
+                onConfirm = logViewModel::confirmUpload,
+                onDismiss = logViewModel::dismissPreview,
+                onRewriteCallsign = logViewModel::rewriteCallsignConflicts,
+                onSwitchCertificate = logViewModel::switchCertificateForConflicts
+            )
+        }
+    }
+
+    logUiState.wavelogPreview?.let { preview ->
+        WavelogUploadPreviewDialog(
             preview = preview,
             busy = logUiState.busy,
-            onConfirm = logViewModel::confirmUpload,
-            onDismiss = logViewModel::dismissPreview
+            onConfirm = logViewModel::confirmWavelogUpload,
+            onDismiss = logViewModel::dismissWavelogPreview
         )
     }
 
     if (logUiState.message.isNotBlank()) {
         AlertDialog(
             onDismissRequest = logViewModel::clearMessage,
-            title = { Text("LoTW Upload") },
+            shape = sheetDialogShape(),
+            containerColor = sheetDialogContainerColor(),
+            title = { SheetDialogTitle(if (logUiState.wavelogMode) "Wavelog Upload" else "LoTW Upload") },
             text = { Text(logUiState.message) },
             confirmButton = {
                 TextButton(onClick = logViewModel::clearMessage) { Text("OK") }
             }
         )
     }
+
+    // Out-of-window notice: the clock is outside the current pass [aos, los], so the record
+    // would never show in the window-filtered list. Confirm first, then store it at the pass
+    // midpoint (there is always an edit dialog afterwards for the exact time).
+    logUiState.outOfWindowLog?.let { pending ->
+        val midpointText = remember(pending.midpointUtcMillis) {
+            java.text.SimpleDateFormat("HH:mm'Z'", java.util.Locale.US).apply {
+                timeZone = java.util.TimeZone.getTimeZone("UTC")
+            }.format(java.util.Date(pending.midpointUtcMillis))
+        }
+        AlertDialog(
+            onDismissRequest = logViewModel::dismissOutOfWindowLog,
+            shape = sheetDialogShape(),
+            containerColor = sheetDialogContainerColor(),
+            title = { SheetDialogTitle(stringResource(R.string.log_out_window_title)) },
+            text = { Text(stringResource(R.string.log_out_window_message, midpointText)) },
+            confirmButton = {
+                TextButton(onClick = logViewModel::confirmOutOfWindowLog) {
+                    Text(stringResource(R.string.log_out_window_confirm))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = logViewModel::dismissOutOfWindowLog) {
+                    Text(stringResource(R.string.btn_cancel))
+                }
+            }
+        )
+    }
+
+    editTarget?.let { target ->
+        QsoEditDialog(
+            record = target,
+            satelliteCandidates = logUiState.satelliteCatalog,
+            onDismiss = { editTarget = null },
+            onSave = { updated ->
+                logViewModel.updateRecord(updated)
+                editTarget = null
+            }
+        )
+    }
 }
 
 @Composable
-private fun LogRecordRow(record: QsoRecord, swipeController: SwipeController, onDelete: () -> Unit) {
+private fun LogRecordRow(
+    record: QsoRecord,
+    swipeController: SwipeController,
+    onDelete: () -> Unit,
+    onClick: () -> Unit
+) {
     val time = remember(record.startUtcMillis) {
         java.text.SimpleDateFormat("HH:mm'Z'", java.util.Locale.US).apply {
             timeZone = java.util.TimeZone.getTimeZone("UTC")
         }.format(java.util.Date(record.startUtcMillis))
     }
+    // Own station grid: the upload-stamped set, else the grid the QSO was logged under.
+    val ownGrids = gridsLabel(record.vuccGrids.ifEmpty { listOf(record.myGrid) })
     // 右划露出删除按钮（短信式）；整行点击不再删除。
     SwipeRevealRow(
         key = record.id.toString(),
@@ -217,7 +354,10 @@ private fun LogRecordRow(record: QsoRecord, swipeController: SwipeController, on
         modifier = Modifier.fillMaxWidth()
     ) {
         Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 2.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { onClick() }
+                .padding(horizontal = 4.dp, vertical = 2.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -227,14 +367,22 @@ private fun LogRecordRow(record: QsoRecord, swipeController: SwipeController, on
                     text = record.theirCallsign,
                     fontSize = 14.sp,
                     fontFamily = FontFamily.Monospace,
-                    color = Color(0xFFFFE082),
+                    color = MaterialTheme.colorScheme.primary,
                     maxLines = 1
                 )
                 Text(text = "  ${record.displayMode}", fontSize = 14.sp, maxLines = 1)
+                if (ownGrids.isNotBlank()) {
+                    Text(
+                        text = "  $ownGrids",
+                        fontSize = 14.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1
+                    )
+                }
             }
             when {
-                record.lotwConfirmed -> Text("QSL", fontSize = 12.sp, color = Color(0xFFFFE082), fontFamily = FontFamily.Monospace)
-                record.lotwUploaded -> Text("UP", fontSize = 12.sp, color = Color(0xFFFFE082), fontFamily = FontFamily.Monospace)
+                record.lotwConfirmed -> Text("QSL", fontSize = 12.sp, color = MaterialTheme.colorScheme.primary, fontFamily = FontFamily.Monospace)
+                record.lotwUploaded -> Text("UP", fontSize = 12.sp, color = MaterialTheme.colorScheme.primary, fontFamily = FontFamily.Monospace)
                 else -> Text("", fontSize = 12.sp)
             }
         }
@@ -250,7 +398,9 @@ private fun PostDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("通联记录") },
+        shape = sheetDialogShape(),
+        containerColor = sheetDialogContainerColor(),
+        title = { SheetDialogTitle("通联记录") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(text, fontSize = 13.sp)
@@ -269,15 +419,22 @@ private fun UploadPreviewDialog(
     preview: com.rtbishop.look4sat.core.domain.repository.LoTWUploadPreview,
     busy: Boolean,
     onConfirm: () -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    onRewriteCallsign: () -> Unit,
+    onSwitchCertificate: () -> Unit
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("上传到 LoTW") },
+        shape = sheetDialogShape(),
+        containerColor = sheetDialogContainerColor(),
+        title = { SheetDialogTitle("上传到 LoTW") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text("${preview.callsign}  DXCC ${preview.dxcc}  Grid ${preview.grid}", fontSize = 13.sp)
-                Text("${preview.count} QSO(s) · ${
+                val range = if (preview.firstUtc.isBlank()) {
+                    // A blocked batch (shown for its conflict actions) has no date range to show.
+                    "${preview.count} QSO(s)"
+                } else "${preview.count} QSO(s) · ${
                     java.text.SimpleDateFormat("MM-dd HH:mm", java.util.Locale.US).apply {
                         timeZone = java.util.TimeZone.getTimeZone("UTC")
                     }.format(java.util.Date(preview.firstUtc.let {
@@ -293,12 +450,60 @@ private fun UploadPreviewDialog(
                             timeZone = java.util.TimeZone.getTimeZone("UTC")
                         }.parse(it).time }.getOrDefault(System.currentTimeMillis())
                     }))
-                }Z", fontSize = 13.sp)
+                }Z"
+                Text(range, fontSize = 13.sp)
+                if (preview.skipped > 0 || preview.unknownSkipped > 0 || preview.unavailableSkipped > 0) {
+                    val parts = buildList {
+                        // skipped counts every record left out of this batch: previously-uploaded
+                        // ones, batch duplicates and unknown-outcome ones. Show them separately so
+                        // "10 already uploaded" (historical records) is not read as this upload
+                        // being rejected as a duplicate.
+                        val alreadyUploaded = preview.skipped - preview.duplicateSkipped - preview.unknownSkipped
+                        if (alreadyUploaded > 0) add("$alreadyUploaded already uploaded")
+                        if (preview.duplicateSkipped > 0) add("${preview.duplicateSkipped} duplicate")
+                        if (preview.unknownSkipped > 0) add("${preview.unknownSkipped} unknown result")
+                        if (preview.unavailableSkipped > 0) add(
+                            unavailableUploadSummary(
+                                preview.unavailableSkipped,
+                                preview.unavailableReasons,
+                                duplicates = preview.duplicateSkipped
+                            )
+                        )
+                    }
+                    Text(parts.joinToString(" · "), fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
+                }
+                if (preview.missingCallsign > 0) {
+                    // Logged while no certificate was installed; signed with the certificate's
+                    // callsign instead of being refused.
+                    Text(
+                        stringResource(R.string.prefs_logbook_callsign_missing, preview.missingCallsign, preview.callsign),
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+                if (preview.callsignConflicts.isNotEmpty()) {
+                    // These name another callsign than the certificate: rewrite them with this
+                    // certificate's callsign, or upload them under the other certificate.
+                    Text(
+                        stringResource(R.string.prefs_logbook_callsign_different, preview.callsignConflicts.size, preview.callsign),
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        TextButton(onClick = onRewriteCallsign, enabled = !busy) {
+                            Text(stringResource(R.string.prefs_logbook_callsign_rewrite, preview.callsign), fontSize = 12.sp)
+                        }
+                        TextButton(onClick = onSwitchCertificate, enabled = !busy) {
+                            Text(stringResource(R.string.prefs_logbook_callsign_switch), fontSize = 12.sp)
+                        }
+                    }
+                }
                 Text(preview.contacts.joinToString("\n") { it }, fontSize = 12.sp, maxLines = 8)
             }
         },
         confirmButton = {
-            TextButton(onClick = onConfirm, enabled = !busy) { Text("确认上传") }
+            // Nothing uploadable (a conflict-only batch): the actions above are the way out.
+            TextButton(onClick = onConfirm, enabled = !busy && preview.count > 0) { Text("确认上传") }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("Cancel") }

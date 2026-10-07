@@ -25,6 +25,7 @@ include(
 include(
     ":feature:ft4",
     ":feature:logbook",
+    ":feature:gridfinder",
     ":feature:map",
     ":feature:mutual",
     ":feature:passes",

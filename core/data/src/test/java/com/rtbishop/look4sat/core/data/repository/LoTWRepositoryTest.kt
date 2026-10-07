@@ -1,3 +1,21 @@
+/*
+ * Look4Sat-BA7OPF. Amateur radio satellite tracker and pass predictor.
+ * Copyright (C) 2026 BA7OPF.
+ * Based on Look4Sat by Arty Bishop and contributors.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
 package com.rtbishop.look4sat.core.data.repository
 
 import com.rtbishop.look4sat.core.domain.logbook.isSatellite
@@ -113,9 +131,12 @@ class LoTWRepositoryTest {
         assertEquals("A50QO", qso.call)
         assertEquals("FO-29", qso.satName)
         assertEquals("CW", qso.mode)
-        assertEquals("2M", qso.bandUp)
-        assertEquals("70CM", qso.bandDown)
-        assertEquals("V/U", qso.bandLabel)
+        // ADIF BAND is the transmitted (uplink) band, BAND_RX the received (downlink) one.
+        // Confirmed against the live report of the own uploads: SO-50 QSOs arrive as
+        // BAND=2M/FREQ=145.85000 + BAND_RX=70CM/FREQ_RX=436.80500, i.e. BAND=uplink.
+        assertEquals("70CM", qso.bandUp)
+        assertEquals("2M", qso.bandDown)
+        assertEquals("U/V", qso.bandLabel)
         assertEquals(2026, java.time.Instant.ofEpochMilli(qso.epochMs).atZone(java.time.ZoneOffset.UTC).year)
     }
 
@@ -145,6 +166,29 @@ class LoTWRepositoryTest {
         val result = repo.parseConfirmedGridQsos(report(qso))!!
         assertEquals(setOf("EN52", "EN53", "EN42", "EN43"), result.keys)
         result.values.forEach { assertEquals(1, it.size) }
+    }
+
+    @Test
+    fun parseQsosCapturesOppositeGridSet() {
+        // The opposite station's grids (GRIDSQUARE + VUCC_GRIDS) must ride on the
+        // GridQso so the logbook can show multi-grid confirmations in its QSL slot.
+        val single = "<PROP_MODE:3>SAT\n<SAT_NAME:5>FO-29\n<GRIDSQUARE:4>NL47\n<EOR>\n"
+        assertEquals(
+            listOf("NL47"),
+            repo.parseConfirmedGridQsos(report(single))!!["NL47"]!!.first().theirGrids
+        )
+        val pair = "<PROP_MODE:3>SAT\n<SAT_NAME:5>SO-50\n<VUCC_GRIDS:11>EN52en,EN53fa\n<EOR>\n"
+        assertEquals(
+            listOf("EN52", "EN53"),
+            repo.parseConfirmedGridQsos(report(pair))!!["EN52"]!!.first().theirGrids
+        )
+        // A 6-char GRIDSQUARE plus a VUCC pair: every field, truncated to 4 chars, in order.
+        val six = "<PROP_MODE:3>SAT\n<SAT_NAME:5>SO-50\n" +
+            "<GRIDSQUARE:6>OM60IL\n<VUCC_GRIDS:11>EN52en,EN53fa\n<EOR>\n"
+        assertEquals(
+            listOf("OM60", "EN52", "EN53"),
+            repo.parseConfirmedGridQsos(report(six))!!["OM60"]!!.first().theirGrids
+        )
     }
 
     @Test

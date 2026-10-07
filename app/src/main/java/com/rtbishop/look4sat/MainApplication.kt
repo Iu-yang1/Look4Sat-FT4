@@ -50,6 +50,9 @@ class MainApplication : Application(), IContainerProvider {
         container.appScope.launch { checkAutoUpdate() }
         // automatic LoTW grid sync on every app start (gated, see checkLoTWAutoSync)
         container.appScope.launch { checkLoTWAutoSync() }
+        // repair logbooks split by the old name/band identity mismatch, independent of
+        // whether a sync is due (cheap read + in-memory match on every start)
+        container.appScope.launch { runCatching { container.qsoRepository.consolidateConfirmations() } }
         // load satellite data on every app start
         container.appScope.launch { container.satelliteRepo.initRepository() }
     }
@@ -101,6 +104,9 @@ class MainApplication : Application(), IContainerProvider {
      */
     private suspend fun checkLoTWAutoSync(timeNow: Long = System.currentTimeMillis()) {
         val settingsRepo = container.settingsRepo
+        // One-of-two rule: while Wavelog is configured the app uploads/syncs through
+        // Wavelog only — the automatic LoTW sync stays off.
+        if (settingsRepo.wavelogUploadSettings.value.isReady) return
         val lotwSettings = settingsRepo.lotwSettings.value
         if (!shouldAutoSyncLoTW(
                 isConfigured = lotwSettings.isConfigured,

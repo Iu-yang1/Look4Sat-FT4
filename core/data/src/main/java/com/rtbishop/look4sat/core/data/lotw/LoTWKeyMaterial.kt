@@ -1,3 +1,21 @@
+/*
+ * Look4Sat-BA7OPF. Amateur radio satellite tracker and pass predictor.
+ * Copyright (C) 2026 BA7OPF.
+ * Based on Look4Sat by Arty Bishop and contributors.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
 package com.rtbishop.look4sat.core.data.lotw
 
 import com.rtbishop.look4sat.core.domain.repository.LoTWCertificate
@@ -15,53 +33,38 @@ import java.util.TimeZone
 
 internal data class LoTWKeyMaterial(val key: PrivateKey, val certificate: X509Certificate, val info: LoTWCertificate) {
     companion object {
-        fun read(bytes: ByteArray, password: CharArray, now: Long): LoTWKeyMaterial {
+        /**
+         * Reads the private key and certificate out of a TrustedQSL .p12 backup.
+         *
+         * The platform PKCS12 parser is tried first because it resolves the certificate that
+         * belongs to the key entry. When it cannot deliver a usable pair — it may refuse the file
+         * outright (older Android cannot read PBES2 at all) or accept the container yet expose no
+         * key entry (Conscrypt/OpenSSL reads PBES2 but fails to recover the key of, for example,
+         * an empty-password backup) — our own PBES2 reader is consulted before reporting a problem,
+         * so a valid certificate is not rejected as "not a valid LoTW certificate file".
+         *
+         * [platformStore] is a seam that lets tests simulate a platform which accepts the file
+         * without exposing any key entry.
+         */
+        internal fun read(
+            bytes: ByteArray,
+            password: CharArray,
+            now: Long,
+            platformStore: (ByteArray, CharArray) -> KeyStore? = { data, pass -> loadPlatformStore(data, pass) },
+        ): LoTWKeyMaterial {
             if (bytes.isEmpty() || bytes.size > MAX_CERTIFICATE_BYTES) fail(LoTWProblem.CERTIFICATE_INVALID)
             val key: PrivateKey
             val cert: X509Certificate
-            val store = try {
-                KeyStore.getInstance("PKCS12").apply { bytes.inputStream().use { load(it, password) } }
-            } catch (_: Exception) {
-                // Modern TQSL / OpenSSL 3 exports use PBES2+AES-CBC which Android's legacy
-                // Bouncy Castle parser cannot read. Fall back to our own PBES2 reader; if
-                // that fails too, report the real reason (format vs password).
-                if (isPbes2(bytes)) {
-                    try {
-                        val parsed = Pkcs12Reader.read(bytes, password)
-                        parsed.first to parsed.second
-                    } catch (e: Exception) {
-                        // Classify by exception type so the user sees the right message:
-                        //  - BadPadding (BAD_DECRYPT)          -> wrong password
-                        //  - IllegalStateException (error())    -> unsupported algorithm,
-                        //    message is the algorithm name
-                        //  - IllegalArgumentException (require()) -> structurally invalid file
-                        fail(
-                            when {
-                                e is javax.crypto.BadPaddingException -> LoTWProblem.CERTIFICATE_PASSWORD
-                                e is IllegalStateException && password.isNotEmpty() -> LoTWProblem.CERTIFICATE_FORMAT
-                                else -> LoTWProblem.CERTIFICATE_INVALID
-                            },
-                            if (e is IllegalStateException) (e.message ?: "") else ""
-                        )
-                    }
-                } else {
-                    fail(LoTWProblem.CERTIFICATE_PASSWORD)
-                }
-            }
-            if (store is Pair<*, *>) {
-                @Suppress("UNCHECKED_CAST")
-                key = store.first as PrivateKey
-                @Suppress("UNCHECKED_CAST")
-                cert = store.second as X509Certificate
+            val outcome = platformStore(bytes, password)?.let { platformKeyAndCertificate(it, password) }
+            if (outcome is PlatformOutcome.Ok) {
+                key = outcome.key
+                cert = outcome.certificate
+            } else if (isPbes2(bytes)) {
+                val parsed = readWithPbes2Reader(bytes, password)
+                key = parsed.first
+                cert = parsed.second
             } else {
-                val ks = store as KeyStore
-                val aliases = Collections.list(ks.aliases()).filter { ks.isKeyEntry(it) }
-                if (aliases.size != 1) fail(LoTWProblem.CERTIFICATE_INVALID)
-                val alias = aliases.single()
-                key = try { ks.getKey(alias, password) as? PrivateKey }
-                catch (_: Exception) { fail(LoTWProblem.CERTIFICATE_PASSWORD) }
-                    ?: fail(LoTWProblem.CERTIFICATE_INVALID)
-                cert = ks.getCertificate(alias) as? X509Certificate ?: fail(LoTWProblem.CERTIFICATE_INVALID)
+                fail((outcome as? PlatformOutcome.Unusable)?.problem ?: LoTWProblem.CERTIFICATE_PASSWORD)
             }
             if (key.algorithm != "RSA" || cert.publicKey.algorithm != "RSA") fail(LoTWProblem.CERTIFICATE_INVALID)
             try { cert.checkValidity(Date(now)) } catch (_: Exception) { fail(LoTWProblem.CERTIFICATE_EXPIRED) }
@@ -72,6 +75,54 @@ internal data class LoTWKeyMaterial(val key: PrivateKey, val certificate: X509Ce
             val valid = Signature.getInstance("SHA1withRSA").run { initVerify(cert); update(challenge); verify(signed) }
             if (!valid) fail(LoTWProblem.CERTIFICATE_INVALID)
             return LoTWKeyMaterial(key, cert, info)
+        }
+
+        /** What the platform PKCS12 parser managed to deliver for the key entry. */
+        private sealed interface PlatformOutcome {
+            data class Ok(val key: PrivateKey, val certificate: X509Certificate) : PlatformOutcome
+
+            /** The problem the platform path would have reported on its own. */
+            data class Unusable(val problem: LoTWProblem) : PlatformOutcome
+        }
+
+        /** The platform PKCS12 keystore, or null when it refuses to read the file at all. */
+        private fun loadPlatformStore(bytes: ByteArray, password: CharArray): KeyStore? = try {
+            KeyStore.getInstance("PKCS12").apply { bytes.inputStream().use { load(it, password) } }
+        } catch (_: Exception) {
+            null
+        }
+
+        /** Resolves the single key entry the platform offers, keeping its own failure reasons. */
+        private fun platformKeyAndCertificate(store: KeyStore, password: CharArray): PlatformOutcome {
+            val aliases = Collections.list(store.aliases()).filter { store.isKeyEntry(it) }
+            val alias = aliases.singleOrNull() ?: return PlatformOutcome.Unusable(LoTWProblem.CERTIFICATE_INVALID)
+            val key = try {
+                store.getKey(alias, password) as? PrivateKey
+            } catch (_: Exception) {
+                return PlatformOutcome.Unusable(LoTWProblem.CERTIFICATE_PASSWORD)
+            } ?: return PlatformOutcome.Unusable(LoTWProblem.CERTIFICATE_INVALID)
+            val certificate = store.getCertificate(alias) as? X509Certificate
+                ?: return PlatformOutcome.Unusable(LoTWProblem.CERTIFICATE_INVALID)
+            return PlatformOutcome.Ok(key, certificate)
+        }
+
+        /** Our own PBES2 reader, mapping failures onto the message the operator should see. */
+        private fun readWithPbes2Reader(bytes: ByteArray, password: CharArray): Pair<PrivateKey, X509Certificate> = try {
+            Pkcs12Reader.read(bytes, password)
+        } catch (e: Exception) {
+            // Classify by exception type so the user sees the right message:
+            //  - BadPadding (BAD_DECRYPT)          -> wrong password
+            //  - IllegalStateException (error())    -> unsupported algorithm,
+            //    message is the algorithm name
+            //  - IllegalArgumentException (require()) -> structurally invalid file
+            fail(
+                when {
+                    e is javax.crypto.BadPaddingException -> LoTWProblem.CERTIFICATE_PASSWORD
+                    e is IllegalStateException && password.isNotEmpty() -> LoTWProblem.CERTIFICATE_FORMAT
+                    else -> LoTWProblem.CERTIFICATE_INVALID
+                },
+                if (e is IllegalStateException) (e.message ?: "") else ""
+            )
         }
 
         /** True when the PKCS12 uses PBES2 (OID 1.2.840.113549.1.5.13), the default

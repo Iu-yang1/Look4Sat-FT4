@@ -32,6 +32,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -85,7 +86,11 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.rtbishop.look4sat.core.domain.model.AwardCalculator
 import com.rtbishop.look4sat.core.domain.model.AwardProgress
 import com.rtbishop.look4sat.core.domain.model.AwardType
+import com.rtbishop.look4sat.core.domain.model.firstCallsByGrid
 import com.rtbishop.look4sat.core.domain.model.MapSource
+import com.rtbishop.look4sat.core.domain.model.myStationGrids
+import com.rtbishop.look4sat.core.domain.model.scopedToStation
+import com.rtbishop.look4sat.core.domain.model.stationGridSetKey
 import com.rtbishop.look4sat.core.domain.predict.GeoPos
 import com.rtbishop.look4sat.core.domain.predict.OrbitalObject
 import com.rtbishop.look4sat.core.domain.predict.OrbitalPos
@@ -93,10 +98,13 @@ import com.rtbishop.look4sat.core.domain.repository.IContainerProvider
 import com.rtbishop.look4sat.core.presentation.IconCard
 import com.rtbishop.look4sat.core.presentation.NextPassRow
 import com.rtbishop.look4sat.core.presentation.R
+import com.rtbishop.look4sat.core.presentation.SheetDialogTitle
 import com.rtbishop.look4sat.core.presentation.TimerRow
 import com.rtbishop.look4sat.core.presentation.TopBar
 import com.rtbishop.look4sat.core.presentation.isVerticalLayout
 import com.rtbishop.look4sat.core.presentation.layoutPadding
+import com.rtbishop.look4sat.core.presentation.sheetDialogContainerColor
+import com.rtbishop.look4sat.core.presentation.sheetDialogShape
 import org.osmdroid.tileprovider.MapTileProviderBasic
 import org.osmdroid.tileprovider.tilesource.OnlineTileSourceBase
 import org.osmdroid.tileprovider.tilesource.XYTileSource
@@ -159,6 +167,71 @@ private val moonIconPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         android.graphics.PorterDuffColorFilter("#E0E0E0".toColorInt(), android.graphics.PorterDuff.Mode.SRC_IN)
 }
 
+/**
+ * Accent used for the station marker, footprint outline and map labels. It is recolored per
+ * theme (dark amber on light tiles, light amber on dark tiles) so every map element stays
+ * readable; [applyMapColors] keeps it in sync with the shared paints.
+ */
+private var mapAccentColor = "#FFE082".toColorInt()
+
+/** Grayscale + invert filter that turns the offline OSM map dark; unused (and off) in light theme. */
+private val darkTileFilter by lazy { createColorFilter() }
+
+/** Theme the shared map paints were last colored for; null = not applied yet this process. */
+private var mapIsLightUi: Boolean? = null
+
+/** Theme the tile filter / icon caches were last applied for (drives the per-frame theme check). */
+private var appliedLightUi: Boolean? = null
+
+/** True while the offline OSM source is active — satellite imagery (Tianditu) is never filtered. */
+private var offlineTilesActive = true
+
+/**
+ * Recolor the shared overlay paints and custom overlays for the current theme. Must run before the
+ * markers are (re)built each frame so freshly created icons use the new colors; [applyThemeToOverlays]
+ * and the icon-cache eviction in the update block handle the already created ones.
+ */
+private fun applyMapColors(isLightUi: Boolean) {
+    mapIsLightUi = isLightUi
+    if (isLightUi) {
+        // Dark amber (lightScheme primary) reads on light tiles; labels get a white halo.
+        mapAccentColor = "#715C0C".toColorInt()
+        footprintPaint.color = mapAccentColor
+        textPaint.color = "#1E1B13".toColorInt()
+        textPaint.setShadowLayer(3f, 3f, 3f, Color.WHITE)
+        sunIconPaint.colorFilter =
+            android.graphics.PorterDuffColorFilter(mapAccentColor, android.graphics.PorterDuff.Mode.SRC_IN)
+        moonIconPaint.colorFilter = android.graphics.PorterDuffColorFilter(
+            "#4C4639".toColorInt(), android.graphics.PorterDuff.Mode.SRC_IN
+        )
+    } else {
+        mapAccentColor = "#FFE082".toColorInt()
+        footprintPaint.color = mapAccentColor
+        textPaint.color = mapAccentColor
+        textPaint.setShadowLayer(3f, 3f, 3f, Color.BLACK)
+        sunIconPaint.colorFilter =
+            android.graphics.PorterDuffColorFilter(mapAccentColor, android.graphics.PorterDuff.Mode.SRC_IN)
+        moonIconPaint.colorFilter =
+            android.graphics.PorterDuffColorFilter("#E0E0E0".toColorInt(), android.graphics.PorterDuff.Mode.SRC_IN)
+    }
+    applyThemeToOverlays()
+}
+
+/** Push the current theme into the grid / award overlays, which own their own paints. */
+private fun applyThemeToOverlays() {
+    val isLight = mapIsLightUi == true
+    currentMapView?.overlays?.forEach { overlay ->
+        when (overlay) {
+            is MaidenheadGridOverlay -> overlay.applyTheme(isLight)
+            is AwardBoundaryOverlay -> overlay.applyTheme(isLight)
+            else -> Unit
+        }
+    }
+}
+
+/** The MapView currently attached to the map page; used to recolor overlays on a theme change. */
+private var currentMapView: MapView? = null
+
 @Composable
 fun MapDestination(
     mapFilterViewModel: MapFilterViewModel,
@@ -204,7 +277,14 @@ fun MapDestination(
             viewModel.onAction(MapAction.SetVisible(false))
         }
     }
-    MapScreen(uiState, viewModel::onAction, mapView, mapFilterViewModel, onMatchGrid, matchCalculating)
+    MapScreen(
+        uiState = uiState,
+        onAction = viewModel::onAction,
+        mapView = mapView,
+        mapFilterViewModel = mapFilterViewModel,
+        onMatchGrid = onMatchGrid,
+        matchCalculating = matchCalculating
+    )
 }
 
 @Composable
@@ -225,16 +305,13 @@ private fun MapScreen(
     // Tapped worked grid -> centered QSO dialog. Local UI state: the map is the
     // only consumer and it resets when leaving the page.
     var selectedGrid by remember { mutableStateOf<String?>(null) }
+    // Tapped award region (DXCC/WAPC/WAJA/WAZ/WAS) -> its QSO detail dialog,
+    // paired with the award type it was tapped under. Local UI state like the
+    // grid selection above: the map is the only consumer.
+    var selectedRegion by remember { mutableStateOf<Pair<AwardType, AwardRegion>?>(null) }
     // Selected award filter. Lives in an Activity-scoped ViewModel so it
     // survives page switches; defaults to VUCC only once per process (cold start).
     var selectedAward by mapFilterViewModel.selectedAward
-    // First callsign worked in each grid (earliest QSO by time), used by the
-    // "首通呼号" label mode — derived from the same QSO store as the worked fills.
-    val firstCallsByGrid: Map<String, String> = remember(uiState.workedGridQsos) {
-        uiState.workedGridQsos.mapNotNull { (grid, qsos) ->
-            qsos.minByOrNull { it.epochMs }?.let { grid to it.call }
-        }.toMap()
-    }
     // 台址名单: QSOs grouped by the 台址's GRID SET. A station location (台址)
     // can span several grids (MY_GRIDSQUARE + MY_VUCC_GRIDS), and QSOs whose
     // location covers the same grid set belong to the same 台址; groups with an
@@ -242,18 +319,24 @@ private fun MapScreen(
     // can differ between records of the same physical 台址 when LoTW omits
     // optional fields). Data synced before multi-grid support falls back to
     // one group per grid, preserving the old selector exactly.
+    // Each group's `worked` cells are derived through scopedToStation (the
+    // covering rule): a single-grid 台址 also counts the cells worked by any
+    // multi-grid 台址 covering it (OL62 ← OL62/63, 四格点同理) — the reverse
+    // never leaks (2026-10-05 用户定稿, 方案 A).
     val stationGroups: List<StationGroup> = remember(uiState.workedGridQsos) {
-        val byGridSet = LinkedHashMap<String, Pair<Set<String>, MutableSet<String>>>()
-        for ((grid, qsos) in uiState.workedGridQsos) {
+        val gridSets = LinkedHashMap<String, Set<String>>()
+        for ((_, qsos) in uiState.workedGridQsos) {
             for (q in qsos) {
-                val gs = q.myGrids.ifEmpty { q.myGrid?.let { setOf(it) }.orEmpty() }
-                if (gs.isEmpty()) continue
-                val key = gs.sorted().joinToString(",")
-                byGridSet.getOrPut(key) { gs to mutableSetOf() }.second.add(grid)
+                val key = q.stationGridSetKey() ?: continue
+                gridSets.getOrPut(key) { q.myStationGrids() }
             }
         }
-        byGridSet.map { (key, v) -> StationGroup(id = key, grids = v.first, worked = v.second) }
-            .sortedByDescending { it.workedCount }
+        gridSets.map { (key, grids) ->
+            val worked = uiState.workedGridQsos.filterValues { qsos ->
+                qsos.scopedToStation(key).isNotEmpty()
+            }.keys
+            StationGroup(id = key, grids = grids, worked = worked)
+        }.sortedByDescending { it.workedCount }
     }
     // Selected 台址 for VUCC counting; defaults to the group with the most
     // worked grids. Null = "All" (every 台址 combined). Empty when the store
@@ -277,6 +360,13 @@ private fun MapScreen(
         if (selectedStationId == null) uiState.workedGrids
         else stationGroups.firstOrNull { it.id == selectedStationId }?.worked ?: emptySet()
     }
+    // First callsign worked in each grid (earliest QSO by time), used by the
+    // "首通呼号" label mode. Scoped to the selected 台址 like the fills: with a
+    // specific operated grid chosen, the label must show ITS first contact, not
+    // another 台址's (user decision 2026-10-05); "All" = global first call.
+    val firstCallsByGrid: Map<String, String> = remember(uiState.workedGridQsos, selectedStationId) {
+        uiState.workedGridQsos.firstCallsByGrid(selectedStationId)
+    }
     val isGridMode = uiState.isGridMode
     // True when this composition restored a saved viewport. Only grid mode
     // restores the viewport the user left (satellite mode keeps its original
@@ -290,6 +380,20 @@ private fun MapScreen(
         val receiver = object : org.osmdroid.events.MapEventsReceiver {
             override fun singleTapConfirmedHelper(p: GeoPoint?): Boolean {
                 if (!isGridMode || p == null) return false
+                // Award views (DXCC/WAPC/WAJA/WAZ/WAS): the tap resolves to the
+                // boundary region under the finger and opens its QSO detail
+                // dialog. No zoom gate here — unlike the grid path below — so
+                // tiny islands stay reachable while zoomed out (Tianditu tiles
+                // have no zoom cap, so "just zoom in" is not an answer).
+                val awardMode = selectedAward?.takeIf { it != AwardType.VUCC }
+                if (awardMode != null) {
+                    val overlay = mapView.overlays.getOrNull(OVERLAY_GRID) as? AwardBoundaryOverlay
+                        ?: return false
+                    val region = overlay.regionAt(p.latitude, p.longitude, mapView.zoomLevelDouble)
+                        ?: return false
+                    selectedRegion = awardMode to region
+                    return true
+                }
                 val zoom = mapView.zoomLevelDouble
                 // Allow tapping grid cells as soon as the 4-char grid lines
                 // appear (GRID_ZOOM_SUB); grid labels now appear at that zoom too.
@@ -312,6 +416,12 @@ private fun MapScreen(
         (mapView.overlays.getOrNull(OVERLAY_GRID) as? MaidenheadGridOverlay)?.selectedGrid = selectedGrid
         mapView.invalidate()
     }
+    // Same for the award boundary overlay's selected region.
+    LaunchedEffect(selectedRegion) {
+        (mapView.overlays.getOrNull(OVERLAY_GRID) as? AwardBoundaryOverlay)?.selectedCode =
+            selectedRegion?.second?.code
+        mapView.invalidate()
+    }
     LaunchedEffect(uiState.track) {
         // In grid mode the map is centered on the local grid square; following
         // the satellite subpoint here would override that centering on every
@@ -320,8 +430,8 @@ private fun MapScreen(
         val firstPos = uiState.track?.firstOrNull()?.firstOrNull() ?: return@LaunchedEffect
         mapView.controller.animateTo(GeoPoint(firstPos.latitude, firstPos.longitude))
     }
-    LaunchedEffect(uiState.mapSource, uiState.tiandituKey) {
-        configureTileSources(mapView, uiState.mapSource, uiState.tiandituKey)
+    LaunchedEffect(uiState.mapSource, uiState.tiandituKey, uiState.isLightUi) {
+        configureTileSources(mapView, uiState.mapSource, uiState.tiandituKey, uiState.isLightUi)
     }
     Column(modifier = Modifier.layoutPadding(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         val isVertical = isVerticalLayout()
@@ -359,6 +469,18 @@ private fun MapScreen(
                     mutableStateOf(restoredViewport && uiState.isGridMode)
                 }
                 AndroidView({ mapView }) { view ->
+                    // Theme change: recolor the paints/tile filter/overlays and drop the icon
+                    // caches, which baked the previous theme's colors into their bitmaps.
+                    if (appliedLightUi != uiState.isLightUi) {
+                        appliedLightUi = uiState.isLightUi
+                        applyMapColors(uiState.isLightUi)
+                        iconCache.evictAll()
+                        dotIcon = null
+                        view.overlayManager.tilesOverlay.setColorFilter(
+                            if (!uiState.isLightUi && offlineTilesActive) darkTileFilter else null
+                        )
+                        requestTileRefresh(view)
+                    }
                     // Award filter mode: show the selected award's regions with
                     // worked ones filled green; hide satellite layers like grid mode.
                     val awardMode = selectedAward?.takeIf { it != AwardType.VUCC }
@@ -393,13 +515,13 @@ private fun MapScreen(
                         }
                     }
                     if (!uiState.isGridMode) {
-                        uiState.stationPosition?.let { setStationPosition(it, view) }
+                        uiState.stationPosition?.let { setStationPosition(it, view, uiState.isLightUi) }
                         uiState.track?.let { setSatelliteTrack(it, view) }
                         uiState.footprint?.let { setFootprint(it, view) }
                         uiState.positions?.let { setPositions(it, view) { item -> onAction(MapAction.SelectItem(item)) } }
                         setTerminator(uiState.sunLatDeg, uiState.sunLonDeg, view)
-                        setSubSolarPoint(uiState.sunLatDeg, uiState.sunLonDeg, view)
-                        setMoonPosition(uiState.moonLatDeg, uiState.moonLonDeg, view)
+                        setSubSolarPoint(uiState.sunLatDeg, uiState.sunLonDeg, view, uiState.isLightUi)
+                        setMoonPosition(uiState.moonLatDeg, uiState.moonLonDeg, view, uiState.isLightUi)
                     }
                     view.invalidate()
                 }
@@ -452,7 +574,11 @@ private fun MapScreen(
     selectedGrid?.let { grid ->
         WorkedGridQsoDialog(
             grid = grid,
-            qsos = uiState.workedGridQsos[grid].orEmpty().sortedBy { it.epochMs },
+            // Scope to the selected 台址 (null = All): a specific station location
+            // must not show other locations' QSOs (bug report 2026-10-05).
+            qsos = uiState.workedGridQsos[grid].orEmpty()
+                .scopedToStation(selectedStationId)
+                .sortedBy { it.epochMs },
             marked = uiState.markedGrids[grid].orEmpty(),
             isUtc = uiState.isUtc,
             matchCalculating = matchCalculating,
@@ -461,6 +587,22 @@ private fun MapScreen(
             onMark = { call -> onAction(MapAction.SetMarkedStation(grid, call)) },
             onRemoveMark = { call -> onAction(MapAction.RemoveMarkedStation(grid, call)) },
             onPinMark = { call -> onAction(MapAction.PinMarkedStation(grid, call)) }
+        )
+    }
+    // Region detail dialog for a tapped award region. Read-only: the Match
+    // button and station marks are grid-scoped and stay hidden here. The list
+    // is the GLOBAL one (all 台址) — the non-VUCC awards count and fill the
+    // map globally, so their detail lists use the same scope.
+    selectedRegion?.let { (type, region) ->
+        val regionQsos = remember(uiState.workedGridQsos, type, region) {
+            AwardCalculator.regionQsos(uiState.workedGridQsos, type, region.code)
+        }
+        RegionQsoDialog(
+            type = type,
+            region = region,
+            qsos = regionQsos,
+            isUtc = uiState.isUtc,
+            onDismiss = { selectedRegion = null }
         )
     }
 }
@@ -592,7 +734,9 @@ private fun WorkedGridQsoDialog(
     if (showMarkInput) {
         androidx.compose.material3.AlertDialog(
             onDismissRequest = { showMarkInput = false },
-            title = { Text(stringResource(R.string.grid_mark_station)) },
+            shape = sheetDialogShape(),
+            containerColor = sheetDialogContainerColor(),
+            title = { SheetDialogTitle(stringResource(R.string.grid_mark_station)) },
             text = {
                 androidx.compose.material3.OutlinedTextField(
                     value = callInput,
@@ -617,6 +761,110 @@ private fun WorkedGridQsoDialog(
     }
 }
 
+/**
+ * Centered dialog listing the confirmed satellite QSOs counted for a tapped
+ * award region (DXCC/WAPC/WAJA/WAZ/WAS). Read-only variant of the worked-grid
+ * dialog: the header shows the region name + code, and the same expandable
+ * callsign rows. Match / station marks are grid-scoped and stay hidden.
+ * Dismissed by tapping outside. An unworked region opens with an empty list.
+ */
+@Composable
+private fun RegionQsoDialog(
+    type: AwardType,
+    region: AwardRegion,
+    qsos: List<com.rtbishop.look4sat.core.domain.model.GridQso>,
+    isUtc: Boolean,
+    onDismiss: () -> Unit
+) {
+    // WAZ regions are named by their bare zone number in the asset, so the
+    // title gets the full "CQ ZONE 24" wording (user request 2026-10-05) and
+    // the code is not repeated in the subtitle. DXCC shows the entity's call
+    // prefix instead of the numeric code ("BY", user request 2026-10-06);
+    // other awards keep the bare code.
+    val isZone = type == AwardType.WAZ
+    val codeLabel = when {
+        isZone -> ""
+        type == AwardType.DXCC -> "${region.pfx.ifBlank { region.code }} · "
+        else -> "${region.code} · "
+    }
+    androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
+        Card(
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+            modifier = Modifier.fillMaxWidth(0.88f)
+        ) {
+            Column {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .padding(start = 16.dp, end = 8.dp, top = 4.dp, bottom = 4.dp)
+                        // Match the grid dialog header height exactly: its Match button
+                        // enforces a 48dp minimum touch target, inflating the row and
+                        // lowering the title to 6dp from the dialog edge.
+                        .defaultMinSize(minHeight = 48.dp)
+                ) {
+                    // Header mirrors the worked-grid dialog exactly (same font,
+                    // same paddings, same weight layout) — user request
+                    // 2026-10-05: 标题字体/位置与 VUCC 的统一.
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            text = if (isZone) "CQ ZONE ${region.code}" else regionDisplayName(region),
+                            style = MaterialTheme.typography.titleLarge,
+                            color = MaterialTheme.colorScheme.primary,
+                            fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+                        )
+                        Text(
+                            text = codeLabel + stringResource(
+                                R.string.grid_qso_calls_count,
+                                qsos.map { it.call }.distinct().size,
+                                qsos.size
+                            ),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+                androidx.compose.material3.HorizontalDivider()
+                Column(
+                    Modifier
+                        .heightIn(max = 380.dp)
+                        .verticalScroll(rememberScrollState())
+                ) {
+                    if (qsos.isEmpty()) {
+                        Text(
+                            text = stringResource(R.string.region_qso_empty),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(16.dp)
+                        )
+                    } else {
+                        // Same grouping as the worked-grid dialog: by callsign
+                        // preserving first-contact order (list is oldest-first).
+                        val grouped = remember(qsos) {
+                            qsos.groupBy { it.call }.entries.sortedBy { it.value.first().epochMs }
+                        }
+                        grouped.forEach { (call, callQsos) ->
+                            WorkedGridCallRow(call, callQsos = callQsos, isUtc = isUtc)
+                            androidx.compose.material3.HorizontalDivider(
+                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** Region display label, same language rule as the overlay's map labels. */
+@Composable
+private fun regionDisplayName(region: AwardRegion): String {
+    val useEnglish =
+        androidx.compose.ui.platform.LocalConfiguration.current.locales[0].language != "zh"
+    return if (useEnglish) region.nameEn ?: region.name else region.name
+}
+
 @Composable
 private fun MarkedStationRow(
     marked: com.rtbishop.look4sat.core.domain.model.MarkedStation,
@@ -634,24 +882,25 @@ private fun MarkedStationRow(
             text = marked.call,
             style = MaterialTheme.typography.titleMedium,
             fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
-            color = ComposeColor(0xFFFFE082),
+            color = MaterialTheme.colorScheme.primary,
             maxLines = 1,
             overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f)
         )
         // "标记" column: pin icon (only when the grid has multiple marks) sits
         // left of the label; pinned (first) row's icon is grey, others pale
-        // yellow — tapping moves that mark to the top.
+        // yellow — tapping moves that mark to the top. Wrap-content (no weight),
+        // same as the count column of the QSO rows, so the callsign column next
+        // to it takes the leftover width while these glyphs stay row-centred.
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.Center,
-            modifier = Modifier.weight(1f)
+            horizontalArrangement = Arrangement.Center
         ) {
             if (showPin) {
                 Icon(
                     painter = painterResource(R.drawable.ic_pin),
                     contentDescription = stringResource(R.string.grid_mark_pin),
-                    tint = if (isPinned) ComposeColor(0xFF9E9E9E) else ComposeColor(0xFFFFE082),
+                    tint = if (isPinned) ComposeColor(0xFF9E9E9E) else MaterialTheme.colorScheme.primary,
                     modifier = Modifier
                         .size(18.dp)
                         .clickable(onClick = onPinMark)
@@ -706,7 +955,7 @@ private fun WorkedGridCallRow(
                 text = call,
                 style = MaterialTheme.typography.titleMedium,
                 fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
-                color = ComposeColor(0xFFFFE082),
+                color = MaterialTheme.colorScheme.primary,
                 maxLines = 1,
                 overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f)
@@ -718,8 +967,13 @@ private fun WorkedGridCallRow(
                 else stringResource(R.string.grid_qso_count_many, callQsos.size),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                modifier = Modifier.weight(1f)
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                // No weight: the count column wraps its content, so the callsign
+                // column (weight 1f, opposite the date column) absorbs the slack
+                // that used to sit left of the centred count text. The count text
+                // keeps its exact on-screen position: with equal weights on the
+                // outer columns the wrap-content middle column starts where the
+                // centred text used to start, i.e. its centre stays at row centre.
             )
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -1092,22 +1346,29 @@ private fun FirstCallToggle(
 // region Tile sources
 private var configuredTileMapView: MapView? = null
 private var configuredTileSource: String? = null
+private var configuredTileIsLightUi: Boolean? = null
 
-private fun configureTileSources(mapView: MapView, mapSource: String, tiandituKey: String) {
+private fun configureTileSources(mapView: MapView, mapSource: String, tiandituKey: String, isLightUi: Boolean) {
     val key = tiandituKey.trim()
     val layers = tiandituLayers(mapSource)
-    val sourceKey = if (layers == null || key.isBlank()) MapSource.OSM else "${layers.base}:$key"
-    if (configuredTileMapView === mapView && configuredTileSource == sourceKey) return
+    val offlineSource = layers == null || key.isBlank()
+    offlineTilesActive = offlineSource
+    val sourceKey = if (offlineSource) MapSource.OSM else "${layers.base}:$key"
+    if (configuredTileMapView === mapView && configuredTileSource == sourceKey &&
+        configuredTileIsLightUi == isLightUi
+    ) return
 
     configuredTileMapView = mapView
     configuredTileSource = sourceKey
+    configuredTileIsLightUi = isLightUi
     (mapView.overlays.getOrNull(OVERLAY_TDT_LABELS) as? TilesOverlay)?.onDetach(mapView)
 
-    if (layers == null || key.isBlank()) {
+    if (offlineSource) {
         mapView.setUseDataConnection(false)
         mapView.setTileSource(offlineTileSource)
         mapView.maxZoomLevel = OFFLINE_MAX_ZOOM
-        mapView.overlayManager.tilesOverlay.applyTileOverlayDefaults(createColorFilter())
+        // The dark-map filter belongs to the dark theme only; the light theme shows plain tiles.
+        mapView.overlayManager.tilesOverlay.applyTileOverlayDefaults(if (isLightUi) null else darkTileFilter)
         mapView.overlays[OVERLAY_TDT_LABELS] = FolderOverlay()
         requestTileRefresh(mapView)
         return
@@ -1210,6 +1471,7 @@ private fun setAwardMode(award: AwardType, workedCodes: Set<String>, mapView: Ma
             isEnabled = true
             regions = AwardBoundaryData.load(mapView.context, asset)
             this.workedCodes = workedCodes
+            applyTheme(mapIsLightUi == true)
         }
     }
     for (index in OVERLAY_STATION..OVERLAY_MOON) {
@@ -1252,6 +1514,7 @@ private fun setGridMode(
                 this.firstCallsByGrid = firstCallsByGrid
                 this.markedGrids = markedGrids
                 this.ownGrid = ownGridOf(stationPosition)
+                applyTheme(mapIsLightUi == true)
             }
         }
         // Satellite-related layers are hidden in grid mode; the grid overlay
@@ -1306,17 +1569,28 @@ private fun gridOfPoint(latitude: Double, longitude: Double): String? {
     return "${'A' + fieldLon}${'A' + fieldLat}$subLon$subLat"
 }
 
-private fun setStationPosition(stationPos: GeoPos, mapView: MapView) {
+private fun setStationPosition(stationPos: GeoPos, mapView: MapView, isLightUi: Boolean) {
     try {
         val overlay = mapView.overlays[OVERLAY_STATION]
+        val stationPoint = GeoPoint(stationPos.latitude, stationPos.longitude)
         if (overlay is Marker) {
-            overlay.position = GeoPoint(stationPos.latitude, stationPos.longitude)
+            overlay.position = stationPoint
+            // Icon tint is baked into the drawable, so re-tint after a theme change.
+            if ((overlay.relatedObject as? Boolean) != isLightUi) {
+                overlay.icon = ContextCompat.getDrawable(mapView.context, R.drawable.ic_position)?.apply {
+                    setTint(mapAccentColor)
+                }
+                overlay.relatedObject = isLightUi
+            }
         } else {
             mapView.overlays[OVERLAY_STATION] = Marker(mapView).apply {
                 setInfoWindow(null)
                 setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
-                icon = ContextCompat.getDrawable(mapView.context, R.drawable.ic_position)
-                position = GeoPoint(stationPos.latitude, stationPos.longitude)
+                icon = ContextCompat.getDrawable(mapView.context, R.drawable.ic_position)?.apply {
+                    setTint(mapAccentColor)
+                }
+                position = stationPoint
+                relatedObject = isLightUi
             }
         }
     } catch (e: Exception) {
@@ -1539,26 +1813,37 @@ private fun setTerminator(sunLatDeg: Double, sunLonDeg: Double, mapView: MapView
     }
 }
 
+/** Build the 48dp sun/moon marker icon, tinted with the theme-dependent paint. */
+private fun buildMarkerIcon(mapView: MapView, resId: Int, paint: Paint): Drawable {
+    val iconSize = 48
+    val bmp = createBitmap(iconSize, iconSize)
+    ContextCompat.getDrawable(mapView.context, resId)?.apply {
+        setBounds(0, 0, iconSize, iconSize)
+        colorFilter = paint.colorFilter
+        draw(Canvas(bmp))
+    }
+    return bmp.toDrawable(mapView.context.resources)
+}
+
 /** Place an ic_sun icon marker at the sub-solar point. */
-private fun setSubSolarPoint(sunLatDeg: Double, sunLonDeg: Double, mapView: MapView) {
+private fun setSubSolarPoint(sunLatDeg: Double, sunLonDeg: Double, mapView: MapView, isLightUi: Boolean) {
     try {
         val overlay = mapView.overlays[OVERLAY_SUN]
         val sunPos = GeoPoint(sunLatDeg, sunLonDeg)
         if (overlay is Marker) {
             overlay.position = sunPos
-        } else {
-            val iconSize = 48
-            val bmp = createBitmap(iconSize, iconSize)
-            ContextCompat.getDrawable(mapView.context, R.drawable.ic_sun)?.apply {
-                setBounds(0, 0, iconSize, iconSize)
-                colorFilter = sunIconPaint.colorFilter
-                draw(Canvas(bmp))
+            // The icon bitmap bakes in the theme tint, so rebuild it after a theme change.
+            if ((overlay.relatedObject as? Boolean) != isLightUi) {
+                overlay.icon = buildMarkerIcon(mapView, R.drawable.ic_sun, sunIconPaint)
+                overlay.relatedObject = isLightUi
             }
+        } else {
             mapView.overlays[OVERLAY_SUN] = Marker(mapView).apply {
                 setInfoWindow(null)
                 setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
-                icon = bmp.toDrawable(mapView.context.resources)
+                icon = buildMarkerIcon(mapView, R.drawable.ic_sun, sunIconPaint)
                 position = sunPos
+                relatedObject = isLightUi
             }
         }
     } catch (e: Exception) {
@@ -1567,26 +1852,23 @@ private fun setSubSolarPoint(sunLatDeg: Double, sunLonDeg: Double, mapView: MapV
 }
 
 /** Place an ic_moon icon marker at the sub-lunar point. */
-private fun setMoonPosition(moonLatDeg: Double, moonLonDeg: Double, mapView: MapView) {
+private fun setMoonPosition(moonLatDeg: Double, moonLonDeg: Double, mapView: MapView, isLightUi: Boolean) {
     try {
         val overlay = mapView.overlays[OVERLAY_MOON]
         val moonPos = GeoPoint(moonLatDeg, moonLonDeg)
         if (overlay is Marker) {
             overlay.position = moonPos
-        } else {
-            val iconSize = 48
-            val bmp = createBitmap(iconSize, iconSize)
-            val c = Canvas(bmp)
-            ContextCompat.getDrawable(mapView.context, R.drawable.ic_moon)?.apply {
-                setBounds(0, 0, iconSize, iconSize)
-                colorFilter = moonIconPaint.colorFilter
-                draw(c)
+            if ((overlay.relatedObject as? Boolean) != isLightUi) {
+                overlay.icon = buildMarkerIcon(mapView, R.drawable.ic_moon, moonIconPaint)
+                overlay.relatedObject = isLightUi
             }
+        } else {
             mapView.overlays[OVERLAY_MOON] = Marker(mapView).apply {
                 setInfoWindow(null)
                 setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
-                icon = bmp.toDrawable(mapView.context.resources)
+                icon = buildMarkerIcon(mapView, R.drawable.ic_moon, moonIconPaint)
                 position = moonPos
+                relatedObject = isLightUi
             }
         }
     } catch (e: Exception) {
@@ -1631,10 +1913,12 @@ private fun rememberMapViewWithLifecycle(
             zoomController.setVisibility(CustomZoomButtonsController.Visibility.NEVER)
             overlayManager.tilesOverlay.loadingBackgroundColor = Color.TRANSPARENT
             overlayManager.tilesOverlay.loadingLineColor = Color.TRANSPARENT
-            overlayManager.tilesOverlay.setColorFilter(createColorFilter())
+            // The dark-map tile filter (or no filter in the light theme) is applied per theme from
+            // the AndroidView update block, so it also follows a theme switch at runtime.
             setScrollableAreaLimitLatitude(maxLat, minLat, 0)
             overlays.addAll(Array(OVERLAY_COUNT) { FolderOverlay() })
-            overlays[OVERLAY_GRID] = MaidenheadGridOverlay()
+            overlays[OVERLAY_GRID] = MaidenheadGridOverlay().apply { applyTheme(mapIsLightUi == true) }
+            currentMapView = this
         }
     }
     val lifecycleObserver = rememberMapViewLifecycleObserver(mapView)
@@ -1647,7 +1931,10 @@ private fun rememberMapViewWithLifecycle(
     // released with the MapView or they keep the Activity and its bitmaps alive after disposal.
     // (The viewport save lives in MapDestination, where the grid/satellite mode is known.)
     DisposableEffect(mapView) {
-        onDispose { clearMapCaches() }
+        onDispose {
+            clearMapCaches()
+            if (currentMapView === mapView) currentMapView = null
+        }
     }
     return mapView
 }

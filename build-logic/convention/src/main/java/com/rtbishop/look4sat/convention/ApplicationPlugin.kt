@@ -34,6 +34,7 @@ internal class ApplicationPlugin : Plugin<Project> {
             implementation(project(":feature:map"))
             implementation(project(":feature:ft4"))
             implementation(project(":feature:logbook"))
+            implementation(project(":feature:gridfinder"))
             implementation(project(":feature:mutual"))
             implementation(project(":feature:passes"))
             implementation(project(":feature:radar"))

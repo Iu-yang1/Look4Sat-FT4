@@ -36,6 +36,8 @@ interface IMainContainer {
     val selectionRepo: ISelectionRepo
     val satelliteRepo: ISatelliteRepo
     val databaseRepo: IDatabaseRepo
+    val wavelogUploadRepository: IWavelogUploadRepository
+    val wavelogSyncRepository: IWavelogSyncRepository
     val qsoRepository: IQsoRepository
     val lotwUploadRepository: ILoTWUploadRepository
     val amSatRepo: IAmSatRepository
@@ -46,11 +48,14 @@ interface IMainContainer {
     val disciplinedClock: IDisciplinedClock
     val timeSynchronizationService: ITimeSynchronizationService
     val updateRepo: IUpdateRepository
-    val wavelogRepo: IWavelogRepository
     val lotwRepo: ILoTWRepository
     val radioTrackingService: IRadioTrackingService
+    val locationRepo: ILocationRepo
     val mutualPassData: StateFlow<MutualPassData>
+    /** Grid Finder → LoTW station page prefill, consumed once by that page. */
+    val pendingLoTWStationGrid: StateFlow<String?>
     fun setMutualPassData(data: MutualPassData)
+    fun setPendingLoTWStationGrid(grid: String?)
     fun provideAddToCalendar(): IAddToCalendar
     fun provideShowToast(): IShowToast
     fun provideBluetoothReporter(): IReporter

@@ -22,6 +22,7 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Path
+import org.json.JSONArray
 import org.json.JSONObject
 import org.osmdroid.views.MapView
 import org.osmdroid.views.Projection
@@ -48,6 +49,15 @@ data class AwardRegion(
     val labelLon: Double,
     val labelLat: Double,
     val rings: List<List<DoubleArray>>,
+    /** Entity call-sign prefix ("BY" for China, "K" for the USA) from the
+     *  Club Log cty.csv primary prefix; shown in the QSO detail dialog. */
+    val pfx: String = "",
+    /** Optional fill geometry with separate child entities knocked out as
+     *  even-odd holes (e.g. Lesotho inside South Africa, Hong Kong inside
+     *  China). Used only for the worked green fill so a worked parent never
+     *  greens a different DXCC entity's territory; [rings] stay the stroke /
+     *  hit-test source. Empty means "fill = rings". */
+    val fillRings: List<List<DoubleArray>> = emptyList(),
     val forceLabel: Boolean = false
 )
 
@@ -60,6 +70,20 @@ data class AwardRegion(
 object AwardBoundaryData {
 
     private val cache = mutableMapOf<AwardAsset, List<AwardRegion>>()
+
+    private fun parseRings(array: JSONArray): List<List<DoubleArray>> {
+        val rings = mutableListOf<List<DoubleArray>>()
+        for (r in 0 until array.length()) {
+            val ring = array.optJSONArray(r) ?: continue
+            val points = mutableListOf<DoubleArray>()
+            for (p in 0 until ring.length()) {
+                val pt = ring.optJSONArray(p) ?: continue
+                if (pt.length() >= 2) points.add(doubleArrayOf(pt.getDouble(0), pt.getDouble(1)))
+            }
+            if (points.size >= 3) rings.add(points)
+        }
+        return rings
+    }
 
     enum class AwardAsset(val fileName: String) {
         WAPC("wapc.json"),
@@ -80,16 +104,7 @@ object AwardBoundaryData {
             for (i in 0 until array.length()) {
                 val o = array.optJSONObject(i) ?: continue
                 val ringsArray = o.optJSONArray("rings") ?: continue
-                val rings = mutableListOf<List<DoubleArray>>()
-                for (r in 0 until ringsArray.length()) {
-                    val ring = ringsArray.optJSONArray(r) ?: continue
-                    val points = mutableListOf<DoubleArray>()
-                    for (p in 0 until ring.length()) {
-                        val pt = ring.optJSONArray(p) ?: continue
-                        if (pt.length() >= 2) points.add(doubleArrayOf(pt.getDouble(0), pt.getDouble(1)))
-                    }
-                    if (points.size >= 3) rings.add(points)
-                }
+                val rings = parseRings(ringsArray)
                 if (rings.isEmpty()) continue
                 list.add(
                     AwardRegion(
@@ -98,7 +113,9 @@ object AwardBoundaryData {
                         nameEn = o.optString("name_en").takeIf { it.isNotEmpty() },
                         labelLon = o.optDouble("label_lon", 0.0),
                         labelLat = o.optDouble("label_lat", 0.0),
+                        pfx = o.optString("pfx"),
                         rings = rings,
+                        fillRings = o.optJSONArray("fill_rings")?.let { parseRings(it) } ?: emptyList(),
                         forceLabel = o.optBoolean("force_label", false)
                     )
                 )
@@ -138,6 +155,26 @@ class AwardBoundaryOverlay : Overlay() {
         style = Paint.Style.FILL
         color = Color.argb(90, 76, 217, 100)
     }
+    private val dotPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.FILL
+        color = Color.argb(230, 64, 68, 76)
+    }
+    private val workedDotPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.FILL
+        color = Color.argb(230, 76, 217, 100)
+    }
+
+    /**
+     * Recolor the amber boundary/label paints for the active map theme (dark amber + white halo on
+     * the light map, light amber + black halo on the dark map). The worked fill reads on both.
+     */
+    fun applyTheme(isLightUi: Boolean) {
+        val line = if (isLightUi) Color.argb(200, 113, 92, 12) else Color.argb(160, 255, 224, 130)
+        val label = if (isLightUi) Color.argb(235, 30, 25, 5) else Color.argb(220, 255, 224, 130)
+        linePaint.color = line
+        labelPaint.color = label
+        labelPaint.setShadowLayer(3f, 2f, 2f, if (isLightUi) Color.WHITE else Color.BLACK)
+    }
 
     /** Boundary regions to render; assigning recomputes culling bounds. */
     var regions: List<AwardRegion> = emptyList()
@@ -159,6 +196,15 @@ class AwardBoundaryOverlay : Overlay() {
 
     /** Codes of worked regions -> green fill. */
     var workedCodes: Set<String> = emptySet()
+
+    /** Code of the tapped region whose detail dialog is open -> thicker outline. */
+    var selectedCode: String? = null
+
+    /** The region under a tap at the given geo point on the map at [zoom],
+     *  or null when the tap lands on empty space. Delegates to [AwardHitTest]
+     *  so the tap tolerance matches the tiny-region dots drawn in [draw]. */
+    fun regionAt(latitude: Double, longitude: Double, zoom: Double): AwardRegion? =
+        AwardHitTest.hitRegion(regions, regionBounds, latitude, longitude, zoom)
 
     /** Bounding boxes (computed on region assignment) for cheap culling. */
     private val regionBounds = mutableListOf<DoubleArray>() // [minLon,minLat,maxLon,maxLat]
@@ -199,8 +245,24 @@ class AwardBoundaryOverlay : Overlay() {
             if (b[1] > topLat || b[3] < bottomLat) continue
             if (b[0] > rightLon || b[2] < leftLon) continue
             val worked = region.code in workedCodes
+            val selected = region.code == selectedCode
+
+            // Projected bbox size: decides between the region's own shape and
+            // the minimum-size dot below, and gates the label.
+            val regionW = abs((b[2] - b[0]) / 360.0 * worldWidthPx).toFloat()
+            val regionH =
+                abs((projectionToY(projection, b[3]) ?: 0f) - (projectionToY(projection, b[1]) ?: 0f))
+            val tiny = max(regionW, regionH) <= AwardHitTest.MIN_SHAPE_PX
 
             val path = Path()
+            // The worked fill uses fillRings when present: the award asset stores
+            // fill geometry with separate child entities (Lesotho in South Africa,
+            // Hong Kong in China, ...) knocked out as even-odd holes, so working a
+            // parent never greens a different DXCC entity's territory. The stroke
+            // keeps using the plain rings — hole borders coincide with the child
+            // entity's own outline and must not be drawn twice.
+            val fillRings = region.fillRings.ifEmpty { region.rings }
+            val fillPath = if (worked) Path().apply { fillType = Path.FillType.EVEN_ODD } else null
             var pathHasPoints = false
             for (ring in region.rings) {
                 // Split each ring into consecutive segments at the antimeridian
@@ -225,10 +287,40 @@ class AwardBoundaryOverlay : Overlay() {
                     pathHasPoints = traceSegment(path, segment, projection, centerLon, worldWidthPx, closeRing) || pathHasPoints
                 }
             }
-            if (!pathHasPoints) continue
+            fillPath?.let { fp ->
+                for (ring in fillRings) {
+                    val segments = splitRingAtAntimeridian(ring)
+                    val closeRing = segments.size == 1
+                    for (segment in segments) {
+                        if (segment.isEmpty()) continue
+                        traceSegment(fp, segment, projection, centerLon, worldWidthPx, closeRing)
+                    }
+                }
+            }
+            if (!pathHasPoints && !tiny) continue
 
-            if (worked) canvas.drawPath(path, workedPaint)
+            if (worked) fillPath?.let { canvas.drawPath(it, workedPaint) }
+            linePaint.strokeWidth = if (selected) LINE_WIDTH_SELECTED else LINE_WIDTH
             canvas.drawPath(path, linePaint)
+            linePaint.strokeWidth = LINE_WIDTH
+
+            // Tiny-region fallback (Macao, island DXCCs at low zoom): the own
+            // shape is sub-pixel and invisible, so draw a minimum-size dot at
+            // the bbox centre — green when worked — and let it carry the
+            // region. AwardHitTest gives small regions (dot-sized included) an
+            // inflated MIN_TAP_TARGET_PX square hit area at the same centre,
+            // so the dot is reliably tappable at any zoom (Tianditu tiles have
+            // no zoom cap, so "just zoom in" is not a workable answer for
+            // finding these).
+            if (tiny) {
+                val cx = projectionToX(projection, normalizeLon((b[0] + b[2]) / 2.0), centerLon, worldWidthPx)
+                val cy = projectionToY(projection, (b[1] + b[3]) / 2.0)
+                if (cx != null && cy != null) {
+                    val r = if (selected) DOT_RADIUS_PX + 3f else DOT_RADIUS_PX
+                    canvas.drawCircle(cx, cy, r, if (worked) workedDotPaint else dotPaint)
+                    canvas.drawCircle(cx, cy, r, linePaint)
+                }
+            }
 
             // Label: draw when its anchor is on screen and the region is big
             // enough on screen to hold the text (avoid clutter at low zoom).
@@ -238,11 +330,10 @@ class AwardBoundaryOverlay : Overlay() {
             val lx = projectionToX(projection, labelLonNorm, centerLon, worldWidthPx) ?: continue
             val ly = projectionToY(projection, region.labelLat) ?: continue
             // Screen-size gate: the label only when the region spans enough px.
-            // force_label regions (HK / Macau) always draw — their tiny land
-            // bbox would otherwise stay below the gate forever, and their label
-            // anchor sits out on the sea where there is room for the text.
-            val regionH = (projectionToY(projection, b[3]) ?: 0f) - (projectionToY(projection, b[1]) ?: 0f)
-            if (abs(regionH) < MIN_LABEL_REGION_PX && !region.forceLabel) continue
+            // force_label regions (HK / Macau) and tiny regions always draw —
+            // their bbox would otherwise stay below the gate forever, and they
+            // are exactly the ones that would otherwise be unfindable.
+            if (abs(regionH) < MIN_LABEL_REGION_PX && !region.forceLabel && !tiny) continue
             val label = if (useEnglishLabels) region.nameEn ?: region.name else region.name
             canvas.drawText(label, lx, ly - textHalfHeight, labelPaint)
         }
@@ -412,5 +503,8 @@ class AwardBoundaryOverlay : Overlay() {
     private companion object {
         const val MIN_LABEL_REGION_PX = 42f
         const val MAX_MERCATOR_LAT = 85.05113 // Web Mercator latitude limit
+        const val LINE_WIDTH = 1.5f
+        const val LINE_WIDTH_SELECTED = 3f
+        const val DOT_RADIUS_PX = 6f
     }
 }

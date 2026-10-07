@@ -74,6 +74,7 @@ class RadarViewModel(
     private val stationPos = settingsRepo.stationPosition.value
     private val magDeclination = sensorsRepo.getMagDeclination(stationPos)
     private var transponders: List<SatRadio> = emptyList()
+    private var calculatorCatnum: Int? = null
     private var sstvDecoder: SstvDecoder? = null
     private var sstvSampleRate: Int? = null
     private var sstvFrameJob: Job? = null
@@ -171,12 +172,8 @@ class RadarViewModel(
         transponders = allRadios.filter { it.downlinkLow != null }
         if (allRadios.isNotEmpty()) {
             val firstUuid = allRadios.first().uuid
-            val offsetKHz = allRadios.first().catnum?.let { settingsRepo.getSatelliteOffset(it) } ?: ""
             _uiState.update {
-                it.copy(
-                    transceivers = it.transceivers.copy(selectedUuid = firstUuid),
-                    calculatorOffsetKHz = offsetKHz
-                )
+                it.copy(transceivers = it.transceivers.copy(selectedUuid = firstUuid))
             }
             transponders.find { it.uuid == firstUuid }?.let { trackingService.setTransponder(it) }
         }
@@ -255,15 +252,8 @@ class RadarViewModel(
                 // Compute toggle state before the update so we don't read post-update value
                 val isTogglingOff = _uiState.value.transceivers.selectedUuid == action.uuid
                 val newUuid = if (isTogglingOff) null else action.uuid
-                val offsetKHz = if (!isTogglingOff) {
-                    transponders.find { it.uuid == action.uuid }
-                        ?.catnum?.let { settingsRepo.getSatelliteOffset(it) } ?: ""
-                } else ""
                 _uiState.update {
-                    it.copy(
-                        transceivers = it.transceivers.copy(selectedUuid = newUuid),
-                        calculatorOffsetKHz = offsetKHz
-                    )
+                    it.copy(transceivers = it.transceivers.copy(selectedUuid = newUuid))
                 }
                 // Only update the tracking service when selecting a different transponder to
                 // avoid resetting a user-adjusted TX base on re-expand
@@ -342,13 +332,20 @@ class RadarViewModel(
                 }
             }
             is RadarAction.ChangeCalculatorOffset -> {
-                val catnum = _uiState.value.transceivers.selectedUuid?.let { uuid ->
+                // Keyed by the transponder driving the calculator, so the offset saves
+                // even when no transceiver is selected (or selection was toggled off)
+                val catnum = calculatorCatnum ?: _uiState.value.transceivers.selectedUuid?.let { uuid ->
                     transponders.find { it.uuid == uuid }?.catnum
                 }
                 if (catnum != null) {
                     settingsRepo.setSatelliteOffset(catnum, action.offsetKHz)
                 }
                 _uiState.update { it.copy(calculatorOffsetKHz = action.offsetKHz) }
+            }
+            is RadarAction.CalculatorTransponderChanged -> {
+                calculatorCatnum = action.catnum
+                val offsetKHz = action.catnum?.let { settingsRepo.getSatelliteOffset(it) } ?: ""
+                _uiState.update { it.copy(calculatorOffsetKHz = offsetKHz) }
             }
             is RadarAction.UpdateCalculatorFrequency -> {
                 _uiState.update {

@@ -44,6 +44,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.rtbishop.look4sat.core.presentation.SheetDialogTitle
+import com.rtbishop.look4sat.core.presentation.sheetDialogContainerColor
+import com.rtbishop.look4sat.core.presentation.sheetDialogShape
 import com.ve3nea.morse_expert.MainActivity
 import kotlin.math.roundToInt
 
@@ -91,7 +94,9 @@ fun CwSettingsDialog(controller: MainActivity, onDismiss: () -> Unit) {
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("CW Settings") },
+        shape = sheetDialogShape(),
+        containerColor = sheetDialogContainerColor(),
+        title = { SheetDialogTitle("CW Settings") },
         text = {
             Column(
                 modifier = Modifier

@@ -1,3 +1,21 @@
+/*
+ * Look4Sat-BA7OPF. Amateur radio satellite tracker and pass predictor.
+ * Copyright (C) 2026 BA7OPF.
+ * Based on Look4Sat by Arty Bishop and contributors.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
 package com.rtbishop.look4sat.feature.status
 
 import androidx.compose.animation.AnimatedVisibility
@@ -63,7 +81,10 @@ import com.rtbishop.look4sat.core.domain.repository.IContainerProvider
 import com.rtbishop.look4sat.core.presentation.CardButton
 import com.rtbishop.look4sat.core.presentation.InfoDialog
 import com.rtbishop.look4sat.core.presentation.R
+import com.rtbishop.look4sat.core.presentation.SheetDialogTitle
 import com.rtbishop.look4sat.core.presentation.layoutPadding
+import com.rtbishop.look4sat.core.presentation.sheetDialogContainerColor
+import com.rtbishop.look4sat.core.presentation.sheetDialogShape
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
@@ -379,6 +400,7 @@ private fun ReportDialog(
     onDismiss: () -> Unit
 ) {
     val dayReports = day.slots.flatMap { it.reportIds }.mapNotNull { reports[it] }
+    val conflictedIds = day.slots.filter { it.isConflicted }.flatMap { it.reportIds }.toSet()
     InfoDialog(
         title = "$statusName · ${day.dateLabel}",
         onDismiss = onDismiss,
@@ -427,6 +449,10 @@ private fun ReportDialog(
                             )
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(text = report.statusText, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                            if (report.id in conflictedIds) {
+                                Spacer(modifier = Modifier.width(8.dp))
+                                ConflictBadge()
+                            }
                         }
                         Text(
                             text = "${report.call}  ${report.dateUtc}  ${report.timeUtc}" +
@@ -439,6 +465,23 @@ private fun ReportDialog(
                 }
             }
         }
+    }
+}
+
+/** Orange "冲突" tag on reports whose 2h slot has no strict majority (Conflicting reports). */
+@Composable
+private fun ConflictBadge() {
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(4.dp))
+            .background(Color(0xFFFE6100).copy(alpha = 0.15f))
+            .padding(horizontal = 5.dp, vertical = 1.dp)
+    ) {
+        Text(
+            text = stringResource(id = R.string.amsat_conflict),
+            fontSize = 11.sp,
+            color = Color(0xFFFE6100)
+        )
     }
 }
 
@@ -573,7 +616,9 @@ private fun AmSatUploadConfirmDialog(
     val grid = upload.gridSquare.ifBlank { stringResource(R.string.amsat_upload_grid_none) }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.amsat_upload_confirm_title)) },
+        shape = sheetDialogShape(),
+        containerColor = sheetDialogContainerColor(),
+        title = { SheetDialogTitle(stringResource(R.string.amsat_upload_confirm_title)) },
         text = {
             Text(
                 text = stringResource(

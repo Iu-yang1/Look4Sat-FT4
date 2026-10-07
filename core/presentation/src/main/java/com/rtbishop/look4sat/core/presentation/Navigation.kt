@@ -54,6 +54,14 @@ data object RadarDestination : NavKey
 @Serializable
 data object LogbookDestination : NavKey
 
+/** Full-screen field tool: guides the operator onto a VUCC grid line or corner. */
+@Serializable
+data object GridFinderDestination : NavKey
+
+/** LoTW upload certificate + station location page, reached from the Grid Finder. */
+@Serializable
+data object LoTWUploadDestination : NavKey
+
 interface IDeeplinkMatcher {
     fun match(deeplink: String): NavKey?
 }

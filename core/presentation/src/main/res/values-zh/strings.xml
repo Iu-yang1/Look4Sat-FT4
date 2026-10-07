@@ -41,7 +41,6 @@
     <string name="pass_welcome_message">请务必在设置中通过GPS、经纬度或QTH定位您的位置\n建议至少每周更新一次数据库，以确保预测结果的准确性</string>
 
     <!-- AMSAT Status screen -->
-    <string name="pass_whatsnew_message">4.4.6 以来的全部更新（4.4.7 系列）：\n\n• 网格模式地图：LoTW 已确认网格绿色填充、漫游网格蓝色条纹、当前网格加粗框；右上角网格/卫星模式开关。\n\n• 首通呼号（VUCC 视图）：绿格显示该格最早通联的呼号，非绿格空白。\n\n• worked 网格可按操作网格筛选（含“全部”）；点击网格弹出 QSO 明细；每格 QSO 计数。\n\n• 各操作网格独立 VUCC 计数；极区网格标签；反经线修复；漫游条纹密度一致。\n\n• WAPC/WAJA 地图标签随系统语言。\n\n• 网格模式视口与筛选跨页保持。\n\n• LoTW 同步：账号直连、全量/增量模式、实时进度、可取消、启动自动同步（独立开关）、设置页显示上次同步时间。\n\n• 历史过境：过境筛选可回看过去数小时（历史过境时间）。\n\n• 指南针校准：8 字动作精度指示 + 手动航向偏置。\n\n• AMSAT 状态页：连续相同状态报告计数。\n\n• 过境/雷达：UTC 切换重算过境；日出日落与仰角颜色修复；卫星模糊搜索；相互过境页滚动保持、跟随 UTC、雷达快捷入口。\n\n• CW 解码器支持 32/64 位设备；Android 17 (API 37) 适配。</string>
 
     <string name="nav_amsat">AMSAT</string>
     <string name="amsat_title">AMSAT 卫星状态</string>
@@ -79,6 +78,8 @@
 
     <!-- Radar screen -->
     <string name="radar_back">后退</string>
+    <string name="radar_use_large">使用大雷达</string>
+    <string name="radar_use_small">使用小雷达</string>
     <string name="radar_notify">通知</string>
     <string name="radar_az_text">方位角</string>
     <string name="radar_el_text">仰角</string>
@@ -128,6 +129,8 @@
     <string name="map_visibility">能见度：%s</string>
     <!-- Worked-grid QSO dialog -->
     <string name="grid_qso_calls_count" formatted="false">%1$d 个呼号 · %2$d 次通联</string>
+
+    <string name="region_qso_empty">该区域暂无已确认通联</string>
     <string name="grid_qso_count_one">%d QSO</string>
     <string name="grid_qso_count_many">%d QSOs</string>
     <string name="grid_qso_first">首通</string>
@@ -143,7 +146,6 @@
     <string name="map_visible">日照中</string>
 
     <!-- Settings screen -->
-    <string name="prefs_donate_title">支持</string>
     <string name="prefs_privacy_title">隐私政策</string>
 
     <string name="prefs_updated_title">更新：%s</string>
@@ -161,15 +163,29 @@
     <string name="prefs_station_lat_text">输入站点的纬度</string>
     <string name="prefs_station_lon_text">输入站点的经度</string>
     <string name="prefs_locator_title">QTH 网格</string>
-    <string name="prefs_wavelog_title">Wavelog 已通联网格</string>
     <string name="prefs_wavelog_configure">配置</string>
-    <string name="prefs_wavelog_configured">已从 Wavelog 同步 — 通联 %1$d 个网格</string>
-    <string name="prefs_wavelog_not_configured">未配置 — 连接你的 Wavelog 日志以在地图上高亮已通联网格</string>
     <string name="prefs_wavelog_url">Wavelog 地址</string>
-    <string name="prefs_wavelog_token">API key ：日志 ID</string>
-    <string name="prefs_wavelog_hint">已同步网格数：%1$d。格式：API key:日志ID。填好直接点同步，会自动保存并拉取。</string>
-    <string name="prefs_wavelog_sync">立即同步</string>
     <string name="prefs_wavelog_syncing">同步中…</string>
+    <string name="prefs_wavelog_upload_title">Wavelog 配置</string>
+    <string name="prefs_wavelog_exclusive">与 LoTW 二选一配置，两者不兼容。</string>
+    <string name="prefs_wavelog_sync_incremental">增量同步</string>
+    <string name="prefs_wavelog_sync_full">全量同步</string>
+    <string name="prefs_wavelog_clear">清除配置</string>
+    <string name="prefs_wavelog_clear_title">清除 Wavelog 配置？</string>
+    <string name="prefs_wavelog_clear_message">清除后将切回 LoTW 模式，LoTW 功能恢复可用。</string>
+    <string name="prefs_wavelog_switch_title">配置提醒</string>
+    <string name="prefs_wavelog_switch_message">已配置 LoTW。配置 Wavelog 后，App 内 LoTW 的上传与同步将不可用（两者二选一，不兼容）。继续？</string>
+    <string name="prefs_wavelog_switch_continue">继续</string>
+    <string name="prefs_lotw_disabled_wavelog">Wavelog 模式中不可用（二选一）</string>
+    <string name="prefs_wavelog_upload_not_configured">未配置 — 把本机通联记录上传到 Wavelog</string>
+    <string name="prefs_wavelog_upload_configured">站点 %1$s — 可以上传</string>
+    <string name="prefs_wavelog_upload_apikey">API key（读写权限）</string>
+    <string name="prefs_wavelog_upload_fetch">获取站点</string>
+    <string name="prefs_wavelog_upload_probing">检测中…</string>
+    <string name="prefs_wavelog_upload_station_none">未选择站点 — 点「获取站点」</string>
+    <string name="prefs_wavelog_upload_rights_rw">密钥：读写 — 可上传</string>
+    <string name="prefs_wavelog_upload_rights_r">密钥只读 — 请在 Wavelog → API 生成「读写」密钥</string>
+    <string name="prefs_wavelog_upload_hint">点「获取站点」选择上传使用的台站档案；密钥需要「读写」权限。</string>
     <string name="prefs_lotw_title">LoTW 已确认网格</string>
     <string name="prefs_lotw_callsign">LoTW 呼号</string>
     <string name="prefs_lotw_password">LoTW 密码</string>
@@ -195,6 +211,54 @@
 
     <string name="btn_delete">删除</string>
 
+    <string name="prefs_logbook_title">日志本</string>
+    <string name="prefs_logbook_count">%1$d 条记录 — 本地通联与 LoTW 确认</string>
+    <string name="prefs_logbook_empty">暂无记录 — 在雷达页 Log 标签记录通联</string>
+    <string name="prefs_logbook_close">关闭</string>
+    <string name="prefs_logbook_upload">上传</string>
+    <string name="prefs_logbook_upload_title">上传到 LoTW</string>
+    <string name="prefs_logbook_upload_confirm">确认上传</string>
+    <string name="prefs_logbook_resubmit">重传选中 (%1$d)</string>
+    <string name="prefs_logbook_selected">已选 %1$d 条</string>
+    <string name="prefs_logbook_select_hint">长按记录行可多选重传</string>
+    <string name="prefs_logbook_resubmit_note">已上传记录将按当前台址就地更新；已被奖项使用的旧网格可能被拒绝。</string>
+    <string name="prefs_logbook_callsign_missing">其中 %1$d 条记录没有呼号，将按证书 %2$s 上传。</string>
+    <string name="prefs_logbook_callsign_different">%1$d 条记录登记的不是证书 %2$s 的呼号。</string>
+    <string name="prefs_logbook_callsign_rewrite">改写为 %1$s</string>
+    <string name="prefs_logbook_callsign_switch">换一张证书</string>
+    <string name="prefs_logbook_station_label">台址</string>
+    <string name="prefs_logbook_station_all">全部</string>
+    <string name="prefs_logbook_upload_wavelog_title">上传到 Wavelog</string>
+    <string name="lotw_upload_grid_title">上传前核对</string>
+    <string name="lotw_upload_grid_fix">修改台址</string>
+    <string name="lotw_upload_grid_ignore">忽略</string>
+    <string name="lotw_upload_grid_mismatch">当前定位 %1$s 不在证书台址网格 %2$s 内——如果正在此处操作，请先更新台址再上传。</string>
+    <string name="lotw_upload_pos_hint">当前定位 %1$s 不在证书台址网格 %2$s 内 · 点此更新</string>
+    <string name="prefs_lotw_upload_title">LoTW 上传证书</string>
+    <string name="prefs_lotw_upload_configured">证书已导入 · 台址网格 %1$s</string>
+    <string name="prefs_lotw_upload_not_configured">未配置 — 导入 TrustedQSL 证书后即可上传通联</string>
+    <string name="prefs_lotw_upload_busy">处理中…</string>
+    <string name="prefs_lotw_upload_cert_hint">导入你的 TrustedQSL .p12 证书（与 TQSL 同款）用于签名上传通联。密码仅加密保存在手机本地。</string>
+    <string name="prefs_lotw_upload_password">证书密码</string>
+    <string name="prefs_lotw_upload_password_hint">证书无密码时留空即可</string>
+    <string name="prefs_lotw_upload_import">选择 .p12 文件</string>
+    <string name="prefs_lotw_upload_import_confirm">导入</string>
+    <string name="prefs_lotw_upload_error_password">证书密码错误，请检查 TQSL 导出 .p12 时设置的密码</string>
+    <string name="prefs_lotw_upload_error_expired">证书已过期或尚未生效</string>
+    <string name="prefs_lotw_upload_error_invalid">不是有效的 LoTW 证书文件</string>
+    <string name="prefs_lotw_upload_error_format">不支持的 .p12 加密，请用 TQSL 默认加密重新导出后再试</string>
+    <string name="prefs_lotw_upload_error_format_alg">不支持的 .p12 加密（%1$s），请用 TQSL 默认加密重新导出后再试</string>
+    <string name="prefs_lotw_upload_error_unknown">导入失败，请重试</string>
+    <string name="prefs_lotw_upload_cert_info">%1$s · DXCC %2$d · 有效期至 %3$s</string>
+    <string name="prefs_lotw_upload_remove">移除证书</string>
+    <string name="prefs_lotw_upload_station_title">台址</string>
+    <string name="prefs_lotw_upload_region_hint">未选择</string>
+    <string name="prefs_lotw_upload_region_label">省份</string>
+    <string name="prefs_lotw_upload_region_pending">导入证书后可选</string>
+    <string name="prefs_lotw_upload_grid">网格（逗号分隔，可多格）</string>
+    <string name="prefs_lotw_upload_save">保存</string>
+    <string name="prefs_lotw_upload_close">关闭</string>
+
     <string name="prefs_data_title">卫星数据更新</string>
     <string name="prefs_data_entries">卫星：%s</string>
     <string name="prefs_data_radios">收发器：%s</string>
@@ -208,6 +272,8 @@
     <string name="prefs_data_import_transceivers_error">未导入收发器。请选择有效的 SatNOGS (.json) 文件。</string>
 
     <string name="prefs_data_sources_title">自定义数据源</string>
+    <string name="prefs_data_sources_sat_hint">轨道数据优先取列表最新星历，此顺序仅影响卫星名称</string>
+    <string name="prefs_data_sources_transceivers_hint">靠前优先：收发器数据</string>
     <string name="prefs_data_sources_restore">恢复默认数据源</string>
     <string name="prefs_data_sources_tle_switch">自定义TLE URL</string>
     <string name="prefs_data_sources_transceivers_switch">自定义收发器URL</string>
@@ -340,6 +406,7 @@
     <string name="prefs_compass_offset">手动航向偏置（°）</string>
     <string name="prefs_compass_offset_support">范围 −180° 至 +180°；正值为顺时针偏移。</string>
     <string name="prefs_compass_offset_reset">偏置归零</string>
+    <string name="prefs_other_switch_light_theme">浅色主题</string>
     <string name="prefs_other_switch_night_mode">启用红色夜间模式</string>
     <string name="prefs_other_switch_map_grid">地图显示 Maidenhead 网格</string>
 
@@ -348,7 +415,20 @@
     <string name="prefs_highlight_mid">中 %1$d-%2$d°</string>
     <string name="prefs_highlight_high">高 &gt; %1$d°</string>
 
-    <string name="prefs_outro_title">我要感谢：</string>
+    <string name="prefs_outro_title">致谢与声明</string>
+    <string name="prefs_project_wiki">Project Wiki</string>
+    <string name="project_wiki_intro">Look4Sat-BA7OPF 是基于 Look4Sat 的定制版，保留上游全部功能，并新增：</string>
+    <string name="project_wiki_section_logbook">卫星日志本与 LoTW</string>
+    <string name="project_wiki_logbook_1">卫星通联日志本——通联时一键记录呼号、时间、频率、模式、信号报告和网格。</string>
+    <string name="project_wiki_logbook_2">LoTW 直传——导入 ARRL 证书后，直接在 App 内把日志上传到 LoTW，无需电脑。</string>
+    <string name="project_wiki_logbook_3">确认同步——一键同步 LoTW 官方确认，日志自动标记“已上传 / 已确认”；修改已上传的记录会自动新建一条，原记录不受影响。</string>
+    <string name="project_wiki_logbook_how">用法：通联后点“记录”→ 日志页点“上传”→ 设置里“同步”查看确认。</string>
+    <string name="project_wiki_section_mutual">双站过境匹配</string>
+    <string name="project_wiki_mutual_1">友台共视匹配——输入你和友台的位置，找出双方同时可见的卫星过境，点一下直接进雷达图。</string>
+    <string name="project_wiki_mutual_how">用法：Match 页 → 设置两站位置 → 查询。</string>
+    <string name="project_wiki_section_grids">通联网格地图</string>
+    <string name="project_wiki_grids_1">已通联网格——LoTW/Wavelog 同步的网格在地图上标绿，支持奖状边界和首通呼号标签；点格子看该网格的通联记录，还能一键去匹配友台。</string>
+    <string name="project_wiki_grids_how">用法：地图页开启网格模式 → 设置里同步 LoTW/Wavelog。</string>
     <string name="prefs_outro_thanks" translatable="false">
         • Look4Sat 所有用户及贡献者!
         \n• David A. B. Johnson (predict4java)
@@ -361,7 +441,9 @@
         \n• BH2VSQ BG5JSU（天地图渲染支持）
         \n• BG5JSU（LoTW上传支持）
     </string>
-    <string name="prefs_outro_license">该应用程序不提供任何保修.</string>
+    <string name="prefs_outro_notice">Look4Sat-BA7OPF 是基于 Look4Sat（GPL-3.0）的非官方修改版，由 BA7OPF 独立维护，与原项目无隶属关系，亦未获其背书。
+上游项目：https://github.com/rt-bishop/Look4Sat</string>
+<string name="prefs_outro_license">基于 GNU GPL v3 许可 · 本程序不提供任何保修</string>
 
     <!-- 匹配页 Mutual match page -->
     <string name="mutual_title">过境匹配</string>
@@ -583,4 +665,93 @@
     <string name="radar_tab_logs">日志</string>
     <string name="map_grid_empty">在日志本同步 LoTW，可显示已确认网格与奖项进度。</string>
     <string name="map_boundaries_loading">正在加载边界…</string>
+
+    <!-- QSO edit dialog -->
+    <string name="qso_edit_title">编辑通联记录</string>
+    <string name="qso_edit_uploaded_notice">该通联已上传或已确认。保存将保留原记录不变，并新建一条记录。</string>
+    <string name="qso_edit_callsign">呼号</string>
+    <string name="qso_edit_date">日期 (UTC)</string>
+    <string name="qso_edit_time">时间 (UTC)</string>
+    <string name="qso_edit_tx">上行频率 (MHz)</string>
+    <string name="qso_edit_rx">下行频率 (MHz)</string>
+    <string name="qso_edit_band">频段：%1$s</string>
+    <string name="qso_edit_mode">模式</string>
+    <string name="qso_edit_satellite">卫星</string>
+    <string name="qso_edit_hint_satellite">LoTW 只接受它的官方卫星名</string>
+    <string name="qso_edit_sent">发送报告</string>
+    <string name="qso_edit_received">接收报告</string>
+    <string name="qso_edit_grid">对方网格</string>
+    <string name="qso_edit_comment">备注</string>
+    <string name="qso_edit_save">保存</string>
+    <string name="qso_edit_cancel">取消</string>
+    <string name="log_out_window_title">不在过境窗口</string>
+    <string name="log_out_window_message">当前时间不在该过境窗口内，将默认按过境中点 %1$s 录入；如需修改，请点击该条通联记录。</string>
+    <string name="log_out_window_confirm">录入</string>
+    <string name="qso_edit_err_callsign">呼号不能为空</string>
+    <string name="qso_edit_err_datetime">日期或时间格式不对 —— 应为 yyyy-MM-dd 与 HH:mm:ss（UTC）</string>
+    <string name="qso_edit_err_frequency">频率格式不对 —— 请输入 MHz，例如 145.850</string>
+    <string name="qso_edit_err_satellite">不是 LoTW 官方卫星名 —— 请从列表中选一个</string>
+    <string name="qso_edit_satellite_pick">选择</string>
+    <string name="qso_edit_satellite_pick_title">LoTW 官方卫星名</string>
+    <string name="qso_edit_satellite_search">搜索卫星名或数据源别名</string>
+    <string name="qso_edit_satellite_official">保存并签名时使用 %1$s</string>
+    <string name="qso_edit_warn_no_freq">没有上行频率：LoTW 要求 BAND，补上频率前这条无法上传</string>
+
+    <!-- 网格寻线（VUCC 网格线／网格角实地导航） -->
+    <string name="gridfinder_title">网格寻线</string>
+    <string name="gridfinder_status_corner">位于网格点上</string>
+    <string name="gridfinder_status_line">位于网格线上</string>
+    <string name="gridfinder_status_inside">在网格内部</string>
+    <string name="gridfinder_status_unknown">位置不可用</string>
+    <string name="gridfinder_status_waiting">正在获取定位…</string>
+    <string name="gridfinder_status_blocked">需要定位权限</string>
+    <string name="gridfinder_status_disabled">本机定位服务未开启</string>
+    <string name="gridfinder_status_confirmed">已由 %1$d 次连续满足 20 英尺规则的定位确认</string>
+    <string name="gridfinder_status_unconfirmed">尚未确认：精度达 6.1 m 的连续定位 %1$d/%2$d 次</string>
+    <string name="gridfinder_grant_permission">授予定位权限</string>
+    <string name="gridfinder_card_location">位置</string>
+    <string name="gridfinder_card_corner">最近网格点引导</string>
+    <string name="gridfinder_card_line">最近网格线引导</string>
+    <string name="gridfinder_card_lines">两条边界线</string>
+    <string name="gridfinder_card_map">近距离网格图</string>
+    <string name="gridfinder_card_fix">定位质量</string>
+    <string name="gridfinder_card_compass">罗盘</string>
+    <string name="gridfinder_label_claimable">此处可计分的网格</string>
+    <string name="gridfinder_label_grid4">网格 (4)</string>
+    <string name="gridfinder_label_grid6">网格 (6)</string>
+    <string name="gridfinder_label_grid8">网格 (8)</string>
+    <string name="gridfinder_label_latitude">纬度</string>
+    <string name="gridfinder_label_longitude">经度</string>
+    <string name="gridfinder_label_altitude">海拔</string>
+    <string name="gridfinder_label_accuracy">水平精度</string>
+    <string name="gridfinder_label_fix_age">定位时刻</string>
+    <string name="gridfinder_label_provider">定位来源</string>
+    <string name="gridfinder_value_provider_on">已开启</string>
+    <string name="gridfinder_value_provider_off">未开启</string>
+    <string name="gridfinder_label_distance">距离</string>
+    <string name="gridfinder_label_bearing">方位角</string>
+    <string name="gridfinder_label_direction">方向</string>
+    <string name="gridfinder_label_grids">网格</string>
+    <string name="gridfinder_label_lat_line">纬线</string>
+    <string name="gridfinder_label_lon_line">经线</string>
+    <string name="gridfinder_line_value">位于%2$s方向 %1$s</string>
+    <string name="gridfinder_line_latitude">这是纬度边界，东西走向</string>
+    <string name="gridfinder_line_longitude">这是经度边界，南北走向</string>
+    <string name="gridfinder_label_heading">朝向</string>
+    <string name="gridfinder_label_compass_accuracy">罗盘精度</string>
+    <string name="gridfinder_action_set_station">设为我的台址</string>
+    <string name="gridfinder_action_station_saved">台址已更新 —— 过境预报将使用这个位置</string>
+    <string name="gridfinder_action_calibrate">校准罗盘</string>
+    <string name="gridfinder_map_legend">中心点是你的位置，虚线是正北与正东，直线是两条网格边界，绿点是最近的网格点，圆环是最近网格线的垂足，红色指针是你的朝向</string>
+    <string name="gridfinder_compass_disabled_hint">设置里未开启罗盘，表盘按正北朝上显示。方位角数字仍可引导你</string>
+    <string name="gridfinder_compass_unavailable_hint">本机没有磁力传感器 —— 请按方位角数字导航</string>
+    <string name="gridfinder_compass_hint">请平持手机，箭头指向应走的方向</string>
+    <string name="gridfinder_vucc_rule_note">VUCC 20 英尺规则：%1$.1f m</string>
+    <string name="gridfinder_direction_north">北</string>
+    <string name="gridfinder_direction_south">南</string>
+    <string name="gridfinder_direction_east">东</string>
+    <string name="gridfinder_direction_west">西</string>
+    <string name="gridfinder_action_set_lotw_station">设为 LoTW 上传台址（%1$s）</string>
+    <string name="gridfinder_lotw_station_hint">预填上传台站网格：上传时 LoTW 按这些格记录（线上 2 格、角上 4 格）；证书呼号保持不变。</string>
+
 </resources>

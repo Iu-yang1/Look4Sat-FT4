@@ -36,6 +36,10 @@ data class QsoRecord(
     val theirCallsign: String,
     val myCallsign: String,
     val theirGrid: String = "",
+    /** Every 4-char grid the OPPOSITE station logged this QSO under (ADIF
+     *  <GRIDSQUARE> + <VUCC_GRIDS>; 1–4 grids). [theirGrid] keeps the first;
+     *  the logbook's QSL slot shows the abbreviated set. */
+    val theirVuccGrids: List<String> = emptyList(),
     val myGrid: String = "",
     val sentReport: String = "",
     val receivedReport: String = "",
@@ -58,6 +62,12 @@ data class QsoRecord(
     val propagationMode: String = if (satelliteName.isNotBlank()) "SAT" else "",
     val lotwConfirmed: Boolean = false,
     val lotwUploaded: Boolean = false,
+    /** Internal: set after a successful Wavelog upload; keeps the pending filter small. Not shown in any list. */
+    val wavelogUploaded: Boolean = false,
+    /** Wavelog station profile (台址) this QSO belongs to: the profile it was uploaded
+     *  through, or the profile a sync pulled it from. Empty for records the app never
+     *  involved with Wavelog — the logbook's 台址 selector shows those under "All" only. */
+    val wavelogStation: String = "",
     val lotwReceived: Boolean = false,
     val lotwQslDate: String = "",
     val vuccGrids: List<String> = emptyList(),

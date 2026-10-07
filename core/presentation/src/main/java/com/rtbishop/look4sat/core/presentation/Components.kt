@@ -494,6 +494,7 @@ fun SwipeRevealRow(
     controller: SwipeController,
     modifier: Modifier = Modifier,
     revealWidth: Dp = 64.dp,
+    gesturesEnabled: Boolean = true,
     revealAction: () -> Unit,
     revealButton: @Composable () -> Unit = {
         Box(
@@ -557,7 +558,9 @@ fun SwipeRevealRow(
             modifier = Modifier
                 .fillMaxWidth()
                 .graphicsLayer { translationX = offsetX }
-                .pointerInput(revealPx) {
+                .pointerInput(revealPx, gesturesEnabled) {
+                    // Selection mode turns reveals off; rows must not shift under the checkboxes.
+                    if (!gesturesEnabled) return@pointerInput
                     detectHorizontalDragGestures(
                         onDragStart = { settleJob?.cancel() },
                         onHorizontalDrag = { change, dragAmount ->

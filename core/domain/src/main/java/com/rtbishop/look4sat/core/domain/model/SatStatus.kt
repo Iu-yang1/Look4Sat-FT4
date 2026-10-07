@@ -1,3 +1,21 @@
+/*
+ * Look4Sat-BA7OPF. Amateur radio satellite tracker and pass predictor.
+ * Copyright (C) 2026 BA7OPF.
+ * Based on Look4Sat by Arty Bishop and contributors.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
 package com.rtbishop.look4sat.core.domain.model
 
 /** One satellite status report (AMSAT site tooltip data) */
@@ -12,9 +30,10 @@ data class SatReport(
 
 /** State of one 2-hour slot */
 data class SatSlot(
-    val statusColor: Long,   // ARGB 状态色(-1 = 无报告)
-    val count: Int,          // 报告数量(0 = 无)
-    val reportIds: List<String> = emptyList() // 该槽报告 ID 列表
+    val statusColor: Long,   // ARGB 状态色（灰=无报告；判定见 AmSatRepository.slotStatusOf）
+    val count: Int,          // 官网页口径：多数方计数（冲突槽/异常槽=总条数；0 = 无）
+    val reportIds: List<String> = emptyList(), // 该槽报告 ID 列表
+    val isConflicted: Boolean = false // 官网页"Conflicting reports"：该槽无严格多数（弹窗据此标注）
 )
 
 /** One satellite day (12 two-hour slots) */

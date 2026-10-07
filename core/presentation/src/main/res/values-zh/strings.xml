@@ -220,6 +220,9 @@
     <string name="prefs_bt_output">蓝牙</string>
     <string name="prefs_cat_output">CAT</string>
     <string name="prefs_rotator_output">旋转器</string>
+    <string name="control_diagnostics_count">控制诊断：%1$d 条事件</string>
+    <string name="control_diagnostics_export">导出诊断</string>
+    <string name="control_diagnostics_clear">清空诊断</string>
     <string name="rotator_settings_title">旋转器控制</string>
     <string name="rotator_enable">启用旋转器控制</string>
     <string name="rotator_protocol">协议</string>

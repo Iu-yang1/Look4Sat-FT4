@@ -85,6 +85,8 @@ data class SettingsState(
     /** 指南针校准精度等级 (校准对话框进度条). */
     val compassAccuracy: CompassAccuracy = CompassAccuracy.UNRELIABLE,
     val compassHeadingDegrees: Float = 0f,
+    val controlDiagnosticCount: Int = 0,
+    val controlDiagnosticsExportText: String? = null,
     val updateChecker: UpdateCheckerState = UpdateCheckerState()
 )
 
@@ -140,6 +142,9 @@ sealed interface SettingsAction {
     data class TestRotatorPoint(val azimuthDegrees: Double, val elevationDegrees: Double) : SettingsAction
     data object ParkRotator : SettingsAction
     data object StopRotator : SettingsAction
+    data object ExportControlDiagnostics : SettingsAction
+    data object ClearControlDiagnostics : SettingsAction
+    data object ConsumeControlDiagnosticsExport : SettingsAction
 
     // Data sources
     data class UpdateDataSources(val settings: DataSourcesSettings) : SettingsAction

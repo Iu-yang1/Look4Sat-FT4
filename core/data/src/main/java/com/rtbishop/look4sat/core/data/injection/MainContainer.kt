@@ -74,6 +74,8 @@ import com.rtbishop.look4sat.core.domain.repository.IMainContainer
 import com.rtbishop.look4sat.core.domain.repository.IRadioTrackingService
 import com.rtbishop.look4sat.core.domain.repository.IRotatorTrackingService
 import com.rtbishop.look4sat.core.domain.repository.IReporter
+import com.rtbishop.look4sat.core.domain.control.ControlDiagnosticsBuffer
+import com.rtbishop.look4sat.core.domain.control.IControlDiagnostics
 import com.rtbishop.look4sat.core.domain.repository.ILoTWRepository
 import com.rtbishop.look4sat.core.domain.repository.ISatelliteRepo
 import com.rtbishop.look4sat.core.domain.repository.ISelectionRepo
@@ -103,6 +105,7 @@ class MainContainer(private val context: Context) : IMainContainer {
     private val remoteSource = provideRemoteSource()
     private val mainHandler = CoroutineExceptionHandler { _, error -> println("MainHandler: $error") }
     override val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default + mainHandler)
+    override val controlDiagnostics: IControlDiagnostics = ControlDiagnosticsBuffer()
     override val settingsRepo = provideSettingsRepo()
     override val selectionRepo = provideSelectionRepo()
     override val satelliteRepo = provideSatelliteRepo()
@@ -144,7 +147,8 @@ class MainContainer(private val context: Context) : IMainContainer {
             satelliteRepo,
             settingsRepo,
             disciplinedClock,
-            transportFactory = transportFactory::create
+            transportFactory = transportFactory::create,
+            diagnostics = controlDiagnostics
         )
     }
     override val radioTrackingService: IRadioTrackingService by lazy { sharedRadioTrackingService }
@@ -168,7 +172,8 @@ class MainContainer(private val context: Context) : IMainContainer {
                     position.altitude.toFloat(),
                     time
                 ).declination.toDouble()
-            }
+            },
+            diagnostics = controlDiagnostics
         )
     }
     override val ft4TransmitCoordinator: IFt4TransmitCoordinator by lazy { sharedRadioTrackingService }

@@ -14,6 +14,10 @@
 package com.rtbishop.look4sat.core.data.framework
 
 import com.rtbishop.look4sat.core.domain.predict.GeoPos
+import com.rtbishop.look4sat.core.domain.control.ControlDiagnosticSeverity
+import com.rtbishop.look4sat.core.domain.control.ControlDiagnosticSource
+import com.rtbishop.look4sat.core.domain.control.IControlDiagnostics
+import com.rtbishop.look4sat.core.domain.control.NoOpControlDiagnostics
 import com.rtbishop.look4sat.core.domain.predict.OrbitalPass
 import com.rtbishop.look4sat.core.domain.repository.IRotatorTrackingService
 import com.rtbishop.look4sat.core.domain.rotator.RotatorConnectionState
@@ -53,7 +57,8 @@ class RotatorTrackingService(
     private val responseAccumulator: ControlResponseAccumulator = ControlResponseAccumulator(),
     private val reconnectDelayMillis: Long = DEFAULT_RECONNECT_DELAY_MILLIS,
     private val maxReconnectAttempts: Int = DEFAULT_RECONNECT_ATTEMPTS,
-    private val positionQueryIntervalMillis: Long = DEFAULT_POSITION_QUERY_INTERVAL_MILLIS
+    private val positionQueryIntervalMillis: Long = DEFAULT_POSITION_QUERY_INTERVAL_MILLIS,
+    private val diagnostics: IControlDiagnostics = NoOpControlDiagnostics
 ) : IRotatorTrackingService {
     private val _state = MutableStateFlow(RotatorTrackingState())
     override val state: StateFlow<RotatorTrackingState> = _state
@@ -87,6 +92,8 @@ class RotatorTrackingService(
     }
 
     override suspend fun connect() {
+        val settings = settingsProvider().normalized()
+        diagnose("connect/start", "protocol=${settings.protocol} transport=${settings.transport}")
         reconnectJob?.cancelAndJoin()
         reconnectJob = null
         connectionMutex.withLock {
@@ -97,6 +104,7 @@ class RotatorTrackingService(
     }
 
     override suspend fun disconnect(park: Boolean) {
+        diagnose("disconnect/start", "parkRequested=$park")
         wantConnection = false
         reconnectJob?.cancelAndJoin()
         reconnectJob = null
@@ -118,9 +126,11 @@ class RotatorTrackingService(
             protocol = settings.protocol,
             transport = settings.transport
         )
+        diagnose("disconnect/result", "rotator disconnected")
     }
 
     override fun startTracking(pass: OrbitalPass) {
+        diagnose("tracking/start", "satellite=${pass.catNum}")
         activePass = pass
         val settings = settingsProvider().normalized()
         _state.update {
@@ -139,6 +149,7 @@ class RotatorTrackingService(
     }
 
     override fun stopTracking(park: Boolean) {
+        diagnose("tracking/stop", "parkRequested=$park")
         activePass = null
         trackingJob?.cancel()
         trackingJob = null
@@ -174,6 +185,7 @@ class RotatorTrackingService(
     }
 
     override suspend fun emergencyStop() {
+        diagnose("emergency-stop/start", "canceling movement and tracking", ControlDiagnosticSeverity.WARNING)
         activePass = null
         trackingJob?.cancelAndJoin()
         trackingJob = null
@@ -202,11 +214,17 @@ class RotatorTrackingService(
                 }
             )
         }
+        diagnose(
+            "emergency-stop/result",
+            if (sent) "stop command handled" else "stop command failed",
+            if (sent) ControlDiagnosticSeverity.WARNING else ControlDiagnosticSeverity.ERROR
+        )
     }
 
     private suspend fun connectLocked(reconnecting: Boolean): Boolean {
         val settings = settingsProvider().normalized()
         if (!settings.isConfigured) {
+            diagnose("connect/validation", "rotator settings are incomplete", ControlDiagnosticSeverity.ERROR)
             transport = null
             _state.update {
                 it.copy(
@@ -257,6 +275,7 @@ class RotatorTrackingService(
                     errorMessage = null
                 )
             }
+            diagnose("connect/result", "connected protocol=${settings.protocol} transport=${settings.transport}")
         } else {
             candidate.disconnect()
             if (transport === candidate) transport = null
@@ -267,6 +286,7 @@ class RotatorTrackingService(
                     errorMessage = "Could not connect to rotator"
                 )
             }
+            diagnose("connect/result", "connection failed", ControlDiagnosticSeverity.ERROR)
         }
         return connected
     }
@@ -340,10 +360,16 @@ class RotatorTrackingService(
         )
         azimuth450Precommitted = decision.nextAzimuth450Precommitted
         when (decision) {
-            is RotatorPointingDecision.Hold -> _state.update {
-                it.copy(trackingPhase = RotatorTrackingPhase.HOLDING)
+            is RotatorPointingDecision.Hold -> {
+                if (_state.value.trackingPhase != RotatorTrackingPhase.HOLDING) {
+                    diagnose("tracking/phase", "HOLDING reason=${decision.reason}")
+                }
+                _state.update { it.copy(trackingPhase = RotatorTrackingPhase.HOLDING) }
             }
             is RotatorPointingDecision.Point -> {
+                if (_state.value.trackingPhase != decision.phase) {
+                    diagnose("tracking/phase", decision.phase.name)
+                }
                 _state.update { it.copy(trackingPhase = decision.phase, errorMessage = null) }
                 if (
                     RotatorPointingPolicy.shouldSend(
@@ -454,11 +480,23 @@ class RotatorTrackingService(
             )
         }
         if (!outcome.success && wantConnection) scheduleReconnect(outcome.errorMessage)
+        if (!outcome.success) {
+            diagnose(
+                "command/failure",
+                outcome.errorMessage ?: "rotator command failed",
+                ControlDiagnosticSeverity.ERROR
+            )
+        }
     }
 
     private fun scheduleReconnect(reason: String?) {
         if (!wantConnection || reconnectJob?.isActive == true || maxReconnectAttempts == 0) return
         reconnectJob = appScope.launch {
+            diagnose(
+                "reconnect/scheduled",
+                reason ?: "write failed",
+                ControlDiagnosticSeverity.WARNING
+            )
             commandActor.cancelPendingTargets()
             _state.update {
                 it.copy(
@@ -471,11 +509,15 @@ class RotatorTrackingService(
                 transport?.disconnect()
                 transport = null
             }
-            repeat(maxReconnectAttempts) {
+            repeat(maxReconnectAttempts) { attempt ->
                 delay(reconnectDelayMillis)
                 if (!wantConnection) return@launch
+                diagnose("reconnect/attempt", "attempt=${attempt + 1}", ControlDiagnosticSeverity.WARNING)
                 val connected = connectionMutex.withLock { connectLocked(reconnecting = true) }
-                if (connected) return@launch
+                if (connected) {
+                    diagnose("reconnect/result", "reconnected after attempt=${attempt + 1}")
+                    return@launch
+                }
             }
             _state.update {
                 it.copy(
@@ -484,7 +526,16 @@ class RotatorTrackingService(
                     errorMessage = "Rotator reconnect attempts exhausted"
                 )
             }
+            diagnose("reconnect/result", "attempts exhausted", ControlDiagnosticSeverity.ERROR)
         }
+    }
+
+    private fun diagnose(
+        stage: String,
+        message: String,
+        severity: ControlDiagnosticSeverity = ControlDiagnosticSeverity.INFO
+    ) {
+        diagnostics.record(ControlDiagnosticSource.ROTATOR, stage, message, severity)
     }
 
     private fun resetCommandHistory() {

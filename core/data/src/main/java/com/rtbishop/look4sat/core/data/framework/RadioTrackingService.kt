@@ -22,6 +22,10 @@ import android.util.Log
 import com.rtbishop.look4sat.core.domain.model.RadioControlSettings
 import com.rtbishop.look4sat.core.domain.model.SatRadio
 import com.rtbishop.look4sat.core.domain.model.parseRadioTcpEndpoint
+import com.rtbishop.look4sat.core.domain.control.ControlDiagnosticSeverity
+import com.rtbishop.look4sat.core.domain.control.ControlDiagnosticSource
+import com.rtbishop.look4sat.core.domain.control.IControlDiagnostics
+import com.rtbishop.look4sat.core.domain.control.NoOpControlDiagnostics
 import com.rtbishop.look4sat.core.domain.ft4.IFt4TransmitCoordinator
 import com.rtbishop.look4sat.core.domain.ft4.TxLease
 import com.rtbishop.look4sat.core.domain.ft4.TxRequest
@@ -67,7 +71,8 @@ class RadioTrackingService(
     private val settingsRepo: ISettingsRepo,
     private val clock: IDisciplinedClock,
     private val controllerFactory: ((Boolean, String) -> IRadioController)? = null,
-    private val transportFactory: ((String, String, Int, Int) -> RadioTransport)? = null
+    private val transportFactory: ((String, String, Int, Int) -> RadioTransport)? = null,
+    private val diagnostics: IControlDiagnostics = NoOpControlDiagnostics
 ) : IRadioTrackingService, IFt4TransmitCoordinator {
 
     private val tag = "RadioTracking"
@@ -122,6 +127,11 @@ class RadioTrackingService(
         val isSatelliteMode = isSplit && profile.supportsSatelliteMode &&
             rcSettings.duplexMode == RadioControlSettings.DUPLEX_MODE_SATELLITE &&
             !usesHamlib
+        diagnose(
+            stage = "connect/start",
+            message = "model=${profile.model} transport=${rcSettings.catTransport} " +
+                "split=$isSplit satellite=$isSatelliteMode"
+        )
 
         Log.i(tag, "connectRadios model=${rcSettings.radioModel} split=$isSplit TX=$txAddr RX=$rxAddr")
         _state.update {
@@ -138,6 +148,7 @@ class RadioTrackingService(
 
         if (rcSettings.catTransport == RadioControlSettings.TRANSPORT_VOX) {
             Log.i(tag, "VOX transport selected; CAT radios are not connected")
+            diagnose("connect/vox", "CAT bypassed for VOX")
             return
         }
 
@@ -148,6 +159,11 @@ class RadioTrackingService(
                 else -> null
             }
             if (invalidEndpoint != null) {
+                diagnose(
+                    "connect/validation",
+                    "invalid ${invalidEndpoint.first} TCP endpoint",
+                    ControlDiagnosticSeverity.ERROR
+                )
                 _state.update {
                     it.copy(
                         errorMessage = "Invalid ${invalidEndpoint.first} TCP endpoint " +
@@ -205,6 +221,16 @@ class RadioTrackingService(
             }
             Log.i(tag, "Dual-radio connected: txOk=$txOk rxOk=$rxOk")
         }
+        diagnose(
+            "connect/result",
+            "tx=${_state.value.txConnected} rx=${_state.value.rxConnected} " +
+                "physical=${_state.value.physicalConnectionCount}",
+            if (_state.value.txConnected || _state.value.rxConnected) {
+                ControlDiagnosticSeverity.INFO
+            } else {
+                ControlDiagnosticSeverity.ERROR
+            }
+        )
     }
 
     private fun makeController(profile: RadioProfile, address: String): IRadioController {
@@ -266,6 +292,7 @@ class RadioTrackingService(
     }
 
     override suspend fun disconnectRadios(): Unit = connectionMutex.withLock {
+        diagnose("disconnect/start", "disconnect requested")
         cancelTrackingAndJoin()
         emergencyPttOff()
         txController?.disconnect()
@@ -285,6 +312,7 @@ class RadioTrackingService(
                 physicalConnectionCount = 0
             )
         }
+        diagnose("disconnect/result", "radio controllers disconnected")
     }
 
     // ── FT4 transmit lease ──────────────────────────────────────────────────
@@ -374,6 +402,7 @@ class RadioTrackingService(
                 dataModeController = controller
                 dataModeBaseMode = txMode
                 dataModeUsesSplit = split
+                diagnose("transmit/data", "DATA mode enabled split=$split")
             }
             check(pendingControls.get() == 0 && controller.pttSafetyGeneration() == safetyGeneration &&
                 _state.value.isActive && _state.value.currentPass == pass &&
@@ -394,6 +423,7 @@ class RadioTrackingService(
                 automatic = request.automatic
             )
             activeTxLease = lease
+            diagnose("transmit/prepared", "lease=${lease.id} midpoint=${lease.waveformMidpointUtcMillis}")
             _state.update {
                 it.copy(
                     pttState = PttState.OFF,
@@ -465,6 +495,7 @@ class RadioTrackingService(
             } == true
             check(confirmed) { "PTT ON was not confirmed" }
             _state.update { it.copy(pttState = PttState.ON, lastCommandError = null) }
+            diagnose("transmit/ptt", "PTT confirmed lease=${lease.id}")
             pttWatchdogJob?.cancel()
             pttWatchdogJob = appScope.launch {
                 delay(lease.maximumPttMillis)
@@ -632,6 +663,11 @@ class RadioTrackingService(
                 errorMessage = error ?: it.errorMessage
             )
         }
+        diagnose(
+            "transmit/release",
+            "pttOff=$acknowledged dataRestored=$dataModeRestored",
+            if (error == null) ControlDiagnosticSeverity.INFO else ControlDiagnosticSeverity.ERROR
+        )
     }
 
     private suspend fun restoreDataModeLocked(): Boolean {
@@ -660,12 +696,14 @@ class RadioTrackingService(
 
     private fun updateCommandFailure(error: Throwable) {
         val message = error.message ?: error.javaClass.simpleName
+        diagnose("command/failure", message, ControlDiagnosticSeverity.ERROR)
         _state.update { it.copy(trackingPhase = TrackingPhase.ERROR, lastCommandError = message, errorMessage = message) }
     }
 
     // ── Tracking ────────────────────────────────────────────────────────────
 
     override fun startTracking(pass: OrbitalPass, transponder: SatRadio, txBaseFreqHz: Long?) {
+        diagnose("tracking/start", "satellite=${pass.catNum} transponderSelected=true")
         txController?.invalidatePendingPttOn()
         val previousJob = trackingJob
         previousJob?.cancel()
@@ -741,6 +779,7 @@ class RadioTrackingService(
                     txBaseFrequencyHz = initialTxBaseFreqHz ?: transponder.uplinkCenterFrequency()
                 )
             }
+            diagnose("tracking/ready", "mode=dual-radio")
         }
 
         runTrackingLoop(split = false)
@@ -825,6 +864,7 @@ class RadioTrackingService(
                     txBaseFrequencyHz = txBase
                 )
             }
+            diagnose("tracking/ready", "mode=single-radio split=true satellite=$isSatelliteMode")
             Log.i(tag, "Icom duplex init done — entering tracking loop")
 
         }
@@ -1119,10 +1159,12 @@ class RadioTrackingService(
     }
 
     private fun failTrackingCommand(message: String) {
+        diagnose("tracking/command", message, ControlDiagnosticSeverity.ERROR)
         _state.update { it.copy(lastCommandError = message, errorMessage = message) }
     }
 
     private fun failTrackingInitialization(message: String) {
+        diagnose("tracking/initialization", message, ControlDiagnosticSeverity.ERROR)
         _state.update {
             it.copy(
                 isActive = false,
@@ -1131,6 +1173,14 @@ class RadioTrackingService(
                 errorMessage = message
             )
         }
+    }
+
+    private fun diagnose(
+        stage: String,
+        message: String,
+        severity: ControlDiagnosticSeverity = ControlDiagnosticSeverity.INFO
+    ) {
+        diagnostics.record(ControlDiagnosticSource.RADIO, stage, message, severity)
     }
 
     private companion object {

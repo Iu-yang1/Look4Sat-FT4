@@ -18,6 +18,7 @@
 package com.rtbishop.look4sat.feature.settings
 
 import android.Manifest
+import android.content.Intent
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -102,6 +103,7 @@ fun SettingsDestination() {
 
 @Composable
 private fun SettingsScreen(uiState: SettingsState, onAction: (SettingsAction) -> Unit) {
+    val context = LocalContext.current
     var showUpdateChecker by rememberSaveable { mutableStateOf(false) }
     var showMapSettings by rememberSaveable { mutableStateOf(false) }
     if (showUpdateChecker) {
@@ -133,6 +135,16 @@ private fun SettingsScreen(uiState: SettingsState, onAction: (SettingsAction) ->
             pendingCustomSourcesDeny.value = null
         }
     )
+    LaunchedEffect(uiState.controlDiagnosticsExportText) {
+        val text = uiState.controlDiagnosticsExportText ?: return@LaunchedEffect
+        val intent = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_SUBJECT, "Look4Sat control diagnostics")
+            putExtra(Intent.EXTRA_TEXT, text)
+        }
+        context.startActivity(Intent.createChooser(intent, context.getString(R.string.control_diagnostics_export)))
+        onAction(SettingsAction.ConsumeControlDiagnosticsExport)
+    }
 
     if (showMapSettings) {
         MapSettingsDialog(
@@ -378,7 +390,10 @@ private fun SettingsScreen(uiState: SettingsState, onAction: (SettingsAction) ->
                     onNetworkClick = permissions.launchNetwork,
                     onBluetoothClick = permissions.launchBluetooth,
                     onRadioControlClick = { dialogs.radioControl = true },
-                    onRotatorControlClick = { dialogs.rotatorControl = true }
+                    onRotatorControlClick = { dialogs.rotatorControl = true },
+                    diagnosticCount = uiState.controlDiagnosticCount,
+                    onExportDiagnostics = { onAction(SettingsAction.ExportControlDiagnostics) },
+                    onClearDiagnostics = { onAction(SettingsAction.ClearControlDiagnostics) }
                 )
             }
             item(span = { GridItemSpan(maxLineSpan) }) {
@@ -675,14 +690,17 @@ private fun DataCard(
 
 @Preview(showBackground = true)
 @Composable
-private fun OutputCardPreview() = MainTheme { OutputCard({}, {}, {}, {}) }
+private fun OutputCardPreview() = MainTheme { OutputCard({}, {}, {}, {}, 0, {}, {}) }
 
 @Composable
 private fun OutputCard(
     onNetworkClick: () -> Unit,
     onBluetoothClick: () -> Unit,
     onRadioControlClick: () -> Unit,
-    onRotatorControlClick: () -> Unit
+    onRotatorControlClick: () -> Unit,
+    diagnosticCount: Int,
+    onExportDiagnostics: () -> Unit,
+    onClearDiagnostics: () -> Unit
 ) {
     ElevatedCard(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) {
@@ -700,6 +718,23 @@ private fun OutputCard(
                 CardButton(
                     onClick = onBluetoothClick,
                     text = stringResource(id = R.string.prefs_bt_output),
+                    modifier = Modifier.weight(1f)
+                )
+            }
+            Spacer(modifier = Modifier.height(6.dp))
+            Text(
+                stringResource(R.string.control_diagnostics_count, diagnosticCount),
+                style = MaterialTheme.typography.bodySmall
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                CardButton(
+                    onClick = onExportDiagnostics,
+                    text = stringResource(R.string.control_diagnostics_export),
+                    modifier = Modifier.weight(1f)
+                )
+                CardButton(
+                    onClick = onClearDiagnostics,
+                    text = stringResource(R.string.control_diagnostics_clear),
                     modifier = Modifier.weight(1f)
                 )
             }

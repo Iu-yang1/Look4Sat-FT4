@@ -22,6 +22,9 @@ import com.rtbishop.look4sat.core.domain.model.RadioControlSettings
 import com.rtbishop.look4sat.core.domain.model.SatRadio
 import com.rtbishop.look4sat.core.domain.model.WavelogSettings
 import com.rtbishop.look4sat.core.domain.predict.GeoPos
+import com.rtbishop.look4sat.core.domain.control.ControlDiagnosticsBuffer
+import com.rtbishop.look4sat.core.domain.control.IControlDiagnostics
+import com.rtbishop.look4sat.core.domain.control.NoOpControlDiagnostics
 import com.rtbishop.look4sat.core.domain.predict.OrbitalData
 import com.rtbishop.look4sat.core.domain.predict.OrbitalObject
 import com.rtbishop.look4sat.core.domain.predict.OrbitalPass
@@ -53,6 +56,28 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class RadioTrackingServiceTest {
+
+    @Test
+    fun diagnosticsCaptureConnectionTrackingAndControlledFailureStages() = runTest {
+        val diagnostics = ControlDiagnosticsBuffer(nowMillis = { testScheduler.currentTime })
+        val fixture = Fixture(
+            backgroundScope,
+            FakeRadioController(setModeSucceeds = false),
+            FakeRadioController(),
+            diagnostics = diagnostics
+        )
+
+        fixture.service.connectRadios()
+        fixture.startTracking()
+        runCurrent()
+
+        val stages = diagnostics.events.value.map { it.stage }
+        assertTrue("connect/start" in stages)
+        assertTrue("connect/result" in stages)
+        assertTrue("tracking/start" in stages)
+        assertTrue("tracking/initialization" in stages)
+        fixture.close()
+    }
     @Test
     fun radioCommandActorSerializesConcurrentCommands() = runTest {
         var active = 0
@@ -779,7 +804,8 @@ class RadioTrackingServiceTest {
         radioModel: String = RadioControlSettings.MODEL_YAESU_FT817,
         splitMode: Boolean = false,
         duplexMode: String = RadioControlSettings.DUPLEX_MODE_SPLIT,
-        transport: String = RadioControlSettings.TRANSPORT_BLUETOOTH
+        transport: String = RadioControlSettings.TRANSPORT_BLUETOOTH,
+        diagnostics: IControlDiagnostics = NoOpControlDiagnostics
     ) {
         val nominalTxHz = 145_900_000L
         val position = OrbitalPos(elevation = 0.5, distanceRate = 1.2, aboveHorizon = true)
@@ -823,7 +849,8 @@ class RadioTrackingServiceTest {
             satelliteRepo = satelliteRepo,
             settingsRepo = settings,
             clock = FixedClock(nowProvider),
-            controllerFactory = { _, address -> if (address == "TX") tx else rx }
+            controllerFactory = { _, address -> if (address == "TX") tx else rx },
+            diagnostics = diagnostics
         )
 
         fun startTracking(base: Long? = nominalTxHz) {

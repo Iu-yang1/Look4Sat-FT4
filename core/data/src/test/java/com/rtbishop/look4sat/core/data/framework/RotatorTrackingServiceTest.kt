@@ -1,6 +1,9 @@
 package com.rtbishop.look4sat.core.data.framework
 
 import com.rtbishop.look4sat.core.domain.predict.GeoPos
+import com.rtbishop.look4sat.core.domain.control.ControlDiagnosticsBuffer
+import com.rtbishop.look4sat.core.domain.control.IControlDiagnostics
+import com.rtbishop.look4sat.core.domain.control.NoOpControlDiagnostics
 import com.rtbishop.look4sat.core.domain.predict.OrbitalData
 import com.rtbishop.look4sat.core.domain.predict.OrbitalPass
 import com.rtbishop.look4sat.core.domain.rotator.RotatorConnectionState
@@ -21,6 +24,30 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class RotatorTrackingServiceTest {
+
+    @Test
+    fun diagnosticsCaptureConnectionTrackingAndEmergencyStopStages() = runTest {
+        val diagnostics = ControlDiagnosticsBuffer(nowMillis = { testScheduler.currentTime })
+        val service = service(
+            now = { 50_000L },
+            orbit = FakeRotatorOrbitSource(lookProvider = { time -> RotatorLook(100.0, 30.0, time) }),
+            transports = ArrayDeque(listOf(FakeRotatorTransport())),
+            diagnostics = diagnostics
+        )
+
+        service.connect()
+        service.startTracking(pass(aos = 0L, los = 100_000L))
+        runCurrent()
+        service.emergencyStop()
+
+        val stages = diagnostics.events.value.map { it.stage }
+        assertTrue("connect/start" in stages)
+        assertTrue("connect/result" in stages)
+        assertTrue("tracking/start" in stages)
+        assertTrue("tracking/phase" in stages)
+        assertTrue("emergency-stop/result" in stages)
+        service.disconnect()
+    }
 
     @Test
     fun connectsAndTracksTheSelectedPass() = runTest {
@@ -81,11 +108,13 @@ class RotatorTrackingServiceTest {
         val failed = FakeRotatorTransport(writeResults = ArrayDeque(listOf(false)))
         val recovered = FakeRotatorTransport()
         val transports = ArrayDeque(listOf<ControlTransport>(failed, recovered))
+        val diagnostics = ControlDiagnosticsBuffer(nowMillis = { testScheduler.currentTime })
         val service = service(
             now = { now },
             orbit = FakeRotatorOrbitSource(lookProvider = { time -> RotatorLook(100.0, 30.0, time) }),
             transports = transports,
-            reconnectDelayMillis = 10L
+            reconnectDelayMillis = 10L,
+            diagnostics = diagnostics
         )
 
         service.connect()
@@ -97,6 +126,11 @@ class RotatorTrackingServiceTest {
         assertEquals(1, failed.disconnectCalls)
         assertEquals(1, recovered.connectCalls)
         assertEquals(RotatorConnectionState.CONNECTED, service.state.value.connectionState)
+        val stages = diagnostics.events.value.map { it.stage }
+        assertTrue("command/failure" in stages)
+        assertTrue("reconnect/scheduled" in stages)
+        assertTrue("reconnect/attempt" in stages)
+        assertTrue("reconnect/result" in stages)
 
         now += 1_000L
         advanceTimeBy(1_000L)
@@ -173,7 +207,8 @@ class RotatorTrackingServiceTest {
         transports: ArrayDeque<ControlTransport>,
         reconnectDelayMillis: Long = 2_000L,
         responseAccumulator: ControlResponseAccumulator = ControlResponseAccumulator(),
-        positionQueryIntervalMillis: Long = 0L
+        positionQueryIntervalMillis: Long = 0L,
+        diagnostics: IControlDiagnostics = NoOpControlDiagnostics
     ) = RotatorTrackingService(
         appScope = backgroundScope,
         orbitSource = orbit,
@@ -183,7 +218,8 @@ class RotatorTrackingServiceTest {
         stationPosition = { GeoPos(0.0, 0.0) },
         responseAccumulator = responseAccumulator,
         reconnectDelayMillis = reconnectDelayMillis,
-        positionQueryIntervalMillis = positionQueryIntervalMillis
+        positionQueryIntervalMillis = positionQueryIntervalMillis,
+        diagnostics = diagnostics
     )
 
     private fun activeSettings() = RotatorSettings(

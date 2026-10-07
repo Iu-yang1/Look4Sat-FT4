@@ -250,6 +250,9 @@
     <string name="prefs_bt_output">Bluetooth</string>
     <string name="prefs_cat_output">CAT</string>
     <string name="prefs_rotator_output">Rotator</string>
+    <string name="control_diagnostics_count">Control diagnostics: %1$d events</string>
+    <string name="control_diagnostics_export">Export diagnostics</string>
+    <string name="control_diagnostics_clear">Clear diagnostics</string>
     <string name="rotator_settings_title">Rotator Control</string>
     <string name="rotator_enable">Enable rotator control</string>
     <string name="rotator_protocol">Protocol</string>

@@ -23,6 +23,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.rtbishop.look4sat.core.domain.audio.IAudioHub
+import com.rtbishop.look4sat.core.domain.control.IControlDiagnostics
 import com.rtbishop.look4sat.core.domain.repository.IDatabaseRepo
 import com.rtbishop.look4sat.core.domain.ft4.IFt4AudioTransmitter
 import com.rtbishop.look4sat.core.domain.ft4.IFt4Service
@@ -68,6 +69,7 @@ class SettingsViewModel(
     private val lotwRepo: com.rtbishop.look4sat.core.domain.repository.ILoTWRepository,
     private val qsoRepository: IQsoRepository,
     private val rotatorTrackingService: IRotatorTrackingService,
+    private val controlDiagnostics: IControlDiagnostics,
     private val sensorsRepo: ISensorsRepo,
     private val apkFile: File,
     private val showToast: IShowToast
@@ -93,6 +95,7 @@ class SettingsViewModel(
             radioControlSettings = settingsRepo.radioControlSettings.value,
             rotatorSettings = settingsRepo.rotatorSettings.value,
             rotatorTrackingState = rotatorTrackingService.state.value,
+            controlDiagnosticCount = controlDiagnostics.events.value.size,
             dataSourcesSettings = settingsRepo.dataSourcesSettings.value,
             dataSourcesStatus = settingsRepo.dataSourcesStatus.value,
             wavelogSettings = settingsRepo.wavelogSettings.value,
@@ -216,6 +219,11 @@ class SettingsViewModel(
             }
         }
         viewModelScope.launch {
+            controlDiagnostics.events.collect { events ->
+                _uiState.update { it.copy(controlDiagnosticCount = events.size) }
+            }
+        }
+        viewModelScope.launch {
             settingsRepo.wavelogSettings.collect { settings ->
                 _uiState.update { it.copy(wavelogSettings = settings) }
             }
@@ -303,6 +311,13 @@ class SettingsViewModel(
             }
             SettingsAction.ParkRotator -> viewModelScope.launch { rotatorTrackingService.park() }
             SettingsAction.StopRotator -> viewModelScope.launch { rotatorTrackingService.emergencyStop() }
+            SettingsAction.ExportControlDiagnostics -> {
+                _uiState.update { it.copy(controlDiagnosticsExportText = controlDiagnostics.exportText()) }
+            }
+            SettingsAction.ClearControlDiagnostics -> controlDiagnostics.clear()
+            SettingsAction.ConsumeControlDiagnosticsExport -> {
+                _uiState.update { it.copy(controlDiagnosticsExportText = null) }
+            }
             is SettingsAction.UpdateDataSources -> settingsRepo.updateDataSourcesSettings(action.settings)
             // Wavelog worked grids
             is SettingsAction.UpdateWavelog -> settingsRepo.updateWavelogSettings(action.settings)
@@ -572,6 +587,7 @@ class SettingsViewModel(
                     lotwRepo = container.lotwRepo,
                     qsoRepository = container.qsoRepository,
                     rotatorTrackingService = container.rotatorTrackingService,
+                    controlDiagnostics = container.controlDiagnostics,
                     sensorsRepo = container.provideSensorsRepo(),
                     apkFile = File(context.cacheDir, "look4sat-update.apk"),
                     showToast = container.provideShowToast()

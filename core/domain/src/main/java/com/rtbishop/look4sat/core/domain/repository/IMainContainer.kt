@@ -16,6 +16,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 package com.rtbishop.look4sat.core.domain.repository
+import com.rtbishop.look4sat.core.domain.control.IControlDiagnostics
 import com.rtbishop.look4sat.core.domain.model.SatRadio
 import com.rtbishop.look4sat.core.domain.audio.IAudioHub
 import com.rtbishop.look4sat.core.domain.logbook.IQsoRepository
@@ -50,6 +51,7 @@ interface IMainContainer {
     val lotwRepo: ILoTWRepository
     val radioTrackingService: IRadioTrackingService
     val rotatorTrackingService: IRotatorTrackingService
+    val controlDiagnostics: IControlDiagnostics
     val mutualPassData: StateFlow<MutualPassData>
     fun setMutualPassData(data: MutualPassData)
     fun provideAddToCalendar(): IAddToCalendar

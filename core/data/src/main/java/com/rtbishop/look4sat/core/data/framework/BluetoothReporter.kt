@@ -31,7 +31,6 @@ import java.util.UUID
 class BluetoothReporter(
     private val bluetoothManager: BluetoothManager,
     private val reporterScope: CoroutineScope,
-    private val rotatorDeviceId: String,
     private val frequencyDeviceId: String
 ) : IReporter {
 
@@ -39,28 +38,10 @@ class BluetoothReporter(
     private val sppId: UUID = UUID.fromString("00001101-0000-1000-8000-00805f9b34fb")
     private val writeMutex = Mutex()
 
-    private var rotatorSocket: BluetoothSocket? = null
-    private var rotatorStream: OutputStream? = null
-    private var rotatorConnected = false
-    private var rotatorConnecting = false
-
     private var frequencySocket: BluetoothSocket? = null
     private var frequencyStream: OutputStream? = null
     private var frequencyConnected = false
     private var frequencyConnecting = false
-
-    override fun reportRotation(format: String, azimuth: Double, elevation: Double) {
-        reporterScope.launch {
-            ensureRotatorConnected()
-            if (!rotatorConnected) return@launch
-            val el = if (elevation > 0.0) elevation else 0.0
-            val command = format
-                .replace($$"$AZ", azimuth.toString())
-                .replace($$"$EL", el.toString())
-                .unescapeControlChars()
-            write(rotatorStream, command) { rotatorConnected = false }
-        }
-    }
 
     override fun reportFrequency(format: String, frequency: Long) {
         reporterScope.launch {
@@ -70,27 +51,6 @@ class BluetoothReporter(
                 .replace($$"$FREQ", frequency.toString())
                 .unescapeControlChars()
             write(frequencyStream, command) { frequencyConnected = false }
-        }
-    }
-
-    private fun ensureRotatorConnected() {
-        if (rotatorConnected || rotatorConnecting || rotatorDeviceId.isBlank()) return
-        reporterScope.launch {
-            try {
-                rotatorConnecting = true
-                val device = bluetoothManager.adapter.getRemoteDevice(rotatorDeviceId)
-                val socket = device.createInsecureRfcommSocketToServiceRecord(sppId)
-                socket.connect()
-                rotatorSocket = socket
-                rotatorStream = socket.outputStream
-                rotatorConnected = true
-                Log.i(tag, "Rotator connected to $rotatorDeviceId")
-            } catch (e: Exception) {
-                Log.e(tag, "Rotator connect error: ${e.message}")
-                rotatorConnected = false
-            } finally {
-                rotatorConnecting = false
-            }
         }
     }
 

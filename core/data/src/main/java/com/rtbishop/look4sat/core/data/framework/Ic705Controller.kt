@@ -148,6 +148,29 @@ class Ic705Controller(
         ioMutex.withLock { sendAndWaitAck(cmd) }
     }
 
+    override suspend fun setDataMode(enabled: Boolean, baseMode: String): Boolean =
+        withContext(Dispatchers.IO) {
+            if (variant == IcomCivVariant.IC910) return@withContext !enabled
+            val command = IcomCivProtocol.buildDataModeCommand(enabled)
+            Log.d(tag, "CMD DATA ${if (enabled) "ON" else "OFF"} → ${commandHex(command)}")
+            ioMutex.withLock { sendAndWaitAck(command) }
+        }
+
+    override suspend fun setTxDataMode(enabled: Boolean, baseMode: String): Boolean =
+        withContext(Dispatchers.IO) {
+            if (variant == IcomCivVariant.IC910) return@withContext !enabled
+            ioMutex.withLock {
+                var rxRestored = false
+                val configured = try {
+                    sendAndWaitAck(selectVfoCommand(vfoA = false)) &&
+                        sendAndWaitAck(IcomCivProtocol.buildDataModeCommand(enabled))
+                } finally {
+                    rxRestored = restoreRxVfo()
+                }
+                configured && rxRestored
+            }
+        }
+
     override suspend fun setCtcssMode(enabled: Boolean): Boolean = withContext(Dispatchers.IO) {
         Log.d(tag, "setCtcssMode: $enabled")
         val cmd = IcomCivProtocol.buildCtcssModeCommand(enabled)
@@ -481,12 +504,12 @@ class Ic705Controller(
     }
 
     private fun normalizedMode(mode: String): String =
-        if (mode.equals("AFSK", ignoreCase = true)) "FM" else mode.uppercase(Locale.US)
+        IcomCivProtocol.modeSpec(mode)?.baseMode
+            ?: if (mode.equals("AFSK", ignoreCase = true)) "FM" else mode.uppercase(Locale.US)
 
     private fun isModeSupported(mode: String): Boolean {
-        val normalized = normalizedMode(mode)
-        return normalized in IcomCivProtocol.MODE_TO_BYTE &&
-            (variant != IcomCivVariant.IC910 || normalized in IC910_MODES)
+        return IcomCivProtocol.modeSpec(mode) != null &&
+            (variant != IcomCivVariant.IC910 || mode.uppercase(Locale.US) in IC910_MODES)
     }
 
     private fun selectVfoCommand(vfoA: Boolean): ByteArray = if (!usesDedicatedSatelliteMode) {

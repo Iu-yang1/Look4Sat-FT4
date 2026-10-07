@@ -23,12 +23,14 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.rtbishop.look4sat.core.domain.audio.IAudioHub
+import com.rtbishop.look4sat.core.domain.control.IControlDiagnostics
 import com.rtbishop.look4sat.core.domain.repository.IDatabaseRepo
 import com.rtbishop.look4sat.core.domain.ft4.IFt4AudioTransmitter
 import com.rtbishop.look4sat.core.domain.ft4.IFt4Service
 import com.rtbishop.look4sat.core.domain.model.WavelogUploadSettings
 import com.rtbishop.look4sat.core.domain.repository.IMainContainer
 import com.rtbishop.look4sat.core.domain.repository.ISettingsRepo
+import com.rtbishop.look4sat.core.domain.repository.IRotatorTrackingService
 import com.rtbishop.look4sat.core.domain.repository.ISensorsRepo
 import com.rtbishop.look4sat.core.domain.repository.IUpdateRepository
 import com.rtbishop.look4sat.core.domain.repository.LoTWResult
@@ -57,6 +59,7 @@ import com.rtbishop.look4sat.core.domain.utility.VersionComparator
 import com.rtbishop.look4sat.core.domain.logbook.needsPreviewForConflicts
 import com.rtbishop.look4sat.core.domain.logbook.resubmitCandidates
 import com.rtbishop.look4sat.core.domain.logbook.toConfirmedRecord
+import com.rtbishop.look4sat.core.domain.rotator.RotatorPosition
 import com.rtbishop.look4sat.core.domain.logbook.unavailableUploadSummary
 import com.rtbishop.look4sat.core.domain.logbook.wavelogConfirmedSegment
 import com.rtbishop.look4sat.core.domain.logbook.wavelogIdleSegment
@@ -86,6 +89,8 @@ class SettingsViewModel(
     private val lotwUploadRepository: ILoTWUploadRepository,
     private val lotwRepo: com.rtbishop.look4sat.core.domain.repository.ILoTWRepository,
     private val qsoRepository: IQsoRepository,
+    private val rotatorTrackingService: IRotatorTrackingService,
+    private val controlDiagnostics: IControlDiagnostics,
     private val sensorsRepo: ISensorsRepo,
     private val apkFile: File,
     private val showToast: IShowToast
@@ -109,6 +114,9 @@ class SettingsViewModel(
             audioInputDevices = audioHub.inputDevices.value,
             rcSettings = settingsRepo.rcSettings.value,
             radioControlSettings = settingsRepo.radioControlSettings.value,
+            rotatorSettings = settingsRepo.rotatorSettings.value,
+            rotatorTrackingState = rotatorTrackingService.state.value,
+            controlDiagnosticCount = controlDiagnostics.events.value.size,
             dataSourcesSettings = settingsRepo.dataSourcesSettings.value,
             dataSourcesStatus = settingsRepo.dataSourcesStatus.value,
             wavelogUploadSettings = settingsRepo.wavelogUploadSettings.value,
@@ -224,6 +232,21 @@ class SettingsViewModel(
             }
         }
         viewModelScope.launch {
+            settingsRepo.rotatorSettings.collect { settings ->
+                _uiState.update { it.copy(rotatorSettings = settings) }
+            }
+        }
+        viewModelScope.launch {
+            rotatorTrackingService.state.collect { state ->
+                _uiState.update { it.copy(rotatorTrackingState = state) }
+            }
+        }
+        viewModelScope.launch {
+            controlDiagnostics.events.collect { events ->
+                _uiState.update { it.copy(controlDiagnosticCount = events.size) }
+            }
+        }
+        viewModelScope.launch {
             settingsRepo.wavelogUploadSettings.collect { settings ->
                 _uiState.update { it.copy(wavelogUploadSettings = settings) }
             }
@@ -322,6 +345,25 @@ class SettingsViewModel(
             // Remote control & data sources
             is SettingsAction.UpdateRC -> settingsRepo.updateRCSettings(action.settings)
             is SettingsAction.UpdateRadioControl -> settingsRepo.updateRadioControlSettings(action.settings)
+            is SettingsAction.UpdateRotatorControl -> settingsRepo.updateRotatorSettings(action.settings)
+            SettingsAction.ConnectRotator -> viewModelScope.launch { rotatorTrackingService.connect() }
+            SettingsAction.DisconnectRotator -> viewModelScope.launch {
+                rotatorTrackingService.disconnect(park = false)
+            }
+            is SettingsAction.TestRotatorPoint -> viewModelScope.launch {
+                rotatorTrackingService.point(
+                    RotatorPosition(action.azimuthDegrees, action.elevationDegrees)
+                )
+            }
+            SettingsAction.ParkRotator -> viewModelScope.launch { rotatorTrackingService.park() }
+            SettingsAction.StopRotator -> viewModelScope.launch { rotatorTrackingService.emergencyStop() }
+            SettingsAction.ExportControlDiagnostics -> {
+                _uiState.update { it.copy(controlDiagnosticsExportText = controlDiagnostics.exportText()) }
+            }
+            SettingsAction.ClearControlDiagnostics -> controlDiagnostics.clear()
+            SettingsAction.ConsumeControlDiagnosticsExport -> {
+                _uiState.update { it.copy(controlDiagnosticsExportText = null) }
+            }
             is SettingsAction.UpdateDataSources -> settingsRepo.updateDataSourcesSettings(action.settings)
             // Wavelog configuration (single block; LoTW and Wavelog are mutually exclusive)
             is SettingsAction.UpdateWavelogUpload -> applyWavelogUploadSettings(action.settings)
@@ -1104,6 +1146,8 @@ class SettingsViewModel(
                     lotwUploadRepository = container.lotwUploadRepository,
                     lotwRepo = container.lotwRepo,
                     qsoRepository = container.qsoRepository,
+                    rotatorTrackingService = container.rotatorTrackingService,
+                    controlDiagnostics = container.controlDiagnostics,
                     sensorsRepo = container.provideSensorsRepo(),
                     apkFile = File(context.cacheDir, "look4sat-update.apk"),
                     showToast = container.provideShowToast()

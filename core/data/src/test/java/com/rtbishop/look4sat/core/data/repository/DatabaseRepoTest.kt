@@ -446,6 +446,10 @@ internal class FakeSettingsRepo(dataSources: DataSourcesSettings = defaultDataSo
         RCSettings(false, "", "", "", false, "", "", "", 0L, false, "", "", "", false, "", "")
     )
 
+    override val rotatorSettings = MutableStateFlow(
+        com.rtbishop.look4sat.core.domain.rotator.RotatorSettings()
+    )
+
     override val otherSettings: StateFlow<OtherSettings> = MutableStateFlow(
         OtherSettings(
             stateOfAutoUpdate = false,
@@ -495,6 +499,10 @@ internal class FakeSettingsRepo(dataSources: DataSourcesSettings = defaultDataSo
     }
 
     override fun updateRCSettings(settings: RCSettings) = Unit
+
+    override fun updateRotatorSettings(
+        settings: com.rtbishop.look4sat.core.domain.rotator.RotatorSettings
+    ) = Unit
 
     override fun updateOtherSettings(transform: (OtherSettings) -> OtherSettings) = Unit
 

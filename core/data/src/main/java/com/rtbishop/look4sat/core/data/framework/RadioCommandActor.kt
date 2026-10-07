@@ -198,6 +198,10 @@ class SerialRadioController(
     override suspend fun disconnect() = actor.execute(operation = delegate::disconnect)
     override suspend fun setFrequency(frequencyHz: Long) = actor.execute { delegate.setFrequency(frequencyHz) }
     override suspend fun setMode(mode: String) = actor.execute { delegate.setMode(mode) }
+    override suspend fun setDataMode(enabled: Boolean, baseMode: String) =
+        actor.execute { delegate.setDataMode(enabled, baseMode) }
+    override suspend fun setTxDataMode(enabled: Boolean, baseMode: String) =
+        actor.execute { delegate.setTxDataMode(enabled, baseMode) }
     override suspend fun setCtcssMode(enabled: Boolean) = actor.execute { delegate.setCtcssMode(enabled) }
     override suspend fun setCtcssTone(toneHz: Double) = actor.execute { delegate.setCtcssTone(toneHz) }
     override suspend fun readFrequencyAndMode() = actor.execute(operation = delegate::readFrequencyAndMode)

@@ -30,13 +30,8 @@ import kotlinx.coroutines.runInterruptible
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 
-interface RadioTransport {
-    val isConnected: Boolean
-    suspend fun connect(): Boolean
-    suspend fun disconnect()
-    suspend fun write(bytes: ByteArray): Boolean
-    suspend fun readAvailable(maxBytes: Int): ByteArray
-}
+/** Backward-compatible CAT specialization of the shared station-control transport. */
+interface RadioTransport : ControlTransport
 
 class BluetoothSppRadioTransport(
     private val manager: BluetoothManager?,

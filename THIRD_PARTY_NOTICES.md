@@ -8,9 +8,9 @@ components:
 - Source: https://github.com/prstoetzer/OrbitDeckiOS
 - Copyright (c) 2025 Paul Stoetzer, N8HM
 - License: MIT
-- Used for: the Grid Finder feature — the VUCC grid line / grid point
-  geometry in `core/domain/.../utility/GridGeometry.kt` is ported from
-  OrbitDeckiOS' GridGeometry.
+- Used for: the CAT and antenna-rotator architecture, protocol command formats,
+  related test vectors, and the Grid Finder VUCC grid line / grid point geometry
+  in `core/domain/.../utility/GridGeometry.kt`.
 
 ### MIT License
 

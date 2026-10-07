@@ -30,6 +30,7 @@ import com.rtbishop.look4sat.core.domain.model.OtherSettings
 import com.rtbishop.look4sat.core.domain.model.PassesSettings
 import com.rtbishop.look4sat.core.domain.model.RCSettings
 import com.rtbishop.look4sat.core.domain.model.RadioControlSettings
+import com.rtbishop.look4sat.core.domain.rotator.RotatorSettings
 
 import com.rtbishop.look4sat.core.domain.model.WavelogUploadSettings
 import com.rtbishop.look4sat.core.domain.predict.GeoPos
@@ -239,6 +240,8 @@ class WavelogSyncTest {
         override fun updateDataSourcesStatus(status: Map<String, Int>) = TODO()
         override val radioControlSettings: StateFlow<RadioControlSettings> get() = TODO()
         override fun updateRadioControlSettings(settings: RadioControlSettings) = TODO()
+        override val rotatorSettings: StateFlow<RotatorSettings> get() = TODO()
+        override fun updateRotatorSettings(settings: RotatorSettings) = TODO()
         override fun getSatelliteOffset(catnum: Int): String = TODO()
         override fun setSatelliteOffset(catnum: Int, offset: String) = TODO()
         override fun getSatelliteMode(catnum: Int): String = TODO()

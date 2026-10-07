@@ -333,6 +333,9 @@ private class FakeSettingsRepoForSearch : ISettingsRepo {
     override val rcSettings: StateFlow<RCSettings> = MutableStateFlow(
         RCSettings(false, "", "", "", false, "", "", "", 0L, false, "", "", "", false, "", "")
     )
+    override val rotatorSettings = MutableStateFlow(
+        com.rtbishop.look4sat.core.domain.rotator.RotatorSettings()
+    )
     override val otherSettings: StateFlow<OtherSettings> = MutableStateFlow(
         OtherSettings(
             false, false, false, false, false, false, false,
@@ -368,6 +371,9 @@ private class FakeSettingsRepoForSearch : ISettingsRepo {
     }
     override fun updateDatabaseState(state: DatabaseState) = Unit
     override fun updateRCSettings(settings: RCSettings) = Unit
+    override fun updateRotatorSettings(
+        settings: com.rtbishop.look4sat.core.domain.rotator.RotatorSettings
+    ) = Unit
     override fun updateOtherSettings(transform: (OtherSettings) -> OtherSettings) = Unit
     override fun updateFt4Settings(transform: (Ft4Settings) -> Ft4Settings) = Unit
     override fun updateDataSourcesSettings(settings: DataSourcesSettings) = Unit

@@ -31,6 +31,8 @@ import com.rtbishop.look4sat.core.domain.repository.LoTWSyncMode
 import com.rtbishop.look4sat.core.domain.repository.CompassAccuracy
 import com.rtbishop.look4sat.core.domain.time.ClockSnapshot
 import com.rtbishop.look4sat.core.domain.time.TimeSynchronizationState
+import com.rtbishop.look4sat.core.domain.rotator.RotatorSettings
+import com.rtbishop.look4sat.core.domain.rotator.RotatorTrackingState
 import java.io.File
 
 data class PositionSettings(
@@ -65,6 +67,8 @@ data class SettingsState(
     val audioInputDevices: List<AudioInputDevice>,
     val rcSettings: RCSettings,
     val radioControlSettings: RadioControlSettings,
+    val rotatorSettings: RotatorSettings = RotatorSettings(),
+    val rotatorTrackingState: RotatorTrackingState = RotatorTrackingState(),
     val dataSourcesSettings: DataSourcesSettings,
     val dataSourcesStatus: Map<String, Int> = emptyMap(),
     val workedGridsCount: Int = 0,
@@ -124,6 +128,8 @@ data class SettingsState(
     /** 指南针校准精度等级 (校准对话框进度条). */
     val compassAccuracy: CompassAccuracy = CompassAccuracy.UNRELIABLE,
     val compassHeadingDegrees: Float = 0f,
+    val controlDiagnosticCount: Int = 0,
+    val controlDiagnosticsExportText: String? = null,
     val updateChecker: UpdateCheckerState = UpdateCheckerState()
 )
 
@@ -175,6 +181,15 @@ sealed interface SettingsAction {
     // Remote control
     data class UpdateRC(val settings: RCSettings) : SettingsAction
     data class UpdateRadioControl(val settings: RadioControlSettings) : SettingsAction
+    data class UpdateRotatorControl(val settings: RotatorSettings) : SettingsAction
+    data object ConnectRotator : SettingsAction
+    data object DisconnectRotator : SettingsAction
+    data class TestRotatorPoint(val azimuthDegrees: Double, val elevationDegrees: Double) : SettingsAction
+    data object ParkRotator : SettingsAction
+    data object StopRotator : SettingsAction
+    data object ExportControlDiagnostics : SettingsAction
+    data object ClearControlDiagnostics : SettingsAction
+    data object ConsumeControlDiagnosticsExport : SettingsAction
 
     // Data sources
     data class UpdateDataSources(val settings: DataSourcesSettings) : SettingsAction

@@ -28,9 +28,11 @@ import com.rtbishop.look4sat.core.domain.predict.CelestialComputer
 import com.rtbishop.look4sat.core.domain.predict.OrbitalObject
 import com.rtbishop.look4sat.core.domain.predict.OrbitalPass
 import com.rtbishop.look4sat.core.domain.predict.OrbitalPos
+import com.rtbishop.look4sat.core.domain.rotator.RotatorConnectionState
 import com.rtbishop.look4sat.core.domain.repository.IMainContainer
 import com.rtbishop.look4sat.core.domain.repository.IRadioTrackingService
 import com.rtbishop.look4sat.core.domain.repository.IReporter
+import com.rtbishop.look4sat.core.domain.repository.IRotatorTrackingService
 import com.rtbishop.look4sat.core.domain.repository.ISatelliteRepo
 import com.rtbishop.look4sat.core.domain.repository.ISensorsRepo
 import com.rtbishop.look4sat.core.domain.repository.ISettingsRepo
@@ -41,8 +43,6 @@ import com.rtbishop.look4sat.core.domain.cw.CwDecoder
 import com.rtbishop.look4sat.core.domain.usecase.IAddToCalendar
 import com.rtbishop.look4sat.core.domain.usecase.ISaveImage
 import com.rtbishop.look4sat.core.domain.usecase.IShowToast
-import com.rtbishop.look4sat.core.domain.utility.round
-import com.rtbishop.look4sat.core.domain.utility.toDegrees
 import com.rtbishop.look4sat.core.domain.utility.toTimerString
 import com.rtbishop.look4sat.core.presentation.formatFrequency
 import kotlinx.coroutines.Dispatchers
@@ -66,6 +66,7 @@ class RadarViewModel(
     private val sensorsRepo: ISensorsRepo,
     private val addToCalendar: IAddToCalendar,
     private val trackingService: IRadioTrackingService,
+    private val rotatorTrackingService: IRotatorTrackingService,
     private val audioHub: IAudioHub,
     private val saveImage: ISaveImage,
     private val showToast: IShowToast
@@ -82,6 +83,7 @@ class RadarViewModel(
     private var sstvRecordingJob: Job? = null
     private var cwDecoder: CwDecoder? = null
     private var cwListeningJob: Job? = null
+    private var lastRotatorConnectionState: RotatorConnectionState? = null
 
     // Celestial positions change slowly, recompute at most once per minute
     private var lastCelestialUpdateMs = 0L
@@ -95,7 +97,13 @@ class RadarViewModel(
             shouldShowSweep = settingsRepo.otherSettings.value.stateOfSweep,
             shouldUseCompass = settingsRepo.otherSettings.value.stateOfSensors,
             sstv = SstvSubState(selectedMode = settingsRepo.otherSettings.value.sstvMode),
-            radioTransport = settingsRepo.radioControlSettings.value.catTransport
+            radioTransport = settingsRepo.radioControlSettings.value.catTransport,
+            rotatorEnabled = settingsRepo.rotatorSettings.value.enabled,
+            rotatorPosition = if (settingsRepo.rotatorSettings.value.enabled) {
+                preferredRotatorPosition()
+            } else {
+                null
+            }
         )
     )
     val uiState: StateFlow<RadarState> = _uiState
@@ -105,6 +113,7 @@ class RadarViewModel(
         collectSettingsChanges()
         collectPassAndStartTickLoop()
         collectRadioTrackingState()
+        collectRotatorTrackingState()
     }
 
     private fun collectCompassSensor() {
@@ -141,6 +150,17 @@ class RadarViewModel(
                 _uiState.update { it.copy(radioTransport = settings.catTransport) }
             }
         }
+        viewModelScope.launch {
+            settingsRepo.rotatorSettings.collectLatest { settings ->
+                _uiState.update {
+                    it.copy(
+                        rotatorEnabled = settings.enabled,
+                        rotatorPosition = preferredRotatorPosition().takeIf { settings.enabled }
+                    )
+                }
+                syncRotatorTracking(settings.enabled, _uiState.value.currentPass)
+            }
+        }
     }
 
     // --- Pass loading split into focused functions ---
@@ -168,6 +188,7 @@ class RadarViewModel(
     // Loads transmitters and satellite track for pass, sets initial state, returns full radio list
     private suspend fun loadPassData(pass: OrbitalPass): List<SatRadio> {
         _uiState.update { it.copy(currentPass = pass) }
+        syncRotatorTracking(settingsRepo.rotatorSettings.value.enabled, pass)
         val allRadios = satelliteRepo.getRadiosWithId(pass.catNum)
         transponders = allRadios.filter { it.downlinkLow != null }
         if (allRadios.isNotEmpty()) {
@@ -205,7 +226,7 @@ class RadarViewModel(
             )
         }
         processRadios(allRadios, pass.orbitalObject, timeNow)
-        sendPassData(pos)
+        sendFrequencyData()
     }
 
     private fun collectRadioTrackingState() {
@@ -238,6 +259,41 @@ class RadarViewModel(
                 }
             }
         }
+    }
+
+    private fun collectRotatorTrackingState() {
+        viewModelScope.launch {
+            rotatorTrackingService.state.collect { serviceState ->
+                val connectedNow = serviceState.connectionState == RotatorConnectionState.CONNECTED &&
+                    lastRotatorConnectionState != RotatorConnectionState.CONNECTED
+                lastRotatorConnectionState = serviceState.connectionState
+                _uiState.update { state ->
+                    state.copy(
+                        rotatorPosition = (serviceState.reportedPosition ?: serviceState.commandedPosition)
+                            .takeIf { state.rotatorEnabled }
+                        )
+                }
+                if (connectedNow) {
+                    syncRotatorTracking(_uiState.value.rotatorEnabled, _uiState.value.currentPass)
+                }
+            }
+        }
+    }
+
+    private fun syncRotatorTracking(enabled: Boolean, pass: OrbitalPass?) {
+        val serviceState = rotatorTrackingService.state.value
+        if (!enabled) {
+            if (serviceState.isTrackingRequested) rotatorTrackingService.stopTracking(park = false)
+            return
+        }
+        if (pass == null) return
+        if (!serviceState.isTrackingRequested || serviceState.satelliteCatalogNumber != pass.catNum) {
+            rotatorTrackingService.startTracking(pass)
+        }
+    }
+
+    private fun preferredRotatorPosition() = rotatorTrackingService.state.value.let {
+        it.reportedPosition ?: it.commandedPosition
     }
 
     override fun onCleared() {
@@ -364,34 +420,17 @@ class RadarViewModel(
         }
     }
 
-    private fun sendPassData(orbitalPos: OrbitalPos) {
+    private fun sendFrequencyData() {
         val rc = settingsRepo.rcSettings.value
-        sendReporterData(
-            networkReporter, orbitalPos,
-            rc.rotatorState, rc.rotatorFormat,
-            rc.frequencyState, rc.frequencyFormat
-        )
-        sendReporterData(
-            bluetoothReporter, orbitalPos,
-            rc.bluetoothRotatorState, rc.bluetoothRotatorFormat,
-            rc.bluetoothFrequencyState, rc.bluetoothFrequencyFormat
-        )
+        reportFrequency(networkReporter, rc.frequencyState, rc.frequencyFormat)
+        reportFrequency(bluetoothReporter, rc.bluetoothFrequencyState, rc.bluetoothFrequencyFormat)
     }
 
-    private fun sendReporterData(
+    private fun reportFrequency(
         reporter: IReporter,
-        orbitalPos: OrbitalPos,
-        rotatorEnabled: Boolean,
-        rotatorFormat: String,
         frequencyEnabled: Boolean,
         frequencyFormat: String
     ) {
-        // Only send rotator commands when the satellite is above the horizon
-        if (rotatorEnabled && orbitalPos.aboveHorizon) {
-            val azimuth = orbitalPos.azimuth.toDegrees().round(2)
-            val elevation = orbitalPos.elevation.toDegrees().round(2)
-            reporter.reportRotation(rotatorFormat, azimuth, elevation)
-        }
         if (frequencyEnabled) {
             _uiState.value.transceivers.selectedFrequency?.let { freq ->
                 reporter.reportFrequency(frequencyFormat, freq)
@@ -577,6 +616,7 @@ class RadarViewModel(
                     sensorsRepo = container.provideSensorsRepo(),
                     addToCalendar = container.provideAddToCalendar(),
                     trackingService = container.radioTrackingService,
+                    rotatorTrackingService = container.rotatorTrackingService,
                     audioHub = container.audioHub,
                     saveImage = container.provideSaveImage(),
                     showToast = container.provideShowToast()

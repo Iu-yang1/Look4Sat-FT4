@@ -229,6 +229,8 @@ class LoTWGridSyncTest {
         override val rcSettings: StateFlow<RCSettings> = MutableStateFlow(
             RCSettings(false, "", "", "", false, "", "", "", 0L, false, "", "", "", false, "", "")
         )
+        override val rotatorSettings: StateFlow<com.rtbishop.look4sat.core.domain.rotator.RotatorSettings> =
+            MutableStateFlow(com.rtbishop.look4sat.core.domain.rotator.RotatorSettings())
         override val otherSettings: StateFlow<OtherSettings> = MutableStateFlow(
             OtherSettings(
                 stateOfAutoUpdate = true,
@@ -298,6 +300,9 @@ class LoTWGridSyncTest {
         override fun setSatelliteTypeIds(type: String, ids: List<Int>) = TODO()
         override fun updateDatabaseState(state: DatabaseState) = TODO()
         override fun updateRCSettings(settings: RCSettings) = TODO()
+        override fun updateRotatorSettings(
+            settings: com.rtbishop.look4sat.core.domain.rotator.RotatorSettings
+        ) = TODO()
         override fun updateOtherSettings(transform: (OtherSettings) -> OtherSettings) = TODO()
         override fun updateFt4Settings(transform: (Ft4Settings) -> Ft4Settings) = TODO()
         override fun updateDataSourcesSettings(settings: DataSourcesSettings) = TODO()

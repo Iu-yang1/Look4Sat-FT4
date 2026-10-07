@@ -79,6 +79,22 @@ class Ft817CatProtocolTest {
     }
 
     @Test
+    fun buildSetModeCommand_narrowFmAndDataModes() {
+        assertArrayEquals(
+            byteArrayOf(0x88.toByte(), 0x00, 0x00, 0x00, 0x07),
+            Ft817CatProtocol.buildSetModeCommand("FM-N")
+        )
+        assertArrayEquals(
+            byteArrayOf(0x0A, 0x00, 0x00, 0x00, 0x07),
+            Ft817CatProtocol.buildSetModeCommand("DIG")
+        )
+        assertArrayEquals(
+            byteArrayOf(0x0C, 0x00, 0x00, 0x00, 0x07),
+            Ft817CatProtocol.buildSetModeCommand("PKT")
+        )
+    }
+
+    @Test
     fun buildSetModeCommand_unknownReturnsNull() {
         assertNull(Ft817CatProtocol.buildSetModeCommand("INVALID"))
     }

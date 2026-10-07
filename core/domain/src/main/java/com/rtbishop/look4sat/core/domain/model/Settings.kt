@@ -147,7 +147,15 @@ data class RadioControlSettings(
     /** Optional override for the radio's default CI-V address (0x00..0xFF). */
     val civAddress: Int? = null,
     /** TCP payload protocol: direct binary CAT or Hamlib rigctld text commands. */
-    val tcpProtocol: String = TCP_PROTOCOL_RAW_CAT
+    val tcpProtocol: String = TCP_PROTOCOL_RAW_CAT,
+    /** Time that a manually moved dial must remain stable before it becomes the new reference. */
+    val dialSettleMillis: Long = 1_500L,
+    /** Manual-tuning detection threshold for linear transponders. */
+    val linearDialDeadbandHz: Long = 20L,
+    /** Manual-tuning detection threshold for FM transponders. */
+    val fmDialDeadbandHz: Long = 200L,
+    /** Optional spacing between commands sharing one physical CAT connection. */
+    val sharedBusCommandDelayMillis: Long = 0L
 ) {
     companion object {
         const val MODEL_YAESU_FT817 = "Yaesu FT-817/818"
@@ -165,35 +173,14 @@ data class RadioControlSettings(
         const val DUPLEX_MODE_SPLIT = "SPLIT"
         const val DUPLEX_MODE_SATELLITE = "SATELLITE"
 
-        val SUPPORTED_RADIOS = listOf(
-            MODEL_YAESU_FT817,
-            MODEL_YAESU_FT857,
-            MODEL_ICOM_IC705,
-            MODEL_ICOM_IC9700,
-            MODEL_ICOM_IC910
-        )
-        val ICOM_RADIOS = setOf(MODEL_ICOM_IC705, MODEL_ICOM_IC9700, MODEL_ICOM_IC910)
-        val SATELLITE_MODE_RADIOS = setOf(MODEL_ICOM_IC9700, MODEL_ICOM_IC910)
+        val SUPPORTED_RADIOS = RadioModelCatalog.supportedModels
         val SUPPORTED_TRANSPORTS = listOf(TRANSPORT_BLUETOOTH, TRANSPORT_USB, TRANSPORT_TCP, TRANSPORT_VOX)
         val SUPPORTED_TCP_PROTOCOLS = listOf(TCP_PROTOCOL_RAW_CAT, TCP_PROTOCOL_HAMLIB)
 
-        /** Baud rates available for Yaesu radios. */
-        val BAUD_RATES_YAESU = listOf(4800, 9600, 38400)
-        /** IC-705 CI-V rates documented by Hamlib (8N1). */
-        val BAUD_RATES_IC705 = listOf(4800, 9600, 19200)
-        /** IC-9700 CI-V rates documented by Hamlib (8N1). */
-        val BAUD_RATES_IC9700 = listOf(4800, 9600, 19200, 38400)
-        /** Hamlib documents the IC-910 family serial interface as 300–19200 baud. */
-        val BAUD_RATES_IC910 = listOf(9600, 19200, 4800, 1200, 300)
     }
 }
 
-fun supportedRadioBaudRates(model: String): List<Int> = when (model) {
-    RadioControlSettings.MODEL_ICOM_IC705 -> RadioControlSettings.BAUD_RATES_IC705
-    RadioControlSettings.MODEL_ICOM_IC9700 -> RadioControlSettings.BAUD_RATES_IC9700
-    RadioControlSettings.MODEL_ICOM_IC910 -> RadioControlSettings.BAUD_RATES_IC910
-    else -> RadioControlSettings.BAUD_RATES_YAESU
-}
+fun supportedRadioBaudRates(model: String): List<Int> = radioModelDescriptor(model).baudRates
 
 data class RadioTcpEndpoint(val host: String, val port: Int)
 

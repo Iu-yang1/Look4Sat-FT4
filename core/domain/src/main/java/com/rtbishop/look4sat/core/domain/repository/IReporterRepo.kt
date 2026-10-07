@@ -18,6 +18,5 @@
 package com.rtbishop.look4sat.core.domain.repository
 
 interface IReporter {
-    fun reportRotation(format: String, azimuth: Double, elevation: Double)
     fun reportFrequency(format: String, frequency: Long)
 }

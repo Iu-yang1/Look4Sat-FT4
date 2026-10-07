@@ -18,6 +18,7 @@
 package com.rtbishop.look4sat.feature.settings
 
 import android.Manifest
+import android.content.Intent
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -79,7 +80,6 @@ import com.rtbishop.look4sat.core.domain.model.RadioControlSettings
 import com.rtbishop.look4sat.core.domain.predict.GeoPos
 import com.rtbishop.look4sat.core.domain.repository.IContainerProvider
 import com.rtbishop.look4sat.core.domain.repository.CompassAccuracy
-import com.rtbishop.look4sat.core.domain.repository.LoTWSyncMode
 import com.rtbishop.look4sat.core.domain.repository.WavelogSyncMode
 import com.rtbishop.look4sat.core.presentation.CardButton
 import com.rtbishop.look4sat.core.presentation.IconCard
@@ -96,35 +96,23 @@ import java.util.Date
 import java.util.Locale
 
 @Composable
-fun SettingsDestination(onOpenGridFinder: () -> Unit = {}) {
+fun SettingsDestination() {
     val context = LocalContext.current
     val container = (context.applicationContext as IContainerProvider).getMainContainer()
     val viewModel: SettingsViewModel = viewModel(factory = SettingsViewModel.factory(container, context))
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-    // Station-grid prefill for the "fix it" jump from the logbook grid check (single-use,
-    // mirrors the Grid Finder's "Set as LoTW station" hand-off).
-    val pendingStationGrid by container.pendingLoTWStationGrid.collectAsStateWithLifecycle()
     SettingsScreen(
         uiState = uiState,
-        onAction = viewModel::onAction,
-        onOpenGridFinder = onOpenGridFinder,
-        pendingStationGrid = pendingStationGrid.orEmpty(),
-        onFixStationGrid = { grids ->
-            if (grids.isNotEmpty()) container.setPendingLoTWStationGrid(grids.joinToString(","))
-        },
-        onClearStationGridPrefill = { container.setPendingLoTWStationGrid(null) }
+        onAction = viewModel::onAction
     )
 }
 
 @Composable
 private fun SettingsScreen(
     uiState: SettingsState,
-    onAction: (SettingsAction) -> Unit,
-    onOpenGridFinder: () -> Unit,
-    pendingStationGrid: String = "",
-    onFixStationGrid: (List<String>) -> Unit = {},
-    onClearStationGridPrefill: () -> Unit = {}
+    onAction: (SettingsAction) -> Unit
 ) {
+    val context = LocalContext.current
     var showUpdateChecker by rememberSaveable { mutableStateOf(false) }
     var showMapSettings by rememberSaveable { mutableStateOf(false) }
     var showProjectWiki by rememberSaveable { mutableStateOf(false) }
@@ -160,6 +148,16 @@ private fun SettingsScreen(
             pendingCustomSourcesDeny.value = null
         }
     )
+    LaunchedEffect(uiState.controlDiagnosticsExportText) {
+        val text = uiState.controlDiagnosticsExportText ?: return@LaunchedEffect
+        val intent = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_SUBJECT, "Look4Sat control diagnostics")
+            putExtra(Intent.EXTRA_TEXT, text)
+        }
+        context.startActivity(Intent.createChooser(intent, context.getString(R.string.control_diagnostics_export)))
+        onAction(SettingsAction.ConsumeControlDiagnosticsExport)
+    }
 
     if (showMapSettings) {
         MapSettingsDialog(
@@ -214,12 +212,10 @@ private fun SettingsScreen(
         NetworkOutputDialog(
             initialSettings = uiState.rcSettings,
             onDismiss = { dialogs.network = false },
-            onSave = { rotState, rotAddr, rotPort, rotFmt, freqState, freqAddr, freqPort, freqFmt, freqOffsetHz ->
+            onSave = { freqState, freqAddr, freqPort, freqFmt, freqOffsetHz ->
                 onAction(
                     SettingsAction.UpdateRC(
                         uiState.rcSettings.copy(
-                            rotatorState = rotState, rotatorAddress = rotAddr,
-                            rotatorPort = rotPort, rotatorFormat = rotFmt,
                             frequencyState = freqState, frequencyAddress = freqAddr,
                             frequencyPort = freqPort, frequencyFormat = freqFmt,
                             frequencyOffsetHz = freqOffsetHz
@@ -233,12 +229,11 @@ private fun SettingsScreen(
         BluetoothOutputDialog(
             initialSettings = uiState.rcSettings,
             onDismiss = { dialogs.bluetooth = false },
-            onSave = { rotState, rotAddr, rotFmt, freqState, freqAddr, freqFmt ->
+            onSave = { freqState, freqAddr, freqFmt ->
                 onAction(
                     SettingsAction.UpdateRC(
                         uiState.rcSettings.copy(
-                            bluetoothRotatorState = rotState, bluetoothRotatorAddress = rotAddr,
-                            bluetoothRotatorFormat = rotFmt, bluetoothFrequencyState = freqState,
+                            bluetoothFrequencyState = freqState,
                             bluetoothFrequencyAddress = freqAddr, bluetoothFrequencyFormat = freqFmt
                         )
                     )
@@ -251,6 +246,21 @@ private fun SettingsScreen(
             initialSettings = uiState.radioControlSettings,
             onDismiss = { dialogs.radioControl = false },
             onSave = { onAction(SettingsAction.UpdateRadioControl(it)) }
+        )
+    }
+    if (dialogs.rotatorControl) {
+        RotatorControlDialog(
+            initialSettings = uiState.rotatorSettings,
+            trackingState = uiState.rotatorTrackingState,
+            onDismiss = { dialogs.rotatorControl = false },
+            onSave = { onAction(SettingsAction.UpdateRotatorControl(it)) },
+            onConnect = { onAction(SettingsAction.ConnectRotator) },
+            onDisconnect = { onAction(SettingsAction.DisconnectRotator) },
+            onTestPoint = { azimuth, elevation ->
+                onAction(SettingsAction.TestRotatorPoint(azimuth, elevation))
+            },
+            onPark = { onAction(SettingsAction.ParkRotator) },
+            onStop = { onAction(SettingsAction.StopRotator) }
         )
     }
     if (dialogs.compassCalibration) {
@@ -266,104 +276,6 @@ private fun SettingsScreen(
             onSave = { onAction(SettingsAction.SetCompassOffset(it)) }
         )
     }
-    if (dialogs.lotw) {
-        // LoTW sync failures are typed codes from the ViewModel; render them
-        // through string resources so the dialog follows the system language.
-        val lotwErrorMessage = uiState.lotwError?.let { error ->
-            when (error) {
-                LoTWError.NotConfigured -> stringResource(R.string.lotw_sync_error_not_configured)
-                LoTWError.BadCredentials -> stringResource(R.string.lotw_sync_error_credentials)
-                LoTWError.RateLimited -> stringResource(R.string.lotw_sync_error_rate_limited)
-                LoTWError.Timeout -> stringResource(R.string.lotw_sync_error_timeout)
-                is LoTWError.Network -> stringResource(R.string.lotw_sync_error_network, error.detail)
-            }
-        }
-        LoTWDialog(
-            initialSettings = uiState.lotwSettings,
-            workedGridsCount = uiState.workedGridsCount,
-            isSyncing = uiState.lotwSyncing,
-            syncMode = uiState.lotwSyncMode,
-            progress = uiState.lotwProgress,
-            message = lotwErrorMessage,
-            dismiss = { dialogs.lotw = false },
-            onCancelSync = { onAction(SettingsAction.CancelLoTWSync); dialogs.lotw = false },
-            onSave = { onAction(SettingsAction.UpdateLoTW(it)) },
-            onSyncFull = { onAction(SettingsAction.SyncLoTWGrids(it, LoTWSyncMode.Full)) },
-            onSyncIncremental = { onAction(SettingsAction.SyncLoTWGrids(it, LoTWSyncMode.Incremental)) }
-        )
-    }
-
-    if (dialogs.logbook) {
-        val stationFilter = uiState.logbookStationFilter
-        LogbookDialog(
-            records = uiState.logbookRecords.filter { stationFilter == null || it.wavelogStation == stationFilter },
-            satelliteCandidates = uiState.satelliteCatalog,
-            uploadBusy = uiState.logbookUploadBusy,
-            uploadMessage = uiState.logbookUploadMessage,
-            preview = uiState.logbookPreview,
-            positionWarning = uiState.logbookPositionWarning,
-            onDismiss = {
-                // Leaving the logbook resets the resubmit selection: re-entering starts
-                // clean — the operator long-presses again to pick records.
-                onAction(SettingsAction.ExitLogbookSelection)
-                dialogs.logbook = false
-            },
-            onDelete = { onAction(SettingsAction.DeleteLogbookRecord(it)) },
-            onEdit = { onAction(SettingsAction.UpdateLogbookRecord(it)) },
-            onUpload = { onAction(SettingsAction.PrepareLogbookUpload) },
-            onConfirmUpload = { onAction(SettingsAction.ConfirmLogbookUpload) },
-            onDismissPreview = { onAction(SettingsAction.DismissLogbookPreview) },
-            onDismissMessage = { onAction(SettingsAction.ClearLogbookMessage) },
-            onRewriteCallsign = { onAction(SettingsAction.RewriteLogbookCallsigns) },
-            onSwitchCertificate = {
-                // The other callsign's certificate lives in the LoTW upload settings: leave the
-                // logbook and open that dialog.
-                onAction(SettingsAction.DismissLogbookPreview)
-                onAction(SettingsAction.ExitLogbookSelection)
-                dialogs.logbook = false
-                dialogs.lotwUpload = true
-            },
-            onIgnorePositionWarning = { onAction(SettingsAction.IgnoreLogbookPositionWarning) },
-            onFixGrid = { grids ->
-                onAction(SettingsAction.AbandonLogbookForGridFix)
-                onAction(SettingsAction.ExitLogbookSelection)
-                dialogs.logbook = false
-                onFixStationGrid(grids)
-                dialogs.lotwUpload = true
-            },
-            selectionMode = uiState.logbookSelectionMode,
-            selectedIds = uiState.logbookSelectedIds,
-            onStartSelection = { onAction(SettingsAction.StartLogbookSelection(it)) },
-            onToggleSelection = { onAction(SettingsAction.ToggleLogbookSelection(it)) },
-            onExitSelection = { onAction(SettingsAction.ExitLogbookSelection) },
-            onResubmitSelected = { onAction(SettingsAction.ResubmitSelectedLogbook) },
-            wavelogPreview = uiState.logbookWavelogPreview,
-            wavelogMode = uiState.wavelogUploadSettings.isReady,
-            stationOptions = if (uiState.wavelogUploadSettings.isReady) uiState.wavelogUploadStations else emptyList(),
-            stationFilter = uiState.logbookStationFilter,
-            onStationFilterChange = { onAction(SettingsAction.SetLogbookStationFilter(it)) }
-        )
-    }
-    if (dialogs.lotwUpload) {
-        LoTWUploadConfigDialog(
-            certificate = uiState.lotwCertificate,
-            station = uiState.lotwStation,
-            stationMeta = uiState.lotwStationMeta,
-            busy = uiState.lotwUploadBusy,
-            error = uiState.lotwUploadError,
-            errorDetail = uiState.lotwUploadErrorDetail,
-            initialGrid = pendingStationGrid,
-            onDismiss = {
-                dialogs.lotwUpload = false
-                onClearStationGridPrefill()
-            },
-            onImport = { bytes, password -> onAction(SettingsAction.ImportLoTWCertificate(bytes, password)) },
-            onPreview = { bytes, password -> onAction(SettingsAction.PreviewLoTWCertificate(bytes, password)) },
-            onRemove = { onAction(SettingsAction.RemoveLoTWCertificate) },
-            onSaveStation = { onAction(SettingsAction.SaveLoTWStation(it)) }
-        )
-    }
-
     if (dialogs.wavelogUpload) {
         WavelogUploadDialog(
             initialSettings = uiState.wavelogUploadSettings,
@@ -471,7 +383,6 @@ private fun SettingsScreen(
                     showPosDialog = { dialogs.position = true },
                     showLocDialog = { dialogs.locator = true },
                     dismissPosMessage = { onAction(SettingsAction.DismissPosMessages) },
-                    openGridFinder = onOpenGridFinder,
                     onAction = onAction
                 )
             }
@@ -487,7 +398,11 @@ private fun SettingsScreen(
                 OutputCard(
                     onNetworkClick = permissions.launchNetwork,
                     onBluetoothClick = permissions.launchBluetooth,
-                    onRadioControlClick = { dialogs.radioControl = true }
+                    onRadioControlClick = { dialogs.radioControl = true },
+                    onRotatorControlClick = { dialogs.rotatorControl = true },
+                    diagnosticCount = uiState.controlDiagnosticCount,
+                    onExportDiagnostics = { onAction(SettingsAction.ExportControlDiagnostics) },
+                    onClearDiagnostics = { onAction(SettingsAction.ClearControlDiagnostics) }
                 )
             }
             item(span = { GridItemSpan(maxLineSpan) }) {
@@ -499,29 +414,6 @@ private fun SettingsScreen(
                 )
             }
 
-            item {
-                LogbookCard(
-                    recordCount = uiState.logbookRecords.size,
-                    showLogbookDialog = { dialogs.logbook = true }
-                )
-            }
-            item {
-                LoTWUploadCard(
-                    hasCertificate = uiState.lotwCertificate != null,
-                    stationGrid = uiState.lotwStation?.grid.orEmpty(),
-                    enabled = !wavelogMode,
-                    showUploadConfigDialog = { onAction(SettingsAction.LoadLoTWUploadStatus); dialogs.lotwUpload = true }
-                )
-            }
-            item {
-                LoTWCard(
-                    settings = uiState.lotwSettings,
-                    workedGridsCount = uiState.workedGridsCount,
-                    lastSyncEpochMs = uiState.lotwLastSyncEpochMs,
-                    enabled = !wavelogMode,
-                    showLoTWDialog = { dialogs.lotw = true }
-                )
-            }
             item {
                 WavelogUploadCard(
                     settings = uiState.wavelogUploadSettings,
@@ -689,7 +581,14 @@ private fun Ft4SettingsCard(
 private fun LocationCardPreview() = MainTheme {
     val stationPos = GeoPos(0.0, 0.0, 0.0, "IO91vl", 0L)
     val settings = PositionSettings(true, stationPos, 0)
-    LocationCard(settings = settings, setGpsPos = {}, showPosDialog = {}, {}, {}, {}) {}
+    LocationCard(
+        settings = settings,
+        setGpsPos = {},
+        showPosDialog = {},
+        showLocDialog = {},
+        dismissPosMessage = {},
+        onAction = {}
+    )
 }
 
 @Composable
@@ -699,7 +598,6 @@ private fun LocationCard(
     showPosDialog: () -> Unit,
     showLocDialog: () -> Unit,
     dismissPosMessage: () -> Unit,
-    openGridFinder: () -> Unit,
     onAction: (SettingsAction) -> Unit
 ) {
     ElevatedCard(modifier = Modifier.fillMaxWidth()) {
@@ -742,12 +640,6 @@ private fun LocationCard(
                     modifier = Modifier.weight(1f)
                 )
             }
-            Spacer(modifier = Modifier.height(4.dp))
-            CardButton(
-                onClick = openGridFinder,
-                text = stringResource(id = R.string.gridfinder_title),
-                modifier = Modifier.fillMaxWidth()
-            )
         }
     }
     if (settings.messageResId != 0) {
@@ -816,13 +708,17 @@ private fun DataCard(
 
 @Preview(showBackground = true)
 @Composable
-private fun OutputCardPreview() = MainTheme { OutputCard({}, {}, {}) }
+private fun OutputCardPreview() = MainTheme { OutputCard({}, {}, {}, {}, 0, {}, {}) }
 
 @Composable
 private fun OutputCard(
     onNetworkClick: () -> Unit,
     onBluetoothClick: () -> Unit,
-    onRadioControlClick: () -> Unit
+    onRadioControlClick: () -> Unit,
+    onRotatorControlClick: () -> Unit,
+    diagnosticCount: Int,
+    onExportDiagnostics: () -> Unit,
+    onClearDiagnostics: () -> Unit
 ) {
     ElevatedCard(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) {
@@ -842,9 +738,34 @@ private fun OutputCard(
                     text = stringResource(id = R.string.prefs_bt_output),
                     modifier = Modifier.weight(1f)
                 )
+            }
+            Spacer(modifier = Modifier.height(6.dp))
+            Text(
+                stringResource(R.string.control_diagnostics_count, diagnosticCount),
+                style = MaterialTheme.typography.bodySmall
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                CardButton(
+                    onClick = onExportDiagnostics,
+                    text = stringResource(R.string.control_diagnostics_export),
+                    modifier = Modifier.weight(1f)
+                )
+                CardButton(
+                    onClick = onClearDiagnostics,
+                    text = stringResource(R.string.control_diagnostics_clear),
+                    modifier = Modifier.weight(1f)
+                )
+            }
+            Spacer(modifier = Modifier.height(6.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 CardButton(
                     onClick = onRadioControlClick,
                     text = stringResource(id = R.string.prefs_cat_output),
+                    modifier = Modifier.weight(1f)
+                )
+                CardButton(
+                    onClick = onRotatorControlClick,
+                    text = stringResource(id = R.string.prefs_rotator_output),
                     modifier = Modifier.weight(1f)
                 )
             }
@@ -1295,10 +1216,7 @@ private class DialogVisibility {
     var radioControl by mutableStateOf(false)
     var compassCalibration by mutableStateOf(false)
     var wavelog by mutableStateOf(false)
-    var lotw by mutableStateOf(false)
-
-    var logbook by mutableStateOf(false)
-    var lotwUpload by mutableStateOf(false)
+    var rotatorControl by mutableStateOf(false)
     var wavelogUpload by mutableStateOf(false)
 }
 
@@ -1307,18 +1225,19 @@ private fun rememberDialogVisibility(): DialogVisibility {
     return rememberSaveable(saver = run {
         androidx.compose.runtime.saveable.Saver(
             save = {
-                listOf(it.position, it.locator, it.dataSources, it.network, it.bluetooth, it.radioControl, it.wavelog, it.lotw, it.compassCalibration, it.logbook, it.lotwUpload, it.wavelogUpload)
+                listOf(
+                    it.position, it.locator, it.dataSources, it.network, it.bluetooth,
+                    it.radioControl, it.wavelog, false, it.compassCalibration,
+                    it.rotatorControl, false, false, it.wavelogUpload
+                )
             },
             restore = {
                 DialogVisibility().apply {
                     position = it[0]; locator = it[1]; dataSources = it[2]
                     network = it[3]; bluetooth = it[4]; radioControl = it[5]; wavelog = it[6]
-                    lotw = it.getOrElse(7) { false }
                     compassCalibration = it.getOrElse(8) { false }
-
-                    logbook = it.getOrElse(9) { false }
-                    lotwUpload = it.getOrElse(10) { false }
-                    wavelogUpload = it.getOrElse(11) { false }
+                    rotatorControl = it.getOrElse(9) { false }
+                    wavelogUpload = it.getOrElse(12) { false }
                 }
             }
         )

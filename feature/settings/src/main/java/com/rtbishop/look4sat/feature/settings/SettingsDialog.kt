@@ -106,6 +106,8 @@ import androidx.compose.ui.zIndex
 import com.rtbishop.look4sat.core.domain.model.Constants
 import com.rtbishop.look4sat.core.domain.model.RCSettings
 import com.rtbishop.look4sat.core.domain.model.RadioControlSettings
+import com.rtbishop.look4sat.core.domain.model.RadioProtocolFamily
+import com.rtbishop.look4sat.core.domain.model.radioModelDescriptor
 import com.rtbishop.look4sat.core.domain.model.parseRadioTcpEndpoint
 import com.rtbishop.look4sat.core.domain.model.supportedRadioBaudRates
 import com.rtbishop.look4sat.core.domain.repository.LoTWSyncMode
@@ -961,7 +963,7 @@ fun PreviewNetworkOutputDialog() {
                 bluetoothFrequencyFormat = $$"F $FREQ"
             ),
             onDismiss = {},
-            onSave = { _, _, _, _, _, _, _, _, _ -> }
+            onSave = { _, _, _, _, _ -> }
         )
     }
 }
@@ -970,17 +972,9 @@ fun PreviewNetworkOutputDialog() {
 fun NetworkOutputDialog(
     initialSettings: RCSettings,
     onDismiss: () -> Unit,
-    onSave: (
-        Boolean, String, String, String,
-        Boolean, String, String, String, Long
-    ) -> Unit
+    onSave: (Boolean, String, String, String, Long) -> Unit
 ) {
     val padding = LocalSpacing.current.large
-    val rotatorState = rememberSaveable { mutableStateOf(initialSettings.rotatorState) }
-    val rotatorAddress = rememberSaveable {
-        mutableStateOf("${initialSettings.rotatorAddress}:${initialSettings.rotatorPort}")
-    }
-    val rotatorFormat = rememberSaveable { mutableStateOf(initialSettings.rotatorFormat) }
     val frequencyState = rememberSaveable { mutableStateOf(initialSettings.frequencyState) }
     val frequencyAddress = rememberSaveable {
         mutableStateOf("${initialSettings.frequencyAddress}:${initialSettings.frequencyPort}")
@@ -988,14 +982,10 @@ fun NetworkOutputDialog(
     val frequencyFormat = rememberSaveable { mutableStateOf(initialSettings.frequencyFormat) }
     val frequencyOffsetHz = rememberSaveable { mutableStateOf(initialSettings.frequencyOffsetHz.toString()) }
     val onAccept = {
-        val (rotIp, rotPort) = splitAddress(rotatorAddress.value)
         val (freqIp, freqPort) = splitAddress(frequencyAddress.value)
         val offsetHz = (frequencyOffsetHz.value.trim().toLongOrNull() ?: 0L)
             .coerceIn(Constants.FREQ_OFFSET_MIN_HZ, Constants.FREQ_OFFSET_MAX_HZ)
-        onSave(
-            rotatorState.value, rotIp, rotPort, rotatorFormat.value,
-            frequencyState.value, freqIp, freqPort, frequencyFormat.value, offsetHz
-        )
+        onSave(frequencyState.value, freqIp, freqPort, frequencyFormat.value, offsetHz)
         onDismiss()
     }
     SharedDialog(
@@ -1004,18 +994,6 @@ fun NetworkOutputDialog(
         onAccept = onAccept
     ) {
         Column(modifier = Modifier.padding(horizontal = padding)) {
-            OutputChannelSection(
-                switchLabel = stringResource(R.string.prefs_net_rotator_switch),
-                enabled = rotatorState.value,
-                onEnabledChange = { rotatorState.value = it },
-                address = rotatorAddress.value,
-                onAddressChange = { rotatorAddress.value = it },
-                addressLabel = stringResource(R.string.prefs_net_rotator_address_hint),
-                format = rotatorFormat.value,
-                onFormatChange = { rotatorFormat.value = it },
-                formatLabel = stringResource(R.string.prefs_net_rotator_format_hint)
-            )
-            Spacer(modifier = Modifier.height(6.dp))
             OutputChannelSection(
                 switchLabel = stringResource(R.string.prefs_net_frequency_switch),
                 enabled = frequencyState.value,
@@ -1083,7 +1061,7 @@ fun PreviewBluetoothOutputDialog() {
                 bluetoothFrequencyFormat = $$"F $FREQ"
             ),
             onDismiss = {},
-            onSave = { _, _, _, _, _, _ -> }
+            onSave = { _, _, _ -> }
         )
     }
 }
@@ -1092,23 +1070,14 @@ fun PreviewBluetoothOutputDialog() {
 fun BluetoothOutputDialog(
     initialSettings: RCSettings,
     onDismiss: () -> Unit,
-    onSave: (
-        Boolean, String, String,
-        Boolean, String, String
-    ) -> Unit
+    onSave: (Boolean, String, String) -> Unit
 ) {
     val padding = LocalSpacing.current.large
-    val rotatorState = rememberSaveable { mutableStateOf(initialSettings.bluetoothRotatorState) }
-    val rotatorAddress = rememberSaveable { mutableStateOf(initialSettings.bluetoothRotatorAddress) }
-    val rotatorFormat = rememberSaveable { mutableStateOf(initialSettings.bluetoothRotatorFormat) }
     val frequencyState = rememberSaveable { mutableStateOf(initialSettings.bluetoothFrequencyState) }
     val frequencyAddress = rememberSaveable { mutableStateOf(initialSettings.bluetoothFrequencyAddress) }
     val frequencyFormat = rememberSaveable { mutableStateOf(initialSettings.bluetoothFrequencyFormat) }
     val onAccept = {
-        onSave(
-            rotatorState.value, rotatorAddress.value, rotatorFormat.value,
-            frequencyState.value, frequencyAddress.value, frequencyFormat.value
-        )
+        onSave(frequencyState.value, frequencyAddress.value, frequencyFormat.value)
         onDismiss()
     }
     SharedDialog(
@@ -1117,18 +1086,6 @@ fun BluetoothOutputDialog(
         onAccept = onAccept
     ) {
         Column(modifier = Modifier.padding(horizontal = padding)) {
-            OutputChannelSection(
-                switchLabel = stringResource(R.string.prefs_bt_rotator_switch),
-                enabled = rotatorState.value,
-                onEnabledChange = { rotatorState.value = it },
-                address = rotatorAddress.value,
-                onAddressChange = { rotatorAddress.value = it },
-                addressLabel = stringResource(R.string.prefs_bt_rotator_device_hint),
-                format = rotatorFormat.value,
-                onFormatChange = { rotatorFormat.value = it },
-                formatLabel = stringResource(R.string.prefs_bt_rotator_output_hint)
-            )
-            Spacer(modifier = Modifier.height(6.dp))
             OutputChannelSection(
                 switchLabel = stringResource(R.string.prefs_bt_frequency_switch),
                 enabled = frequencyState.value,
@@ -1203,7 +1160,8 @@ fun RadioControlDialog(
     val padding    = LocalSpacing.current.large
     val enabled    = rememberSaveable { mutableStateOf(initialSettings.enabled) }
     val radioModel = rememberSaveable { mutableStateOf(initialSettings.radioModel) }
-    val initialIsIcom = initialSettings.radioModel in RadioControlSettings.ICOM_RADIOS
+    val initialIsIcom = radioModelDescriptor(initialSettings.radioModel).protocolFamily ==
+        RadioProtocolFamily.ICOM_CIV
     val initialBaudRates = radioBaudRates(initialSettings.radioModel)
     val splitMode  = rememberSaveable { mutableStateOf(initialSettings.splitMode && initialIsIcom) }
     val duplexMode = rememberSaveable { mutableStateOf(initialSettings.duplexMode) }
@@ -1221,6 +1179,18 @@ fun RadioControlDialog(
     val rxName     = rememberSaveable { mutableStateOf(initialRxName) }
     val baudRate   = rememberSaveable {
         mutableIntStateOf(initialSettings.baudRate.takeIf { it in initialBaudRates } ?: initialBaudRates.first())
+    }
+    val dialSettleMillis = rememberSaveable {
+        mutableStateOf(initialSettings.dialSettleMillis.toString())
+    }
+    val linearDialDeadbandHz = rememberSaveable {
+        mutableStateOf(initialSettings.linearDialDeadbandHz.toString())
+    }
+    val fmDialDeadbandHz = rememberSaveable {
+        mutableStateOf(initialSettings.fmDialDeadbandHz.toString())
+    }
+    val sharedBusDelayMillis = rememberSaveable {
+        mutableStateOf(initialSettings.sharedBusCommandDelayMillis.toString())
     }
     val initialCivAddress = initialSettings.civAddress
         ?: defaultCivAddress(initialSettings.radioModel)
@@ -1323,13 +1293,14 @@ fun RadioControlDialog(
         }
     }
 
-    val isIcom = radioModel.value in RadioControlSettings.ICOM_RADIOS
+    val modelDescriptor = radioModelDescriptor(radioModel.value)
+    val isIcom = modelDescriptor.protocolFamily == RadioProtocolFamily.ICOM_CIV
     val isVox = catTransport.value == RadioControlSettings.TRANSPORT_VOX
-    val supportsSatelliteMode = radioModel.value in RadioControlSettings.SATELLITE_MODE_RADIOS &&
+    val supportsSatelliteMode = modelDescriptor.capabilities.satelliteMode &&
         !(catTransport.value == RadioControlSettings.TRANSPORT_TCP &&
             tcpProtocol.value == RadioControlSettings.TCP_PROTOCOL_HAMLIB)
-    val isSingleRadio = isIcom && splitMode.value
-    val requiredStopBits = if (isIcom) 1 else 2
+    val isSingleRadio = modelDescriptor.capabilities.singleRadioSplit && splitMode.value
+    val requiredStopBits = modelDescriptor.serialStopBits
 
     val baudRates = radioBaudRates(radioModel.value)
 
@@ -1451,7 +1422,11 @@ fun RadioControlDialog(
                     RadioControlSettings.DUPLEX_MODE_SPLIT
                 },
                 civAddress     = parsedCivAddress,
-                tcpProtocol    = tcpProtocol.value
+                tcpProtocol    = tcpProtocol.value,
+                dialSettleMillis = dialSettleMillis.value.toLongOrNull() ?: 1_500L,
+                linearDialDeadbandHz = linearDialDeadbandHz.value.toLongOrNull() ?: 20L,
+                fmDialDeadbandHz = fmDialDeadbandHz.value.toLongOrNull() ?: 200L,
+                sharedBusCommandDelayMillis = sharedBusDelayMillis.value.toLongOrNull() ?: 0L
             )
         )
         onDismiss()
@@ -1548,8 +1523,9 @@ fun RadioControlDialog(
                             val oldDefaultAddress = defaultCivAddress(radioModel.value)
                             val currentAddress = parseCivAddress(civAddress.value)
                             radioModel.value = model
-                            if (model !in RadioControlSettings.ICOM_RADIOS) splitMode.value = false
-                            if (model !in RadioControlSettings.SATELLITE_MODE_RADIOS) {
+                            val newCapabilities = radioModelDescriptor(model).capabilities
+                            if (!newCapabilities.singleRadioSplit) splitMode.value = false
+                            if (!newCapabilities.satelliteMode) {
                                 duplexMode.value = RadioControlSettings.DUPLEX_MODE_SPLIT
                             }
                             val modelRates = radioBaudRates(model)
@@ -1850,6 +1826,44 @@ fun RadioControlDialog(
                 }
                 Spacer(modifier = Modifier.height(6.dp))
             }
+            Text(stringResource(R.string.rc_dial_follow), fontWeight = FontWeight.Medium)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = dialSettleMillis.value,
+                    onValueChange = { dialSettleMillis.value = it },
+                    label = { Text(stringResource(R.string.rc_dial_settle_ms)) },
+                    singleLine = true,
+                    enabled = enabled.value,
+                    modifier = Modifier.weight(1f)
+                )
+                OutlinedTextField(
+                    value = sharedBusDelayMillis.value,
+                    onValueChange = { sharedBusDelayMillis.value = it },
+                    label = { Text(stringResource(R.string.rc_shared_bus_delay_ms)) },
+                    singleLine = true,
+                    enabled = enabled.value,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = linearDialDeadbandHz.value,
+                    onValueChange = { linearDialDeadbandHz.value = it },
+                    label = { Text(stringResource(R.string.rc_linear_deadband_hz)) },
+                    singleLine = true,
+                    enabled = enabled.value,
+                    modifier = Modifier.weight(1f)
+                )
+                OutlinedTextField(
+                    value = fmDialDeadbandHz.value,
+                    onValueChange = { fmDialDeadbandHz.value = it },
+                    label = { Text(stringResource(R.string.rc_fm_deadband_hz)) },
+                    singleLine = true,
+                    enabled = enabled.value,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+            Spacer(modifier = Modifier.height(6.dp))
             }
         }
     }
@@ -1857,12 +1871,7 @@ fun RadioControlDialog(
 
 private fun radioBaudRates(model: String): List<Int> = supportedRadioBaudRates(model)
 
-private fun defaultCivAddress(model: String): Int? = when (model) {
-    RadioControlSettings.MODEL_ICOM_IC705 -> 0xA4
-    RadioControlSettings.MODEL_ICOM_IC9700 -> 0xA2
-    RadioControlSettings.MODEL_ICOM_IC910 -> 0x60
-    else -> null
-}
+private fun defaultCivAddress(model: String): Int? = radioModelDescriptor(model).defaultCivAddress
 
 private fun parseCivAddress(value: String): Int? {
     val text = value.trim()
@@ -1874,7 +1883,7 @@ private fun parseCivAddress(value: String): Int? {
     return parsed?.takeIf { it in 0..0xFF }
 }
 
-private data class UsbSerialUiPort(
+internal data class UsbSerialUiPort(
     val driverName: String,
     val controlInterfaceId: Int,
     val dataInterfaceId: Int,
@@ -1886,7 +1895,7 @@ private data class UsbSerialUiPort(
     }
 }
 
-private data class RadioDeviceUiEntry(
+internal data class RadioDeviceUiEntry(
     val name: String,
     val address: String,
     val usbDeviceId: Int? = null,
@@ -1958,7 +1967,7 @@ private fun resolveUsbSerialUiDevice(
     return devices.filter(matchesIdentity).singleOrNull()
 }
 
-private fun UsbDevice.usbSerialPorts(): List<UsbSerialUiPort> {
+internal fun UsbDevice.usbSerialPorts(): List<UsbSerialUiPort> {
     val interfaces = (0 until interfaceCount).map(::getInterface)
     val controls = interfaces.filter {
         it.interfaceClass == UsbConstants.USB_CLASS_COMM && it.interfaceSubclass == 0x02

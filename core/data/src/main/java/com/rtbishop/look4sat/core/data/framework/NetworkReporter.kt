@@ -30,8 +30,6 @@ import java.nio.channels.SocketChannel
 
 class NetworkReporter(
     private val reporterScope: CoroutineScope,
-    private val rotatorServer: String,
-    private val rotatorPort: Int,
     private val frequencyServer: String,
     private val frequencyPort: Int,
     private val frequencyOffsetHz: Long = 0L
@@ -40,9 +38,6 @@ class NetworkReporter(
     private val writeMutex = Mutex()
     private val connectionMutex = Mutex()
     private val frequencyCommands = Channel<String>(Channel.CONFLATED)
-
-    private var rotatorSocket: SocketChannel? = null
-    private var rotatorConnected = false
 
     private var frequencySocket: SocketChannel? = null
     private var frequencyConnected = false
@@ -58,19 +53,6 @@ class NetworkReporter(
         }
     }
 
-    override fun reportRotation(format: String, azimuth: Double, elevation: Double) {
-        reporterScope.launch {
-            ensureRotatorConnected()
-            if (!rotatorConnected) return@launch
-            val el = if (elevation > 0.0) elevation else 0.0
-            val command = format
-                .replace($$"$AZ", azimuth.toString())
-                .replace($$"$EL", el.toString())
-                .unescapeControlChars()
-            write(rotatorSocket, command) { resetRotatorConnection() }
-        }
-    }
-
     override fun reportFrequency(format: String, frequency: Long) {
         val clampedOffset = frequencyOffsetHz.coerceIn(
             Constants.FREQ_OFFSET_MIN_HZ,
@@ -81,21 +63,6 @@ class NetworkReporter(
             .replace($$"$FREQ", correctedFreq.toString())
             .unescapeControlChars()
         frequencyCommands.trySend(command)
-    }
-
-    private suspend fun ensureRotatorConnected() {
-        connectionMutex.withLock {
-            if (rotatorConnected || rotatorServer.isBlank()) return
-            try {
-                resetRotatorConnection()
-                rotatorSocket = SocketChannel.open(InetSocketAddress(rotatorServer, rotatorPort))
-                rotatorConnected = true
-                println("NetworkReporter: Rotator connected to $rotatorServer:$rotatorPort")
-            } catch (e: Exception) {
-                println("NetworkReporter rotator connect error: ${e.message}")
-                resetRotatorConnection()
-            }
-        }
     }
 
     private suspend fun ensureFrequencyConnected() {
@@ -125,12 +92,6 @@ class NetworkReporter(
             println("NetworkReporter write error: ${e.message}")
             onError()
         }
-    }
-
-    private fun resetRotatorConnection() {
-        rotatorConnected = false
-        closeQuietly(rotatorSocket)
-        rotatorSocket = null
     }
 
     private fun resetFrequencyConnection() {

@@ -32,6 +32,13 @@ interface IRadioController {
 
     suspend fun setMode(mode: String): Boolean
 
+    /** Enable a radio's DATA path while preserving the requested sideband for later restore. */
+    suspend fun setDataMode(enabled: Boolean, baseMode: String): Boolean = !enabled
+
+    /** Configure the transmit side's DATA path in single-radio duplex operation. */
+    suspend fun setTxDataMode(enabled: Boolean, baseMode: String): Boolean =
+        setDataMode(enabled, baseMode)
+
     suspend fun setCtcssMode(enabled: Boolean): Boolean
 
     suspend fun setCtcssTone(toneHz: Double): Boolean

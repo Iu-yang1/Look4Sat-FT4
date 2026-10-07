@@ -94,6 +94,7 @@ object IcomCivProtocol {
     const val SUB_SATELLITE_MODE: Byte = 0x5A
     /** IC-910 family satellite mode under CMD 0x1A. */
     const val SUB_IC910_SATELLITE_MODE: Byte = 0x07
+    const val SUB_DATA_MODE: Byte = 0x06
     const val SUB_PTT: Byte = 0x00
 
     // ── Mode bytes ────────────────────────────────────────────────────────
@@ -116,6 +117,22 @@ object IcomCivProtocol {
         .filterKeys { it != "AFSK" }
         .entries
         .associate { it.value to it.key }
+
+    data class ModeSpec(
+        val baseMode: String,
+        val modeByte: Byte,
+        val filter: Byte? = null
+    )
+
+    fun modeSpec(mode: String): ModeSpec? = when (mode.uppercase(Locale.US)) {
+        "FM-N", "NFM" -> ModeSpec("FM", 0x05, 0x02)
+        "USB-D", "DATA-U", "PKTUSB", "DIG" -> ModeSpec("USB", 0x01, 0x02)
+        "LSB-D", "DATA-L", "PKTLSB" -> ModeSpec("LSB", 0x00, 0x02)
+        "DATA-FM", "PKTFM", "PKT" -> ModeSpec("FM", 0x05, 0x02)
+        else -> MODE_TO_BYTE[mode.uppercase(Locale.US)]?.let {
+            ModeSpec(mode.uppercase(Locale.US), it)
+        }
+    }
 
     // ── Frequency BCD encoding ─────────────────────────────────────────────
 
@@ -216,15 +233,23 @@ object IcomCivProtocol {
 
     /** Set operating mode (CMD 0x06). Filter byte is omitted — radio uses its default filter for the mode. */
     fun buildSetModeCommand(mode: String): ByteArray? {
-        val modeByte = MODE_TO_BYTE[mode.uppercase(Locale.US)] ?: return null
-        return frame(CMD_SET_MODE, modeByte)
+        val spec = modeSpec(mode) ?: return null
+        return if (spec.filter == null) {
+            frame(CMD_SET_MODE, spec.modeByte)
+        } else {
+            frame(CMD_SET_MODE, spec.modeByte, spec.filter)
+        }
     }
 
     /** Set selected (0x00) or unselected (0x01) VFO mode via CMD 0x26. */
     fun buildSetVfoModeCommand(selected: Boolean, mode: String): ByteArray? {
-        val modeByte = MODE_TO_BYTE[mode.uppercase(Locale.US)] ?: return null
+        val spec = modeSpec(mode) ?: return null
         val selector = if (selected) SUB_SELECTED_VFO else SUB_UNSELECTED_VFO
-        return frame(CMD_SELECTED_VFO_MODE, selector, modeByte)
+        return if (spec.filter == null) {
+            frame(CMD_SELECTED_VFO_MODE, selector, spec.modeByte)
+        } else {
+            frame(CMD_SELECTED_VFO_MODE, selector, spec.modeByte, spec.filter)
+        }
     }
 
     /** Read selected (0x00) or unselected (0x01) VFO mode via CMD 0x26. */
@@ -270,6 +295,28 @@ object IcomCivProtocol {
     /** Read the IC-910 family's dedicated satellite-mode state. */
     fun buildReadIc910SatelliteModeCommand(): ByteArray =
         frame(CMD_MEMORY_CONTROL, SUB_IC910_SATELLITE_MODE)
+
+    /** Enable or disable the selected receiver's DATA path. Filter 2 is the documented default. */
+    fun buildDataModeCommand(enabled: Boolean, filter: Int = 2): ByteArray {
+        require(filter in 1..3)
+        return frame(
+            CMD_MEMORY_CONTROL,
+            SUB_DATA_MODE,
+            if (enabled) 0x01 else 0x00,
+            if (enabled) filter.toByte() else 0x00
+        )
+    }
+
+    fun buildReadDataModeCommand(): ByteArray = frame(CMD_MEMORY_CONTROL, SUB_DATA_MODE)
+
+    fun parseDataModeState(payload: ByteArray): Boolean? {
+        if (payload.size < 2 || payload[0] != SUB_DATA_MODE) return null
+        return when (payload[1]) {
+            0x00.toByte() -> false
+            0x01.toByte() -> true
+            else -> null
+        }
+    }
 
     /**
      * Enable/disable CTCSS encode (CMD 0x16 sub 0x42).

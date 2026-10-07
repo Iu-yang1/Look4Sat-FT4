@@ -102,6 +102,19 @@ class Ft817Controller(
         ioMutex.withLock { sendCommandWithAck(cmd) }
     }
 
+    override suspend fun setDataMode(enabled: Boolean, baseMode: String): Boolean {
+        val target = if (enabled) {
+            if (baseMode.equals("FM", ignoreCase = true) || baseMode.equals("FM-N", ignoreCase = true)) {
+                "PKT"
+            } else {
+                "DIG"
+            }
+        } else {
+            baseMode
+        }
+        return setMode(target)
+    }
+
     override suspend fun setCtcssMode(enabled: Boolean): Boolean = withContext(Dispatchers.IO) {
         ioMutex.withLock {
             sendCommandWithAck(Ft817CatProtocol.buildCtcssModeCommand(enabled))

@@ -41,6 +41,7 @@ object Ft817CatProtocol {
         "CW-R" to 0x03,
         "AM" to 0x04,
         "FM" to 0x08,
+        "FM-N" to 0x88.toByte(),
         "DIG" to 0x0A,
         "PKT" to 0x0C
     )

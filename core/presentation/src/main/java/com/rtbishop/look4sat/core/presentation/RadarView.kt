@@ -58,6 +58,7 @@ import androidx.compose.ui.unit.sp
 import com.rtbishop.look4sat.core.domain.predict.CelestialComputer
 import com.rtbishop.look4sat.core.domain.predict.OrbitalPos
 import com.rtbishop.look4sat.core.domain.predict.PI_2
+import com.rtbishop.look4sat.core.domain.rotator.RotatorPosition
 import com.rtbishop.look4sat.core.domain.utility.toRadians
 import kotlin.math.PI
 import kotlin.math.abs
@@ -81,10 +82,12 @@ fun RadarViewCompose(
     modifier: Modifier = Modifier,
     sunPosition: CelestialComputer.SunPosition? = null,
     moonPosition: CelestialComputer.MoonPosition? = null,
+    rotatorPosition: RotatorPosition? = null,
 ) {
     val aimColor = MaterialTheme.colorScheme.error
     val primaryColor = MaterialTheme.colorScheme.primary
     val radarColor = MaterialTheme.colorScheme.secondary
+    val rotatorColor = MaterialTheme.colorScheme.tertiary
     val sunColor = MaterialTheme.colorScheme.primary
     val animTransition = rememberInfiniteTransition(label = "animScale")
     val animScale by animTransition.animateFloat(
@@ -174,6 +177,9 @@ fun RadarViewCompose(
                         52f
                     )
                 }
+                rotatorPosition?.let { position ->
+                    drawRotatorAim(position, radius, rotatorColor)
+                }
                 if (shouldUseCompass) drawAim(azimElev.first, azimElev.second, radius, aimColor)
             }
         }
@@ -211,10 +217,23 @@ private fun DrawScope.drawPosition(item: OrbitalPos, radius: Float, posRadius: F
 }
 
 private fun DrawScope.drawAim(azim: Float, elev: Float, radius: Float, color: Color) {
-    val size = 36f
     val azimRad = azim.toDouble().toRadians()
     val elevRad = elev.toDouble().toRadians().coerceAtMost(0.0)
     val pos = sph2Cart(azimRad, -elevRad, radius.toDouble())
+    drawAimMarker(pos, color)
+}
+
+private fun DrawScope.drawRotatorAim(position: RotatorPosition, radius: Float, color: Color) {
+    val pos = sph2Cart(
+        position.azimuthDegrees.toRadians(),
+        position.elevationDegrees.toRadians(),
+        radius.toDouble()
+    )
+    drawAimMarker(pos, color)
+}
+
+private fun DrawScope.drawAimMarker(pos: Offset, color: Color) {
+    val size = 36f
     drawLine(color, Offset(pos.x - size, pos.y), Offset(pos.x + size, pos.y), STROKE_WIDTH)
     drawLine(color, Offset(pos.x, pos.y - size), Offset(pos.x, pos.y + size), STROKE_WIDTH)
     drawCircle(color, size / 2, pos, style = Stroke(STROKE_WIDTH))

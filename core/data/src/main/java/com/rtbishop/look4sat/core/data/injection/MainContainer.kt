@@ -22,6 +22,7 @@ import android.bluetooth.BluetoothManager
 import android.content.Context
 import android.content.pm.PackageManager
 import android.hardware.SensorManager
+import android.hardware.GeomagneticField
 import android.hardware.display.DisplayManager
 import android.location.LocationManager
 import androidx.core.content.ContextCompat
@@ -39,8 +40,11 @@ import com.rtbishop.look4sat.core.data.database.QSO_MIGRATION_5_6
 import com.rtbishop.look4sat.core.data.lotw.LoTWUploadRepository
 import com.rtbishop.look4sat.core.data.framework.BluetoothReporter
 import com.rtbishop.look4sat.core.data.framework.AndroidRadioTransportFactory
+import com.rtbishop.look4sat.core.data.framework.AndroidRotatorTransportFactory
 import com.rtbishop.look4sat.core.data.framework.NetworkReporter
 import com.rtbishop.look4sat.core.data.framework.RadioTrackingService
+import com.rtbishop.look4sat.core.data.framework.RepositoryRotatorOrbitSource
+import com.rtbishop.look4sat.core.data.framework.RotatorTrackingService
 import com.rtbishop.look4sat.core.data.ft4.Ft4Service
 import com.rtbishop.look4sat.core.data.ft4.Ft4AudioTransmitter
 import com.rtbishop.look4sat.core.data.repository.AmSatRepository
@@ -74,7 +78,10 @@ import com.rtbishop.look4sat.core.domain.time.SystemDisciplinedClock
 import com.rtbishop.look4sat.core.domain.repository.IDatabaseRepo
 import com.rtbishop.look4sat.core.domain.repository.IMainContainer
 import com.rtbishop.look4sat.core.domain.repository.IRadioTrackingService
+import com.rtbishop.look4sat.core.domain.repository.IRotatorTrackingService
 import com.rtbishop.look4sat.core.domain.repository.IReporter
+import com.rtbishop.look4sat.core.domain.control.ControlDiagnosticsBuffer
+import com.rtbishop.look4sat.core.domain.control.IControlDiagnostics
 import com.rtbishop.look4sat.core.domain.repository.ILoTWRepository
 import com.rtbishop.look4sat.core.domain.repository.ILocationRepo
 import com.rtbishop.look4sat.core.domain.repository.ISatelliteRepo
@@ -107,6 +114,7 @@ class MainContainer(private val context: Context) : IMainContainer {
     private val remoteSource = provideRemoteSource()
     private val mainHandler = CoroutineExceptionHandler { _, error -> println("MainHandler: $error") }
     override val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default + mainHandler)
+    override val controlDiagnostics: IControlDiagnostics = ControlDiagnosticsBuffer()
     override val settingsRepo = provideSettingsRepo()
     override val selectionRepo = provideSelectionRepo()
     override val satelliteRepo = provideSatelliteRepo()
@@ -155,10 +163,35 @@ class MainContainer(private val context: Context) : IMainContainer {
             satelliteRepo,
             settingsRepo,
             disciplinedClock,
-            transportFactory = transportFactory::create
+            transportFactory = transportFactory::create,
+            diagnostics = controlDiagnostics
         )
     }
     override val radioTrackingService: IRadioTrackingService by lazy { sharedRadioTrackingService }
+    override val rotatorTrackingService: IRotatorTrackingService by lazy {
+        val manager = context.getSystemService(BluetoothManager::class.java)
+        val serialFactory = AndroidRadioTransportFactory(context, manager)
+        val transportFactory = AndroidRotatorTransportFactory(serialFactory)
+        RotatorTrackingService(
+            appScope = appScope,
+            orbitSource = RepositoryRotatorOrbitSource(satelliteRepo) {
+                settingsRepo.stationPosition.value
+            },
+            nowMillis = disciplinedClock::nowMillis,
+            settingsProvider = { settingsRepo.rotatorSettings.value },
+            transportFactory = transportFactory::create,
+            stationPosition = { settingsRepo.stationPosition.value },
+            magneticDeclinationDegrees = { position, time ->
+                GeomagneticField(
+                    position.latitude.toFloat(),
+                    position.longitude.toFloat(),
+                    position.altitude.toFloat(),
+                    time
+                ).declination.toDouble()
+            },
+            diagnostics = controlDiagnostics
+        )
+    }
     override val ft4TransmitCoordinator: IFt4TransmitCoordinator by lazy { sharedRadioTrackingService }
     override val ft4AudioTransmitter: IFt4AudioTransmitter by lazy {
         Ft4AudioTransmitter(context, ft4Service, ft4TransmitCoordinator, disciplinedClock)
@@ -195,7 +228,6 @@ class MainContainer(private val context: Context) : IMainContainer {
         return BluetoothReporter(
             manager,
             CoroutineScope(Dispatchers.IO),
-            rc.bluetoothRotatorAddress,
             rc.bluetoothFrequencyAddress
         )
     }
@@ -204,8 +236,6 @@ class MainContainer(private val context: Context) : IMainContainer {
         val rc = settingsRepo.rcSettings.value
         return NetworkReporter(
             CoroutineScope(Dispatchers.IO),
-            rc.rotatorAddress,
-            rc.rotatorPort.toIntOrNull() ?: 0,
             rc.frequencyAddress,
             rc.frequencyPort.toIntOrNull() ?: 0,
             rc.frequencyOffsetHz

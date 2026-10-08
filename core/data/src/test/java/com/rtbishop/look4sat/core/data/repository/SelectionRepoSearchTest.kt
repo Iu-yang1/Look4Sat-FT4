@@ -125,6 +125,22 @@ class SelectionRepoSearchTest {
     }
 
     @Test
+    fun `FM virtual type includes the BA7OPF RS95S and UNNE-1B additions`() = runTest {
+        // RS95S / QMR-KWT-2 (67291) and UNNE-1B (98205) joined the hardcoded
+        // AMSAT Live FM set on 2026-10-09; both carry a V/U FM repeater in
+        // SatNOGS ("V/U FM Transponder CTCSS 67.0 Hz" / "Mode V/U - FM Repeater
+        // (Voice + (A)FSK)"). sampleItems contributes ISS (25544) only.
+        val items = sampleItems + listOf(
+            SatItem(catnum = 67291, name = "QMR-KWT-2 (RS95S)"),
+            SatItem(catnum = 98205, name = "UNNE-1B")
+        )
+        val repo = createRepo(items)
+        repo.setTypes(listOf("AMSAT Live FM"))
+        val results = repo.getEntriesFlow().first()
+        assertEquals(setOf(25544, 67291, 98205), results.map { it.catnum }.toSet())
+    }
+
+    @Test
     fun `Linear virtual type shows only hardcoded linear satellites`() = runTest {
         val repo = createRepo(sampleItems)
         repo.setTypes(listOf("AMSAT Live Linear"))

@@ -34,6 +34,8 @@ import java.util.Locale
  *  - live SatNOGS 3LE names and Celestrak amateur names joined to the same NORAD id,
  *  - designator tokens of the config.tq6 satellite descriptions (e.g. CAS-7B -> BO-102),
  *  - the ISS family, which SatNOGS does not list under its ARRL name "ARISS".
+ * Added 2026-10-08: config.tq6 v11.35 lists QMR-KWT 2 as "RS95S"; SatNOGS DB carries it as
+ * "QMR-KWT 2" (alias "RS95S") and other sources spell it "RS-95S", hence the identity entry.
  * Placeholder names ("OBJECT AY" and friends) are deliberately NOT mapped: they are recycled
  * between objects and would sign the wrong satellite. LoTWConfigTest asserts that every target
  * here is a real config.tq6 name.
@@ -79,11 +81,11 @@ object LoTWSatelliteAliases {
         "OSCAR16PACSAT" to "AO-16", "OSCAR19LUSAT" to "LO-19", "OSCAR64" to "DO-64",
         "OSCAR7" to "AO-7", "PACSAT" to "AO-16", "PARKINSONSAT" to "NO-84",
         "PCSAT" to "NO-44", "PHILLIPINESOSCAR101" to "PO-101", "PO101" to "PO-101",
-        "PSAT" to "NO-84", "PSAT2" to "NO-104", "QB50P1" to "EO-79",
+        "PSAT" to "NO-84", "PSAT2" to "NO-104", "QB50P1" to "EO-79", "QMRKWT2" to "RS95S",
         "QO100" to "QO-100", "RADFXSAT" to "AO-91", "RADIOROSTO" to "RS-15",
         "RS0ISS" to "ARISS", "RS14" to "AO-21", "RS15" to "RS-15",
-        "RS44" to "RS-44", "RS64S" to "AO-123", "SAUDISAT1C" to "SO-50",
-        "SO121" to "SO-121", "SO124" to "SO-124", "SO125" to "SO-125",
+        "RS44" to "RS-44", "RS64S" to "AO-123", "RS95S" to "RS95S",
+        "SAUDISAT1C" to "SO-50", "SO121" to "SO-121", "SO124" to "SO-124", "SO125" to "SO-125",
         "SO50" to "SO-50", "SOLUTUSNANOSATTELITE" to "SONATE", "SONATE2" to "SONATE",
         "TAURUS1" to "TAURUS", "TEVEL21" to "TEV2-1", "TEVEL22" to "TEV2-2",
         "TEVEL23" to "TEV2-3", "TEVEL24" to "TEV2-4", "TEVEL25" to "TEV2-5",

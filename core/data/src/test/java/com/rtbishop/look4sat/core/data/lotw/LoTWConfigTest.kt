@@ -87,6 +87,7 @@ class LoTWConfigTest {
         assertEquals("AO-91", config.resolveSatellite("FOX-1B"))
         assertEquals("IO-86", config.resolveSatellite("LAPAN-A2"))
         assertEquals("RS-44", config.resolveSatellite("DOSAAF-85"))
+        assertEquals("RS95S", config.resolveSatellite("QMR-KWT 2"))
         assertEquals("BO-102", config.resolveSatellite("CAS-7B"))
         assertEquals("SO-50", config.resolveSatellite("SO-50"))
     }

@@ -125,19 +125,21 @@ class SelectionRepoSearchTest {
     }
 
     @Test
-    fun `FM virtual type includes the BA7OPF RS95S and UNNE-1B additions`() = runTest {
-        // RS95S / QMR-KWT-2 (67291) and UNNE-1B (98205) joined the hardcoded
-        // AMSAT Live FM set on 2026-10-09; both carry a V/U FM repeater in
-        // SatNOGS ("V/U FM Transponder CTCSS 67.0 Hz" / "Mode V/U - FM Repeater
-        // (Voice + (A)FSK)"). sampleItems contributes ISS (25544) only.
+    fun `FM virtual type includes the BA7OPF RS95S UNNE-1B and IO-86 additions`() = runTest {
+        // RS95S / QMR-KWT-2 (67291), UNNE-1B (98205) and IO-86 / LAPAN-A2 (40931)
+        // joined the hardcoded AMSAT Live FM set on 2026-10-09; each carries a V/U
+        // FM repeater in SatNOGS ("V/U FM Transponder CTCSS 67.0 Hz",
+        // "Mode V/U - FM Repeater (Voice + (A)FSK)", "V/U FM Voice (PL 88.5Hz)").
+        // sampleItems contributes ISS (25544) only.
         val items = sampleItems + listOf(
             SatItem(catnum = 67291, name = "QMR-KWT-2 (RS95S)"),
-            SatItem(catnum = 98205, name = "UNNE-1B")
+            SatItem(catnum = 98205, name = "UNNE-1B"),
+            SatItem(catnum = 40931, name = "LAPAN-A2 (IO-86)")
         )
         val repo = createRepo(items)
         repo.setTypes(listOf("AMSAT Live FM"))
         val results = repo.getEntriesFlow().first()
-        assertEquals(setOf(25544, 67291, 98205), results.map { it.catnum }.toSet())
+        assertEquals(setOf(25544, 67291, 98205, 40931), results.map { it.catnum }.toSet())
     }
 
     @Test

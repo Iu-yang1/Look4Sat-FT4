@@ -18,6 +18,87 @@ import org.junit.Test
 
 class Ic705ControllerTest {
     @Test
+    fun ic820FrequencyAndModeWritesRequireReadbackAndUseConfiguredAddress() = runTest {
+        val transport = ScriptedCivTransport(civAddress = 0x43, trackFrequencyWrites = true)
+        val radio = Ic705Controller(null, "USB", 0x43, transport, IcomCivVariant.IC820)
+        assertTrue(radio.connect())
+        transport.payloads.clear()
+        assertTrue(radio.setFrequency(145_580_000L))
+        assertTrue(radio.setMode("LSB"))
+        assertEquals(145_580_000L to "LSB", radio.readFrequencyAndMode())
+        assertEquals(listOf("05:00:00:58:45:01", "03", "06:00", "04", "03", "04"), transport.payloads)
+        assertTrue(transport.destinations.all { it == 0x43 })
+        radio.disconnect()
+    }
+
+    @Test
+    fun ic820RejectsIgnoredFrequencyWritesAndUnsupportedFeaturesWithoutSendingCommands() = runTest {
+        val transport = ScriptedCivTransport(civAddress = 0x42)
+        val radio = Ic705Controller(null, "USB", 0x42, transport, IcomCivVariant.IC820)
+        assertTrue(radio.connect())
+        assertFalse(radio.setFrequency(145_580_000L)) // ACK alone is not success.
+        transport.payloads.clear()
+        assertFalse(radio.setFrequency(28_500_000L))
+        assertFalse(radio.setMode("AM"))
+        assertFalse(radio.setMode("NFM"))
+        assertFalse(radio.setMode("RTTY"))
+        assertFalse(radio.setDataMode(true, "USB"))
+        assertFalse(radio.setTxDataMode(true, "USB"))
+        assertTrue(radio.setDataMode(false, "USB"))
+        assertFalse(radio.setCtcssMode(true))
+        assertFalse(radio.setCtcssTone(67.0))
+        assertTrue(radio.setCtcssMode(false))
+        assertTrue(radio.configureTxCtcss(null))
+        assertFalse(radio.configureTxCtcss(67.0))
+        assertFalse(radio.pttOn())
+        assertFalse(radio.pttOff())
+        radio.disconnect()
+        assertTrue(transport.payloads.isEmpty())
+    }
+
+    @Test
+    fun ic820BandAccessUsesItsOwnMainSubSelectorsWithoutExchangingBands() = runTest {
+        val transport = ScriptedCivTransport(civAddress = 0x42, ic820BandAccess = true)
+        val radio = Ic705Controller(null, "USB", 0x42, transport, IcomCivVariant.IC820)
+        assertTrue(radio.connect())
+        transport.payloads.clear()
+        assertTrue(radio.setBand(435_100_000L))
+        assertEquals(listOf("07:D1", "03", "07:D0", "03"), transport.payloads)
+        transport.payloads.clear()
+        assertTrue(radio.setBand(145_900_000L))
+        assertEquals(listOf("07:D1", "03"), transport.payloads)
+        transport.payloads.clear()
+        assertFalse(radio.setBand(1_296_000_000L))
+        assertTrue(transport.payloads.isEmpty())
+        radio.disconnect()
+    }
+
+    @Test
+    fun ic820OrdinarySplitAndManualVfoCommandsNeverUseModernSatelliteCommands() = runTest {
+        val transport = ScriptedCivTransport(civAddress = 0x42, trackFrequencyWrites = true)
+        val radio = Ic705Controller(null, "USB", 0x42, transport, IcomCivVariant.IC820)
+        assertTrue(radio.connect())
+        transport.payloads.clear()
+        assertTrue(radio.setSplitMode(true))
+        assertEquals("0F:00", transport.payloads.single())
+        assertTrue(radio.setSplitModes("USB", "LSB"))
+        assertTrue(radio.setWorkingFrequency(145_900_000L))
+        assertTrue(radio.setTxVfoFrequency(145_950_000L))
+        assertEquals("07:00", transport.payloads.last())
+        assertFalse(transport.commandBytes.any { it in setOf(0x25, 0x26, 0x1A, 0x16, 0x1C) })
+        radio.disconnect()
+        assertEquals("0F:01", transport.payloads.last())
+    }
+
+    @Test
+    fun ic820MalformedLegacyFrequencyReplyCannotEstablishConnection() = runTest {
+        val transport = ScriptedCivTransport(civAddress = 0x42, frequencyPayloadOverride = byteArrayOf(0, 0, 0x59, 0x45))
+        val radio = Ic705Controller(null, "USB", 0x42, transport, IcomCivVariant.IC820)
+        assertFalse(radio.connect())
+        assertFalse(transport.isConnected)
+    }
+
+    @Test
     fun dataModeUsesDocumentedIcomCommandAndIc910RejectsEnable() = runTest {
         for ((variant, address, supported) in listOf(
             Triple(IcomCivVariant.IC705, 0xA4, true),
@@ -382,11 +463,17 @@ private class ScriptedCivTransport(
     private val acknowledgeSetFrequency: Boolean = true,
     private val satelliteReadbackOverride: Boolean? = null,
     private val acknowledgeTxSelection: Boolean = true,
-    private val modeReadbackOverride: Int? = null
+    private val modeReadbackOverride: Int? = null,
+    private val trackFrequencyWrites: Boolean = false,
+    private val ic820BandAccess: Boolean = false,
+    private val frequencyPayloadOverride: ByteArray? = null
 ) : RadioTransport {
     private val replies = ArrayDeque<ByteArray>()
     val commandBytes = mutableListOf<Int>()
     val payloads = mutableListOf<String>()
+    val destinations = mutableListOf<Int>()
+    private var mainFrequency = 145_590_000L
+    private var subFrequency = 435_100_000L
     private var mainSelected = true
     private var mainMode = 0x01
     private var subMode = 0x05
@@ -407,6 +494,7 @@ private class ScriptedCivTransport(
     override suspend fun write(bytes: ByteArray): Boolean {
         if (!isConnected) return false
         val payload = bytes.copyOfRange(4, bytes.lastIndex)
+        destinations += bytes[2].toInt() and 0xFF
         val command = payload.first().toInt() and 0xFF
         commandBytes += command
         payloads += payload.joinToString(":") { "%02X".format(it.toInt() and 0xFF) }
@@ -416,13 +504,24 @@ private class ScriptedCivTransport(
                 val acknowledged = (payload.size < 2 && acknowledgeConnect) ||
                     (payload.size >= 2 && (!selectsTx || acknowledgeTxSelection))
                 if (acknowledged && payload.size >= 2) {
-                    mainSelected = payload[1] == 0x00.toByte() || payload[1] == 0xD0.toByte()
+                    mainSelected = payload[1] == 0x00.toByte() ||
+                        payload[1] == (if (ic820BandAccess) 0xD1 else 0xD0).toByte()
                 }
                 if (acknowledged) replies += ack()
             }
-            0x03 -> replies += response(0x03, 0x00, 0x00, 0x59, 0x45, 0x01)
+            0x03 -> {
+                val frequency = if (mainSelected || (!trackFrequencyWrites && !ic820BandAccess)) mainFrequency else subFrequency
+                val data = frequencyPayloadOverride ?: IcomCivProtocol.encodeFrequencyBcd(frequency)
+                replies += response(0x03, *data.map { it.toInt() and 0xFF }.toIntArray())
+            }
             0x04 -> replies += response(0x04, modeReadbackOverride ?: if (mainSelected) mainMode else subMode, 0x02)
-            0x05 -> if (acknowledgeSetFrequency) replies += ack()
+            0x05 -> if (acknowledgeSetFrequency) {
+                if (trackFrequencyWrites) {
+                    val frequency = IcomCivProtocol.decodeFrequencyBcd(payload.copyOfRange(1, 6))
+                    if (mainSelected) mainFrequency = frequency else subFrequency = frequency
+                }
+                replies += ack()
+            }
             0x0F -> replies += ack()
             0x16 -> when {
                 payload.size >= 3 && payload[1] == 0x5A.toByte() -> {

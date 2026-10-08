@@ -202,6 +202,17 @@ object IcomCivProtocol {
         return frame(CMD_SET_FREQ, *encodeFrequencyBcd(frequencyHz))
     }
 
+    /** Reject ambiguous legacy lengths instead of guessing a VHF/UHF scaling. */
+    fun parseIc820FrequencyPayload(payload: ByteArray): Long? =
+        if (payload.size == 5) parseFrequencyPayload(payload) else null
+
+    // IC-820's own command table reverses these selectors versus newer Icoms.
+    fun buildIc820BandAccessCommand(main: Boolean): ByteArray =
+        frame(CMD_SELECT_VFO, if (main) 0xD1.toByte() else 0xD0.toByte())
+
+    fun buildIc820SplitModeCommand(enabled: Boolean): ByteArray =
+        frame(CMD_DUPLEX_SPLIT, if (enabled) 0x00 else 0x01)
+
     /**
      * Set selected-VFO frequency via CMD 0x25 sub 0x00.
      * Selection is controlled by CMD 0x07 and does not change when PTT is keyed.

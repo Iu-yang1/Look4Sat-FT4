@@ -20,6 +20,25 @@ import org.junit.Test
 
 class IcomCivProtocolTest {
     @Test
+    fun ic820UsesItsOwnBandAccessAndSplitTableWithoutChangingModernCommands() {
+        assertArrayEquals(civCommand(0x07, 0xD1), IcomCivProtocol.buildIc820BandAccessCommand(main = true))
+        assertArrayEquals(civCommand(0x07, 0xD0), IcomCivProtocol.buildIc820BandAccessCommand(main = false))
+        assertArrayEquals(civCommand(0x0F, 0x00), IcomCivProtocol.buildIc820SplitModeCommand(true))
+        assertArrayEquals(civCommand(0x0F, 0x01), IcomCivProtocol.buildIc820SplitModeCommand(false))
+        assertArrayEquals(civCommand(0x07, 0xD0), IcomCivProtocol.buildSelectMainCommand())
+        assertArrayEquals(civCommand(0x0F, 0x01), IcomCivProtocol.buildSplitModeCommand(true))
+    }
+
+    @Test
+    fun ic820FrequencyParserAcceptsActualFiveByteBcdAndRejectsAmbiguousLengths() {
+        assertEquals(145_580_000L, IcomCivProtocol.parseIc820FrequencyPayload(byteArrayOf(0, 0, 0x58, 0x45, 1)))
+        assertEquals(435_100_000L, IcomCivProtocol.parseIc820FrequencyPayload(byteArrayOf(0, 0, 0x10, 0x35, 4)))
+        assertNull(IcomCivProtocol.parseIc820FrequencyPayload(byteArrayOf(0, 0, 0x58, 0x45)))
+        assertNull(IcomCivProtocol.parseIc820FrequencyPayload(byteArrayOf(0, 0, 0x58, 0x45, 1, 0)))
+        assertNull(IcomCivProtocol.parseIc820FrequencyPayload(byteArrayOf(0, 0, 0x5A, 0x45, 1)))
+    }
+
+    @Test
     fun frequencyAndModeUseSeparateStandardReadCommands() {
         assertArrayEquals(
             civCommand(0x03),

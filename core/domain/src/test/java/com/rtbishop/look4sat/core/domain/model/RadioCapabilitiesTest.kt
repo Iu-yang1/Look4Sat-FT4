@@ -16,7 +16,8 @@ class RadioCapabilitiesTest {
                 RadioControlSettings.MODEL_YAESU_FT857,
                 RadioControlSettings.MODEL_ICOM_IC705,
                 RadioControlSettings.MODEL_ICOM_IC9700,
-                RadioControlSettings.MODEL_ICOM_IC910
+                RadioControlSettings.MODEL_ICOM_IC910,
+                RadioControlSettings.MODEL_ICOM_IC820
             ),
             RadioModelCatalog.supportedModels
         )
@@ -51,6 +52,23 @@ class RadioCapabilitiesTest {
         assertTrue(ic910.capabilities.satelliteMode)
         assertFalse(ic910.capabilities.dataMode)
         assertFalse(ic910.capabilities.narrowFm)
+    }
+
+    @Test
+    fun ic820UsesDocumentedDefaultsAndConservativeCatCapabilities() {
+        val radio = radioModelDescriptor(RadioControlSettings.MODEL_ICOM_IC820)
+        assertEquals(0x42, radio.defaultCivAddress)
+        assertEquals(listOf(1_200, 300, 4_800, 9_600), radio.baudRates)
+        assertEquals(1, radio.serialStopBits)
+        assertTrue(radio.capabilities.fullDuplex)
+        assertTrue(radio.capabilities.frequencyReadback)
+        assertFalse(radio.capabilities.singleRadioSplit)
+        assertFalse(radio.capabilities.satelliteMode)
+        assertFalse(radio.capabilities.ptt)
+        assertFalse(radio.capabilities.dataMode)
+        assertFalse(radio.capabilities.narrowFm)
+        assertFalse(radio.capabilities.canSetTxFrequencyWhileTransmitting)
+        assertEquals(setOf(RadioBand.TWO_METERS, RadioBand.SEVENTY_CENTIMETERS), radio.capabilities.bands)
     }
 
     @Test

@@ -21,7 +21,8 @@ enum class YaesuCatVariant {
 enum class IcomCivVariant {
     IC705,
     IC9700,
-    IC910
+    IC910,
+    IC820
 }
 
 data class RadioProfile(
@@ -65,6 +66,13 @@ fun radioProfile(model: String, civAddressOverride: Int? = null): RadioProfile {
         RadioControlSettings.MODEL_ICOM_IC910 -> RadioProfile(
             model = descriptor.model,
             icomVariant = IcomCivVariant.IC910,
+            civAddress = descriptor.defaultCivAddress?.toByte(),
+            serialStopBits = descriptor.serialStopBits,
+            capabilities = descriptor.capabilities
+        )
+        RadioControlSettings.MODEL_ICOM_IC820 -> RadioProfile(
+            model = descriptor.model,
+            icomVariant = IcomCivVariant.IC820,
             civAddress = descriptor.defaultCivAddress?.toByte(),
             serialStopBits = descriptor.serialStopBits,
             capabilities = descriptor.capabilities

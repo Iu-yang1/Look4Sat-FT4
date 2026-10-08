@@ -829,4 +829,5 @@
     <string name="gridfinder_action_set_lotw_station">设为 LoTW 上传台址（%1$s）</string>
     <string name="gridfinder_lotw_station_hint">预填上传台站网格：上传时 LoTW 按这些格记录（线上 2 格、角上 4 格）；证书呼号保持不变。</string>
 
+    <string name="rc_ic820_limits">IC-820：CI-V 地址 0x42，默认 1200 波特（8N1）。支持主/副波段访问、频率及 LSB/USB/CW/FM 控制。不支持 CAT PTT、CAT 亚音、DATA 和自动单机卫星配置。仅接收跟踪请只配置 RX 连接；双机跟踪请使用两台独立电台。卫星模式和亚音需在电台上设置。</string>
 </resources>

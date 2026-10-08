@@ -1522,6 +1522,7 @@ fun RadioControlDialog(
                         onClick  = {
                             val oldDefaultAddress = defaultCivAddress(radioModel.value)
                             val currentAddress = parseCivAddress(civAddress.value)
+                            val modelChanged = radioModel.value != model
                             radioModel.value = model
                             val newCapabilities = radioModelDescriptor(model).capabilities
                             if (!newCapabilities.singleRadioSplit) splitMode.value = false
@@ -1529,7 +1530,9 @@ fun RadioControlDialog(
                                 duplexMode.value = RadioControlSettings.DUPLEX_MODE_SPLIT
                             }
                             val modelRates = radioBaudRates(model)
-                            if (baudRate.intValue !in modelRates) baudRate.intValue = modelRates.first()
+                            if ((modelChanged && model == RadioControlSettings.MODEL_ICOM_IC820) || baudRate.intValue !in modelRates) {
+                                baudRate.intValue = modelRates.first()
+                            }
                             if (
                                 oldDefaultAddress == null || currentAddress == oldDefaultAddress ||
                                 currentAddress == null
@@ -1571,7 +1574,15 @@ fun RadioControlDialog(
             }
 
             // Single-radio duplex control for Icom split or dedicated satellite mode.
-            if (isIcom) {
+            if (radioModel.value == RadioControlSettings.MODEL_ICOM_IC820) {
+                Text(
+                    text = stringResource(R.string.rc_ic820_limits),
+                    style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
+                    color = androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+            }
+            if (modelDescriptor.capabilities.singleRadioSplit) {
                 Row(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment     = Alignment.CenterVertically,

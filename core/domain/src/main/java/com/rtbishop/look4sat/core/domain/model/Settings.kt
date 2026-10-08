@@ -163,6 +163,7 @@ data class RadioControlSettings(
         const val MODEL_ICOM_IC705 = "Icom IC-705"
         const val MODEL_ICOM_IC9700 = "Icom IC-9700"
         const val MODEL_ICOM_IC910 = "Icom IC-910/D/H"
+        const val MODEL_ICOM_IC820 = "Icom IC-820"
         const val TRANSPORT_BLUETOOTH = "BLUETOOTH"
         const val TRANSPORT_USB = "USB"
         const val TRANSPORT_TCP = "TCP"

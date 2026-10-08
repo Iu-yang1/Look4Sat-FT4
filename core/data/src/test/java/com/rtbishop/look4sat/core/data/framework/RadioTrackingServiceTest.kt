@@ -58,6 +58,34 @@ import org.junit.Test
 class RadioTrackingServiceTest {
 
     @Test
+    fun ic820RejectsTwoConnectionsToTheSameRadio() = runTest {
+        val tx = FakeRadioController()
+        val rx = FakeRadioController()
+        val fixture = Fixture(backgroundScope, tx, rx, radioModel = RadioControlSettings.MODEL_ICOM_IC820)
+        fixture.settings.radioControlSettings.value = fixture.settings.radioControlSettings.value.copy(rxRadioAddress = "TX")
+        fixture.service.connectRadios()
+        assertTrue(fixture.service.state.value.errorMessage?.contains("separate TX/RX radios") == true)
+        assertFalse(tx.isConnected)
+        assertFalse(rx.isConnected)
+        fixture.close()
+    }
+
+    @Test
+    fun ic820CannotAcquireCatTransmitLeaseEvenWithStaleSplitSettings() = runTest {
+        val tx = FakeRadioController()
+        val fixture = Fixture(backgroundScope, tx, FakeRadioController(),
+            radioModel = RadioControlSettings.MODEL_ICOM_IC820, splitMode = true)
+        fixture.service.connectRadios()
+        assertFalse(fixture.service.state.value.splitMode)
+        fixture.service.emergencyPttOff()
+        assertFalse(tx.operations.contains("ptt:off"))
+        val error = runCatching { fixture.service.beginTransmit(fixture.request(820L)) }.exceptionOrNull()
+        assertTrue(error?.message?.contains("does not support CAT PTT") == true)
+        assertFalse(tx.operations.contains("ptt:on"))
+        fixture.close()
+    }
+
+    @Test
     fun diagnosticsCaptureConnectionTrackingAndControlledFailureStages() = runTest {
         val diagnostics = ControlDiagnosticsBuffer(nowMillis = { testScheduler.currentTime })
         val fixture = Fixture(

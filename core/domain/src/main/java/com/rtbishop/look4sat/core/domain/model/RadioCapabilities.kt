@@ -150,6 +150,26 @@ object RadioModelCatalog {
             baudRates = listOf(9_600, 19_200, 4_800, 1_200, 300),
             serialStopBits = 1,
             defaultCivAddress = 0x60
+        ),
+        RadioModelDescriptor(
+            model = RadioControlSettings.MODEL_ICOM_IC820,
+            protocolFamily = RadioProtocolFamily.ICOM_CIV,
+            capabilities = RadioCapabilities(
+                fullDuplex = true,
+                receiveOnly = false,
+                frequencyReadback = true,
+                // A/B split is same-band; cross-band SATL requires manual radio setup.
+                singleRadioSplit = false,
+                satelliteMode = false,
+                dataMode = false,
+                ptt = false,
+                narrowFm = false,
+                canSetTxFrequencyWhileTransmitting = false,
+                bands = setOf(RadioBand.TWO_METERS, RadioBand.SEVENTY_CENTIMETERS)
+            ),
+            baudRates = listOf(1_200, 300, 4_800, 9_600),
+            serialStopBits = 1,
+            defaultCivAddress = 0x42
         )
     )
     private val byModel = descriptors.associateBy(RadioModelDescriptor::model)

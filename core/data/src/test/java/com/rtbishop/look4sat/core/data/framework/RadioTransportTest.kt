@@ -13,6 +13,7 @@ import com.rtbishop.look4sat.core.domain.model.RadioControlSettings
 import com.rtbishop.look4sat.core.domain.model.RadioTcpEndpoint
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -78,6 +79,12 @@ class RadioTransportTest {
             radioProfile(RadioControlSettings.MODEL_ICOM_IC9700).civAddress
         )
         val ic910 = radioProfile(RadioControlSettings.MODEL_ICOM_IC910)
+        val ic820 = radioProfile(RadioControlSettings.MODEL_ICOM_IC820)
+        assertEquals(IcomCivVariant.IC820, ic820.icomVariant)
+        assertEquals(0x42.toByte(), ic820.civAddress)
+        assertEquals(1, ic820.serialStopBits)
+        assertFalse(ic820.capabilities.ptt)
+        assertEquals(0x43.toByte(), radioProfile(RadioControlSettings.MODEL_ICOM_IC820, 0x43).civAddress)
         assertEquals(IcomCivVariant.IC910, ic910.icomVariant)
         assertEquals(IcomCivProtocol.ADDR_IC910, ic910.civAddress)
         assertEquals(true, ic910.supportsSatelliteMode)

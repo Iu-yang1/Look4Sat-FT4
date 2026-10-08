@@ -81,6 +81,7 @@ class RadioTrackingService(
 
     private var txController: IRadioController? = null
     private var rxController: IRadioController? = null
+    private var connectedCatPttSupported = true
     private var trackingJob: Job? = null
     private val connectionMutex = Mutex()
     private val transmitMutex = Mutex()
@@ -120,8 +121,13 @@ class RadioTrackingService(
         val txAddr     = rcSettings.txRadioAddress
         val rxAddr     = rcSettings.rxRadioAddress
         val profile    = radioProfile(rcSettings.radioModel, rcSettings.civAddress)
+        connectedCatPttSupported = profile.capabilities.ptt
+        if (profile.icomVariant == IcomCivVariant.IC820 && txAddr.isNotBlank() && txAddr == rxAddr) {
+            _state.update { it.copy(errorMessage = "IC-820 needs separate TX/RX radios; for receive-only tracking configure RX only") }
+            return
+        }
         val isIcom     = profile.isIcom
-        val isSplit    = isIcom && rcSettings.splitMode
+        val isSplit    = isIcom && profile.capabilities.singleRadioSplit && rcSettings.splitMode
         val usesHamlib = rcSettings.catTransport == RadioControlSettings.TRANSPORT_TCP &&
             rcSettings.tcpProtocol == RadioControlSettings.TCP_PROTOCOL_HAMLIB
         val isSatelliteMode = isSplit && profile.supportsSatelliteMode &&
@@ -329,6 +335,9 @@ class RadioTrackingService(
         if (settingsRepo.radioControlSettings.value.catTransport == RadioControlSettings.TRANSPORT_VOX) {
             return@withLock beginVoxTransmit(request)
         }
+        check(radioProfile(settingsRepo.radioControlSettings.value.radioModel).capabilities.ptt) {
+            "This radio does not support CAT PTT; use an external PTT interface or VOX"
+        }
         check(pendingControls.get() == 0) { "Radio settings are changing" }
         val safetyGeneration = txController?.pttSafetyGeneration()
         transmitPreparing = true
@@ -486,6 +495,9 @@ class RadioTrackingService(
         check(activeTxLease == lease) { "Transmit lease is stale" }
         updateCommandState(busy = true, pttState = PttState.ARMING)
         try {
+            check(radioProfile(settingsRepo.radioControlSettings.value.radioModel).capabilities.ptt) {
+                "This radio does not support CAT PTT"
+            }
             check(pendingControls.get() == 0 && _state.value.isActive &&
                 _state.value.trackingPhase == TrackingPhase.READY) { "Radio tracking context changed" }
             if (lease.automatic) validateAutomaticLease(lease)
@@ -557,6 +569,9 @@ class RadioTrackingService(
             }
             return
         }
+        // No app-owned CAT transmission can exist on this radio. Do not pretend
+        // that an unsupported PTT OFF command confirmed an external PTT state.
+        if (!connectedCatPttSupported && !hasTransmitClaim) return
         txController?.invalidatePendingPttOn()
         val urgentOffConfirmed = sendUrgentPttOff()
         transmitMutex.withLock {
@@ -751,6 +766,17 @@ class RadioTrackingService(
                 }
 
             Log.i(tag, "DualRadio start: txMode=$txMode rxMode=$rxMode")
+
+            if (settingsRepo.radioControlSettings.value.radioModel == RadioControlSettings.MODEL_ICOM_IC820) {
+                val txNominal = initialTxBaseFreqHz ?: transponder.uplinkCenterFrequency()
+                val rxNominal = transponder.downlinkLow
+                if (tx?.isConnected == true && txNominal != null && !tx.setBand(txNominal)) {
+                    return failTrackingInitialization("IC-820 TX band access was not acknowledged")
+                }
+                if (rx?.isConnected == true && rxNominal != null && !rx.setBand(rxNominal)) {
+                    return failTrackingInitialization("IC-820 RX band access was not acknowledged")
+                }
+            }
 
             if (tx != null && tx.isConnected && txMode != null) {
                 Log.d(tag, "Setting TX mode: $txMode")

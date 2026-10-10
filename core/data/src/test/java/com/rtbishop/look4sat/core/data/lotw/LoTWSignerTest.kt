@@ -38,7 +38,7 @@ class LoTWSignerTest {
         assertProblem(LoTWProblem.CERTIFICATE_PASSWORD) { LoTWKeyMaterial.read(certificateFixture(), "wrong".toCharArray(), TEST_NOW) }
     }
     @Test fun stationOrderComesFromOfficialConfigAndNormalizesZones() {
-        assertEquals("11.34", config.version)
+        assertEquals("11.35", config.version)
         assertTrue(config.stationOrder.indexOf("CN_PROVINCE") < config.stationOrder.indexOf("CQZ"))
         assertEquals("24", station["CQZ"])
         assertEquals("44", station["ITUZ"])

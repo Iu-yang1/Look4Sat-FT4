@@ -117,6 +117,8 @@ object AdifCodec {
             lotwConfirmed = values["LOTW_QSL_RCVD"].equals("Y", true),
             lotwReceived = values["LOTW_QSL_SENT"].equals("Y", true),
             lotwQslDate = values["LOTW_QSLRDATE"].orEmpty(),
+            qslConfirmed = values["QSL_RCVD"].equals("Y", true),
+            eqslConfirmed = values["EQSL_QSL_RCVD"].equals("Y", true),
             dxcc = values["DXCC"]?.toIntOrNull(),
             country = values["COUNTRY"].orEmpty(),
             cqZone = values["CQZ"]?.toIntOrNull()?.takeIf { it in 1..40 },

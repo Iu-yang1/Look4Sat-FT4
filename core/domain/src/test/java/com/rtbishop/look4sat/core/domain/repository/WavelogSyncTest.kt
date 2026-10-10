@@ -35,6 +35,7 @@ import com.rtbishop.look4sat.core.domain.predict.GeoPos
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -124,6 +125,35 @@ class WavelogSyncTest {
         assertEquals(listOf("EN52"), qso.theirGrids)
     }
 
+    @Test
+    fun gridDataSkipsUnconfirmedContactsButKeepsTheRoamedGrid() {
+        val data = buildWavelogGridData(
+            listOf(
+                record(start = 1_000L, theirGrid = "EN52", myGrid = "OL62", confirmed = false),
+                record(start = 2_000L, theirGrid = "EN53", myGrid = "OL63", confirmed = false)
+            )
+        )
+        // Wavelog fills the opposite station's grid in from a callsign lookup; an unconfirmed
+        // contact must not turn a square green even though the grid is there.
+        assertTrue(data.grids.isEmpty())
+        assertTrue(data.gridQsos.isEmpty())
+        // Where the operator was is not something the opposite station confirms.
+        assertEquals(setOf("OL62", "OL63"), data.roamedGrids)
+    }
+
+    @Test
+    fun gridDataAcceptsPaperAndEqslConfirmations() {
+        val data = buildWavelogGridData(
+            listOf(
+                record(start = 1_000L, theirGrid = "EN52", confirmed = false, paper = true),
+                record(start = 2_000L, theirGrid = "EN53", confirmed = false, eqsl = true)
+            )
+        )
+        assertEquals(setOf("EN52", "EN53"), data.grids)
+        assertEquals(1, data.gridQsos.getValue("EN52").size)
+        assertEquals(1, data.gridQsos.getValue("EN53").size)
+    }
+
     // endregion
 
     // region # applyWavelogSyncResult
@@ -138,6 +168,7 @@ class WavelogSyncTest {
             listOf(record(start = 1_000L, theirGrid = "EN52", myGrid = "OL62")),
             mapOf("1" to 500L),
             "http://a/wavelog/",
+            WavelogSyncMode.Incremental,
             now = 42L
         )
 
@@ -147,6 +178,7 @@ class WavelogSyncTest {
         assertEquals(mapOf("1" to 500L), settings.getWavelogSyncCursors())
         assertEquals("http://a/wavelog", settings.getWavelogSyncUrl())
         assertEquals(42L, settings.getLastWavelogSyncEpochMs())
+        assertEquals(0L, settings.getLastWavelogFullSyncEpochMs())
         assertEquals(2, count)
     }
 
@@ -156,12 +188,74 @@ class WavelogSyncTest {
         settings.setWorkedGrids(setOf("PM01"))
         settings.setRoamedGrids(setOf("OM60"))
 
-        applyWavelogSyncResult(settings, listOf(record(1_000L, "EN52", myGrid = "OL62")), mapOf("1" to 10L), "http://a")
-        applyWavelogSyncResult(settings, listOf(record(2_000L, "EN53", myGrid = "OL63")), mapOf("1" to 20L), "http://a")
+        applyWavelogSyncResult(
+            settings, listOf(record(1_000L, "EN52", myGrid = "OL62")), mapOf("1" to 10L), "http://a",
+            WavelogSyncMode.Incremental
+        )
+        applyWavelogSyncResult(
+            settings, listOf(record(2_000L, "EN53", myGrid = "OL63")), mapOf("1" to 20L), "http://a",
+            WavelogSyncMode.Incremental
+        )
 
         assertEquals(setOf("PM01", "EN52", "EN53"), settings.getWorkedGrids())
         assertEquals(setOf("OM60", "OL62", "OL63"), settings.getRoamedGrids())
         assertEquals(mapOf("1" to 20L), settings.getWavelogSyncCursors())
+    }
+
+    @Test
+    fun fullSyncReplacesTheStoredSets() = runBlocking {
+        val settings = FakeSettings()
+        // A square kept from before the confirmation rule existed, plus one that is real now.
+        settings.setWorkedGrids(setOf("PM01", "EN52"))
+        settings.setWorkedGridQsos(mapOf("PM01" to emptyList()))
+        settings.setRoamedGrids(setOf("OM60", "OL62"))
+
+        val count = applyWavelogSyncResult(
+            settings,
+            listOf(record(1_000L, "EN52", myGrid = "OL62")),
+            mapOf("1" to 10L),
+            "http://a",
+            WavelogSyncMode.Full,
+            now = 99L
+        )
+
+        assertEquals(setOf("EN52"), settings.getWorkedGrids())
+        assertEquals(setOf("EN52"), settings.getWorkedGridQsos().keys)
+        assertEquals(setOf("OL62"), settings.getRoamedGrids())
+        assertEquals(99L, settings.getLastWavelogFullSyncEpochMs())
+        assertEquals(1, count)
+    }
+
+    @Test
+    fun fullSyncWithAFailedStationDegradesToMerge() = runBlocking {
+        val settings = FakeSettings()
+        settings.setWorkedGrids(setOf("PM01"))
+
+        applyWavelogSyncResult(
+            settings,
+            listOf(record(1_000L, "EN52")),
+            mapOf("1" to 10L),
+            "http://a",
+            WavelogSyncMode.Full,
+            failedStations = setOf("2"),
+            now = 99L
+        )
+
+        // Partial pull: never wipe what the station that failed contributed.
+        assertEquals(setOf("PM01", "EN52"), settings.getWorkedGrids())
+        assertEquals(0L, settings.getLastWavelogFullSyncEpochMs())
+    }
+
+    @Test
+    fun incrementalRequestIsPromotedOnceTheLastFullScanIsStale() {
+        val day = 24L * 60 * 60 * 1000
+        assertTrue(shouldPromoteWavelogFullSync(lastFullSyncEpochMs = 0L, now = day))
+        assertTrue(shouldPromoteWavelogFullSync(lastFullSyncEpochMs = 0L, now = 1000L * day))
+        assertEquals(
+            false,
+            shouldPromoteWavelogFullSync(lastFullSyncEpochMs = 10 * day, now = 12 * day)
+        )
+        assertTrue(shouldPromoteWavelogFullSync(lastFullSyncEpochMs = 10 * day, now = 13 * day))
     }
 
     // endregion
@@ -171,7 +265,10 @@ class WavelogSyncTest {
         theirGrid: String = "",
         theirVucc: List<String> = emptyList(),
         myGrid: String = "OL62TI",
-        sat: String = "SO-50"
+        sat: String = "SO-50",
+        confirmed: Boolean = true,
+        paper: Boolean = false,
+        eqsl: Boolean = false
     ) = QsoRecord(
         startUtcMillis = start,
         theirCallsign = "BG5JVM",
@@ -186,7 +283,10 @@ class WavelogSyncTest {
         mode = "FM",
         satelliteName = sat,
         propagationMode = if (sat.isNotBlank()) "SAT" else "",
-        status = QsoStatus.COMPLETE
+        status = QsoStatus.COMPLETE,
+        lotwConfirmed = confirmed,
+        qslConfirmed = paper,
+        eqslConfirmed = eqsl
     )
 
     private class FakeSettings : ISettingsRepo {
@@ -196,6 +296,7 @@ class WavelogSyncTest {
         private var cursors: Map<String, Long> = emptyMap()
         private var syncUrl: String = ""
         private var lastSync: Long = 0L
+        private var lastFullSync: Long = 0L
 
         override fun getWorkedGrids(): Set<String> = workedGrids
         override fun setWorkedGrids(grids: Set<String>) { workedGrids = grids }
@@ -209,6 +310,8 @@ class WavelogSyncTest {
         override fun setWavelogSyncUrl(url: String) { syncUrl = url }
         override fun getLastWavelogSyncEpochMs(): Long = lastSync
         override fun setLastWavelogSyncEpochMs(value: Long) { lastSync = value }
+        override fun getLastWavelogFullSyncEpochMs(): Long = lastFullSync
+        override fun setLastWavelogFullSyncEpochMs(value: Long) { lastFullSync = value }
 
         override val appVersionName: String get() = TODO()
         override val selectedIds: StateFlow<List<Int>> get() = TODO()

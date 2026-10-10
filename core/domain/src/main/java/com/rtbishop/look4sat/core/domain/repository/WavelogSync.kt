@@ -52,9 +52,38 @@ internal fun isValidGrid4(grid: String): Boolean =
         grid[2] in '0'..'9' && grid[3] in '0'..'9'
 
 /**
+ * "Confirmed" in Wavelog's own sense. Its API's `qsl_filter` maps lotw / qsl / eqsl to
+ * COL_LOTW_QSL_RCVD / COL_QSL_RCVD / COL_EQSL_QSL_RCVD = 'Y', and the ADIF export carries
+ * those as LOTW_QSL_RCVD / QSL_RCVD / EQSL_QSL_RCVD.
+ */
+fun QsoRecord.isQslConfirmed(): Boolean = lotwConfirmed || qslConfirmed || eqslConfirmed
+
+/**
+ * How stale the last full pull may get before an incremental request is promoted to a full
+ * one. Wavelog's pull API filters by row id only, so a confirmation that arrives for a row
+ * pulled earlier (LoTW confirmations land on the same row, keeping its id) can never be seen
+ * by the incremental cursor — the record was already fetched and is not fetched again. A full
+ * pull re-reads every row with its current confirmation flags, which is the only way to pick
+ * such confirmations up; it also rebuilds the stored grid set from scratch, so a square that
+ * only ever existed because an unconfirmed QSO carried a looked-up grid drops out on its own.
+ */
+const val WAVELOG_FULL_RESCAN_INTERVAL_MS: Long = 3L * 24 * 60 * 60 * 1000
+
+fun shouldPromoteWavelogFullSync(
+    lastFullSyncEpochMs: Long,
+    now: Long = System.currentTimeMillis()
+): Boolean = lastFullSyncEpochMs <= 0L || now - lastFullSyncEpochMs >= WAVELOG_FULL_RESCAN_INTERVAL_MS
+
+/**
  * Derives the worked-grid set, the per-grid QSO detail and the roamed (own) grids from
  * records pulled by a Wavelog sync — mirroring what the LoTW report parser produces, so
  * both sync sources feed the map's highlight and its 台址 selector the same data shape.
+ *
+ * Only CONFIRMED contacts turn a square green: the LoTW side derives its grids from ARRL's
+ * confirmation report, so a Wavelog record that merely carries the opposite station's grid
+ * (Wavelog fills those in from a callsign lookup) must not count before it is confirmed.
+ * The roamed set is the operator's own operating location, not the opposite station's
+ * confirmation, so it keeps taking every satellite record with a valid own grid.
  */
 fun buildWavelogGridData(records: List<QsoRecord>): WavelogGridData {
     val grids = linkedSetOf<String>()
@@ -73,6 +102,7 @@ fun buildWavelogGridData(records: List<QsoRecord>): WavelogGridData {
             .filter(::isValidGrid4)
             .toSet()
         roamed += myGrids
+        if (!record.isQslConfirmed()) return@forEach
         val qso = GridQso(
             call = record.theirCallsign,
             epochMs = record.startUtcMillis,
@@ -100,14 +130,16 @@ fun buildWavelogGridData(records: List<QsoRecord>): WavelogGridData {
 /**
  * Applies a successful Wavelog sync to the stored map data and sync bookkeeping.
  *
- * Grids, per-grid QSO detail and roamed grids only ever GROW (union): both the
- * incremental and the full re-pull merge into the stored sets, matching how the LoTW
- * sync treats stale data — a full re-pull heals missing records but never deletes map
- * data the app already knows about. Cursors are replaced wholesale ([cursors] covers
- * every station just fetched), and the sync URL/epoch advance so the next run resumes
- * incrementally. Persistence runs on the IO dispatcher — building the per-grid QSO
- * JSON blocks the caller, and for large accounts that froze the main thread after a
- * manual sync.
+ * An incremental pull MERGES into the stored sets (union: a late confirmation only ever
+ * adds a square). A full pull REPLACES them — same contract as the LoTW full sync — so the
+ * squares left behind by unconfirmed records that used to be counted disappear, and so do
+ * rows the log no longer has. A full pull that lost a station is partial: it degrades to
+ * the merge instead of wiping the squares that station contributed.
+ *
+ * Cursors are replaced wholesale ([cursors] covers every station just fetched), and the
+ * sync URL/epoch advance so the next run resumes incrementally. Persistence runs on the IO
+ * dispatcher — building the per-grid QSO JSON blocks the caller, and for large accounts that
+ * froze the main thread after a manual sync.
  *
  * @return the resulting number of worked grids.
  */
@@ -116,18 +148,22 @@ suspend fun applyWavelogSyncResult(
     records: List<QsoRecord>,
     cursors: Map<String, Long>,
     url: String,
+    mode: WavelogSyncMode,
+    failedStations: Set<String> = emptySet(),
     now: Long = System.currentTimeMillis()
 ): Int {
     val data = buildWavelogGridData(records)
+    val replace = mode == WavelogSyncMode.Full && failedStations.isEmpty()
     val existingGrids = settingsRepo.getWorkedGrids()
     val existingQsos = settingsRepo.getWorkedGridQsos()
     val existingRoamed = settingsRepo.getRoamedGrids()
-    val mergedGrids = existingGrids + data.grids
-    val mergedQsos = mergeGridQsos(existingQsos, data.gridQsos)
-    val mergedRoamed = existingRoamed + data.roamedGrids
+    val mergedGrids = if (replace) data.grids else existingGrids + data.grids
+    val mergedQsos = if (replace) data.gridQsos else mergeGridQsos(existingQsos, data.gridQsos)
+    val mergedRoamed = if (replace) data.roamedGrids else existingRoamed + data.roamedGrids
     settingsRepo.setWavelogSyncCursors(cursors)
     settingsRepo.setWavelogSyncUrl(normalizeWavelogUrl(url))
     settingsRepo.setLastWavelogSyncEpochMs(now)
+    if (replace) settingsRepo.setLastWavelogFullSyncEpochMs(now)
     withContext(Dispatchers.IO) {
         settingsRepo.setWorkedGrids(mergedGrids)
         settingsRepo.setWorkedGridQsos(mergedQsos)

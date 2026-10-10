@@ -141,6 +141,11 @@ interface ISettingsRepo {
     /** Epoch ms of the last successful Wavelog sync (0 when never synced). */
     fun getLastWavelogSyncEpochMs(): Long
     fun setLastWavelogSyncEpochMs(value: Long)
+    /** Epoch ms of the last FULL Wavelog re-scan (0 when never). An incremental request is
+     *  promoted to a full pull once this is stale — Wavelog's pull filters by row id, so a
+     *  confirmation arriving for an already-pulled row is invisible to the incremental cursor. */
+    fun getLastWavelogFullSyncEpochMs(): Long
+    fun setLastWavelogFullSyncEpochMs(value: Long)
     //endregion
 
     //region # LoTW confirmed-grids settings

@@ -48,6 +48,12 @@ data class QsoRecord(
     val wavelogStation: String = "",
     val lotwReceived: Boolean = false,
     val lotwQslDate: String = "",
+    /** Paper QSL received (ADIF QSL_RCVD=Y) — one of the routes Wavelog counts as
+     *  "confirmed". Sync-only: the logbook stores no paper-QSL column, so this survives
+     *  only inside the record a Wavelog pull produced (the grid rule reads it there). */
+    val qslConfirmed: Boolean = false,
+    /** eQSL confirmation received (ADIF EQSL_QSL_RCVD=Y). Sync-only, see [qslConfirmed]. */
+    val eqslConfirmed: Boolean = false,
     /** Own operated grid set this QSO went out under — uploaded as ADIF MY_VUCC_GRIDS
      *  (never VUCC_GRIDS, which belongs to the opposite station). Stamped at upload. */
     val vuccGrids: List<String> = emptyList(),

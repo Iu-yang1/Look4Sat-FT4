@@ -41,6 +41,7 @@ import com.rtbishop.look4sat.core.domain.repository.WavelogSyncFetch
 import com.rtbishop.look4sat.core.domain.repository.WavelogSyncMode
 import com.rtbishop.look4sat.core.domain.repository.applyWavelogSyncResult
 import com.rtbishop.look4sat.core.domain.repository.resolveWavelogSyncMode
+import com.rtbishop.look4sat.core.domain.repository.shouldPromoteWavelogFullSync
 import com.rtbishop.look4sat.core.domain.repository.WavelogStationInfo
 import com.rtbishop.look4sat.core.domain.repository.WavelogUploadOutcome
 import com.rtbishop.look4sat.core.domain.repository.WavelogUploadPreview
@@ -390,6 +391,11 @@ class SettingsViewModel(
             return
         }
         val mode = resolveWavelogSyncMode(settingsRepo.getWavelogSyncUrl(), settings.url, requested)
+        // Late confirmations can only be picked up by a full pull (Wavelog's incremental
+        // cursor is a row id), so promote a stale incremental request to a full re-scan.
+        val promoted = mode == WavelogSyncMode.Incremental &&
+            shouldPromoteWavelogFullSync(settingsRepo.getLastWavelogFullSyncEpochMs())
+        val actualMode = if (promoted) WavelogSyncMode.Full else mode
         _uiState.update { it.copy(wavelogSyncing = true, wavelogUploadMessage = null) }
         viewModelScope.launch {
             try {
@@ -398,7 +404,7 @@ class SettingsViewModel(
                     settings.apiKey,
                     stations,
                     settingsRepo.getWavelogSyncCursors(),
-                    full = mode == WavelogSyncMode.Full
+                    full = actualMode == WavelogSyncMode.Full
                 )
                 if (fetch == null) {
                     _uiState.update {
@@ -413,13 +419,20 @@ class SettingsViewModel(
                 }
                 // Stations that failed keep their previous cursor; fetched ones advance.
                 val cursors = settingsRepo.getWavelogSyncCursors() + fetch.cursors
-                applyWavelogSyncResult(settingsRepo, fetch.records, cursors, settings.url)
+                applyWavelogSyncResult(
+                    settingsRepo,
+                    fetch.records,
+                    cursors,
+                    settings.url,
+                    actualMode,
+                    failedStations = fetch.failedStations.toSet()
+                )
                 _uiState.update {
                     it.copy(
                         wavelogSyncing = false,
                         workedGridsCount = settingsRepo.getWorkedGrids().size,
                         wavelogLastSyncEpochMs = settingsRepo.getLastWavelogSyncEpochMs(),
-                        wavelogUploadMessage = wavelogSyncSummary(mode, fetch, merge, stations.size)
+                        wavelogUploadMessage = wavelogSyncSummary(actualMode, fetch, merge, stations.size, promoted)
                     )
                 }
             } catch (e: kotlinx.coroutines.CancellationException) {
@@ -436,9 +449,14 @@ class SettingsViewModel(
         mode: WavelogSyncMode,
         fetch: WavelogSyncFetch,
         merge: com.rtbishop.look4sat.core.domain.logbook.AdifImportResult,
-        totalStations: Int
+        totalStations: Int,
+        promoted: Boolean = false
     ): String {
-        val head = if (mode == WavelogSyncMode.Full) "Full Wavelog sync" else "Incremental Wavelog sync"
+        val head = when {
+            promoted -> "Full Wavelog sync (auto re-scan)"
+            mode == WavelogSyncMode.Full -> "Full Wavelog sync"
+            else -> "Incremental Wavelog sync"
+        }
         val base = "$head — ${merge.imported} new, ${merge.skipped} already there"
         return if (fetch.failedStations.isEmpty()) base
         else "$base · ${fetch.failedStations.size}/$totalStations station(s) failed"

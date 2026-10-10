@@ -434,4 +434,6 @@ private class FakeSettingsRepoForSearch : ISettingsRepo {
     override fun setWavelogSyncUrl(url: String) = Unit
     override fun getLastWavelogSyncEpochMs(): Long = 0L
     override fun setLastWavelogSyncEpochMs(value: Long) = Unit
+    override fun getLastWavelogFullSyncEpochMs(): Long = 0L
+    override fun setLastWavelogFullSyncEpochMs(value: Long) = Unit
 }

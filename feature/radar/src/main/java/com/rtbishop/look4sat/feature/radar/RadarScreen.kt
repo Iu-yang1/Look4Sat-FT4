@@ -56,12 +56,15 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.keepScreenOn
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -152,7 +155,21 @@ internal data class RadarFillSizes(
     val pagerOverlaid: Boolean
 )
 
-internal fun radarFillSizes(maxWidth: Dp, maxHeight: Dp): RadarFillSizes {
+internal fun radarFillSizes(
+    maxWidth: Dp,
+    maxHeight: Dp,
+    useLargeRadar: Boolean = true
+): RadarFillSizes {
+    if (!useLargeRadar) {
+        val radarSide = minOf(maxWidth, ((maxHeight - ROW_GAP) / 2).coerceAtLeast(0.dp))
+        val pagerSpace = maxHeight - radarSide - ROW_GAP
+        return RadarFillSizes(
+            radarSide = radarSide,
+            pagerSpace = pagerSpace,
+            pagerOverlaid = pagerSpace < COMPACT_MIN_PAGER_HEIGHT
+        )
+    }
+
     // Preferred: keep a usable pager block under the radar square. That is only worth it while
     // the circle still reaches its full-screen share of the page width.
     val radarWithPager = minOf(maxWidth, maxHeight - COMPACT_MIN_PAGER_HEIGHT - ROW_GAP)
@@ -266,6 +283,7 @@ private fun RadarScreen(
                 time = it.time
             )
         }
+    var useLargeRadar by rememberSaveable { mutableStateOf(true) }
     BoxWithConstraints(
         modifier = Modifier
             .layoutPadding()
@@ -297,7 +315,19 @@ private fun RadarScreen(
                     TimerRow(timeString = uiState.currentTime, isTimeAos = uiState.isTimeAos)
                     IconCard(action = addToCalendar, resId = R.drawable.ic_calendar)
                 }
-                TopBar { NextPassRow(pass = upcomingPass, isUtc = uiState.isUtc) }
+                TopBar {
+                    NextPassRow(
+                        pass = upcomingPass,
+                        modifier = if (fillRadar) Modifier.weight(1f) else Modifier,
+                        isUtc = uiState.isUtc
+                    )
+                    if (fillRadar) {
+                        RadarSizeToggle(
+                            showingLargeRadar = useLargeRadar,
+                            onToggle = { useLargeRadar = !useLargeRadar }
+                        )
+                    }
+                }
             } else {
                 TopBar {
                     IconCard(action = navigateUp, resId = R.drawable.ic_back)
@@ -316,6 +346,7 @@ private fun RadarScreen(
                         logViewModel = logViewModel,
                         requestMicPermission = requestMicPermission,
                         onFixGrid = onFixGrid,
+                        useLargeRadar = useLargeRadar,
                         modifier = Modifier.weight(1f)
                     )
                 } else {
@@ -328,6 +359,29 @@ private fun RadarScreen(
                     PagerCard(uiState, onAction, logViewModel, requestMicPermission, Modifier.weight(1f), onFixGrid = onFixGrid)
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun RadarSizeToggle(showingLargeRadar: Boolean, onToggle: () -> Unit) {
+    val label = stringResource(
+        if (showingLargeRadar) R.string.radar_use_small else R.string.radar_use_large
+    )
+    ElevatedCard(
+        modifier = Modifier
+            .size(48.dp)
+            .semantics { contentDescription = label },
+        onClick = onToggle
+    ) {
+        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Text(
+                text = stringResource(
+                    if (showingLargeRadar) R.string.radar_size_small_short
+                    else R.string.radar_size_large_short
+                ),
+                fontSize = 16.sp
+            )
         }
     }
 }
@@ -347,10 +401,11 @@ private fun RadarFillArea(
     logViewModel: LogViewModel,
     requestMicPermission: () -> Unit,
     onFixGrid: (List<String>) -> Unit,
+    useLargeRadar: Boolean,
     modifier: Modifier = Modifier
 ) {
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
-        val sizes = radarFillSizes(maxWidth, maxHeight)
+        val sizes = radarFillSizes(maxWidth, maxHeight, useLargeRadar)
         // Hoisted out of the nested Box scope: the BoxWithConstraints receiver is not
         // implicitly reachable inside it.
         val pagerPanelHeight = maxHeight * 0.72f

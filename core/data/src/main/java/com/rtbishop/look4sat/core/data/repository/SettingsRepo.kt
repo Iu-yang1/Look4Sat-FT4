@@ -448,6 +448,7 @@ class SettingsRepo(
     private val keyWavelogSyncCursors = "wavelogSyncCursors"
     private val keyWavelogSyncUrl = "wavelogSyncUrl"
     private val keyLastWavelogSyncEpochMs = "wavelogLastSyncEpochMs"
+    private val keyLastWavelogFullSyncEpochMs = "wavelogLastFullSyncEpochMs"
 
     override fun getWavelogStations(): List<com.rtbishop.look4sat.core.domain.repository.WavelogStationInfo> {
         val json = preferences.getString(keyWavelogStations, null).orEmpty()
@@ -513,6 +514,12 @@ class SettingsRepo(
 
     override fun setLastWavelogSyncEpochMs(value: Long) =
         preferences.edit { putLong(keyLastWavelogSyncEpochMs, value) }
+
+    override fun getLastWavelogFullSyncEpochMs(): Long =
+        preferences.getLong(keyLastWavelogFullSyncEpochMs, 0L)
+
+    override fun setLastWavelogFullSyncEpochMs(value: Long) =
+        preferences.edit { putLong(keyLastWavelogFullSyncEpochMs, value) }
     //endregion
 
     //region # Transceivers settings

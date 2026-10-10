@@ -82,7 +82,10 @@ class MutualViewModel(
     private val settingsRepo: ISettingsRepo,
     // Injected so unit tests can run the pass computation on a test dispatcher;
     // production callers keep the CPU-bound pool default.
-    private val computeDispatcher: CoroutineDispatcher = Dispatchers.Default
+    private val computeDispatcher: CoroutineDispatcher = Dispatchers.Default,
+    // Injected so unit tests can pin the wall clock to the fixture TLE epoch and
+    // stay deterministic; production callers keep the real clock default.
+    private val nowMillis: () -> Long = System::currentTimeMillis
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(MutualUiState())
@@ -289,7 +292,7 @@ class MutualViewModel(
         queryGeneration += 1
 
         viewModelScope.launch {
-            val now = System.currentTimeMillis()
+            val now = nowMillis()
             // 转发器类型筛选: 使用硬编码 AMSAT Live 清单 (见 Sources):
             // FM = {SO-50, ISS ZARYA, AO-123}, Linear = {RS-44, FO-29,
             // AO-7, AO-73, JO-97}. 不再依赖 AMSAT 网页同步: 任何网络下都

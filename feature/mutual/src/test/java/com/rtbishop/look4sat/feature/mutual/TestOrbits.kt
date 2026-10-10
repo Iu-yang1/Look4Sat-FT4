@@ -48,6 +48,15 @@ object TestOrbits {
         )
     )
 
+    /**
+     * Fixed wall-clock base for every fixture computation: 2024-03-10T00:00Z,
+     * ~18 h after [ISS]'s TLE epoch, so SGP4 propagates an accurate, healthy
+     * orbit. Tests pin the ViewModel clock to this value as well
+     * (MutualViewModel.nowMillis), which makes pass windows deterministic
+     * instead of rotting as the fixture ages against System.currentTimeMillis().
+     */
+    val FIXTURE_BASE: Long = 1710028800000L
+
     /** Guangzhou (default BA7OPF grid OL62/OL63 area). */
     val GUANGZHOU = GeoPos(23.13, 113.26)
 
@@ -85,7 +94,7 @@ object TestOrbits {
     fun findPassWindows(
         sat: OrbitalObject = ISS,
         pos: GeoPos = GUANGZHOU,
-        time: Long = System.currentTimeMillis(),
+        time: Long = FIXTURE_BASE,
         hoursAhead: Int = 12
     ): List<OrbitalPass> {
         if (!sat.willBeSeen(pos)) return emptyList()

@@ -53,7 +53,9 @@ class MutualViewModelTest {
     ): MutualViewModel = MutualViewModel(
         satelliteRepo = FakeSatelliteRepo(satellites, passes),
         settingsRepo = FakeSettingsRepo(position),
-        computeDispatcher = StandardTestDispatcher(mainDispatcherRule.dispatcher.scheduler)
+        computeDispatcher = StandardTestDispatcher(mainDispatcherRule.dispatcher.scheduler),
+        // Pin the clock to the fixture base so results never depend on wall time.
+        nowMillis = { TestOrbits.FIXTURE_BASE }
     )
 
     private fun TestScope.queryAndSettle(vm: MutualViewModel) {
@@ -219,7 +221,7 @@ class MutualViewModelTest {
         assertTrue(state.mutualPasses.all { it.catNum == 25544 })
         assertTrue(state.mutualPasses.all { it.name == "ISS (ZARYA)" })
         // AOS/LOS within the searched horizon
-        val now = System.currentTimeMillis()
+        val now = TestOrbits.FIXTURE_BASE
         assertTrue(state.mutualPasses.all { it.startTime >= now - 120_000L })
         assertTrue(state.mutualPasses.all { it.endTime <= now + 24 * 3600_000L + 120_000L })
     }

@@ -27,7 +27,7 @@ import org.junit.Test
 /** Alias table that maps tracker catalogue names onto the names ARRL's config.tq6 uses. */
 class LoTWSatelliteAliasesTest {
 
-    private val catalogue = listOf("SO-50", "ARISS", "PO-101", "BO-102", "AO-91", "RS-44", "IO-117")
+    private val catalogue = listOf("SO-50", "ARISS", "PO-101", "BO-102", "AO-91", "RS-44", "IO-117", "RS95S")
 
     @Test
     fun `lookup maps SatNOGS catalogue names to ARRL names`() {
@@ -37,6 +37,7 @@ class LoTWSatelliteAliasesTest {
         assertEquals("AO-91", LoTWSatelliteAliases.lookup("FOX-1B"))
         assertEquals("RS-44", LoTWSatelliteAliases.lookup("DOSAAF-85"))
         assertEquals("IO-117", LoTWSatelliteAliases.lookup("GREENCUBE"))
+        assertEquals("RS95S", LoTWSatelliteAliases.lookup("QMR-KWT 2"))
     }
 
     @Test
@@ -59,6 +60,8 @@ class LoTWSatelliteAliasesTest {
         assertEquals("SO-50", LoTWSatelliteAliases.resolve("SAUDISAT 1C (SO-50)", catalogue))
         assertEquals("ARISS", LoTWSatelliteAliases.resolve("ISS (ZARYA)", catalogue))
         assertEquals("AO-91", LoTWSatelliteAliases.resolve("AO-91 (RadFxSat)", catalogue))
+        assertEquals("RS95S", LoTWSatelliteAliases.resolve("RS-95S", catalogue))
+        assertEquals("RS95S", LoTWSatelliteAliases.resolve("QMR-KWT 2", catalogue))
     }
 
     @Test

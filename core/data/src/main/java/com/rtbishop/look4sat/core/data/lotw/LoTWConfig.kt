@@ -36,7 +36,7 @@ import java.util.Locale
 import java.util.zip.GZIPInputStream
 import javax.xml.parsers.DocumentBuilderFactory
 
-/** Bundled ARRL configuration 11.34 from https://lotw.arrl.org/lotw/config.tq6. */
+/** Bundled ARRL configuration 11.35 from https://lotw.arrl.org/lotw/config.tq6. */
 internal class LoTWConfig(input: InputStream) {
     private val root = input.use { source -> GZIPInputStream(source).use { gzip ->
         val xml = gzip.bufferedReader(Charsets.UTF_8).readText()

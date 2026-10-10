@@ -75,7 +75,13 @@ internal fun Project.setupAndroidApp() {
         }
         androidResources {
             generateLocaleConfig = true
-            localeFilters.addAll(listOf("en", "es", "ru", "si", "tr", "uk", "zh"))
+            // "zh" alone is stripped down to the Hans config: without the Traditional
+            // region entries below, values-b+zh+Hant is filtered out of the APK and a
+            // zh-TW / zh-HK / zh-MO device falls back to English. aapt2 only accepts
+            // the legacy "zh-rTW" spelling here ("zh-Hant" fails the build).
+            localeFilters.addAll(
+                listOf("en", "es", "ru", "si", "tr", "uk", "zh", "zh-rTW", "zh-rHK", "zh-rMO")
+            )
         }
         packaging { resources { excludes += listOf("META-INF/*") } }
     }

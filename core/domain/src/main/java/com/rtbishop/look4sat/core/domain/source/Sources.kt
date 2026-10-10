@@ -50,11 +50,30 @@ object Sources {
     )
     /**
      * Hardcoded AMSAT Live FM satellites (NORAD catnums):
-     * SO-50 (27607), ISS ZARYA (25544), AO-123 ASRTU-1 (61781).
+     * SO-50 (27607), ISS ZARYA (25544), AO-123 ASRTU-1 (61781),
+     * RS95S/QMR-KWT-2 (67291), UNNE-1B (98205).
      * Replaces the AMSAT live-page fetch: stable on any network, no
      * sync-time dependency, no stale-list or timeout failure modes.
+     *
+     * BA7OPF additions (2026-10-09):
+     *  - RS95S / QMR-KWT-2 (67291): V/U FM transponder 145.920/436.950 CTCSS 67.0
+     *    (SatNOGS "QMR-KWT-2 (RS95S)", R4UAB "QMR-KWT-2 (RS95S)", AMSAT "RS95S
+     *    (QMR-KWT-2)"; the LoTW alias table maps the tracker name to ARRL's "RS95S").
+     *  - UNNE-1B (98205): AMSAT-EA 1.5P PocketQube released from the T-18 OTV
+     *    "OSSIE" with a V/U FM repeater ("Voice + (A)FSK").
+     *  - IO-86 / LAPAN-A2 (40931): V/U FM voice repeater 145.880/435.880 PL 88.5
+     *    (SatNOGS "V/U FM Voice (PL 88.5Hz)"; R4UAB "LAPAN-A2 (IO-86)", SatNOGS
+     *    3LE "LAPAN-A2", AMSAT "IO-86"; the LoTW alias table maps LAPAN-A2 to
+     *    ARRL's "IO-86"). This fork's first TLE source keeps its elements fresh.
+     *  ⚠ 98205 is SatNOGS' analysis number (designator 26227BL) for the freshly
+     *    released object — Space-Track assigns the permanent catalogue number later,
+     *    so this entry must be re-pointed then; the ephem-watch cron job tracks it.
+     *
+     * The set is shared: the satellite page / mutual page "AMSAT Live FM" filters
+     * and the radar Log page (FM satellites are logged on the fixed nominal
+     * voice-repeater pair).
      */
-    val amSatFmCatnums = setOf(27607, 25544, 61781)
+    val amSatFmCatnums = setOf(27607, 25544, 61781, 67291, 98205, 40931)
 
     /**
      * Hardcoded AMSAT Live linear (SSB/CW) satellites:

@@ -9,6 +9,7 @@
  */
 package com.rtbishop.look4sat.core.domain.logbook
 
+import com.rtbishop.look4sat.core.domain.repository.isQslConfirmed
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -205,6 +206,22 @@ class AdifCodecTest {
         assertTrue(!adif.contains("<STATION_CALLSIGN"))
         assertTrue(adif.contains("<CALL:6>N0CALL"))
         assertTrue(adif.contains("<SAT_NAME:5>SO-50"))
+    }
+
+    @Test
+    fun decodeReadsEveryConfirmationRouteWavelogCounts() {
+        // Wavelog's qsl_filter treats lotw / qsl / eqsl alike; the pull must see all three,
+        // and an unconfirmed record must stay unconfirmed.
+        val adi = "<EOH><CALL:6>BG5JVM<QSO_DATE:8>20260916<TIME_ON:4>0745<LOTW_QSL_RCVD:1>Y<EOR>" +
+            "<CALL:6>BG5JVN<QSO_DATE:8>20260916<TIME_ON:4>0746<QSL_RCVD:1>Y<EOR>" +
+            "<CALL:6>BG5JVO<QSO_DATE:8>20260916<TIME_ON:4>0747<EQSL_QSL_RCVD:1>Y<EOR>" +
+            "<CALL:6>BG5JVP<QSO_DATE:8>20260916<TIME_ON:4>0748<EOR>"
+        val records = AdifCodec.decode(adi)
+        assertTrue(records[0].isQslConfirmed())
+        assertTrue(records[1].isQslConfirmed())
+        assertTrue(records[2].isQslConfirmed())
+        assertTrue(!records[3].isQslConfirmed())
+        assertTrue(records[3].lotwConfirmed.not() && records[3].qslConfirmed.not() && records[3].eqslConfirmed.not())
     }
 
     @Test

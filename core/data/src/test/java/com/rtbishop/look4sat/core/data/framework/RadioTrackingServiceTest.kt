@@ -1167,6 +1167,8 @@ private class FakeSettingsRepo(
     override fun setWavelogSyncUrl(url: String) = Unit
     override fun getLastWavelogSyncEpochMs(): Long = 0L
     override fun setLastWavelogSyncEpochMs(value: Long) = Unit
+    override fun getLastWavelogFullSyncEpochMs(): Long = 0L
+    override fun setLastWavelogFullSyncEpochMs(value: Long) = Unit
     override fun getWorkedGrids() = emptySet<String>()
     override fun setWorkedGrids(grids: Set<String>) = Unit
     override fun getWorkedGridQsos() = emptyMap<String, List<GridQso>>()

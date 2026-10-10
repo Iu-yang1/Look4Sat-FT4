@@ -288,6 +288,8 @@ class LoTWGridSyncTest {
         override fun setWavelogSyncUrl(url: String) { wavelogSyncUrl = url }
         override fun getLastWavelogSyncEpochMs(): Long = lastWavelogSyncEpochMs
         override fun setLastWavelogSyncEpochMs(value: Long) { lastWavelogSyncEpochMs = value }
+        override fun getLastWavelogFullSyncEpochMs(): Long = 0L
+        override fun setLastWavelogFullSyncEpochMs(value: Long) = Unit
 
         override fun setSelectedIds(ids: List<Int>) = TODO()
         override fun setSelectedTypes(types: List<String>) = TODO()

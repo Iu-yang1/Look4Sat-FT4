@@ -1,0 +1,62 @@
+name: Radio USB Recorder - Native Debug APK
+on:
+  push:
+    branches: [feature/usb-raw-recorder]
+    paths:
+      - 'radio-usb-recorder/**'
+      - '.github/workflows/radio-usb-recorder.yml'
+  pull_request:
+    paths:
+      - 'radio-usb-recorder/**'
+      - '.github/workflows/radio-usb-recorder.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: radio-usb-recorder
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Install SDK + NDK + CMake
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platforms;android-35" "build-tools;35.0.0" "ndk;27.2.12479018" "cmake;3.22.1"
+      - name: Fetch pinned libusb / libuac sources
+        run: |
+          set -euo pipefail
+          mkdir -p app/src/main/cpp/vendor
+          git clone --quiet https://github.com/libusb/libusb.git app/src/main/cpp/vendor/libusb
+          git -C app/src/main/cpp/vendor/libusb checkout --quiet 15a7ebb4d426c5ce196684347d2b7cafad862626
+          git clone --quiet https://github.com/nExtCamera/libuac.git app/src/main/cpp/vendor/libuac
+          git -C app/src/main/cpp/vendor/libuac checkout --quiet 17a6ba0a09309a6890ec338826de43a256f89813
+          test -f app/src/main/cpp/vendor/libusb/android/config.h
+          test -f app/src/main/cpp/vendor/libuac/include/libuac.h
+      - name: Build Debug APK
+        run: gradle --no-daemon :app:assembleDebug --stacktrace
+      - name: Verify package and compute checksum
+        run: |
+          APK=app/build/outputs/apk/debug/app-debug.apk
+          test -s "$APK"
+          unzip -l "$APK" | grep -E 'lib/arm64-v8a/libradio_usb_recorder.so|classes.dex'
+          sha256sum "$APK" > "$APK.sha256"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: radio-usb-recorder-debug
+          path: |
+            radio-usb-recorder/app/build/outputs/apk/debug/app-debug.apk
+            radio-usb-recorder/app/build/outputs/apk/debug/app-debug.apk.sha256
+          if-no-files-found: warn
+          retention-days: 14

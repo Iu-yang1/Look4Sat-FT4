@@ -1,0 +1,17 @@
+Radio USB Recorder
+Original Kotlin and JNI/C++ app code is available under Apache-2.0:
+https://www.apache.org/licenses/LICENSE-2.0
+
+Source dependencies retrieved by the CI build:
+
+nExtCamera/libuac — Apache License 2.0
+Copyright 2023 Jakub Księżniak and contributors
+https://github.com/nExtCamera/libuac/tree/17a6ba0a09309a6890ec338826de43a256f89813
+
+libusb — GNU Lesser General Public License 2.1 or later (LGPL-2.1-or-later)
+Copyright libusb contributors
+https://github.com/libusb/libusb/tree/15a7ebb4d426c5ce196684347d2b7cafad862626
+
+The original application has no warranty. Distributors of the statically linked
+debug APK must comply with LGPL's source and relinking requirements; the
+build-from-source workflow and exact source revisions are publicly available.

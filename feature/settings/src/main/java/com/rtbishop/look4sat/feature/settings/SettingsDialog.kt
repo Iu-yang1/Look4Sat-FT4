@@ -71,6 +71,7 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -691,6 +692,19 @@ private fun LazyListScope.sourceSection(
     }
     itemsIndexed(urls, key = { _, entry -> "$sectionKey-${entry.first}" }) { index, (id, url) ->
         val enabledTint = MaterialTheme.colorScheme.onSurfaceVariant
+        val sourceStatusColor = statusCodes[url]?.let { statusColor(it) }
+        val sourceTextFieldColors = if (sourceStatusColor == null) {
+            OutlinedTextFieldDefaults.colors()
+        } else {
+            OutlinedTextFieldDefaults.colors(
+                focusedTextColor = sourceStatusColor,
+                unfocusedTextColor = sourceStatusColor,
+                disabledTextColor = sourceStatusColor,
+                focusedBorderColor = sourceStatusColor,
+                unfocusedBorderColor = sourceStatusColor,
+                disabledBorderColor = sourceStatusColor
+            )
+        }
         val enabled = enabledMap[id] ?: true
         val rowState = remember { DragRowState() }
         val scope = rememberCoroutineScope()
@@ -743,9 +757,7 @@ private fun LazyListScope.sourceSection(
                 value = url,
                 onValueChange = { onUrlChange(index, it) },
                 label = { Text(stringResource(R.string.prefs_data_sources_url_title)) },
-                supportingText = statusCodes[url]?.let { code ->
-                    { Text(statusLabel(code), color = statusColor(code), fontSize = 12.sp) }
-                },
+                colors = sourceTextFieldColors,
                 trailingIcon = {
                     IconButton(onClick = { onRemove(index) }) {
                         Icon(
@@ -930,13 +942,11 @@ private suspend fun autoScroll(
     }
 }
 
-private fun statusLabel(code: Int): String = if (code == NetworkResult.CONNECTION_ERROR) "ERR" else code.toString()
-
 @Composable
 private fun statusColor(code: Int): Color = when {
-    code == NetworkResult.CONNECTION_ERROR -> MaterialTheme.colorScheme.error
-    code in 200..299 -> Color(0xFF66BB6A)
-    else -> MaterialTheme.colorScheme.error
+    code == NetworkResult.CONNECTION_ERROR -> Color(0xFFC62828)
+    code in 200..299 -> Color(0xFF2E7D32)
+    else -> Color(0xFFC62828)
 }
 
 @Preview(showBackground = true)

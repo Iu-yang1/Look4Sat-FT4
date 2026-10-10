@@ -8,6 +8,7 @@ on:
 env:
   TAG_NAME: ${{ github.ref_name }}
   GH_TOKEN: ${{ github.token }}
+  GH_REPO: ${{ github.repository }}
   LOOK4SAT_RELEASE_STORE_PASSWORD: ${{ secrets.KEY_STORE_PASSWORD }}
   LOOK4SAT_RELEASE_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
   LOOK4SAT_RELEASE_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}

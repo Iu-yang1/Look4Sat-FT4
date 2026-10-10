@@ -238,13 +238,13 @@ fun MainScreen(
         Screen.Passes,
         Screen.Logbook,
         Screen.Ft4,
-        Screen.More
+        Screen.More,
+        Screen.Settings
     )
     val moreItems = listOf(
         Screen.GridFinder,
         Screen.Map,
         Screen.Mutual,
-        Screen.Settings,
         Screen.AMSAT
     )
 
@@ -311,11 +311,11 @@ fun MainScreen(
                         is Screen.Passes -> screen is Screen.Passes
                         is Screen.Ft4 -> screen is Screen.Ft4
                         is Screen.Logbook -> screen is Screen.Logbook
+                        is Screen.Settings -> screen is Screen.Settings
                         is Screen.Map,
                         is Screen.GridFinder,
                         is Screen.AMSAT,
-                        is Screen.Mutual,
-                        is Screen.Settings -> screen is Screen.More
+                        is Screen.Mutual -> screen is Screen.More
                         else -> false
                     } || (screen is Screen.More && showMoreSheet)
                     item(

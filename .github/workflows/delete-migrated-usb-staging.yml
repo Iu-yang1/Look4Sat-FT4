@@ -1,0 +1,22 @@
+name: Cleanup migrated USB recorder staging branch
+on:
+  push:
+    branches:
+      - feature/usb-raw-recorder
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  delete-migrated-staging-branch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify new repository and remove only staging branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = 'Iu-yang1/Look4Sat-FT4'
+          test "$GITHUB_REF" = 'refs/heads/feature/usb-raw-recorder'
+          gh api repos/Iu-yang1/usb-raw-recorder-ab13x/contents/app/src/main/java/org/iu/radio/usbrecorder/MainActivity.kt >/dev/null
+          gh api -X DELETE repos/Iu-yang1/Look4Sat-FT4/git/refs/heads/feature/usb-raw-recorder
+          echo 'Temporary staging branch deleted after verifying destination repository.'

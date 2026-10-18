@@ -232,6 +232,27 @@ class LoTWRepositoryTest {
     }
 
     @Test
+    fun parseQsosKeepsCompleteOwnAndCounterpartGridSetsAndStationIdentity() {
+        val qso = "<CALL:5>K1ABC\n<QSO_DATE:8>20260820\n<TIME_ON:4>1130\n" +
+            "<PROP_MODE:3>SAT\n<SAT_NAME:5>FO-29\n<MODE:2>CW\n" +
+            "<GRIDSQUARE:6>OM60IL\n<VUCC_GRIDS:13>EN52en,EN53fa\n" +
+            "<MY_GRIDSQUARE:4>OL62\n<MY_VUCC_GRIDS:9>OL72,OL73\n" +
+            "<STATION_CALLSIGN:6>BA7OPF\n<MY_DXCC:3>318\n<EOR>\n"
+        val body = report(qso)
+        val result = repo.parseConfirmedGridQsos(body)!!
+
+        assertEquals(setOf("OM60", "EN52", "EN53"), repo.parseConfirmedGrids(body))
+        assertEquals(setOf("OM60", "EN52", "EN53"), result.keys)
+        assertEquals(setOf("OL62", "OL72", "OL73"), repo.parseRoamedGrids(body))
+        val detail = result.getValue("EN52").single()
+        assertEquals("OL62", detail.myGrid)
+        assertEquals(setOf("OL62", "OL72", "OL73"), detail.myGrids)
+        assertEquals(listOf("OM60", "EN52", "EN53"), detail.theirGrids)
+        assertEquals("BA7OPF", detail.myCallsign)
+        assertEquals("BA7OPF|318|||||", detail.stationKey)
+    }
+
+    @Test
     fun parseQsosBuildsStationKeyFromMyFields() {
         // 台址 identity = the MY_* station snapshot (callsign + dxcc + state +
         // CQ/ITU + IOTA + country). A record with the full snapshot yields the

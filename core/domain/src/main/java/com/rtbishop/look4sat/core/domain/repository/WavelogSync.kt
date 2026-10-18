@@ -92,12 +92,12 @@ fun buildWavelogGridData(records: List<QsoRecord>): WavelogGridData {
     records.forEach { record ->
         val isSatellite = record.satelliteName.isNotBlank() || record.propagationMode.equals("SAT", true)
         if (!isSatellite) return@forEach
-        val theirGrids = (record.theirVuccGrids.ifEmpty { listOf(record.theirGrid) })
+        val theirGrids = (listOf(record.theirGrid) + record.theirVuccGrids)
             .map { it.trim().uppercase(Locale.US).take(4) }
             .filter(::isValidGrid4)
             .distinct()
         if (theirGrids.isEmpty()) return@forEach
-        val myGrids = (record.vuccGrids.ifEmpty { listOf(record.myGrid) })
+        val myGrids = (listOf(record.myGrid) + record.vuccGrids)
             .map { it.trim().uppercase(Locale.US).take(4) }
             .filter(::isValidGrid4)
             .toSet()

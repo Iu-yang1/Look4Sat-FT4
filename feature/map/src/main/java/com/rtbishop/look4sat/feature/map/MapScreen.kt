@@ -362,12 +362,10 @@ private fun MapScreen(
             StationGroup(id = key, grids = grids, worked = worked)
         }.sortedByDescending { it.workedCount }
     }
-    // Selected 台址 for VUCC counting; defaults to the group with the most
-    // worked grids. Null = "All" (every 台址 combined). Empty when the store
-    // carries no per-QSO myGrid data (requires a LoTW resync) — the selector
-    // is hidden then and VUCC falls back to the global count.
+    // Default to All so the opening VUCC count covers every operated station.
+    // Without per-QSO station data the selector is hidden and the count is global.
     var selectedStationId by remember(stationGroups) {
-        mutableStateOf(stationGroups.maxByOrNull { it.workedCount }?.id)
+        mutableStateOf<String?>(null)
     }
     val awardProgress: List<AwardProgress> = remember(uiState.workedGridQsos, stationGroups, selectedStationId) {
         val base = AwardCalculator.calculate(uiState.workedGridQsos)

@@ -521,7 +521,7 @@ private fun LogbookRow(
                 // instead of the word QSL; without any grid the QSL text stays.
                 if (record.lotwConfirmed) {
                     val oppositeGrids = gridsLabel(
-                        record.theirVuccGrids.ifEmpty { listOf(record.theirGrid) }
+                        (listOf(record.theirGrid) + record.theirVuccGrids).distinct()
                     )
                     if (oppositeGrids.isNotEmpty()) {
                         Text(text = oppositeGrids, fontSize = 13.sp, color = ConfirmedGreen, fontFamily = FontFamily.Monospace)
@@ -538,7 +538,7 @@ private fun LogbookRow(
                 // stored contact shows where the operator was.
                 text = listOf(
                     satShort, record.displayMode, band, time,
-                    gridsLabel(record.vuccGrids.ifEmpty { listOf(record.myGrid) })
+                    gridsLabel((listOf(record.myGrid) + record.vuccGrids).distinct())
                 ).filter { it.isNotBlank() }.joinToString(" · "),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,

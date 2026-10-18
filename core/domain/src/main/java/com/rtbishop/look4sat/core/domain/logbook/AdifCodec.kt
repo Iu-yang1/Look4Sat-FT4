@@ -95,9 +95,9 @@ object AdifCodec {
             theirCallsign = call,
             myCallsign = values["STATION_CALLSIGN"].orEmpty().uppercase(Locale.US),
             theirGrid = values["GRIDSQUARE"].orEmpty().uppercase(Locale.US),
-            theirVuccGrids = decodeGrids(values["VUCC_GRIDS"]),
+            theirVuccGrids = decodeGridSet(values["GRIDSQUARE"], values["VUCC_GRIDS"]),
             myGrid = values["MY_GRIDSQUARE"].orEmpty().uppercase(Locale.US),
-            vuccGrids = decodeGrids(values["MY_VUCC_GRIDS"]),
+            vuccGrids = decodeGridSet(values["MY_GRIDSQUARE"], values["MY_VUCC_GRIDS"]),
             sentReport = values["RST_SENT"].orEmpty(),
             receivedReport = values["RST_RCVD"].orEmpty(),
             txFrequencyHz = mhzToHz(values["FREQ"]),
@@ -162,6 +162,15 @@ object AdifCodec {
         .map { it.trim().uppercase(Locale.US) }
         .filter { it.matches(gridPattern) }
         .distinct()
+
+    /** Merge the primary locator into a multi-grid field's complete VUCC square set. */
+    private fun decodeGridSet(primary: String?, multi: String?): List<String> {
+        // Single-grid records keep the legacy empty list and full locator precision.
+        if (multi.isNullOrBlank()) return emptyList()
+        return (decodeGrids(primary) + decodeGrids(multi))
+            .map { it.take(4) }
+            .distinct()
+    }
 
     private fun StringBuilder.appendOptional(name: String, value: String) {
         if (value.isNotBlank()) append(field(name, value))

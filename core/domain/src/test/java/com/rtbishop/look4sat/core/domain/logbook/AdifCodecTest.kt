@@ -97,6 +97,54 @@ class AdifCodecTest {
     }
 
     @Test
+    fun decodeNormalizesPrimaryAndMultiGridFieldsIntoCompleteVuccSets() {
+        val adi = """
+            <EOH>
+            <CALL:5>K1ABC
+            <QSO_DATE:8>20260820
+            <TIME_ON:4>1130
+            <GRIDSQUARE:6>OM60IL
+            <VUCC_GRIDS:13>EN52en,EN53fa
+            <MY_GRIDSQUARE:6>OL62TI
+            <MY_VUCC_GRIDS:9>OL72,OL73
+            <EOR>
+        """.trimIndent()
+
+        val record = AdifCodec.decode(adi).single()
+        assertEquals("OM60IL", record.theirGrid)
+        assertEquals(listOf("OM60", "EN52", "EN53"), record.theirVuccGrids)
+        assertEquals("OL62TI", record.myGrid)
+        assertEquals(listOf("OL62", "OL72", "OL73"), record.vuccGrids)
+    }
+
+    @Test
+    fun decodeMultiGridSetsDeduplicateSquaresAndDiscardInvalidLocators() {
+        val record = AdifCodec.decodeRecords(listOf(mapOf(
+            "CALL" to "K1ABC", "QSO_DATE" to "20260820", "TIME_ON" to "1130",
+            "GRIDSQUARE" to "EN52EN",
+            "VUCC_GRIDS" to "en52en01, EN53fa, ZZ99, garbage",
+            "MY_GRIDSQUARE" to "OL62TI",
+            "MY_VUCC_GRIDS" to "ol62ti01, OL63, XX99"
+        ))).single()
+
+        assertEquals(listOf("EN52", "EN53"), record.theirVuccGrids)
+        assertEquals(listOf("OL62", "OL63"), record.vuccGrids)
+    }
+
+    @Test
+    fun decodeSingleGridWithoutMultiFieldKeepsLocatorPrecisionAndEmptySets() {
+        val record = AdifCodec.decodeRecords(listOf(mapOf(
+            "CALL" to "K1ABC", "QSO_DATE" to "20260820", "TIME_ON" to "1130",
+            "GRIDSQUARE" to "EN52EN01", "MY_GRIDSQUARE" to "OL62TI"
+        ))).single()
+
+        assertEquals("EN52EN01", record.theirGrid)
+        assertEquals("OL62TI", record.myGrid)
+        assertTrue(record.theirVuccGrids.isEmpty())
+        assertTrue(record.vuccGrids.isEmpty())
+    }
+
+    @Test
     fun decodeWavelogPullStyleRecordKeepsGridDirections() {
         // Wavelog's export: the OPPOSITE station's grids un-prefixed, the station
         // profile's grid under MY_*. A pull must not flip them into each other.

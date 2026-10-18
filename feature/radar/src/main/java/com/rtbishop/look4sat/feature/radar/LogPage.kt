@@ -345,7 +345,7 @@ private fun LogRecordRow(
         }.format(java.util.Date(record.startUtcMillis))
     }
     // Own station grid: the upload-stamped set, else the grid the QSO was logged under.
-    val ownGrids = gridsLabel(record.vuccGrids.ifEmpty { listOf(record.myGrid) })
+    val ownGrids = gridsLabel((listOf(record.myGrid) + record.vuccGrids).distinct())
     // 右划露出删除按钮（短信式）；整行点击不再删除。
     SwipeRevealRow(
         key = record.id.toString(),

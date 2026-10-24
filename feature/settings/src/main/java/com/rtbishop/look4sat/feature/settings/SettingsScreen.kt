@@ -588,8 +588,10 @@ private fun SettingsScreen(
                     settings = uiState.lotwSettings,
                     workedGridsCount = uiState.workedGridsCount,
                     lastSyncEpochMs = uiState.lotwLastSyncEpochMs,
-                    isSyncing = uiState.lotwSyncing,
-                    syncProgress = uiState.lotwProgress,
+                    // Manual and automatic downloads run in a foreground service.
+                    // The Settings ViewModel no longer owns their progress.
+                    isSyncing = foregroundStatus.running || uiState.lotwSyncing,
+                    syncProgress = if (foregroundStatus.running) foregroundStatus.progress else uiState.lotwProgress,
                     enabled = !wavelogMode,
                     showLoTWDialog = { dialogs.lotw = true }
                 )

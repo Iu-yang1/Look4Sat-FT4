@@ -303,7 +303,8 @@ fun RadarDestination(
         )
         if (uiState.cwConsole.visible) CwConsole(uiState, logViewModel, viewModel::onAction,
             requestMicPermission = { permissionLauncher.launch(Manifest.permission.RECORD_AUDIO) },
-            onFixGrid = openLoTWStationForGridFix)
+            onFixGrid = openLoTWStationForGridFix,
+            connectRadios = connectRadios)
     }
 }
 

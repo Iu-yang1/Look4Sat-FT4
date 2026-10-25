@@ -69,6 +69,9 @@ data class RadioControlSubState(
 }
 
 data class TransceiverSubState(
+    /** Original transponder-list entries, without the live Doppler correction. */
+    val nominalTransmitters: List<SatRadio> = emptyList(),
+    /** Live transponder entries with Doppler-corrected frequencies, for tracking UI. */
     val transmitters: List<SatRadio> = emptyList(),
     val selectedUuid: String? = null,
     val selectedFrequency: Long? = null,

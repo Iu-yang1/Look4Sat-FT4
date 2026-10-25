@@ -529,6 +529,10 @@ private fun CalculatorContent(
     var txFrequencyHz by rememberSaveable(transponder.uuid, reference) { mutableStateOf(0L) }
     var rxFrequencyHz by rememberSaveable(transponder.uuid, reference) { mutableStateOf(0L) }
     var passbandPosition by rememberSaveable(transponder.uuid, reference) { mutableStateOf(0.5f) }
+    // Saved values can be restored without validating rememberSaveable inputs.
+    // Retain the reference used by that saved pair so a later base edit wins.
+    var appliedReference by rememberSaveable(transponder.uuid) { mutableStateOf(longArrayOf()) }
+    val referenceKey=reference?.let { longArrayOf(it.txHz,it.rxHz,it.offsetHz) } ?: longArrayOf()
     var nominalPassbandInitialized by remember(transponder.uuid, reference, displayNominalFrequencies) {
         mutableStateOf(false)
     }
@@ -536,7 +540,8 @@ private fun CalculatorContent(
     // Observe the live pair during composition even when CW displays only nominal
     // values; reads inside SideEffect alone do not schedule another composition.
     val publishedPair = txFrequencyHz to rxFrequencyHz
-    val publishReady = !displayNominalFrequencies || nominalPassbandInitialized
+    val publishReady = appliedReference.contentEquals(referenceKey) &&
+        (!displayNominalFrequencies || nominalPassbandInitialized)
     SideEffect {
         if (publishedPair.first != 0L && publishedPair.second != 0L && publishReady)
             onFrequencyChange(publishedPair.first, publishedPair.second)
@@ -601,21 +606,20 @@ private fun CalculatorContent(
         orbitalPos.distanceRate,
         offsetHz
     ) {
-        if (displayNominalFrequencies && !nominalPassbandInitialized) {
+        if (!appliedReference.contentEquals(referenceKey) ||
+            displayNominalFrequencies && !nominalPassbandInitialized ||
+            txFrequencyHz == 0L || rxFrequencyHz == 0L) {
             passbandPosition = initialTxBaseHz?.let {
                 ((it-nominalTxLow).toFloat()/nominalTxRange).coerceIn(0f,1f)
             } ?: 0.5f
             txFrequencyHz = txAtPassbandPosition(passbandPosition)
             rxFrequencyHz = downlinkFor(txFrequencyHz) ?: (rxLow + rxRange / 2)
             nominalPassbandInitialized = true
+            appliedReference = referenceKey
         } else if (displayNominalFrequencies) {
             // Keep the displayed nominal TX/RX position fixed as orbital Doppler changes.
             txFrequencyHz = txAtPassbandPosition(passbandPosition)
             rxFrequencyHz = downlinkFor(txFrequencyHz) ?: rxFrequencyHz.coerceIn(rxLow, rxHigh)
-        } else if (txFrequencyHz == 0L || rxFrequencyHz == 0L) {
-            passbandPosition = initialTxBaseHz?.let { ((it-nominalTxLow).toFloat()/nominalTxRange).coerceIn(0f,1f) } ?: 0.5f
-            txFrequencyHz = txAtPassbandPosition(passbandPosition)
-            rxFrequencyHz = downlinkFor(txFrequencyHz) ?: (rxLow + rxRange / 2)
         } else {
             when (lastEditedField) {
                 EditedField.TX -> {

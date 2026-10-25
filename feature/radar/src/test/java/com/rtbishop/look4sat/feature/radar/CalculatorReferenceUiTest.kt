@@ -1,6 +1,7 @@
 package com.rtbishop.look4sat.feature.radar
 
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import com.rtbishop.look4sat.core.domain.model.SatRadio
@@ -75,4 +76,28 @@ class CalculatorReferenceUiTest {
 
     @Test fun trackingCalculatorUpdatesBothReferencesWithoutAutomaticallyRetuning()=exercise(false)
     @Test fun cwCalculatorUsesTheSameReferencesAndKeepsNominalTuningAcrossDopplerChanges()=exercise(true)
+
+    @Test fun reopeningTrackingCalculatorAfterEditingBasesDoesNotRestoreTheOldFrequencies() {
+        val visible=mutableStateOf(true)
+        val reference=mutableStateOf(CalculatorReference(145962000,435057000))
+        compose.setContent {
+            val holder=rememberSaveableStateHolder()
+            MainTheme(isDarkTheme=false) {
+                if(visible.value) holder.SaveableStateProvider("calculator") {
+                    DopplerFrequencyCalculator(radio,OrbitalPos(),reference=reference.value,
+                        initialTxBaseHz=reference.value.txHz)
+                }
+            }
+        }
+        compose.onNodeWithTag("calculatorTxFrequency").assertTextEquals("145.962000")
+        compose.onAllNodesWithText("+").onFirst().performClick()
+        compose.onNodeWithTag("calculatorTxFrequency").assertTextEquals("145.963000")
+        compose.runOnIdle { visible.value=false }
+        compose.runOnIdle {
+            reference.value=CalculatorReference(145965000,435059000)
+            visible.value=true
+        }
+        compose.onNodeWithTag("calculatorTxFrequency").assertTextEquals("145.965000")
+        compose.onNodeWithTag("calculatorRxFrequency").assertTextEquals("435.059000")
+    }
 }

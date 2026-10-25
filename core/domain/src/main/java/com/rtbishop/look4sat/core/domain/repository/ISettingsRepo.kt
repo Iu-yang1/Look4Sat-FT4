@@ -91,6 +91,8 @@ interface ISettingsRepo {
     fun getRemoteCwPresets(): List<String> = CwTransmitPresets.defaults
     fun updateRemoteCwPreset(index: Int, text: String) = Unit
     fun updateRadioControlSettings(settings: RadioControlSettings)
+    fun getRadioBaseFrequencies(transponderUuid: String): RadioBaseFrequencies? = null
+    fun setRadioBaseFrequencies(transponderUuid: String, bases: RadioBaseFrequencies): Boolean = true
     //endregion
 
     //region # Per-satellite calculator offset settings

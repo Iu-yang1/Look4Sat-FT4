@@ -456,6 +456,14 @@ private fun ExpandedRadioControl(
         HorizontalDivider(thickness = 1.dp, color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
         ReferenceFrequencyControls(radioControl, onAction)
         TxToneControl(radio, radioControl, onAction)
+        if (DopplerFrequencyCalculator.isNamedLinearTransponder(radio)) {
+            OutlinedButton(
+                onClick = { onAction(RadarAction.OpenCwConsole) },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(stringResource(R.string.rc_l4s_cw))
+            }
+        }
         if (!radioControl.catControlsActive) {
             Text(
                 stringResource(if (!radioControl.catEnabled) R.string.rc_cat_disabled_status else R.string.rc_vox_status),

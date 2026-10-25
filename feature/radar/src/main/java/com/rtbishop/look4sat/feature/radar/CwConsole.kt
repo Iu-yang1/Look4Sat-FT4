@@ -46,6 +46,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.activity.compose.BackHandler
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -336,7 +337,7 @@ private fun CwConsoleHeader(
         Surface(
             modifier = Modifier.fillMaxWidth(),
             shape = MaterialTheme.shapes.medium,
-            color = MaterialTheme.colorScheme.surfaceContainerHigh
+            color = Color.Transparent
         ) {
             Column(Modifier.padding(horizontal = 12.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(state.currentPass?.name.orEmpty(), color = MaterialTheme.colorScheme.primary,

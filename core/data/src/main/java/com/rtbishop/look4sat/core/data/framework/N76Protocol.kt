@@ -86,7 +86,9 @@ internal object N76Protocol {
 
     class Decoder {
         private var pending = byteArrayOf()
-        fun clear() { pending = byteArrayOf() }
+        private var stalePrefix = 0
+        fun clear() { pending = byteArrayOf(); stalePrefix = 0 }
+        fun beginRequest() { stalePrefix = pending.size }
 
         fun feed(bytes: ByteArray): List<Packet> {
             // At most one partial 264-byte frame is retained between reads.
@@ -106,11 +108,16 @@ internal object N76Protocol {
                 val buffer = ByteBuffer.wrap(input, offset + 4, 4).order(ByteOrder.BIG_ENDIAN)
                 val group = buffer.short.toInt() and 65535
                 val command = buffer.short.toInt() and 65535
-                packets += Packet(group, command and 0x7fff, command and 0x8000 != 0,
-                    input.copyOfRange(offset + 8, offset + length - (flags and 1)))
+                // Preserve split notifications without accepting an old partial
+                // reply as acknowledgement of a newly written command.
+                if (command and 0x8000 == 0 || offset >= stalePrefix) {
+                    packets += Packet(group, command and 0x7fff, command and 0x8000 != 0,
+                        input.copyOfRange(offset + 8, offset + length - (flags and 1)))
+                }
                 offset += length
             }
             pending = input.copyOfRange(offset, input.size).takeLast(263).toByteArray()
+            stalePrefix = (stalePrefix - offset).coerceIn(0, pending.size)
             return packets
         }
     }

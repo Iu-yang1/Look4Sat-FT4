@@ -44,7 +44,9 @@ internal fun lastLocalN76Recording(directory: File, saved: String?): String? {
     fun valid(file: File): Boolean = runCatching {
         if (!file.isFile || file.parentFile?.canonicalFile != directory.canonicalFile || file.length() < 44) return@runCatching false
         val header = file.inputStream().use { input -> ByteArray(44).also { if (input.read(it) != 44) return@runCatching false } }
-        header.contentEquals(n76WaveHeader(file.length() - 44))
+        val channels = (header[22].toInt() and 255) or ((header[23].toInt() and 255) shl 8)
+        // Old stereo recordings remain available for playback/export.
+        header.contentEquals(n76WaveHeader(file.length() - 44, channels))
     }.getOrDefault(false)
     saved?.takeUnless { it.startsWith("content:") }?.let(::File)?.takeIf(::valid)?.let { return it.absolutePath }
     return directory.listFiles()?.filter { it.extension.equals("wav", true) && valid(it) }

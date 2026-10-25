@@ -3,7 +3,6 @@ package com.rtbishop.look4sat.feature.settings
 
 import android.content.Intent
 import android.app.Activity
-import android.Manifest
 import android.provider.DocumentsContract
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -51,12 +50,11 @@ import kotlinx.coroutines.withContext
 @Composable
 internal fun N76OptionsDialog(initial: N76ControlOptions, audioEnabled: Boolean,
     inputs: List<AudioInputDevice>, onSave: (N76ControlOptions) -> Unit, onDismiss: () -> Unit) {
-    var draft by remember { mutableStateOf(initial) }
+    var draft by remember { mutableStateOf(initial.normalized()) }
     var interval by remember { mutableStateOf(initial.pollMillis.toString()) }
     var folderError by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val microphonePermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
     val folder = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         val uri = result.data?.data
         if (result.resultCode == Activity.RESULT_OK && uri != null) scope.launch {
@@ -113,10 +111,6 @@ internal fun N76OptionsDialog(initial: N76ControlOptions, audioEnabled: Boolean,
             }
             N76Switch(stringResource(R.string.rc_n76_speaker_monitor), draft.speakerMonitor, audioEnabled) { draft = draft.copy(speakerMonitor = it) }
             N76Switch(stringResource(R.string.rc_n76_record_radio), draft.recordRadio, audioEnabled || draft.recordRadio) { draft = draft.copy(recordRadio = it) }
-            N76Switch(stringResource(R.string.rc_n76_record_mic), draft.recordMicrophone) {
-                draft = draft.copy(recordMicrophone = it)
-                if (it) microphonePermission.launch(Manifest.permission.RECORD_AUDIO)
-            }
             N76Switch(stringResource(R.string.rc_n76_record_on_track), draft.recordOnTrack) { draft = draft.copy(recordOnTrack = it) }
             N76Choice(stringResource(R.string.rc_n76_mic_input), draft.inputDeviceKey,
                 listOf<Pair<String?, String>>(null to stringResource(R.string.rc_n76_auto)) + inputs.map { it.key to it.name }) {

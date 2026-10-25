@@ -8,7 +8,7 @@ data class N76ControlOptions(
     val firmwareMode: N76FirmwareMode = N76FirmwareMode.AUTO,
     val sendSatelliteInfo: Boolean = true,
     val pollMillis: Long = 1_000,
-    val power: N76Power = N76Power.UNCHANGED,
+    val power: N76Power = N76Power.HIGH,
     val openSquelchOnTrack: Boolean = false,
     val forceRxCtcss: Boolean = false,
     val rxCtcssHz: Double? = null,
@@ -23,6 +23,9 @@ data class N76ControlOptions(
     val micGainDb: Int = 0
 ) {
     fun normalized(): N76ControlOptions = copy(
+        // Retain old recording selections without capturing the phone microphone.
+        recordRadio = recordRadio || recordMicrophone,
+        recordMicrophone = false,
         pollMillis = pollMillis.coerceIn(250, 15_000) / 250 * 250,
         rxCtcssHz = rxCtcssHz?.takeIf { it.isFinite() && it in 60.0..260.0 },
         txCtcssHz = txCtcssHz?.takeIf { it.isFinite() && it in 60.0..260.0 },

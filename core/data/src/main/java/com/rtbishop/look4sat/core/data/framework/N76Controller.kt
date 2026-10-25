@@ -108,7 +108,7 @@ internal class N76Controller(
                         firmware = "${info[4].toInt() and 255}.${info[5].toInt() and 255}",
                         capabilities = CAPABILITIES, error = null, isN76 = true,
                         recordingSupported = recorder != null,
-                        recordingNeedsMicrophone = options().recordMicrophone) }
+                        recordingNeedsMicrophone = false) }
                     ready = true
                     break
                 }
@@ -208,7 +208,8 @@ internal class N76Controller(
             report("tracking/context", "Select a satellite before tuning N76")
         }
         if (satelliteFirmware && settings.sendSatelliteInfo && info != null &&
-            request(N76Protocol.SET_SATELLITE_INFO, N76Protocol.satelliteInfo(info)) == null) return FrequencyPairResult.FAILED
+            request(N76Protocol.SET_SATELLITE_INFO, N76Protocol.satelliteInfo(info), disconnectOnTimeout = false) == null)
+            return FrequencyPairResult.FAILED
         val actualTone = if (settings.forceTxCtcss) settings.txCtcssHz else tone
         val rxTone = if (settings.forceRxCtcss) settings.rxCtcssHz else null
         // No retry of mutating requests: an ACK timeout must not replay a stale tune.
@@ -221,7 +222,7 @@ internal class N76Controller(
             appliedRevision = it.appliedRevision + 1, error = null) }
         if (updates == 1) {
             if (settings.openSquelchOnTrack && !radioMonitor && setMonitorLocked(true)) monitorByTracking = true
-            if (settings.recordOnTrack && (settings.recordRadio || settings.recordMicrophone))
+            if (settings.recordOnTrack && settings.recordRadio)
                 performRecordingOperation { it.start(display?.satelliteName.orEmpty(), audio?.state?.value?.connected == true) }
         }
         diagnose("frequency/applied", "rx=${target.rxHz} tx=${target.txHz ?: "disabled"} ack=0")
@@ -281,7 +282,7 @@ internal class N76Controller(
     override suspend fun setCtcssMode(enabled: Boolean): Boolean = configureTxCtcss(if (enabled) requestedTone else null)
 
     override suspend fun readFrequencyAndMode(): Pair<Long, String>? = io(null) {
-        val bytes = request(N76Protocol.GET_FREQUENCY, attempts = 2) ?: return@io null
+        val bytes = request(N76Protocol.GET_FREQUENCY, attempts = 2, disconnectOnTimeout = false) ?: return@io null
         val value = N76Protocol.frequency(bytes) ?: return@io null
         state.update { it.copy(rxFrequencyHz = value.first, rxMode = value.second) }
         value
@@ -478,6 +479,7 @@ internal class N76Controller(
         if (!transport.isConnected) return null
         drain()
         repeat(attempts) { attempt ->
+            decoder.beginRequest()
             if (!transport.write(N76Protocol.frame(command, payload))) throw IOException(transport.lastIoFailure ?: "Bluetooth write failed")
             val deadline = System.nanoTime() + replyTimeoutMillis * 1_000_000
             while (transport.isConnected && System.nanoTime() < deadline) {
@@ -491,7 +493,7 @@ internal class N76Controller(
                     if (status != 0) {
                         if (disconnectOnTimeout || command == N76Protocol.GET_HT_STATUS)
                             report("reply/rejected", "command=$command status=${status ?: "missing"}")
-                        else diagnostics.record(ControlDiagnosticSource.RADIO, "n76/audio/rejected",
+                        else diagnostics.record(ControlDiagnosticSource.RADIO, "n76/command/rejected",
                             "command=$command status=${status ?: "missing"}", ControlDiagnosticSeverity.WARNING)
                         return null
                     }
@@ -505,7 +507,7 @@ internal class N76Controller(
             report("reply/timeout", "command=$command attempts=$attempts")
             if (state.value.connected) dropConnection("N76 reply timed out; reconnect")
         } else diagnostics.record(ControlDiagnosticSource.RADIO,
-            if (command == N76Protocol.GET_HT_STATUS) "n76/status/retry" else "n76/audio/retry",
+            if (command == N76Protocol.GET_HT_STATUS) "n76/status/retry" else "n76/command/retry",
             "command=$command attempts=$attempts; retaining CAT connection", ControlDiagnosticSeverity.WARNING)
         return null
     }
@@ -513,10 +515,12 @@ internal class N76Controller(
     private suspend fun drain() {
         repeat(8) {
             val bytes = transport.readAvailable(1024)
-            if (bytes.isEmpty()) { decoder.clear(); return }
+            // An empty poll is not a frame boundary. Notifications may be split
+            // around it; keep their partial bytes for the transaction reader.
+            if (bytes.isEmpty()) return
             decoder.feed(bytes).forEach(::handleNotification)
         }
-        throw IOException("N76 input did not become quiet")
+        diagnose("input/busy", "Notification backlog drained in bounded batches; continuing CAT request")
     }
 
     private fun handleNotification(packet: N76Protocol.Packet) {

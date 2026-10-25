@@ -13,7 +13,8 @@ class N76OptionsJsonTest {
             forceRxCtcss = true, rxCtcssHz = 88.5, forceTxCtcss = true, txCtcssHz = 67.0,
             speakerMonitor = false, recordRadio = true, recordMicrophone = true, recordOnTrack = true,
             outputFolderUri = "content://recordings/tree/test", inputDeviceKey = "phone-mic", micGainDb = 18)
-        assertEquals(options, n76OptionsFromJson(options.toPreferenceJson()))
+        assertEquals(options.normalized(), n76OptionsFromJson(options.toPreferenceJson()))
+        assertFalse(n76OptionsFromJson(options.toPreferenceJson()).recordMicrophone)
     }
     @Test fun defaultsAndExplicitToneOffRemainDistinctFromFollowingTransponder() {
         assertEquals(N76ControlOptions(), n76OptionsFromJson(null))
@@ -22,6 +23,14 @@ class N76OptionsJsonTest {
         val restored = n76OptionsFromJson(options.toPreferenceJson())
         assertTrue(restored.forceTxCtcss)
         assertNull(restored.txCtcssHz)
-        assertEquals(N76Power.UNCHANGED, n76OptionsFromJson("{\"power\":\"future\"}").power)
+        assertEquals(N76Power.HIGH, n76OptionsFromJson("{\"power\":\"future\"}").power)
+    }
+    @Test fun oldSettingsKeepExplicitPowerAndMigrateMicrophoneOnlyRecording() {
+        assertEquals(N76Power.HIGH, n76OptionsFromJson("{}").power)
+        for (power in N76Power.entries) assertEquals(power,
+            n76OptionsFromJson("{\"power\":\"${power.name}\"}").power)
+        val migrated = n76OptionsFromJson("{\"recordMic\":true}")
+        assertTrue(migrated.recordRadio)
+        assertFalse(migrated.recordMicrophone)
     }
 }

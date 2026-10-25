@@ -24,7 +24,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
-import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -34,8 +33,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-import kotlin.math.pow
-import kotlin.math.roundToInt
 
 data class N76RecordingState(val recording: Boolean = false, val playing: Boolean = false,
     val lastFile: String? = null, val error: String? = null, val exportError: String? = null,
@@ -72,23 +69,19 @@ internal class N76PcmRing(private val capacity: Int = 32_000) {
     @Synchronized fun clear() { start = 0; count = 0 }
 }
 
-internal fun n76StereoPcm(mic: ShortArray, radio: ShortArray, gainDb: Int): ByteArray {
-    require(mic.size == radio.size)
-    val gain = 10.0.pow(gainDb.coerceIn(0, 24) / 20.0)
-    return ByteBuffer.allocate(mic.size * 4).order(ByteOrder.LITTLE_ENDIAN).apply {
-        mic.indices.forEach { index ->
-            putShort((mic[index] * gain).roundToInt().coerceIn(-32768, 32767).toShort())
-            putShort(radio[index])
-        }
+internal fun n76MonoPcm(radio: ShortArray): ByteArray {
+    return ByteBuffer.allocate(radio.size * 2).order(ByteOrder.LITTLE_ENDIAN).apply {
+        radio.forEach(::putShort)
     }.array()
 }
 
-internal fun n76WaveHeader(size: Long): ByteArray {
-    require(size in 0..0xffffffffL - 36 && size % 4 == 0L)
+internal fun n76WaveHeader(size: Long, channels: Int = 1): ByteArray {
+    require(channels in 1..2)
+    require(size in 0..0xffffffffL - 36 && size % (channels * 2) == 0L)
     return ByteBuffer.allocate(44).order(ByteOrder.LITTLE_ENDIAN).apply {
         put("RIFF".toByteArray()); putInt((size + 36).toInt()); put("WAVEfmt ".toByteArray())
-        putInt(16); putShort(1); putShort(2); putInt(32_000); putInt(128_000)
-        putShort(4); putShort(16); put("data".toByteArray()); putInt(size.toInt())
+        putInt(16); putShort(1); putShort(channels.toShort()); putInt(32_000); putInt(64_000 * channels)
+        putShort((2 * channels).toShort()); putShort(16); put("data".toByteArray()); putInt(size.toInt())
     }.array()
 }
 
@@ -102,7 +95,7 @@ internal class N76WaveFile(file: File) : AutoCloseable {
     }
     fun write(bytes: ByteArray) {
         check(!closed)
-        require(bytes.size % 4 == 0 && size + bytes.size <= 0xffffffffL - 36)
+        require(bytes.size % 2 == 0 && size + bytes.size <= 0xffffffffL - 36)
         output.write(bytes); size += bytes.size
     }
     override fun close() {
@@ -115,7 +108,6 @@ internal class N76WaveFile(file: File) : AutoCloseable {
 
 internal class AndroidN76Recording(
     private val context: Context,
-    private val io: N76AudioIo,
     private val scope: CoroutineScope,
     private val diagnostics: IControlDiagnostics = NoOpControlDiagnostics,
     private val options: () -> N76ControlOptions
@@ -126,9 +118,7 @@ internal class AndroidN76Recording(
     override val state: StateFlow<N76RecordingState> = mutableState
     private val mutex = Mutex()
     private val exporter = N76RecordingExportQueue(scope, mutableState, diagnostics)
-    private val microphone = N76PcmRing()
     private val radio = N76PcmRing()
-    private var micJob: Job? = null
     private var writerJob: Job? = null
     private var player: MediaPlayer? = null
     @Volatile private var recordRadio = false
@@ -137,14 +127,12 @@ internal class AndroidN76Recording(
         if (mutableState.value.recording) return@withLock true
         val settings = options().normalized()
         when {
-            !settings.recordRadio && !settings.recordMicrophone -> return@withLock failed("Select a recording source in CAT settings")
-            settings.recordRadio && !radioAudioAvailable -> return@withLock failed("Enable Bluetooth audio to record the radio")
-            settings.recordMicrophone && !io.hasMicrophonePermission() -> return@withLock failed("Allow microphone access to record the phone")
+            !settings.recordRadio -> return@withLock failed("Select radio recording in CAT settings")
+            !radioAudioAvailable -> return@withLock failed("Enable Bluetooth audio to record the radio")
         }
-        micJob?.cancelAndJoin(); micJob = null
         writerJob?.join()
         stopPlayback()
-        microphone.clear(); radio.clear(); recordRadio = settings.recordRadio
+        radio.clear(); recordRadio = true
         if (!directory.exists() && !directory.mkdirs()) return@withLock failed("Cannot create the recording folder")
         val stamp = SimpleDateFormat("yyyyMMdd-HHmmss-SSS", Locale.ROOT).format(Date())
         val name = satelliteName.replace(Regex("[^A-Za-z0-9._-]"), "_").take(48)
@@ -153,13 +141,6 @@ internal class AndroidN76Recording(
         val output = try { N76WaveFile(file) }
         catch (error: Exception) { return@withLock failed(error.message ?: "Cannot create recording") }
         mutableState.update { it.copy(recording = true, error = null) }
-        if (settings.recordMicrophone) micJob = scope.launch(Dispatchers.IO) {
-            try {
-                io.microphone().collect { microphone.offer(it) }
-                failed("Phone microphone stream ended")
-            } catch (cancelled: CancellationException) { throw cancelled }
-            catch (error: Exception) { failed(error.message ?: "Microphone recording failed") }
-        }
         writerJob = scope.launch(Dispatchers.IO) {
             var size = 0L
             val started = System.nanoTime()
@@ -169,15 +150,14 @@ internal class AndroidN76Recording(
                     val next = started + (++blocks * 20_000_000)
                     val wait = (next - System.nanoTime()) / 1_000_000
                     if (wait > 0) delay(wait)
-                    if (size + 2560 > 0xffffffffL - 36) { failed("Recording reached the WAV size limit"); break }
-                    output.write(n76StereoPcm(microphone.read(640), radio.read(640), settings.micGainDb))
-                    size += 2560
+                    if (size + 1280 > 0xffffffffL - 36) { failed("Recording reached the WAV size limit"); break }
+                    output.write(n76MonoPcm(radio.read(640)))
+                    size += 1280
                 }
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (error: Exception) { failed(error.message ?: "Recording write failed") }
             finally {
                 withContext(NonCancellable) {
-                    micJob?.cancelAndJoin(); micJob = null
                     var finalized = false
                     try { output.close(); finalized = true }
                     catch (error: Exception) { failed(error.message ?: "Recording finalization failed") }
@@ -198,7 +178,6 @@ internal class AndroidN76Recording(
     override suspend fun stop(): Boolean = withContext(NonCancellable) {
         mutex.withLock {
             mutableState.update { it.copy(recording = false) }
-            micJob?.cancelAndJoin(); micJob = null
             writerJob?.join(); writerJob = null
             recordRadio = false
             true

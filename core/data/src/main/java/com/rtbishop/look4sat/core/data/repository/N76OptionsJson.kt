@@ -21,7 +21,7 @@ internal fun n76OptionsFromJson(text: String?): N76ControlOptions = runCatching 
     N76ControlOptions(
         firmwareMode = N76FirmwareMode.entries.firstOrNull { it.name == json.optString("firmware") } ?: N76FirmwareMode.AUTO,
         sendSatelliteInfo = json.optBoolean("satelliteInfo", true), pollMillis = json.optLong("poll", 1_000),
-        power = N76Power.entries.firstOrNull { it.name == json.optString("power") } ?: N76Power.UNCHANGED,
+        power = N76Power.entries.firstOrNull { it.name == json.optString("power") } ?: N76Power.HIGH,
         openSquelchOnTrack = json.optBoolean("squelch", false),
         forceRxCtcss = json.optBoolean("forceRx", false), rxCtcssHz = json.optDouble("rxTone", Double.NaN).takeIf { it.isFinite() },
         forceTxCtcss = json.optBoolean("forceTx", false), txCtcssHz = json.optDouble("txTone", Double.NaN).takeIf { it.isFinite() },

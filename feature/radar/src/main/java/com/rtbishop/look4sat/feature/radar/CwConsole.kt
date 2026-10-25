@@ -220,8 +220,7 @@ internal fun CwConsole(
                     item { HorizontalDivider(); Text(stringResource(R.string.radar_cw_decoder), color = MaterialTheme.colorScheme.primary) }
                     item { SharedCwDecoderPanel(state.cw, onAction, requestMicPermission, logViewModel::updateCallsign) }
                     item {
-                        // The CW calculator must show the exact nominal frequencies from the
-                        // transponder list, not the live Doppler-corrected display entries.
+                        // Both calculators start with the same uncorrected transponder entry.
                         val linearTransponders = remember(state.transceivers.nominalTransmitters) {
                             state.transceivers.nominalTransmitters.filter(DopplerFrequencyCalculatorUtil::isNamedLinearTransponder)
                                 .let(DopplerFrequencyCalculatorUtil::deduplicateTransponders)
@@ -243,8 +242,10 @@ internal fun CwConsole(
                                 onOffsetChange = { onAction(RadarAction.ChangeCalculatorOffset(it)) },
                                 onFrequencyChange = { tx, rx -> onAction(RadarAction.UpdateCalculatorFrequency(tx, rx)) },
                                 onTuningChange = { if (!control.frequencyEditingLocked && (control.txPanel.isConnected || control.rxPanel.isConnected)) onAction(RadarAction.TuneCalculator(it)) },
-                                // CW calculator starts from the transponder-list passband, not the
-                                // live radio/tracking base frequency, which may be Doppler-corrected.
+                                initialTxBaseHz = control.txBaseFrequencyHz.takeIf {
+                                    transponder.uuid == control.selectedTransponderUuid },
+                                reference = control.calculatorReferenceFor(transponder.uuid,
+                                    DopplerFrequencyCalculatorUtil.parseOffsetHz(state.calculatorOffsetKHz)),
                                 editingEnabled = !control.frequencyEditingLocked || transponder.uuid != control.selectedTransponderUuid ||
                                     (!control.txPanel.isConnected && !control.rxPanel.isConnected),
                                 displayNominalFrequencies = true,

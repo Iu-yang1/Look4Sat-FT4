@@ -24,6 +24,8 @@ import com.rtbishop.look4sat.core.domain.predict.OrbitalPass
 import com.rtbishop.look4sat.core.domain.predict.OrbitalPos
 import com.rtbishop.look4sat.core.domain.sstv.SstvFrame
 import com.rtbishop.look4sat.core.domain.sstv.SstvQualityMetrics
+import com.rtbishop.look4sat.core.domain.utility.CalculatorReference
+import com.rtbishop.look4sat.core.domain.repository.RadioTrackingState
 
 data class RadioPanelState(
     val label: String = "",
@@ -55,7 +57,8 @@ data class RadioControlSubState(
     val calculatorLinked:Boolean=false,
     val txDopplerHz:Long?=null,val rxDopplerHz:Long?=null,
     val referenceDirty:Boolean=false,
-    val serviceEditingLocked:Boolean=false
+    val serviceEditingLocked:Boolean=false,
+    val calculatorReference: CalculatorReference? = null
 ) {
     val catControlsActive get() = catEnabled && catTransport != RadioControlSettings.TRANSPORT_VOX
     val remoteControlsVisible get() = catControlsActive && remoteRadio?.connected == true &&
@@ -66,6 +69,23 @@ data class RadioControlSubState(
     val frequencyEditingLocked get()=serviceEditingLocked || isTracking && !isReady || pttState!=com.rtbishop.look4sat.core.domain.repository.PttState.OFF ||
         transmitOwner!=com.rtbishop.look4sat.core.domain.repository.RadioTransmitOwner.NONE || remoteRadio?.txSource?.let {it!=0}==true ||
         remoteRadio?.nativeMenuOpen==true || remoteRadio?.profileStore?.busy==true || remoteRadio?.let {!it.connected || !it.transmitStateKnown}==true
+}
+
+internal fun RadioControlSubState.updatedCalculatorReference(service: RadioTrackingState, offsetHz: Long): CalculatorReference? {
+    if (service.calculatorLinked) return service.calculatorReference
+        ?: calculatorReference.takeIf { selectedTransponderUuid == service.selectedTransponder?.uuid }
+    val tx = service.txBaseFrequencyHz ?: return null
+    val rx = service.nominalRxFrequencyHz ?: return null
+    val previous = calculatorReference.takeIf { selectedTransponderUuid == service.selectedTransponder?.uuid }
+    return previous?.takeIf { it.txHz == tx && it.rxHz == rx }
+        ?: CalculatorReference(tx, rx, offsetHz).takeIf(CalculatorReference::valid)
+}
+
+internal fun RadioControlSubState.calculatorReferenceFor(uuid: String, offsetHz: Long): CalculatorReference? {
+    if (uuid != selectedTransponderUuid) return null
+    return calculatorReference ?: txBaseFrequencyHz?.let { tx -> referenceRxHz?.let { rx ->
+        CalculatorReference(tx, rx, offsetHz).takeIf(CalculatorReference::valid)
+    } }
 }
 
 data class TransceiverSubState(

@@ -896,7 +896,7 @@ private fun PagerCard(
                         connectRadios = connectRadios
                     )
                     RadarPage.Calculator -> CalculatorPage(
-                        transceivers = uiState.transceivers.transmitters,
+                        transceivers = uiState.transceivers.nominalTransmitters,
                         selectedUuid = uiState.transceivers.selectedUuid,
                         orbitalPos = uiState.orbitalPos,
                         cw = uiState.cw,

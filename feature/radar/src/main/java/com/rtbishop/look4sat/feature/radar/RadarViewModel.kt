@@ -264,6 +264,9 @@ class RadarViewModel(
                             calculatorLinked=svc.calculatorLinked,
                             txDopplerHz=svc.txDopplerCorrectionHz,rxDopplerHz=svc.rxDopplerCorrectionHz,
                             referenceDirty=svc.referenceDirty,
+                            calculatorReference=state.radioControl.updatedCalculatorReference(svc,
+                                com.rtbishop.look4sat.core.domain.utility.DopplerFrequencyCalculator.parseOffsetHz(
+                                    svc.selectedTransponder?.catnum?.let(settingsRepo::getSatelliteOffset).orEmpty())),
                             serviceEditingLocked=svc.frequencyEditingLocked
                         )
                     )

@@ -515,6 +515,30 @@ class RadioTrackingServiceTest {
         fixture.close()
     }
 
+    @Test fun calibratedCalculatorReferenceSurvivesTrackingTicksAndManualEditsExitLinking() = runTest {
+        val tx=FakeRadioController(remote=remoteFixtureState())
+        val fixture=Fixture(backgroundScope,tx,FakeRadioController(),radioModel=RadioControlSettings.MODEL_QUANSHENG_UVK1,
+            splitMode=true,transport=RadioControlSettings.TRANSPORT_USB)
+        fixture.transponder=fixture.transponder.copy(uplinkHigh=146000000,downlinkHigh=435200000,isInverted=true)
+        fixture.service.connectRadios();fixture.startTracking();runCurrent()
+        val reference=com.rtbishop.look4sat.core.domain.utility.CalculatorReference(145970000,435165000)
+        fixture.service.setBaseFrequencies(com.rtbishop.look4sat.core.domain.repository.RadioBaseFrequencies(reference.rxHz,reference.txHz))
+        runCurrent()
+        val tuning=CalculatorTuning(fixture.transponder.uuid,CalculatorFrequencyAnchor.SATELLITE,reference.txHz+1000,reference)
+        fixture.service.tuneFromCalculator(fixture.transponder,tuning);runCurrent()
+        repeat(3) {
+            advanceTimeBy(1100);runCurrent()
+            val expected=tuning.frequencies(fixture.transponder,fixture.position,0)!!
+            assertEquals(expected.txHz,tx.txFrequencyHz)
+            assertEquals(expected.rxHz,tx.frequencyHz)
+            assertEquals(reference,fixture.service.state.value.calculatorReference)
+        }
+        fixture.service.setRxBaseFrequency(435167000);runCurrent()
+        assertFalse(fixture.service.state.value.calculatorLinked)
+        assertEquals(435167000L,fixture.service.state.value.nominalRxFrequencyHz)
+        fixture.close()
+    }
+
     @Test fun calculatorRxEditDuringCwIsRejectedWithoutStoppingOrQueuing() = runTest {
         val tx=FakeRadioController(remote=remoteFixtureState())
         val fixture=Fixture(backgroundScope,tx,FakeRadioController(),radioModel=RadioControlSettings.MODEL_QUANSHENG_UVK1,

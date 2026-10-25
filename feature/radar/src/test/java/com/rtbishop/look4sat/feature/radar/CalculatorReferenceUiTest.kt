@@ -1,0 +1,78 @@
+package com.rtbishop.look4sat.feature.radar
+
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.test.*
+import androidx.compose.ui.test.junit4.createComposeRule
+import com.rtbishop.look4sat.core.domain.model.SatRadio
+import com.rtbishop.look4sat.core.domain.predict.OrbitalPos
+import com.rtbishop.look4sat.core.domain.utility.CalculatorFrequencyAnchor
+import com.rtbishop.look4sat.core.domain.utility.CalculatorReference
+import com.rtbishop.look4sat.core.domain.utility.CalculatorTuning
+import com.rtbishop.look4sat.core.domain.utility.frequencies
+import com.rtbishop.look4sat.core.presentation.MainTheme
+import org.junit.Assert.*
+import org.junit.Rule
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
+import org.robolectric.annotation.GraphicsMode
+
+@RunWith(RobolectricTestRunner::class)
+@GraphicsMode(GraphicsMode.Mode.NATIVE)
+@Config(sdk=[34],qualifiers="en-w411dp-h891dp-port")
+class CalculatorReferenceUiTest {
+    @get:Rule val compose=createComposeRule()
+    private val radio=SatRadio("linear","Linear Transponder",true,435000000,435100000,"USB",
+        145900000,146000000,"USB",true,12345)
+
+    private fun exercise(nominal: Boolean) {
+        val reference=mutableStateOf(CalculatorReference(145962000,435057000,2500))
+        val position=mutableStateOf(OrbitalPos())
+        val tunings=mutableListOf<CalculatorTuning>()
+        var pair=0L to 0L
+        compose.setContent {
+            MainTheme(isDarkTheme=nominal) {
+                DopplerFrequencyCalculator(radio,position.value,offsetKHz="2.5",
+                    initialTxBaseHz=reference.value.txHz,reference=reference.value,
+                    displayNominalFrequencies=nominal,onFrequencyChange={tx,rx->pair=tx to rx},
+                    onTuningChange={tunings+=it})
+            }
+        }
+        val format=if(nominal) "%.3f" else "%.6f"
+        fun assertFrequency(tag: String, hz: Long) {
+            compose.onNodeWithTag(tag).assertTextEquals(String.format(java.util.Locale.ENGLISH,format,hz/1e6))
+        }
+        assertFrequency("calculatorTxFrequency",145962000)
+        assertFrequency("calculatorRxFrequency",435057000)
+        compose.runOnIdle { reference.value=CalculatorReference(145965000,435059000,2500) }
+        assertFrequency("calculatorTxFrequency",145965000)
+        assertFrequency("calculatorRxFrequency",435059000)
+        compose.runOnIdle { assertTrue(tunings.isEmpty()) }
+        compose.onAllNodesWithText("+").onFirst().performClick()
+        compose.runOnIdle {
+            val tuning=tunings.single()
+            assertEquals(reference.value,tuning.reference)
+            if(nominal) assertEquals(CalculatorFrequencyAnchor.SATELLITE,tuning.anchor)
+            val expected=tuning.frequencies(radio,position.value,2500)!!
+            assertEquals(expected.txHz,pair.first)
+            assertTrue(kotlin.math.abs(expected.rxHz-pair.second)<=2)
+        }
+        if(nominal) {
+            val chosen=pair.first
+            compose.runOnIdle { position.value=OrbitalPos(distanceRate=7.0) }
+            assertFrequency("calculatorTxFrequency",chosen)
+            compose.waitUntil(timeoutMillis=3000) {
+                pair.first==tunings.single().frequencies(radio,position.value,2500)!!.txHz
+            }
+            compose.runOnIdle {
+                val expected=tunings.single().frequencies(radio,position.value,2500)!!
+                assertEquals(expected.txHz,pair.first)
+                assertTrue(kotlin.math.abs(expected.rxHz-pair.second)<=2)
+            }
+        }
+    }
+
+    @Test fun trackingCalculatorUpdatesBothReferencesWithoutAutomaticallyRetuning()=exercise(false)
+    @Test fun cwCalculatorUsesTheSameReferencesAndKeepsNominalTuningAcrossDopplerChanges()=exercise(true)
+}

@@ -1380,7 +1380,7 @@ class RadioTrackingService(
     override fun tuneFromCalculator(transponder: SatRadio, tuning: CalculatorTuning) {
         if(userFrequencyEditingBlocked()) {failTrackingCommand(frequencyEditingBlockMessage());return}
         if (tuning.transponderUuid != transponder.uuid || tuning.frequencyHz <= 0 ||
-            !DopplerFrequencyCalculator.isLinearTransponder(transponder)) return
+            !DopplerFrequencyCalculator.isLinearTransponder(transponder) || tuning.reference?.valid()==false) return
         if (_state.value.isActive && _state.value.currentPass?.catNum != transponder.catnum) {
             failTrackingCommand("Start tracking the calculator satellite before tuning its radio")
             return
@@ -1388,7 +1388,7 @@ class RadioTrackingService(
         fun accept() {
             nativeBaseOverride=null
             calculatorTuning = tuning
-            _state.update {it.copy(calculatorLinked=true,referenceDirty=true)}
+            _state.update {it.copy(calculatorLinked=true,referenceDirty=true,calculatorReference=tuning.reference)}
             tuningRevision.incrementAndGet()
             tuningWake.trySend(Unit)
             diagnose("calculator/tune", "anchor=${tuning.anchor} frequencyHz=${tuning.frequencyHz}")

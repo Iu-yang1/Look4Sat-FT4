@@ -7,6 +7,7 @@ import com.rtbishop.look4sat.core.domain.model.N76ControlOptions
 import com.rtbishop.look4sat.core.domain.model.N76FirmwareMode
 import com.rtbishop.look4sat.core.domain.model.N76Power
 import com.rtbishop.look4sat.core.domain.model.RadioRecordingAction
+import com.rtbishop.look4sat.core.data.repository.n76OptionsFromJson
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import kotlinx.coroutines.CoroutineScope
@@ -57,6 +58,19 @@ class N76ControllerTest {
         assertEquals("ISS (ZARYA)", bytes.take(11).toByteArray().toString(Charsets.US_ASCII))
         assertEquals("3900b40031fb01b00c12", bytes.copyOfRange(20, 30).hex())
         assertEquals(30, N76Protocol.satelliteInfo(RadioTrackingDisplay("X".repeat(60), 360.0, 90.0)).size)
+    }
+
+    @Test fun oldPartialReplyCannotAcknowledgeANewCommandButNotificationsAreRetained() {
+        val oldReply = N76Protocol.frame(20, byteArrayOf(0, 0, 0, 0, 0), reply = true)
+        val newReply = N76Protocol.frame(20, byteArrayOf(0, 0x40, 0, 0, 0), reply = true)
+        for (cut in 1 until oldReply.size) {
+            val decoder = N76Protocol.Decoder()
+            decoder.feed(oldReply.copyOfRange(0, cut))
+            decoder.beginRequest()
+            val replies = decoder.feed(oldReply.copyOfRange(cut, oldReply.size) + newReply)
+            assertEquals(1, replies.size)
+            assertEquals(0x40, replies.single().payload[1].toInt())
+        }
     }
 
     @Test fun connectsReadOnlyRegistersWithoutWaitingForAckAndStartsNoTransmitter() = withRadio { radio, wire, _ ->
@@ -124,7 +138,7 @@ class N76ControllerTest {
             assertEquals(FrequencyPairResult.APPLIED, radio.setTrackingFrequencies(437_797_591L + index, 145_990_803L - index))
         }
         val tunes = wire.sent.filter { it.command == 35 }
-        assertEquals(listOf("0a00", "0a00", "0a00"), tunes.map { it.payload.copyOfRange(12, 14).hex() })
+        assertEquals(listOf("0a03", "0a03", "0a03"), tunes.map { it.payload.copyOfRange(12, 14).hex() })
         for (index in wire.sent.indices.filter { wire.sent[it].command == 35 }) assertEquals(77, wire.sent[index - 1].command)
         assertEquals(145_990_801L, radio.remoteState.value.txFrequencyHz)
         assertTrue(radio.setSplitMode(false))
@@ -475,6 +489,63 @@ class N76ControllerTest {
         assertFalse(wire.transmitting)
     }
 
+    @Test fun defaultHighSelectionEncodesTheRequestedCodeInBothFirmwareModes() = runBlocking {
+        for (mode in listOf(N76FirmwareMode.EXACT, N76FirmwareMode.SATELLITE)) {
+            withRadio(options = N76ControlOptions(firmwareMode = mode)) { radio, wire, _ ->
+                ready(radio)
+                repeat(3) { assertEquals(FrequencyPairResult.APPLIED,
+                    radio.setTrackingFrequencies(435_000_000L + it, 145_950_000)) }
+                assertTrue(wire.sent.filter { it.command == 35 }.all { it.payload[13].toInt() and 3 == 3 })
+            }
+        }
+    }
+
+    @Test fun upgradedLegacyDefaultRequestsHighOnTrackingButNeverKeysTheTransmitter() = withRadio(
+        options=n76OptionsFromJson("{\"power\":\"UNCHANGED\"}")
+    ) { radio,wire,diagnostics ->
+        assertFalse(wire.commands().contains(35))
+        ready(radio)
+        repeat(4) { assertEquals(FrequencyPairResult.APPLIED,
+            radio.setTrackingFrequencies(435000000L+it,145950000)) }
+        assertTrue(wire.sent.filter { it.command==35 }.all { it.payload[13].toInt() and 3==3 })
+        val power=diagnostics.events.value.filter { it.stage=="n76/power/request" }
+        assertEquals(1,power.size)
+        assertTrue(power.single().message.contains("selection=HIGH code=3"))
+        assertFalse(wire.commands().contains(66))
+        assertFalse(wire.transmitting)
+    }
+
+    @Test fun fragmentedNotificationSurvivesAnEmptyPollBeforeTheNextCommand() = withRadio { radio, wire, _ ->
+        val notification = N76Protocol.frame(9, byteArrayOf(14) +
+            ByteBuffer.allocate(14).putInt(435_000_123).putInt(145_950_123).put(ByteArray(5)).put(1).array())
+        wire.queueBeforeCommand(notification.copyOfRange(0, 7), byteArrayOf())
+        wire.appendInput(notification.copyOfRange(7, notification.size))
+        assertNotNull(radio.readFrequencyAndMode())
+        assertEquals(145_950_123L, radio.remoteState.value.txFrequencyHz)
+        assertTrue(radio.isConnected)
+    }
+
+    @Test fun notificationBurstDoesNotRequireAQuietInputToKeepCatConnected() = withRadio { radio, wire, diagnostics ->
+        repeat(9) { wire.queueBeforeCommand(N76Protocol.frame(9, byteArrayOf(1, 0, 0, 0, 0))) }
+        assertNotNull(radio.readFrequencyAndMode())
+        assertTrue(radio.isConnected)
+        assertTrue(diagnostics.events.value.any { it.stage == "n76/input/busy" })
+    }
+
+    @Test fun optionalDisplayAndFrequencyReadTimeoutsKeepTheConnectionForStatusRecovery() = withRadio { radio, wire, _ ->
+        ready(radio)
+        wire.suppress = 77
+        assertEquals(FrequencyPairResult.FAILED, radio.setTrackingFrequencies(435_000_000, 145_950_000))
+        assertTrue(radio.isConnected)
+        assertFalse(wire.commands().contains(35))
+        wire.suppress = 36
+        assertNull(radio.readFrequencyAndMode())
+        assertTrue(radio.isConnected)
+        wire.suppress = null
+        assertFalse(radio.readPttState()!!)
+        assertEquals(FrequencyPairResult.APPLIED, radio.setTrackingFrequencies(435_000_000, 145_950_000))
+    }
+
     private suspend fun ready(radio: N76Controller) {
         assertTrue(radio.prepareTrackingContext("satellite-transponder"))
         assertTrue(radio.setSplitModes("FM", "FM"))
@@ -541,6 +612,9 @@ class N76ControllerTest {
         var alternatives = 0
         var onFrequencyWrite: (suspend () -> Unit)? = null
         private var input = byteArrayOf()
+        private val queuedReads = ArrayDeque<ByteArray>()
+        fun queueBeforeCommand(vararg chunks: ByteArray) { queuedReads.addAll(chunks.toList()) }
+        fun appendInput(bytes: ByteArray) { input += bytes }
         var bss = ByteArray(46).also { it[2] = 2 }
         override val canTryAlternativeConnection get() = silentUntilAlternative && alternatives == 0
         override fun configureBluetoothConnection(secureFirst: Boolean, timeoutMillis: Long) { this.secureFirst = secureFirst }
@@ -573,6 +647,7 @@ class N76ControllerTest {
             return true
         }
         override suspend fun readAvailable(maxBytes: Int): ByteArray {
+            if (queuedReads.isNotEmpty()) return queuedReads.removeFirst()
             // Fragment every response, including coalesced echo + reply.
             val count = minOf(maxBytes, 7, input.size)
             val result = input.copyOfRange(0, count)

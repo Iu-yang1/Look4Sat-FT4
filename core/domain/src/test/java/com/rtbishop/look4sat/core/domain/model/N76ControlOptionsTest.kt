@@ -4,15 +4,21 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class N76ControlOptionsTest {
-    @Test fun defaultsDoNotChangePowerStartRecordingOrOverrideTones() {
+    @Test fun defaultsUseHighPowerWithoutStartingRecordingOrOverridingTones() {
         val options = N76ControlOptions()
-        assertEquals(N76Power.UNCHANGED, options.power)
+        assertEquals(N76Power.HIGH, options.power)
         assertFalse(options.recordOnTrack)
         assertFalse(options.recordRadio)
         assertFalse(options.recordMicrophone)
         assertFalse(options.forceRxCtcss)
         assertFalse(options.forceTxCtcss)
         assertEquals(1000L, options.pollMillis)
+    }
+    @Test fun oldMicrophoneRecordingSelectionMigratesToRadioOnly() {
+        val options = N76ControlOptions(recordMicrophone = true).normalized()
+        assertTrue(options.recordRadio)
+        assertFalse(options.recordMicrophone)
+        assertEquals(options, options.normalized())
     }
     @Test fun firmwareOverrideAndNormalizationArePredictable() {
         assertFalse(N76ControlOptions().satelliteFirmware(136))

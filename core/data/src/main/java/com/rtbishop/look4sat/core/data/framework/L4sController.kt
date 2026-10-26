@@ -15,6 +15,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -53,6 +54,7 @@ class L4sController(
 
     override suspend fun connect(): Boolean = withContext(dispatcher) {
         if(isConnected) return@withContext true
+        heartbeat?.cancelAndJoin();heartbeat=null
         transport.setCdcDtrOnConnect(true)
         diagnose("l4s/transport", "Opening native CDC with DTR=1 RTS=0")
         if(!transport.connect()) {
@@ -85,12 +87,16 @@ class L4sController(
                             state.update { it.copy(connected=false,error=it.error ?: "L4S heartbeat lost; reconnect") }
                             transport.disconnect()
                         }
-                        if(isConnected && caps.nativeSettings && ++polls%2==0) {
-                            if(caps.satelliteProfiles) request(L4sProtocol.PROFILE,byteArrayOf(2)) else request(L4sProtocol.SETTINGS)
-                            if(caps.transactionalProfileStore) request(L4sProtocol.PROFILE_STORE,byteArrayOf(0))
+                        // At most one optional read between heartbeats. A busy
+                        // flash/menu reply must not delay the next keepalive.
+                        if(isConnected && state.value.txSource==0) when(++polls%5) {
+                            1 -> if(caps.nativeSettings) {
+                                if(caps.satelliteProfiles) request(L4sProtocol.PROFILE,byteArrayOf(2)) else request(L4sProtocol.SETTINGS)
+                            }
+                            2 -> if(caps.transactionalProfileStore) request(L4sProtocol.PROFILE_STORE,byteArrayOf(0))
+                            3 -> if(caps.handsetMacros) request(L4sProtocol.MACROS,byteArrayOf(0,-1))
+                            4 -> if(caps.cwOptions) request(L4sProtocol.CW_OPTIONS,byteArrayOf(0))
                         }
-                        if(isConnected && caps.cwOptions && polls%5==0) request(L4sProtocol.CW_OPTIONS,byteArrayOf(0))
-                        if(isConnected && caps.handsetMacros) request(L4sProtocol.MACROS,byteArrayOf(0,-1))
                     }
                 } catch(cancelled: CancellationException) { throw cancelled }
                 catch(error: Exception) {
@@ -111,7 +117,7 @@ class L4sController(
     }
 
     override suspend fun disconnect() = withContext(dispatcher+NonCancellable) {
-        heartbeat?.cancel();heartbeat=null
+        heartbeat?.cancelAndJoin();heartbeat=null
         if(transport.isConnected) {
             request(L4sProtocol.STOP)
             request(L4sProtocol.CLOSE)
@@ -143,22 +149,27 @@ class L4sController(
                         return@withLock null
                     }
                 }
-                val response=withTimeoutOrNull(if(command in setOf(L4sProtocol.PROFILE_STORE,L4sProtocol.MACROS))250L else 600L) {
-                    var match: L4sProtocol.Reply?=null
-                    while(match==null) {
-                        val chunk=transport.readAvailable(1024)
-                        receivedBytes+=chunk.size
-                        decoder.feed(chunk).forEach { plain ->
-                            val reply=L4sProtocol.reply(plain)
-                            if(reply!=null && reply.command==command && reply.sequence==seq &&
-                                (reply.session==wireSession || command==L4sProtocol.HELLO ||
-                                    reply.session==0L && (reply.result==3 || command==L4sProtocol.CLOSE))) match=reply
+                var response: L4sProtocol.Reply?=null
+                withTimeoutOrNull(if(command in setOf(L4sProtocol.PROFILE_STORE,L4sProtocol.MACROS))250L else 600L) {
+                    while(response==null && transport.isConnected) {
+                        // USB bulk reads are bounded by the transport. Decode
+                        // consumed bytes even if the reply deadline just expired.
+                        withContext(NonCancellable) {
+                            val chunk=transport.readAvailable(1024)
+                            receivedBytes+=chunk.size
+                            decoder.feed(chunk).forEach { plain ->
+                                val reply=L4sProtocol.reply(plain)
+                                if(reply!=null && reply.command==command && reply.sequence==seq &&
+                                    (reply.session==wireSession || command==L4sProtocol.HELLO ||
+                                        reply.session==0L && (reply.result==3 || command==L4sProtocol.CLOSE))) response=reply
+                            }
                         }
-                        if(match==null) delay(5)
+                        if(response==null) delay(5)
                     }
-                    match
                 }
-                if(response!=null) {
+                val replyResponse=response
+                if(replyResponse!=null) {
+                    val response=replyResponse
                     if(command!=L4sProtocol.KEEPALIVE) diagnose("l4s/reply","cmd=$label seq=$seq result=${response.result} rxBytes=$receivedBytes")
                     if(command!=L4sProtocol.HELLO) {
                         if(command in setOf(L4sProtocol.CW_OPTIONS,L4sProtocol.MACROS) && response.result<=1) {
@@ -378,6 +389,12 @@ class L4sController(
     }
 
     private suspend fun preparePair(): Boolean {
+        // Macro cancellation/menu exit may complete before the next scheduled
+        // settings poll. Check current handset state before judging TX readiness.
+        val caps=state.value.capabilities ?: return false
+        val statusCommand=if(caps.satelliteProfiles) L4sProtocol.PROFILE
+            else if(caps.nativeSettings) L4sProtocol.SETTINGS else L4sProtocol.STATUS
+        if(!ok(request(statusCommand,if(statusCommand==L4sProtocol.PROFILE) byteArrayOf(2) else byteArrayOf()))) return false
         val raw=rawTargets ?: return false
         val rawTx=raw.txHz ?: return false
         val current=state.value

@@ -1077,6 +1077,10 @@ class SettingsRepo(
 
     //region # Per-satellite calculator offset settings
     private val keySatelliteOffsets = "satelliteOffsets"
+    override fun getRadioBaseFrequencies(transponderUuid: String) = readRadioBaseFrequencies(preferences, transponderUuid)
+
+    override fun setRadioBaseFrequencies(transponderUuid: String, bases: com.rtbishop.look4sat.core.domain.repository.RadioBaseFrequencies) =
+        writeRadioBaseFrequencies(preferences, transponderUuid, bases)
     private val keyLegacySatelliteOffsetPrefix = "offset_khz_"
 
     override fun getSatelliteOffset(catnum: Int): String {

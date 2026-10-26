@@ -76,9 +76,6 @@ internal fun RemoteRadioControls(control: RadioControlSubState, onAction: (Radar
     DisposableEffect(Unit) { onDispose { action(RadarAction.StopRemoteTx) } }
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         if (caps?.cwText == true) {
-            OutlinedButton(onClick = { action(RadarAction.OpenCwConsole) }, modifier = Modifier.fillMaxWidth()) {
-                Text(stringResource(R.string.rc_l4s_cw))
-            }
             cwBlockReason?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
         }
         if (caps?.cwText == true || caps?.nativeSettings == true) {

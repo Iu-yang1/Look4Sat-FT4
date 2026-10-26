@@ -2,6 +2,7 @@
 package com.rtbishop.look4sat.core.data.framework
 
 import com.rtbishop.look4sat.core.domain.repository.RadioTrackingDisplay
+import com.rtbishop.look4sat.core.domain.model.N76Power
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import kotlin.math.roundToInt
@@ -36,6 +37,15 @@ internal object N76Protocol {
     }
 
     fun validFrequency(hz: Long): Boolean = hz in 136_000_000L..174_000_000L || hz in 400_000_000L..480_000_000L
+
+    // Keep wire values independent of enum order. This is the existing mapping
+    // from Look4Sat-n76; an ACK alone does not verify the radio's physical power.
+    fun powerCode(power: N76Power): Int = when(power) {
+        N76Power.UNCHANGED -> 0
+        N76Power.LOW -> 1
+        N76Power.MEDIUM -> 2
+        N76Power.HIGH -> 3
+    }
 
     fun frequencyParameters(pair: Frequencies, txToneHz: Double?, satelliteUpdates: Int,
         satelliteFirmware: Boolean = true, rxToneHz: Double? = null, powerCode: Int? = null): ByteArray {
@@ -86,7 +96,9 @@ internal object N76Protocol {
 
     class Decoder {
         private var pending = byteArrayOf()
-        fun clear() { pending = byteArrayOf() }
+        private var stalePrefix = 0
+        fun clear() { pending = byteArrayOf(); stalePrefix = 0 }
+        fun beginRequest() { stalePrefix = pending.size }
 
         fun feed(bytes: ByteArray): List<Packet> {
             // At most one partial 264-byte frame is retained between reads.
@@ -106,11 +118,16 @@ internal object N76Protocol {
                 val buffer = ByteBuffer.wrap(input, offset + 4, 4).order(ByteOrder.BIG_ENDIAN)
                 val group = buffer.short.toInt() and 65535
                 val command = buffer.short.toInt() and 65535
-                packets += Packet(group, command and 0x7fff, command and 0x8000 != 0,
-                    input.copyOfRange(offset + 8, offset + length - (flags and 1)))
+                // Preserve split notifications without accepting an old partial
+                // reply as acknowledgement of a newly written command.
+                if (command and 0x8000 == 0 || offset >= stalePrefix) {
+                    packets += Packet(group, command and 0x7fff, command and 0x8000 != 0,
+                        input.copyOfRange(offset + 8, offset + length - (flags and 1)))
+                }
                 offset += length
             }
             pending = input.copyOfRange(offset, input.size).takeLast(263).toByteArray()
+            stalePrefix = (stalePrefix - offset).coerceIn(0, pending.size)
             return packets
         }
     }

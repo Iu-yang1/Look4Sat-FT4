@@ -307,7 +307,9 @@ class RadioTrackingServiceTest {
             fixture.service.connectRadios();fixture.startTracking();runCurrent()
             fixture.service.setRxBaseFrequency(435108000);runCurrent()
             fixture.service.connectRadios();runCurrent()
-            assertNull(fixture.service.state.value.nominalRxFrequencyHz)
+            assertEquals(435108000L,fixture.service.state.value.nominalRxFrequencyHz)
+            assertNull(fixture.service.state.value.targetTxFrequencyHz)
+            assertFalse(fixture.service.state.value.isActive)
             fixture.transponder=fixture.transponder.copy(uuid="beacon",uplinkLow=null,uplinkHigh=null,downlinkMode="FM")
             val writes=tx.operations.count {it.startsWith("frequency:") || it.startsWith("tx-frequency:")}
             fixture.startTracking();runCurrent()
@@ -512,6 +514,111 @@ class RadioTrackingServiceTest {
         assertEquals(145950000,tx.txFrequencyHz)
         fixture.service.setTxBaseFrequency(145920000);runCurrent()
         assertEquals(fixture.position.getUplinkFreq(145920000),tx.txFrequencyHz)
+        fixture.close()
+    }
+
+    @Test fun calibratedCalculatorReferenceSurvivesTrackingTicksAndManualEditsExitLinking() = runTest {
+        val tx=FakeRadioController(remote=remoteFixtureState())
+        val fixture=Fixture(backgroundScope,tx,FakeRadioController(),radioModel=RadioControlSettings.MODEL_QUANSHENG_UVK1,
+            splitMode=true,transport=RadioControlSettings.TRANSPORT_USB)
+        fixture.transponder=fixture.transponder.copy(uplinkHigh=146000000,downlinkHigh=435200000,isInverted=true)
+        fixture.service.connectRadios();fixture.startTracking();runCurrent()
+        val reference=com.rtbishop.look4sat.core.domain.utility.CalculatorReference(145970000,435165000)
+        fixture.service.setBaseFrequencies(com.rtbishop.look4sat.core.domain.repository.RadioBaseFrequencies(reference.rxHz,reference.txHz))
+        runCurrent()
+        val tuning=CalculatorTuning(fixture.transponder.uuid,CalculatorFrequencyAnchor.SATELLITE,reference.txHz+1000,reference)
+        fixture.service.tuneFromCalculator(fixture.transponder,tuning);runCurrent()
+        repeat(3) {
+            advanceTimeBy(1100);runCurrent()
+            val expected=tuning.frequencies(fixture.transponder,fixture.position,0)!!
+            assertEquals(expected.txHz,tx.txFrequencyHz)
+            assertEquals(expected.rxHz,tx.frequencyHz)
+            assertEquals(reference,fixture.service.state.value.calculatorReference)
+        }
+        fixture.service.setRxBaseFrequency(435167000);runCurrent()
+        assertFalse(fixture.service.state.value.calculatorLinked)
+        assertEquals(435167000L,fixture.service.state.value.nominalRxFrequencyHz)
+        fixture.close()
+    }
+
+    @Test fun restartedServiceRestoresManualReferencesBeforeTrackingWithoutDefaultOverwrite() = runTest {
+        val first=Fixture(backgroundScope,FakeRadioController(),FakeRadioController())
+        first.service.setTransponder(first.transponder);runCurrent()
+        val expected=com.rtbishop.look4sat.core.domain.repository.RadioBaseFrequencies(435107000,145906000)
+        first.service.setBaseFrequencies(expected);runCurrent()
+        first.service.setTxBaseFrequency(145907000);runCurrent()
+        first.service.setRxBaseFrequency(435108000);runCurrent()
+        first.service.adjustTxBaseFrequency(1000);runCurrent()
+        val saved=first.settings.savedBases.toMap()
+        assertEquals(expected.copy(rxHz=435108000,txHz=145908000),saved[first.transponder.uuid])
+        first.close()
+        val second=Fixture(backgroundScope,FakeRadioController(),FakeRadioController())
+        second.settings.savedBases.putAll(saved)
+        second.service.setTransponder(second.transponder);runCurrent()
+        assertEquals(145908000L,second.service.state.value.txBaseFrequencyHz)
+        assertEquals(435108000L,second.service.state.value.nominalRxFrequencyHz)
+        second.service.connectRadios();second.startTracking();runCurrent()
+        assertEquals(145908000L,second.service.state.value.nominalTxFrequencyHz)
+        assertEquals(435108000L,second.service.state.value.nominalRxFrequencyHz)
+        assertFalse(second.service.state.value.calculatorLinked)
+        second.close()
+    }
+
+    @Test fun savedReferencesAreIsolatedAndNeverRestoreAnUplinkForReceiveOnlyTransponders() = runTest {
+        val fixture=Fixture(backgroundScope,FakeRadioController(),FakeRadioController())
+        val bases=com.rtbishop.look4sat.core.domain.repository.RadioBaseFrequencies(435108000,145908000)
+        fixture.settings.savedBases[fixture.transponder.uuid]=bases
+        fixture.service.setTransponder(fixture.transponder.copy(uplinkLow=null,uplinkHigh=null));runCurrent()
+        assertEquals(bases.rxHz,fixture.service.state.value.nominalRxFrequencyHz)
+        assertNull(fixture.service.state.value.txBaseFrequencyHz)
+        fixture.service.setTransponder(fixture.transponder.copy(uuid="other"));runCurrent()
+        assertEquals(fixture.nominalTxHz,fixture.service.state.value.txBaseFrequencyHz)
+        assertFalse(fixture.service.state.value.nominalRxFrequencyHz==bases.rxHz)
+        fixture.close()
+    }
+
+    @Test fun restoredL4sReferencesTakePriorityOverTheInitialHandsetSnapshot() = runTest {
+        val remote=remoteFixtureState()
+        remote.value=remote.value.copy(nativeProfileValid=true,nativeSettingsModified=true,nativeProfileGeneration=1,
+            nativeProfileKey=com.rtbishop.look4sat.core.domain.repository.radioContextKey("test-transponder"),
+            nativeBaseFrequencies=com.rtbishop.look4sat.core.domain.repository.RadioBaseFrequencies(435100000,145900000),
+            capabilities=remote.value.capabilities!!.copy(nativeSettings=true,satelliteProfiles=true))
+        val fixture=Fixture(backgroundScope,FakeRadioController(remote=remote),FakeRadioController(),
+            radioModel=RadioControlSettings.MODEL_QUANSHENG_UVK1,splitMode=true)
+        val expected=com.rtbishop.look4sat.core.domain.repository.RadioBaseFrequencies(435108000,145908000)
+        fixture.settings.savedBases[fixture.transponder.uuid]=expected
+        fixture.service.setTransponder(fixture.transponder);runCurrent()
+        fixture.service.connectRadios();runCurrent()
+        assertEquals(expected.rxHz,fixture.service.state.value.nominalRxFrequencyHz)
+        assertEquals(expected.txHz,fixture.service.state.value.txBaseFrequencyHz)
+        fixture.startTracking();runCurrent()
+        assertEquals(expected.rxHz,fixture.service.state.value.nominalRxFrequencyHz)
+        assertEquals(expected.txHz,fixture.service.state.value.txBaseFrequencyHz)
+        fixture.close()
+    }
+
+    @Test fun savedDisabledUplinkIsNotReplacedByTheTransponderDefaultOnTrackingStart() = runTest {
+        val fixture=Fixture(backgroundScope,FakeRadioController(),FakeRadioController())
+        fixture.settings.savedBases[fixture.transponder.uuid]=
+            com.rtbishop.look4sat.core.domain.repository.RadioBaseFrequencies(435108000,null)
+        fixture.service.connectRadios();fixture.startTracking();runCurrent()
+        assertTrue(fixture.service.state.value.isActive)
+        assertNull(fixture.service.state.value.txBaseFrequencyHz)
+        assertNull(fixture.service.state.value.targetTxFrequencyHz)
+        assertEquals(435108000L,fixture.service.state.value.nominalRxFrequencyHz)
+        fixture.close()
+    }
+
+    @Test fun failedReferenceSaveDoesNotChangeTheAcceptedFrequencyPair() = runTest {
+        val fixture=Fixture(backgroundScope,FakeRadioController(),FakeRadioController())
+        fixture.service.setTransponder(fixture.transponder);runCurrent()
+        val before=fixture.service.state.value
+        fixture.settings.saveBasesSucceeds=false
+        fixture.service.setBaseFrequencies(com.rtbishop.look4sat.core.domain.repository.RadioBaseFrequencies(435108000,145908000))
+        runCurrent()
+        assertEquals(before.txBaseFrequencyHz,fixture.service.state.value.txBaseFrequencyHz)
+        assertEquals(before.nominalRxFrequencyHz,fixture.service.state.value.nominalRxFrequencyHz)
+        assertTrue(fixture.service.state.value.errorMessage!!.contains("Could not save"))
         fixture.close()
     }
 
@@ -1213,6 +1320,14 @@ private class FakeSettingsRepo(
         radioControlSettings.value = settings
     }
     private val offsets = mutableMapOf<Int, String>()
+    val savedBases = mutableMapOf<String,com.rtbishop.look4sat.core.domain.repository.RadioBaseFrequencies>()
+    var saveBasesSucceeds=true
+    override fun getRadioBaseFrequencies(transponderUuid:String)=savedBases[transponderUuid]
+    override fun setRadioBaseFrequencies(transponderUuid:String,bases:com.rtbishop.look4sat.core.domain.repository.RadioBaseFrequencies):Boolean {
+        if(!saveBasesSucceeds)return false
+        savedBases[transponderUuid]=bases
+        return true
+    }
     override fun getSatelliteOffset(catnum: Int) = offsets[catnum].orEmpty()
     override fun setSatelliteOffset(catnum: Int, offset: String) { offsets[catnum] = offset }
     override fun getSatelliteMode(catnum: Int) = ""

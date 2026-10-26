@@ -97,6 +97,16 @@ class N76RecordingExportTest {
         assertEquals(source.absolutePath, lastLocalN76Recording(directory, source.absolutePath))
     }
 
+    @Test fun existingStereoRecordingsRemainPlayableAndExportable() = withRecording { directory, _ ->
+        val file = File(directory, "legacy-stereo.wav")
+        val pcm = byteArrayOf(1, 0, 2, 0)
+        file.writeBytes(n76WaveHeader(pcm.size.toLong(), channels = 2) + pcm)
+        assertEquals(file.absolutePath, lastLocalN76Recording(directory, file.absolutePath))
+        val target = Target()
+        assertEquals(48L, copyN76Recording(file) { target })
+        assertArrayEquals(file.readBytes(), target.bytes.toByteArray())
+    }
+
     private fun withRecording(block: suspend (File, File) -> Unit) = runBlocking {
         val directory = Files.createTempDirectory("look4sat-n76-export-").toFile()
         try {

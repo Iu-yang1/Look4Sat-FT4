@@ -303,7 +303,8 @@ fun RadarDestination(
         )
         if (uiState.cwConsole.visible) CwConsole(uiState, logViewModel, viewModel::onAction,
             requestMicPermission = { permissionLauncher.launch(Manifest.permission.RECORD_AUDIO) },
-            onFixGrid = openLoTWStationForGridFix)
+            onFixGrid = openLoTWStationForGridFix,
+            connectRadios = connectRadios)
     }
 }
 
@@ -895,7 +896,7 @@ private fun PagerCard(
                         connectRadios = connectRadios
                     )
                     RadarPage.Calculator -> CalculatorPage(
-                        transceivers = uiState.transceivers.transmitters,
+                        transceivers = uiState.transceivers.nominalTransmitters,
                         selectedUuid = uiState.transceivers.selectedUuid,
                         orbitalPos = uiState.orbitalPos,
                         cw = uiState.cw,

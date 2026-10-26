@@ -24,14 +24,19 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.Button
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -41,9 +46,11 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.activity.compose.BackHandler
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextAlign
@@ -60,15 +67,18 @@ import com.rtbishop.look4sat.core.domain.repository.CwTransmitText
 import com.rtbishop.look4sat.core.domain.repository.NativeCwOptions
 import com.rtbishop.look4sat.core.domain.repository.RadioTransmitOwner
 import com.rtbishop.look4sat.core.presentation.R
+import com.rtbishop.look4sat.core.domain.utility.DopplerFrequencyCalculator as DopplerFrequencyCalculatorUtil
 import com.rtbishop.look4sat.core.domain.utility.toDegrees
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun CwConsole(
     state: RadarState,
     logViewModel: LogViewModel,
     onAction: (RadarAction) -> Unit,
     requestMicPermission: () -> Unit,
-    onFixGrid: (List<String>) -> Unit
+    onFixGrid: (List<String>) -> Unit,
+    connectRadios: () -> Unit = {}
 ) {
     val log by logViewModel.uiState.collectAsStateWithLifecycle()
     val control = state.radioControl
@@ -110,11 +120,28 @@ internal fun CwConsole(
         Box(Modifier.fillMaxSize()) {
         Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
             Column(Modifier.fillMaxSize().safeDrawingPadding().imePadding()) {
-                Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    TextButton(onClick = close) { Text(stringResource(R.string.cw_console_back)) }
-                    Text(stringResource(R.string.rc_l4s_cw), style = MaterialTheme.typography.titleLarge,
-                        modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                }
+                TopAppBar(
+                    title = { Text(stringResource(R.string.rc_l4s_cw), maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                    navigationIcon = {
+                        IconButton(onClick = close) {
+                            Icon(painter = painterResource(R.drawable.ic_back), contentDescription = stringResource(R.string.radar_back))
+                        }
+                    },
+                    actions = {
+                        val connected = control.txPanel.isConnected || control.rxPanel.isConnected
+                        TextButton(
+                            onClick = { if (connected) onAction(RadarAction.DisconnectRadios) else connectRadios() },
+                            modifier = Modifier.height(40.dp),
+                            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                        ) { Text(stringResource(if (connected) R.string.rc_panel_disconnect else R.string.rc_panel_connect), maxLines = 1) }
+                        TextButton(
+                            onClick = { onAction(RadarAction.ToggleTracking) },
+                            enabled = control.isTracking || !control.frequencyEditingLocked,
+                            modifier = Modifier.height(40.dp),
+                            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                        ) { Text(stringResource(if (control.isTracking) R.string.rc_panel_stop else R.string.rc_panel_track), maxLines = 1) }
+                    }
+                )
                 LazyColumn(modifier = Modifier.weight(1f).fillMaxWidth().padding(horizontal = 12.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     item {
@@ -159,7 +186,7 @@ internal fun CwConsole(
                             singleLine = true, textStyle = MaterialTheme.typography.bodyMedium,
                             modifier = Modifier.fillMaxWidth().testTag("cwConsoleMessage"))
                         remote?.let { Text(stringResource(R.string.rc_l4s_progress, it.cwPosition, it.cwLength, it.cwState.name)) }
-                        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FlowRow(modifier = Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             Button(onClick = {
                                 runCatching { CwTransmitText.chunks(draft.message, caps?.maxCwText ?: 1) }
                                     .onSuccess { onAction(RadarAction.SendCw(draft.message, wpm)) }
@@ -192,6 +219,40 @@ internal fun CwConsole(
                     }
                     item { HorizontalDivider(); Text(stringResource(R.string.radar_cw_decoder), color = MaterialTheme.colorScheme.primary) }
                     item { SharedCwDecoderPanel(state.cw, onAction, requestMicPermission, logViewModel::updateCallsign) }
+                    item {
+                        // Both calculators start with the same uncorrected transponder entry.
+                        val linearTransponders = remember(state.transceivers.nominalTransmitters) {
+                            state.transceivers.nominalTransmitters.filter(DopplerFrequencyCalculatorUtil::isNamedLinearTransponder)
+                                .let(DopplerFrequencyCalculatorUtil::deduplicateTransponders)
+                        }
+                        val selectedTransponder = remember(linearTransponders, state.transceivers.selectedUuid) {
+                            linearTransponders.firstOrNull { it.uuid == state.transceivers.selectedUuid }
+                                ?: linearTransponders.firstOrNull()
+                        }
+                        selectedTransponder?.let { transponder ->
+                            LaunchedEffect(transponder.uuid) {
+                                onAction(RadarAction.CalculatorTransponderChanged(transponder.catnum))
+                            }
+                            HorizontalDivider()
+                            Text(stringResource(R.string.radar_tab_calculator), color = MaterialTheme.colorScheme.primary)
+                            DopplerFrequencyCalculator(
+                                transponder = transponder,
+                                orbitalPos = state.orbitalPos,
+                                offsetKHz = state.calculatorOffsetKHz,
+                                onOffsetChange = { onAction(RadarAction.ChangeCalculatorOffset(it)) },
+                                onFrequencyChange = { tx, rx -> onAction(RadarAction.UpdateCalculatorFrequency(tx, rx)) },
+                                onTuningChange = { if (!control.frequencyEditingLocked && (control.txPanel.isConnected || control.rxPanel.isConnected)) onAction(RadarAction.TuneCalculator(it)) },
+                                initialTxBaseHz = control.txBaseFrequencyHz.takeIf {
+                                    transponder.uuid == control.selectedTransponderUuid },
+                                reference = control.calculatorReferenceFor(transponder.uuid,
+                                    DopplerFrequencyCalculatorUtil.parseOffsetHz(state.calculatorOffsetKHz)),
+                                editingEnabled = !control.frequencyEditingLocked || transponder.uuid != control.selectedTransponderUuid ||
+                                    (!control.txPanel.isConnected && !control.rxPanel.isConnected),
+                                displayNominalFrequencies = true,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                    }
                     item { HorizontalDivider(); Text(stringResource(R.string.radar_tab_logs), color = MaterialTheme.colorScheme.primary) }
                     item {
                         LogPage(state, logViewModel, onFixGrid,
@@ -274,10 +335,16 @@ private fun CwConsoleHeader(
 ) {
     val fontScale = LocalConfiguration.current.fontScale
     val satellite: @Composable () -> Unit = {
-        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(state.currentPass?.name.orEmpty(), color = MaterialTheme.colorScheme.primary,
-                style = MaterialTheme.typography.titleMedium)
-            Text("${if (state.isTimeAos) "AOS" else "LOS"} ${state.currentTime}", style = MaterialTheme.typography.bodyMedium)
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = MaterialTheme.shapes.medium,
+            color = Color.Transparent
+        ) {
+            Column(Modifier.padding(horizontal = 12.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(state.currentPass?.name.orEmpty(), color = MaterialTheme.colorScheme.primary,
+                    style = MaterialTheme.typography.titleMedium)
+                Text("${if (state.isTimeAos) "AOS" else "LOS"} ${state.currentTime}", style = MaterialTheme.typography.bodyMedium)
+            }
         }
     }
     val radar: @Composable () -> Unit = {

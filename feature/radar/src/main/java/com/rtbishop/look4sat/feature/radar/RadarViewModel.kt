@@ -183,9 +183,14 @@ class RadarViewModel(
             cw = if (changed) it.cw.copy(decodedText = "", resetGeneration = it.cw.resetGeneration + 1) else it.cw) }
         val allRadios = satelliteRepo.getRadiosWithId(pass.catNum)
         val favorites = settingsRepo.getFavoriteTransponders(pass.catNum).toSet()
-        _uiState.update { it.copy(favoriteTransponderUuids = favorites) }
         transponders = allRadios.filter { it.downlinkLow != null }
             .sortedWith(compareByDescending<SatRadio> { it.uuid in favorites })
+        _uiState.update {
+            it.copy(
+                favoriteTransponderUuids = favorites,
+                transceivers = it.transceivers.copy(nominalTransmitters = transponders)
+            )
+        }
         val initialTransponder = transponders.firstOrNull { it.uuid in favorites } ?: transponders.firstOrNull()
         if (initialTransponder != null) {
             _uiState.update {
@@ -259,6 +264,9 @@ class RadarViewModel(
                             calculatorLinked=svc.calculatorLinked,
                             txDopplerHz=svc.txDopplerCorrectionHz,rxDopplerHz=svc.rxDopplerCorrectionHz,
                             referenceDirty=svc.referenceDirty,
+                            calculatorReference=state.radioControl.updatedCalculatorReference(svc,
+                                com.rtbishop.look4sat.core.domain.utility.DopplerFrequencyCalculator.parseOffsetHz(
+                                    svc.selectedTransponder?.catnum?.let(settingsRepo::getSatelliteOffset).orEmpty())),
                             serviceEditingLocked=svc.frequencyEditingLocked
                         )
                     )
@@ -291,8 +299,13 @@ class RadarViewModel(
                 if (action.uuid in current) current.remove(action.uuid) else current.add(action.uuid)
                 settingsRepo.setFavoriteTransponders(action.catnum, current)
                 val favorites = current.toSet()
-                _uiState.update { it.copy(favoriteTransponderUuids = favorites) }
                 transponders = transponders.sortedWith(compareByDescending<SatRadio> { it.uuid in favorites })
+                _uiState.update {
+                    it.copy(
+                        favoriteTransponderUuids = favorites,
+                        transceivers = it.transceivers.copy(nominalTransmitters = transponders)
+                    )
+                }
                 viewModelScope.launch {
                     val pass = _uiState.value.currentPass ?: return@launch
                     val radios = satelliteRepo.getRadiosWithId(pass.catNum)

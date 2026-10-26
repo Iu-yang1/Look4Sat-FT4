@@ -18,6 +18,7 @@ import java.util.UUID
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
@@ -79,6 +80,7 @@ class BluetoothSppRadioTransport internal constructor(
     override suspend fun connectAlternative(): Boolean = withContext(Dispatchers.IO) {
         if (!canTryAlternativeConnection) return@withContext false
         closeSocket("Protocol handshake failed; trying alternative RFCOMM")
+        delay(200L)
         connectNext()
     }
 
@@ -110,6 +112,7 @@ class BluetoothSppRadioTransport internal constructor(
                 failure("connect-failed", error)
             }
             closeSocket("RFCOMM attempt failed")
+            if (nextMode < 2) delay(200L)
         }
         return false
     }

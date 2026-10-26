@@ -382,6 +382,7 @@ class RadioTrackingService(
                     previousTxSource=remote.txSource
                     previousSettingsSequence=remote.settingsSequence
                     if(remote.nativeProfileGeneration!=previousProfileGeneration && remote.nativeSettingsModified && matchingProfile &&
+                        (previousProfileGeneration!=null || _state.value.selectedTransponder?.let { savedBaseFrequencies(it) }==null) &&
                         pendingControls.get()==0 && _state.value.trackingPhase!=TrackingPhase.INITIALIZING) {
                         nativeBaseOverride=remote.nativeBaseFrequencies;calculatorTuning=null
                         remote.nativeBaseFrequencies?.let { bases -> _state.update { it.copy(txBaseFrequencyHz=bases.txHz,
@@ -830,8 +831,10 @@ class RadioTrackingService(
     private fun startTrackingAccepted(pass:OrbitalPass,transponder:SatRadio,txBaseFreqHz:Long?) {
         if (_state.value.selectedTransponder?.uuid != transponder.uuid || _state.value.currentPass?.catNum != pass.catNum) {
             calculatorTuning=null
-            nativeBaseOverride=null
+            nativeBaseOverride=savedBaseFrequencies(transponder)
         }
+        if(nativeBaseOverride==null && calculatorTuning==null) nativeBaseOverride=savedBaseFrequencies(transponder)
+        val initialTx = if(nativeBaseOverride!=null) nativeBaseOverride?.txHz else txBaseFreqHz
         applyDataToneDefault(transponder)
         diagnose("tracking/start", "satellite=${pass.catNum} transponderSelected=true")
         txController?.invalidatePendingPttOn()
@@ -843,10 +846,10 @@ class RadioTrackingService(
                 trackingPhase = TrackingPhase.INITIALIZING,
                 currentPass = pass,
                 selectedTransponder = transponder,
-                txBaseFrequencyHz = txBaseFreqHz,
+                txBaseFrequencyHz = initialTx,
                 txFrequencyHz = null,
                 rxFrequencyHz = null,
-                nominalRxFrequencyHz=null,nominalTxFrequencyHz=null,referenceDirty=false,
+                nominalRxFrequencyHz=nativeBaseOverride?.rxHz,nominalTxFrequencyHz=initialTx,referenceDirty=false,
                 calculatorLinked=calculatorTuning!=null,
                 lastCommandError = null
             )
@@ -857,8 +860,8 @@ class RadioTrackingService(
                 currentCoroutineContext().ensureActive()
                 if (hasTransmitClaim) emergencyPttOff()
                 val isSplit = _state.value.splitMode
-                if (isSplit) runSplitTracking(transponder, txBaseFreqHz)
-                else runDualRadioTracking(transponder, txBaseFreqHz)
+                if (isSplit) runSplitTracking(transponder, initialTx)
+                else runDualRadioTracking(transponder, initialTx)
             } catch (cancelled: CancellationException) {
                 currentCoroutineContext().ensureActive()
                 failTrackingInitialization("Radio setup was interrupted")
@@ -927,7 +930,7 @@ class RadioTrackingService(
                     txMode = txMode,
                     rxMode = rxMode,
                     txBaseFrequencyHz = if (transponder.uplinkLow==null) null else
-                        nativeBaseOverride?.txHz ?: initialTxBaseFreqHz ?: transponder.uplinkCenterFrequency()
+                        if(nativeBaseOverride!=null) nativeBaseOverride?.txHz else initialTxBaseFreqHz ?: transponder.uplinkCenterFrequency()
                 )
             }
             diagnose("tracking/ready", "mode=dual-radio")
@@ -1050,7 +1053,7 @@ class RadioTrackingService(
                 val rxMode = controlDownlinkMode(transponder, txMode)
                 if (!radio.setSplitModes(rxMode, txMode)) return failTrackingInitialization("N76 FM mode setup was not acknowledged")
                 val txBase = if (transponder.uplinkLow == null) null else
-                    nativeBaseOverride?.txHz ?: initialTxBaseFreqHz ?: transponder.uplinkCenterFrequency()
+                    if(nativeBaseOverride!=null) nativeBaseOverride?.txHz else initialTxBaseFreqHz ?: transponder.uplinkCenterFrequency()
                 val rxBase = nativeBaseOverride?.rxHz ?: txBase?.let { TransponderMapper.mapUplinkToDownlink(it, transponder) }
                     ?: transponder.downlinkLow ?: return failTrackingInitialization("No downlink frequency")
                 if (nativeBaseOverride == null) nativeBaseOverride =
@@ -1093,7 +1096,7 @@ class RadioTrackingService(
             }
             _state.update { it.copy(isActive = true, trackingPhase = TrackingPhase.READY,
                 txMode = controlUplinkMode(transponder), rxMode = controlDownlinkMode(transponder, controlUplinkMode(transponder)),
-                txBaseFrequencyHz = nativeBaseOverride?.txHz ?: txBase) }
+                txBaseFrequencyHz = if(nativeBaseOverride!=null) nativeBaseOverride?.txHz else txBase) }
             diagnose("tracking/ready", "mode=single-radio-preset; radio owns TX/RX mode and VFO selection")
         }
         runTrackingLoop(split = true, presetSingle = true)
@@ -1380,15 +1383,26 @@ class RadioTrackingService(
     override fun tuneFromCalculator(transponder: SatRadio, tuning: CalculatorTuning) {
         if(userFrequencyEditingBlocked()) {failTrackingCommand(frequencyEditingBlockMessage());return}
         if (tuning.transponderUuid != transponder.uuid || tuning.frequencyHz <= 0 ||
-            !DopplerFrequencyCalculator.isLinearTransponder(transponder)) return
+            !DopplerFrequencyCalculator.isLinearTransponder(transponder) || tuning.reference?.valid()==false) return
         if (_state.value.isActive && _state.value.currentPass?.catNum != transponder.catnum) {
             failTrackingCommand("Start tracking the calculator satellite before tuning its radio")
             return
         }
-        fun accept() {
+        val editEpoch=manualEpoch.get()
+        suspend fun accept() {
+            val position=_state.value.currentPass?.let { pass -> satelliteRepo.getPosition(
+                pass.orbitalObject,settingsRepo.stationPosition.value,nowMillis()) }
+                ?: if(tuning.anchor==com.rtbishop.look4sat.core.domain.utility.CalculatorFrequencyAnchor.SATELLITE)
+                    com.rtbishop.look4sat.core.domain.predict.OrbitalPos() else null
+            if(editEpoch!=manualEpoch.get() || userFrequencyEditingBlocked()) return
+            position?.let { tuning.frequencies(transponder,it,DopplerFrequencyCalculator.parseOffsetHz(
+                settingsRepo.getSatelliteOffset(transponder.catnum ?: 0))) }?.let { pair ->
+                persistBaseFrequencies(com.rtbishop.look4sat.core.domain.repository.RadioBaseFrequencies(
+                    pair.nominalRxHz,pair.nominalTxHz))
+            }
             nativeBaseOverride=null
             calculatorTuning = tuning
-            _state.update {it.copy(calculatorLinked=true,referenceDirty=true)}
+            _state.update {it.copy(calculatorLinked=true,referenceDirty=true,calculatorReference=tuning.reference)}
             tuningRevision.incrementAndGet()
             tuningWake.trySend(Unit)
             diagnose("calculator/tune", "anchor=${tuning.anchor} frequencyHz=${tuning.frequencyHz}")
@@ -1495,8 +1509,10 @@ class RadioTrackingService(
     override fun setTxBaseFrequency(frequencyHz: Long) {
         if (frequencyHz <= 0L || _state.value.selectedTransponder?.uplinkLow==null) return
         changeRadioSettings {
+            val bases=independentBases(frequencyHz)
+            bases?.let(::persistBaseFrequencies)
             calculatorTuning = null
-            nativeBaseOverride=independentBases(frequencyHz)
+            nativeBaseOverride=bases
             _state.update { it.copy(txBaseFrequencyHz = frequencyHz,nominalTxFrequencyHz=frequencyHz,calculatorLinked=false,referenceDirty=true) }
             tuningWake.trySend(Unit)
         }
@@ -1506,7 +1522,12 @@ class RadioTrackingService(
         changeRadioSettings {
             val base = _state.value.txBaseFrequencyHz ?: return@changeRadioSettings
             val adjusted = Math.addExact(base, deltaHz)
-            if (adjusted > 0L) {nativeBaseOverride=independentBases(adjusted);calculatorTuning=null;_state.update { it.copy(txBaseFrequencyHz = adjusted,nominalTxFrequencyHz=adjusted,calculatorLinked=false,referenceDirty=true) };tuningWake.trySend(Unit)}
+            if (adjusted > 0L) {
+                val bases=independentBases(adjusted);bases?.let(::persistBaseFrequencies)
+                nativeBaseOverride=bases;calculatorTuning=null
+                _state.update { it.copy(txBaseFrequencyHz = adjusted,nominalTxFrequencyHz=adjusted,calculatorLinked=false,referenceDirty=true) }
+                tuningWake.trySend(Unit)
+            }
         }
     }
 
@@ -1518,7 +1539,8 @@ class RadioTrackingService(
     override fun setRxBaseFrequency(frequencyHz:Long) {
         if(frequencyHz<=0) return
         changeRadioSettings {
-            nativeBaseOverride=com.rtbishop.look4sat.core.domain.repository.RadioBaseFrequencies(frequencyHz,_state.value.txBaseFrequencyHz)
+            val bases=com.rtbishop.look4sat.core.domain.repository.RadioBaseFrequencies(frequencyHz,_state.value.txBaseFrequencyHz)
+            persistBaseFrequencies(bases);nativeBaseOverride=bases
             _state.update {it.copy(nominalRxFrequencyHz=frequencyHz,referenceDirty=true,calculatorLinked=false)}
             calculatorTuning=null;tuningRevision.incrementAndGet();tuningWake.trySend(Unit)
         }
@@ -1528,6 +1550,7 @@ class RadioTrackingService(
         if(bases.rxHz !in 1L..9_999_999_999L || bases.txHz?.let {it !in 1L..9_999_999_999L}==true ||
             bases.txHz!=null && _state.value.selectedTransponder?.uplinkLow==null)return
         changeRadioSettings {
+            persistBaseFrequencies(bases)
             nativeBaseOverride=bases;calculatorTuning=null
             _state.update {it.copy(txBaseFrequencyHz=bases.txHz,nominalTxFrequencyHz=bases.txHz,nominalRxFrequencyHz=bases.rxHz,calculatorLinked=false,referenceDirty=true)}
             tuningWake.trySend(Unit)
@@ -1629,14 +1652,31 @@ class RadioTrackingService(
         return ok
     }
     private fun restoreNativeProfile(transponder:SatRadio) {
-        val remote=txController?.remoteState?.value ?: return
-        if(!remote.nativeProfileValid || remote.nativeProfileKey!=profileKey(remote,transponder)) {nativeBaseOverride=null;return}
-        nativeBaseOverride=remote.nativeBaseFrequencies
-        ctcssExplicit=true
-        _state.update { it.copy(ctcssTone=remote.nativeSavedTxCtcssHz,
-            txBaseFrequencyHz=if(remote.nativeBaseFrequencies!=null)remote.nativeBaseFrequencies?.txHz else it.txBaseFrequencyHz,
-            nominalRxFrequencyHz=remote.nativeBaseFrequencies?.rxHz ?: it.nominalRxFrequencyHz,
-            calculatorLinked=false,referenceDirty=false) }
+        val remote=txController?.remoteState?.value
+            ?.takeIf { it.nativeProfileValid && it.nativeProfileKey==profileKey(it,transponder) }
+        nativeBaseOverride=remote?.nativeBaseFrequencies
+        if(remote!=null) {
+            ctcssExplicit=true
+            _state.update { it.copy(ctcssTone=remote.nativeSavedTxCtcssHz,
+                txBaseFrequencyHz=if(remote.nativeBaseFrequencies!=null)remote.nativeBaseFrequencies?.txHz else it.txBaseFrequencyHz,
+                nominalRxFrequencyHz=remote.nativeBaseFrequencies?.rxHz ?: it.nominalRxFrequencyHz,
+                calculatorLinked=false,referenceDirty=false) }
+        }
+        savedBaseFrequencies(transponder)?.let { bases ->
+            nativeBaseOverride=bases
+            _state.update { it.copy(txBaseFrequencyHz=bases.txHz,nominalTxFrequencyHz=bases.txHz,
+                nominalRxFrequencyHz=bases.rxHz,calculatorLinked=false,calculatorReference=null) }
+        }
+    }
+
+    private fun savedBaseFrequencies(transponder:SatRadio):com.rtbishop.look4sat.core.domain.repository.RadioBaseFrequencies? {
+        val saved=settingsRepo.getRadioBaseFrequencies(transponder.uuid) ?: return null
+        return if(transponder.uplinkLow==null) saved.copy(txHz=null) else saved
+    }
+
+    private fun persistBaseFrequencies(bases:com.rtbishop.look4sat.core.domain.repository.RadioBaseFrequencies) {
+        val uuid=_state.value.selectedTransponder?.uuid ?: return
+        check(settingsRepo.setRadioBaseFrequencies(uuid,bases)) { "Could not save reference frequencies" }
     }
     private fun trackingTarget(radio:IRadioController?,hz:Long?,rx:Boolean):Long? {
         if(hz==null) return null

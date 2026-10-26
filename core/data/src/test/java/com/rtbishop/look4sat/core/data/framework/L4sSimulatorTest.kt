@@ -21,7 +21,8 @@ class L4sSimulatorTest {
         val port=System.getenv("L4S_SIMULATOR_PORT")?.toIntOrNull()
         assumeTrue("Set L4S_SIMULATOR_PORT to a running hardware-free C-core simulator",port!=null)
         val scope=CoroutineScope(SupervisorJob()+Dispatchers.IO)
-        val radio=L4sController(SocketTransport(checkNotNull(port)),scope)
+        val diagnostics=com.rtbishop.look4sat.core.domain.control.ControlDiagnosticsBuffer()
+        val radio=L4sController(SocketTransport(checkNotNull(port)),scope,diagnostics=diagnostics)
         try {
             assertTrue(radio.connect())
             assertTrue(radio.remoteState.value.capabilities!!.satelliteProfiles)
@@ -37,7 +38,8 @@ class L4sSimulatorTest {
             val options=com.rtbishop.look4sat.core.domain.repository.NativeCwOptions(25,70,4,45,3,12)
             assertTrue(radio.setNativeCwOptions(options))
             assertEquals(options.copy(modified=true),radio.remoteState.value.nativeCwOptions)
-            val staged=HandsetMacroSync.stage(List(8){"CQ F${it+1}"},123) {radio.handsetMacroCommand(it)}
+            val staged=HandsetMacroSync.stage(List(4){"CQ F${it+1}"},123,
+                radio.remoteState.value.capabilities!!.handsetMacroSlots) {radio.handsetMacroCommand(it)}
             assertTrue(staged.waitingForConfirmation)
             assertFalse(radio.pttOn())
             assertEquals(FrequencyPairResult.HELD,radio.setTrackingFrequencies(435101000,145901000))
@@ -48,7 +50,8 @@ class L4sSimulatorTest {
             assertEquals(435100000L,radio.remoteState.value.rxFrequencyHz)
             assertEquals(145900000L,radio.remoteState.value.txFrequencyHz)
             assertTrue(radio.configureTxCtcss(67.0))
-            assertTrue(radio.pttOn())
+            val started=radio.pttOn()
+            assertTrue("${radio.remoteState.value}\n${diagnostics.exportText()}",started)
             assertFalse(radio.setNativeCwOptions(options.copy(wpm=30)))
             assertTrue(radio.remoteState.value.capabilities!!.trackingDisplay)
             assertTrue(radio.updateTrackingDisplay(com.rtbishop.look4sat.core.domain.repository.RadioTrackingDisplay("TEST",137.0,34.0,

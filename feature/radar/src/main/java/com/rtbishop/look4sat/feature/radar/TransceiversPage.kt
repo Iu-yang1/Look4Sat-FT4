@@ -60,12 +60,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.geometry.Offset
@@ -83,8 +83,11 @@ import androidx.compose.ui.unit.sp
 import com.rtbishop.look4sat.core.domain.model.SatRadio
 import com.rtbishop.look4sat.core.domain.predict.OrbitalPos
 import com.rtbishop.look4sat.core.domain.utility.DopplerFrequencyCalculator
+import com.rtbishop.look4sat.core.domain.utility.TransponderMapper
 import com.rtbishop.look4sat.core.domain.utility.CalculatorTuning
 import com.rtbishop.look4sat.core.domain.utility.CalculatorFrequencyAnchor
+import com.rtbishop.look4sat.core.domain.utility.CalculatorReference
+import com.rtbishop.look4sat.core.domain.utility.withCalculatorReference
 import com.rtbishop.look4sat.core.presentation.R
 import com.rtbishop.look4sat.core.presentation.infiniteMarquee
 import java.util.Locale
@@ -116,10 +119,9 @@ fun TransceiversPage(
         }
         // contentPadding for the system navigation bar: the radar page is a
         // full-screen destination, so on gesture-nav devices the translucent
-        // nav bar floats over the list bottom and covers the CW decoder's
-        // decoded-text output when the panel is scrolled to the end. Padding
-        // the last item above the bar fixes it (three-button nav already
-        // resizes the window, where this padding is a harmless no-op).
+        // nav bar floats over the bottom of the list. Padding the last item
+        // above the bar avoids obscuring the final transponder row (three-button
+        // nav already resizes the window, where this padding is a harmless no-op).
         LazyColumn(
             modifier = modifier.fillMaxSize(),
             state = listState,
@@ -223,23 +225,16 @@ fun CalculatorPage(
             onOffsetChange = { onAction(RadarAction.ChangeCalculatorOffset(it)) },
             onFrequencyChange = { tx, rx -> onAction(RadarAction.UpdateCalculatorFrequency(tx, rx)) },
             onTuningChange = { if(!radioControl.frequencyEditingLocked && (radioControl.txPanel.isConnected || radioControl.rxPanel.isConnected))onAction(RadarAction.TuneCalculator(it)) },
-            initialTxBaseHz = radioControl.txBaseFrequencyHz.takeIf { selectedTransceiver.uuid == selectedUuid },
+            initialTxBaseHz = radioControl.txBaseFrequencyHz.takeIf { selectedTransceiver.uuid == radioControl.selectedTransponderUuid },
+            reference = radioControl.calculatorReferenceFor(selectedTransceiver.uuid,
+                DopplerFrequencyCalculator.parseOffsetHz(calculatorOffsetKHz)),
             editingEnabled=!radioControl.frequencyEditingLocked || selectedTransceiver.uuid!=radioControl.selectedTransponderUuid ||
                 (!radioControl.txPanel.isConnected && !radioControl.rxPanel.isConnected),
+            // Show the live Doppler-corrected TX/RX frequencies and limits on this page.
+            displayNominalFrequencies = false,
             modifier = Modifier.fillMaxWidth()
         )
 
-        HorizontalDivider(
-            thickness = 1.dp,
-            color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
-        )
-
-        CwDecoderPanel(
-            cw = cw,
-            onAction = onAction,
-            requestMicPermission = requestMicPermission,
-            modifier = Modifier.fillMaxWidth()
-        )
     }
 }
 
@@ -456,6 +451,14 @@ private fun ExpandedRadioControl(
         HorizontalDivider(thickness = 1.dp, color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
         ReferenceFrequencyControls(radioControl, onAction)
         TxToneControl(radio, radioControl, onAction)
+        if (DopplerFrequencyCalculator.isNamedLinearTransponder(radio)) {
+            OutlinedButton(
+                onClick = { onAction(RadarAction.OpenCwConsole) },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(stringResource(R.string.rc_l4s_cw))
+            }
+        }
         if (!radioControl.catControlsActive) {
             Text(
                 stringResource(if (!radioControl.catEnabled) R.string.rc_cat_disabled_status else R.string.rc_vox_status),
@@ -476,6 +479,7 @@ private fun ExpandedRadioControl(
 private enum class EditedField { TX, PASSBAND, RX }
 
 private const val MAX_CALCULATOR_OFFSET_KHZ = 10_000.0
+private const val CALCULATOR_FREQUENCY_STEP_HZ = 1_000L // 0.001 MHz
 private val CALCULATOR_OFFSET_PATTERN = Regex("[+-]?(?:[0-9]+(?:\\.[0-9]*)?|\\.[0-9]+)")
 
 private fun isValidCalculatorOffset(value: String): Boolean {
@@ -487,7 +491,7 @@ private fun isValidCalculatorOffset(value: String): Boolean {
 }
 
 @Composable
-private fun DopplerFrequencyCalculator(
+internal fun DopplerFrequencyCalculator(
     transponder: SatRadio,
     orbitalPos: OrbitalPos?,
     offsetKHz: String = "",
@@ -496,19 +500,51 @@ private fun DopplerFrequencyCalculator(
     onTuningChange: (CalculatorTuning) -> Unit = {},
     initialTxBaseHz: Long? = null,
     editingEnabled:Boolean=true,
+    displayNominalFrequencies: Boolean = false,
+    reference: CalculatorReference? = null,
     modifier: Modifier = Modifier
+) {
+    val calibrated = remember(transponder, reference) { transponder.withCalculatorReference(reference) } ?: return
+    CalculatorContent(calibrated, orbitalPos, offsetKHz, onOffsetChange, onFrequencyChange,
+        onTuningChange, initialTxBaseHz, editingEnabled, displayNominalFrequencies, reference, modifier)
+}
+
+@Composable
+private fun CalculatorContent(
+    transponder: SatRadio,
+    orbitalPos: OrbitalPos?,
+    offsetKHz: String,
+    onOffsetChange: (String) -> Unit,
+    onFrequencyChange: (Long, Long) -> Unit,
+    onTuningChange: (CalculatorTuning) -> Unit,
+    initialTxBaseHz: Long?,
+    editingEnabled: Boolean,
+    displayNominalFrequencies: Boolean,
+    reference: CalculatorReference?,
+    modifier: Modifier
 ) {
     if (orbitalPos == null || !DopplerFrequencyCalculator.isLinearTransponder(transponder)) return
 
-    var lastEditedField by rememberSaveable(transponder.uuid) { mutableStateOf(EditedField.TX) }
-    var txFrequencyHz by rememberSaveable(transponder.uuid) { mutableStateOf(0L) }
-    var rxFrequencyHz by rememberSaveable(transponder.uuid) { mutableStateOf(0L) }
-    var passbandPosition by rememberSaveable(transponder.uuid) { mutableStateOf(0.5f) }
-    var stepSizeKHz by remember { mutableIntStateOf(1) }
+    var lastEditedField by rememberSaveable(transponder.uuid, reference) { mutableStateOf(EditedField.TX) }
+    var txFrequencyHz by rememberSaveable(transponder.uuid, reference) { mutableStateOf(0L) }
+    var rxFrequencyHz by rememberSaveable(transponder.uuid, reference) { mutableStateOf(0L) }
+    var passbandPosition by rememberSaveable(transponder.uuid, reference) { mutableStateOf(0.5f) }
+    // Saved values can be restored without validating rememberSaveable inputs.
+    // Retain the reference used by that saved pair so a later base edit wins.
+    var appliedReference by rememberSaveable(transponder.uuid) { mutableStateOf(longArrayOf()) }
+    val referenceKey=reference?.let { longArrayOf(it.txHz,it.rxHz,it.offsetHz) } ?: longArrayOf()
+    var nominalPassbandInitialized by remember(transponder.uuid, reference, displayNominalFrequencies) {
+        mutableStateOf(false)
+    }
 
-    // Keep the live log page aligned with the calculator frequencies.
+    // Observe the live pair during composition even when CW displays only nominal
+    // values; reads inside SideEffect alone do not schedule another composition.
+    val publishedPair = txFrequencyHz to rxFrequencyHz
+    val publishReady = appliedReference.contentEquals(referenceKey) &&
+        (!displayNominalFrequencies || nominalPassbandInitialized)
     SideEffect {
-        if (txFrequencyHz != 0L && rxFrequencyHz != 0L) onFrequencyChange(txFrequencyHz, rxFrequencyHz)
+        if (publishedPair.first != 0L && publishedPair.second != 0L && publishReady)
+            onFrequencyChange(publishedPair.first, publishedPair.second)
     }
 
     val offsetHz = DopplerFrequencyCalculator.parseOffsetHz(offsetKHz)
@@ -560,6 +596,8 @@ private fun DopplerFrequencyCalculator(
     // ground-frequency anchor; passband mode preserves its satellite-passband position.
     LaunchedEffect(
         transponder.uuid,
+        reference,
+        displayNominalFrequencies,
         transponder.uplinkLow,
         transponder.uplinkHigh,
         transponder.downlinkLow,
@@ -568,10 +606,20 @@ private fun DopplerFrequencyCalculator(
         orbitalPos.distanceRate,
         offsetHz
     ) {
-        if (txFrequencyHz == 0L || rxFrequencyHz == 0L) {
-            passbandPosition = initialTxBaseHz?.let { ((it-nominalTxLow).toFloat()/nominalTxRange).coerceIn(0f,1f) } ?: 0.5f
+        if (!appliedReference.contentEquals(referenceKey) ||
+            displayNominalFrequencies && !nominalPassbandInitialized ||
+            txFrequencyHz == 0L || rxFrequencyHz == 0L) {
+            passbandPosition = initialTxBaseHz?.let {
+                ((it-nominalTxLow).toFloat()/nominalTxRange).coerceIn(0f,1f)
+            } ?: 0.5f
             txFrequencyHz = txAtPassbandPosition(passbandPosition)
             rxFrequencyHz = downlinkFor(txFrequencyHz) ?: (rxLow + rxRange / 2)
+            nominalPassbandInitialized = true
+            appliedReference = referenceKey
+        } else if (displayNominalFrequencies) {
+            // Keep the displayed nominal TX/RX position fixed as orbital Doppler changes.
+            txFrequencyHz = txAtPassbandPosition(passbandPosition)
+            rxFrequencyHz = downlinkFor(txFrequencyHz) ?: rxFrequencyHz.coerceIn(rxLow, rxHigh)
         } else {
             when (lastEditedField) {
                 EditedField.TX -> {
@@ -590,39 +638,75 @@ private fun DopplerFrequencyCalculator(
         }
     }
 
-    val txSliderValue = if (lastEditedField == EditedField.PASSBAND) {
+    // Endpoints and number readouts in the CW calculator are in the transponder-list
+    // frequency domain. Only txFrequencyHz/rxFrequencyHz above include live Doppler.
+    val nominalRxLow = minOf(
+        transponder.downlinkLow ?: return,
+        transponder.downlinkHigh ?: return
+    ) + offsetHz
+    val nominalRxHigh = maxOf(
+        transponder.downlinkLow ?: return,
+        transponder.downlinkHigh ?: return
+    ) + offsetHz
+    val displayTxLow = if (displayNominalFrequencies) nominalTxLow else txLow
+    val displayTxHigh = if (displayNominalFrequencies) nominalTxLow + nominalTxRange else txHigh
+    val displayRxLow = if (displayNominalFrequencies) nominalRxLow else rxLow
+    val displayRxHigh = if (displayNominalFrequencies) nominalRxHigh else rxHigh
+    val txSliderValue = if (displayNominalFrequencies || lastEditedField == EditedField.PASSBAND) {
         passbandPosition
     } else {
         txPosition(txFrequencyHz)
     }
-    val rxSliderValue = ((rxFrequencyHz - rxLow).toFloat() / rxRange).coerceIn(0f, 1f)
+    val nominalTxDisplayHz = nominalTxLow + (passbandPosition.coerceIn(0f, 1f) * nominalTxRange).toLong()
+    val nominalRxDisplayHz = TransponderMapper.mapUplinkToDownlink(nominalTxDisplayHz, transponder)
+        ?.let { (it + offsetHz).coerceIn(nominalRxLow, nominalRxHigh) }
+        ?: (nominalRxLow + ((passbandPosition.coerceIn(0f, 1f)) * (nominalRxHigh - nominalRxLow)).toLong())
+    val displayTxHz = if (displayNominalFrequencies) nominalTxDisplayHz else txFrequencyHz
+    val displayRxHz = if (displayNominalFrequencies) nominalRxDisplayHz else rxFrequencyHz
+    val rxSliderValue = if (displayNominalFrequencies) {
+        ((displayRxHz - nominalRxLow).toFloat() / (nominalRxHigh - nominalRxLow).coerceAtLeast(1L)).coerceIn(0f, 1f)
+    } else {
+        ((rxFrequencyHz - rxLow).toFloat() / rxRange).coerceIn(0f, 1f)
+    }
+    val edgeFrequencyFormat = if (displayNominalFrequencies) "%.3f" else "%.4f"
+    val readoutFrequencyFormat = if (displayNominalFrequencies) "%.3f" else "%.6f"
 
     fun publishTuning() {
         if(!editingEnabled)return
-        val anchor = when(lastEditedField) {
+        val anchor = if(displayNominalFrequencies) CalculatorFrequencyAnchor.SATELLITE else when(lastEditedField) {
             EditedField.TX -> CalculatorFrequencyAnchor.GROUND_TX
             EditedField.RX -> CalculatorFrequencyAnchor.GROUND_RX
             EditedField.PASSBAND -> CalculatorFrequencyAnchor.SATELLITE
         }
-        val hz = when(lastEditedField) {
+        val hz = if(anchor == CalculatorFrequencyAnchor.SATELLITE)
+            nominalTxLow + (passbandPosition.coerceIn(0f,1f)*nominalTxRange).toLong()
+        else when(lastEditedField) {
             EditedField.TX -> txFrequencyHz
             EditedField.RX -> rxFrequencyHz
             EditedField.PASSBAND -> nominalTxLow + (passbandPosition.coerceIn(0f,1f)*nominalTxRange).toLong()
         }
-        onTuningChange(CalculatorTuning(transponder.uuid,anchor,hz))
+        onTuningChange(CalculatorTuning(transponder.uuid,anchor,hz,reference))
     }
 
     fun updateTx(newTxHz: Long) {
         if(!editingEnabled)return
-        when (lastEditedField) {
-            EditedField.PASSBAND -> {
-                passbandPosition = txPosition(newTxHz)
-                txFrequencyHz = txAtPassbandPosition(passbandPosition)
-                rxFrequencyHz = downlinkFor(txFrequencyHz) ?: rxFrequencyHz
-            }
-            else -> {
-                txFrequencyHz = newTxHz.coerceIn(txLow, txHigh)
-                rxFrequencyHz = downlinkFor(txFrequencyHz) ?: rxFrequencyHz
+        if (displayNominalFrequencies) {
+            // The slider selects a nominal passband position; recompute the live radio pair
+            // from that position so the readout itself never follows Doppler.
+            passbandPosition = txPosition(newTxHz.coerceIn(txLow, txHigh))
+            txFrequencyHz = txAtPassbandPosition(passbandPosition)
+            rxFrequencyHz = downlinkFor(txFrequencyHz) ?: rxFrequencyHz
+        } else {
+            when (lastEditedField) {
+                EditedField.PASSBAND -> {
+                    passbandPosition = txPosition(newTxHz)
+                    txFrequencyHz = txAtPassbandPosition(passbandPosition)
+                    rxFrequencyHz = downlinkFor(txFrequencyHz) ?: rxFrequencyHz
+                }
+                else -> {
+                    txFrequencyHz = newTxHz.coerceIn(txLow, txHigh)
+                    rxFrequencyHz = downlinkFor(txFrequencyHz) ?: rxFrequencyHz
+                }
             }
         }
         publishTuning()
@@ -630,22 +714,56 @@ private fun DopplerFrequencyCalculator(
 
     fun updateRx(newRxHz: Long) {
         if(!editingEnabled)return
-        when (lastEditedField) {
-            EditedField.PASSBAND -> {
-                val txFromRx = uplinkFor(newRxHz)
-                passbandPosition = if (txFromRx != null) {
-                    txPosition(txFromRx)
-                } else {
-                    passbandPosition
+        if (displayNominalFrequencies) {
+            val rxTarget = newRxHz.coerceIn(rxLow, rxHigh)
+            val txFromRx = uplinkFor(rxTarget)
+            if (txFromRx != null) passbandPosition = txPosition(txFromRx)
+            txFrequencyHz = txAtPassbandPosition(passbandPosition)
+            rxFrequencyHz = downlinkFor(txFrequencyHz) ?: rxTarget
+        } else {
+            when (lastEditedField) {
+                EditedField.PASSBAND -> {
+                    val txFromRx = uplinkFor(newRxHz)
+                    passbandPosition = if (txFromRx != null) {
+                        txPosition(txFromRx)
+                    } else {
+                        passbandPosition
+                    }
+                    txFrequencyHz = txAtPassbandPosition(passbandPosition)
+                    rxFrequencyHz = downlinkFor(txFrequencyHz) ?: rxFrequencyHz
                 }
-                txFrequencyHz = txAtPassbandPosition(passbandPosition)
-                rxFrequencyHz = downlinkFor(txFrequencyHz) ?: rxFrequencyHz
-            }
-            else -> {
-                rxFrequencyHz = newRxHz.coerceIn(rxLow, rxHigh)
-                txFrequencyHz = uplinkFor(rxFrequencyHz) ?: txFrequencyHz
+                else -> {
+                    rxFrequencyHz = newRxHz.coerceIn(rxLow, rxHigh)
+                    txFrequencyHz = uplinkFor(rxFrequencyHz) ?: txFrequencyHz
+                }
             }
         }
+        publishTuning()
+    }
+
+    // In the CW console, plus/minus keys operate in the nominal transponder frequency
+    // domain shown to the user (1 kHz = 0.001 MHz), not on the live Doppler-corrected
+    // radio frequency. The resulting pair is still converted to live radio frequencies
+    // for tuning, while the readout remains stable as Doppler changes.
+    fun updateNominalTx(newTxHz: Long) {
+        if (!editingEnabled) return
+        val targetTxHz = newTxHz.coerceIn(nominalTxLow, nominalTxLow + nominalTxRange)
+        passbandPosition = ((targetTxHz - nominalTxLow).toDouble() / nominalTxRange.toDouble())
+            .toFloat().coerceIn(0f, 1f)
+        txFrequencyHz = txAtPassbandPosition(passbandPosition)
+        rxFrequencyHz = downlinkFor(txFrequencyHz) ?: rxFrequencyHz
+        publishTuning()
+    }
+
+    fun updateNominalRx(newRxHz: Long) {
+        if (!editingEnabled) return
+        val targetRxHz = newRxHz.coerceIn(nominalRxLow, nominalRxHigh)
+        val targetTxHz = TransponderMapper.mapDownlinkToUplink(targetRxHz - offsetHz, transponder)
+            ?.coerceIn(nominalTxLow, nominalTxLow + nominalTxRange) ?: return
+        passbandPosition = ((targetTxHz - nominalTxLow).toDouble() / nominalTxRange.toDouble())
+            .toFloat().coerceIn(0f, 1f)
+        txFrequencyHz = txAtPassbandPosition(passbandPosition)
+        rxFrequencyHz = downlinkFor(txFrequencyHz) ?: rxFrequencyHz
         publishTuning()
     }
 
@@ -753,7 +871,10 @@ private fun DopplerFrequencyCalculator(
             Column(modifier = Modifier.fillMaxWidth()) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     OutlinedButton(
-                        onClick = { updateTx(txFrequencyHz - stepSizeKHz * 1000L) },
+                        onClick = {
+                            if (displayNominalFrequencies) updateNominalTx(displayTxHz - CALCULATOR_FREQUENCY_STEP_HZ)
+                            else updateTx(txFrequencyHz - CALCULATOR_FREQUENCY_STEP_HZ)
+                        },
                         enabled=editingEnabled,
                         modifier = Modifier.width(32.dp).height(28.dp),
                         contentPadding = PaddingValues(0.dp),
@@ -773,7 +894,10 @@ private fun DopplerFrequencyCalculator(
                     )
 
                     OutlinedButton(
-                        onClick = { updateTx(txFrequencyHz + stepSizeKHz * 1000L) },
+                        onClick = {
+                            if (displayNominalFrequencies) updateNominalTx(displayTxHz + CALCULATOR_FREQUENCY_STEP_HZ)
+                            else updateTx(txFrequencyHz + CALCULATOR_FREQUENCY_STEP_HZ)
+                        },
                         enabled=editingEnabled,
                         modifier = Modifier.width(32.dp).height(28.dp),
                         contentPadding = PaddingValues(0.dp),
@@ -785,7 +909,7 @@ private fun DopplerFrequencyCalculator(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = String.format(Locale.ENGLISH, "%.4f", txLow / 1_000_000.0),
+                        text = String.format(Locale.ENGLISH, edgeFrequencyFormat, displayTxLow / 1_000_000.0),
                         fontSize = 12.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.weight(1f)
@@ -795,7 +919,8 @@ private fun DopplerFrequencyCalculator(
                         horizontalArrangement = Arrangement.Center
                     ) {
                         Text(
-                            text = String.format(Locale.ENGLISH, "%.6f", txFrequencyHz / 1_000_000.0),
+                            text = String.format(Locale.ENGLISH, readoutFrequencyFormat, displayTxHz / 1_000_000.0),
+                            modifier = Modifier.testTag("calculatorTxFrequency"),
                             fontSize = 20.sp,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.primary
@@ -808,7 +933,7 @@ private fun DopplerFrequencyCalculator(
                         )
                     }
                     Text(
-                        text = String.format(Locale.ENGLISH, "%.4f", txHigh / 1_000_000.0),
+                        text = String.format(Locale.ENGLISH, edgeFrequencyFormat, displayTxHigh / 1_000_000.0),
                         fontSize = 12.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.weight(1f),
@@ -826,7 +951,10 @@ private fun DopplerFrequencyCalculator(
             Column(modifier = Modifier.fillMaxWidth()) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     OutlinedButton(
-                        onClick = { updateRx(rxFrequencyHz - stepSizeKHz * 1000L) },
+                        onClick = {
+                            if (displayNominalFrequencies) updateNominalRx(displayRxHz - CALCULATOR_FREQUENCY_STEP_HZ)
+                            else updateRx(rxFrequencyHz - CALCULATOR_FREQUENCY_STEP_HZ)
+                        },
                         enabled=editingEnabled,
                         modifier = Modifier.width(32.dp).height(28.dp),
                         contentPadding = PaddingValues(0.dp),
@@ -846,7 +974,10 @@ private fun DopplerFrequencyCalculator(
                     )
 
                     OutlinedButton(
-                        onClick = { updateRx(rxFrequencyHz + stepSizeKHz * 1000L) },
+                        onClick = {
+                            if (displayNominalFrequencies) updateNominalRx(displayRxHz + CALCULATOR_FREQUENCY_STEP_HZ)
+                            else updateRx(rxFrequencyHz + CALCULATOR_FREQUENCY_STEP_HZ)
+                        },
                         enabled=editingEnabled,
                         modifier = Modifier.width(32.dp).height(28.dp),
                         contentPadding = PaddingValues(0.dp),
@@ -858,7 +989,7 @@ private fun DopplerFrequencyCalculator(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = String.format(Locale.ENGLISH, "%.4f", rxLow / 1_000_000.0),
+                        text = String.format(Locale.ENGLISH, edgeFrequencyFormat, displayRxLow / 1_000_000.0),
                         fontSize = 12.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.weight(1f)
@@ -868,7 +999,8 @@ private fun DopplerFrequencyCalculator(
                         horizontalArrangement = Arrangement.Center
                     ) {
                         Text(
-                            text = String.format(Locale.ENGLISH, "%.6f", rxFrequencyHz / 1_000_000.0),
+                            text = String.format(Locale.ENGLISH, readoutFrequencyFormat, displayRxHz / 1_000_000.0),
+                            modifier = Modifier.testTag("calculatorRxFrequency"),
                             fontSize = 20.sp,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.primary
@@ -881,7 +1013,7 @@ private fun DopplerFrequencyCalculator(
                         )
                     }
                     Text(
-                        text = String.format(Locale.ENGLISH, "%.4f", rxHigh / 1_000_000.0),
+                        text = String.format(Locale.ENGLISH, edgeFrequencyFormat, displayRxHigh / 1_000_000.0),
                         fontSize = 12.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.weight(1f),

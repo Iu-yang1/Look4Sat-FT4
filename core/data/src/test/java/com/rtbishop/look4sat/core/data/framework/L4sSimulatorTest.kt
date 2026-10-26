@@ -38,7 +38,8 @@ class L4sSimulatorTest {
             val options=com.rtbishop.look4sat.core.domain.repository.NativeCwOptions(25,70,4,45,3,12)
             assertTrue(radio.setNativeCwOptions(options))
             assertEquals(options.copy(modified=true),radio.remoteState.value.nativeCwOptions)
-            val staged=HandsetMacroSync.stage(List(8){"CQ F${it+1}"},123) {radio.handsetMacroCommand(it)}
+            val staged=HandsetMacroSync.stage(List(4){"CQ F${it+1}"},123,
+                radio.remoteState.value.capabilities!!.handsetMacroSlots) {radio.handsetMacroCommand(it)}
             assertTrue(staged.waitingForConfirmation)
             assertFalse(radio.pttOn())
             assertEquals(FrequencyPairResult.HELD,radio.setTrackingFrequencies(435101000,145901000))

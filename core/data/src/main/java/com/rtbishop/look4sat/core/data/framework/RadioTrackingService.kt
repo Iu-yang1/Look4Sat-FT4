@@ -1391,7 +1391,7 @@ class RadioTrackingService(
         val editEpoch=manualEpoch.get()
         suspend fun accept() {
             val position=_state.value.currentPass?.let { pass -> satelliteRepo.getPosition(
-                pass.orbitalObject,settingsRepo.stationPosition.value,clock.nowMillis()) }
+                pass.orbitalObject,settingsRepo.stationPosition.value,nowMillis()) }
                 ?: if(tuning.anchor==com.rtbishop.look4sat.core.domain.utility.CalculatorFrequencyAnchor.SATELLITE)
                     com.rtbishop.look4sat.core.domain.predict.OrbitalPos() else null
             if(editEpoch!=manualEpoch.get() || userFrequencyEditingBlocked()) return

@@ -78,7 +78,7 @@ internal fun CwConsole(
     onAction: (RadarAction) -> Unit,
     requestMicPermission: () -> Unit,
     onFixGrid: (List<String>) -> Unit,
-    connectRadios: () -> Unit
+    connectRadios: () -> Unit = {}
 ) {
     val log by logViewModel.uiState.collectAsStateWithLifecycle()
     val control = state.radioControl

@@ -7,6 +7,7 @@ import com.rtbishop.look4sat.core.domain.model.N76ControlOptions
 import com.rtbishop.look4sat.core.domain.model.N76FirmwareMode
 import com.rtbishop.look4sat.core.domain.model.N76Power
 import com.rtbishop.look4sat.core.domain.model.RadioRecordingAction
+import com.rtbishop.look4sat.core.data.repository.n76OptionsFromJson
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import kotlinx.coroutines.CoroutineScope
@@ -488,7 +489,7 @@ class N76ControllerTest {
         assertFalse(wire.transmitting)
     }
 
-    @Test fun defaultHighPowerIsAppliedInBothFirmwareModesAndExplicitLowIsRetained() = runBlocking {
+    @Test fun defaultHighSelectionEncodesTheRequestedCodeInBothFirmwareModes() = runBlocking {
         for (mode in listOf(N76FirmwareMode.EXACT, N76FirmwareMode.SATELLITE)) {
             withRadio(options = N76ControlOptions(firmwareMode = mode)) { radio, wire, _ ->
                 ready(radio)
@@ -497,6 +498,21 @@ class N76ControllerTest {
                 assertTrue(wire.sent.filter { it.command == 35 }.all { it.payload[13].toInt() and 3 == 3 })
             }
         }
+    }
+
+    @Test fun upgradedLegacyDefaultRequestsHighOnTrackingButNeverKeysTheTransmitter() = withRadio(
+        options=n76OptionsFromJson("{\"power\":\"UNCHANGED\"}")
+    ) { radio,wire,diagnostics ->
+        assertFalse(wire.commands().contains(35))
+        ready(radio)
+        repeat(4) { assertEquals(FrequencyPairResult.APPLIED,
+            radio.setTrackingFrequencies(435000000L+it,145950000)) }
+        assertTrue(wire.sent.filter { it.command==35 }.all { it.payload[13].toInt() and 3==3 })
+        val power=diagnostics.events.value.filter { it.stage=="n76/power/request" }
+        assertEquals(1,power.size)
+        assertTrue(power.single().message.contains("selection=HIGH code=3"))
+        assertFalse(wire.commands().contains(66))
+        assertFalse(wire.transmitting)
     }
 
     @Test fun fragmentedNotificationSurvivesAnEmptyPollBeforeTheNextCommand() = withRadio { radio, wire, _ ->

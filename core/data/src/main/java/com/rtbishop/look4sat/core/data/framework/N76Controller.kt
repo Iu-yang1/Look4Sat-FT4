@@ -65,6 +65,7 @@ internal class N76Controller(
     private var audioRelayChanged = false
     private var statusFailures = 0
     private var recordingOperationError: String? = null
+    private var lastRequestedPower: com.rtbishop.look4sat.core.domain.model.N76Power? = null
     init { audio?.setRadioPcmSink { recorder?.feedRadio(it) } }
 
     override suspend fun connect(): Boolean = io(false) {
@@ -212,9 +213,13 @@ internal class N76Controller(
             return FrequencyPairResult.FAILED
         val actualTone = if (settings.forceTxCtcss) settings.txCtcssHz else tone
         val rxTone = if (settings.forceRxCtcss) settings.rxCtcssHz else null
+        val powerCode=N76Protocol.powerCode(settings.power)
+        if(lastRequestedPower!=settings.power) diagnose("power/request",
+            "selection=${settings.power} code=$powerCode firmware=$firmwareVersion satellite=$satelliteFirmware txEnabled=${target.txHz!=null}; request only, no power readback")
         // No retry of mutating requests: an ACK timeout must not replay a stale tune.
         if (request(N76Protocol.SET_FREQUENCY, N76Protocol.frequencyParameters(target, actualTone, updates,
-                satelliteFirmware, rxTone, settings.power.ordinal)) == null) return FrequencyPairResult.FAILED
+                satelliteFirmware, rxTone, powerCode)) == null) return FrequencyPairResult.FAILED
+        lastRequestedPower=settings.power
         pair = target; txTone = tone; updates++; stopPending = false
         state.update { it.copy(rxFrequencyHz = target.rxHz, txFrequencyHz = target.txHz,
             rxMode = "FM", txMode = "FM", txEnabled = target.txHz != null,
@@ -545,6 +550,7 @@ internal class N76Controller(
         radioMonitor = false; monitorByTracking = false; audioRelayChanged = false
         statusFailures = 0
         recordingOperationError = null
+        lastRequestedPower = null
     }
     private suspend fun dropConnection(message: String) {
         diagnostics.record(ControlDiagnosticSource.RADIO, "n76/connection/closed",

@@ -27,10 +27,24 @@ class N76OptionsJsonTest {
     }
     @Test fun oldSettingsKeepExplicitPowerAndMigrateMicrophoneOnlyRecording() {
         assertEquals(N76Power.HIGH, n76OptionsFromJson("{}").power)
-        for (power in N76Power.entries) assertEquals(power,
+        for (power in N76Power.entries.filterNot { it==N76Power.UNCHANGED }) assertEquals(power,
             n76OptionsFromJson("{\"power\":\"${power.name}\"}").power)
         val migrated = n76OptionsFromJson("{\"recordMic\":true}")
         assertTrue(migrated.recordRadio)
         assertFalse(migrated.recordMicrophone)
+    }
+    @Test fun legacyUnchangedDefaultMigratesToHighWithoutErasingOtherOptions() {
+        val legacy=n76OptionsFromJson("{\"power\":\"UNCHANGED\",\"poll\":750,\"speaker\":false,\"forceTx\":true,\"txTone\":67.0}")
+        assertEquals(N76Power.HIGH,legacy.power)
+        assertEquals(750L,legacy.pollMillis)
+        assertFalse(legacy.speakerMonitor)
+        assertEquals(67.0,legacy.txCtcssHz!!,0.0)
+        assertEquals(legacy,n76OptionsFromJson(legacy.toPreferenceJson()))
+    }
+    @Test fun newlyExplicitUnchangedSelectionSurvivesSaveReloadAndRestart() {
+        val explicit=N76ControlOptions(power=N76Power.UNCHANGED)
+        val saved=explicit.toPreferenceJson()
+        assertEquals(N76Power.UNCHANGED,n76OptionsFromJson(saved).power)
+        assertEquals(N76Power.UNCHANGED,n76OptionsFromJson(n76OptionsFromJson(saved).toPreferenceJson()).power)
     }
 }

@@ -7,6 +7,7 @@ import com.rtbishop.look4sat.core.domain.model.N76Power
 import org.json.JSONObject
 
 internal fun N76ControlOptions.toPreferenceJson(): String = JSONObject().apply {
+    put("powerSelectionVersion", 1)
     put("firmware", firmwareMode.name); put("satelliteInfo", sendSatelliteInfo); put("poll", pollMillis)
     put("power", power.name); put("squelch", openSquelchOnTrack)
     put("forceRx", forceRxCtcss); put("rxTone", rxCtcssHz ?: JSONObject.NULL)
@@ -18,10 +19,15 @@ internal fun N76ControlOptions.toPreferenceJson(): String = JSONObject().apply {
 
 internal fun n76OptionsFromJson(text: String?): N76ControlOptions = runCatching {
     val json = JSONObject(text ?: "{}")
+    val storedPower=N76Power.entries.firstOrNull { it.name == json.optString("power") } ?: N76Power.HIGH
+    // UNCHANGED was the old default. New, explicitly saved UNCHANGED selections
+    // carry a marker so upgrading defaults does not discard that later choice.
+    val power=if(storedPower==N76Power.UNCHANGED && json.optInt("powerSelectionVersion",0)<1)
+        N76Power.HIGH else storedPower
     N76ControlOptions(
         firmwareMode = N76FirmwareMode.entries.firstOrNull { it.name == json.optString("firmware") } ?: N76FirmwareMode.AUTO,
         sendSatelliteInfo = json.optBoolean("satelliteInfo", true), pollMillis = json.optLong("poll", 1_000),
-        power = N76Power.entries.firstOrNull { it.name == json.optString("power") } ?: N76Power.HIGH,
+        power = power,
         openSquelchOnTrack = json.optBoolean("squelch", false),
         forceRxCtcss = json.optBoolean("forceRx", false), rxCtcssHz = json.optDouble("rxTone", Double.NaN).takeIf { it.isFinite() },
         forceTxCtcss = json.optBoolean("forceTx", false), txCtcssHz = json.optDouble("txTone", Double.NaN).takeIf { it.isFinite() },

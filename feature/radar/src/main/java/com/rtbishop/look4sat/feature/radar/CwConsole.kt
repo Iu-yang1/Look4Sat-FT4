@@ -112,6 +112,11 @@ internal fun CwConsole(
     fun edit(value: CwConsoleDraft) { onAction(RadarAction.SetCwConsoleDraft(value)); error = null }
     val close = { onAction(RadarAction.CloseCwConsole) }
     val myCallsign = draft.myCallsign ?: log.ownCallsign
+    val logTarget = remember(state.currentPass, state.transceivers.transmitters,
+        state.transceivers.selectedUuid, state.calculatorTxHz, state.calculatorRxHz) {
+        state.logRecordTarget()
+    }
+    val cwLogOverrides = LogRecordOverrides(myCallsign, draft.sentReport, mode = "CW")
     // A roaming/multi-grid station may list several grids; use the first grid in spoken CW.
     val grid = log.stationGrid.split(',', ';', ' ').firstOrNull(String::isNotBlank).orEmpty()
     val values = CwTemplateValues(log.callsignInput, myCallsign, draft.sentReport, grid)
@@ -197,6 +202,14 @@ internal fun CwConsole(
                             OutlinedButton(onClick = { onAction(RadarAction.StopRemoteTx) }, modifier = Modifier.heightIn(min = 48.dp)) {
                                 Text(stringResource(R.string.rc_l4s_stop))
                             }
+                            Button(
+                                onClick = {
+                                    logViewModel.record(logTarget.satName, "CW", logTarget.txHz, logTarget.rxHz,
+                                        log.stationGrid, logTarget.passWindow, cwLogOverrides)
+                                },
+                                enabled = !log.recordSaving && log.callsignInput.isNotBlank() && logTarget.satName.isNotBlank(),
+                                modifier = Modifier.heightIn(min = 48.dp).testTag("cwConsoleLogButton")
+                            ) { Text("Log") }
                             if (caps?.cwOptions == true) OutlinedButton(onClick = { showOptions = true },
                                 enabled = !control.frequencyEditingLocked && remote?.nativeCwOptions != null,
                                 modifier = Modifier.heightIn(min = 48.dp)) {
@@ -257,7 +270,7 @@ internal fun CwConsole(
                     item {
                         LogPage(state, logViewModel, onFixGrid,
                             modifier = Modifier.fillMaxWidth().height(maxOf(320, configuration.screenHeightDp / 2).dp),
-                            overrides = LogRecordOverrides(myCallsign, draft.sentReport, mode = "CW"), showCallsignInput = false)
+                            overrides = cwLogOverrides, showCallsignInput = false, showRecordButton = false)
                     }
                 }
             }

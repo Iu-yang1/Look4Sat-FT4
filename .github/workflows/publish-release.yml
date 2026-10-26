@@ -14,7 +14,7 @@ name: Build Look4Sat APK
 # Local Gradle builds keep using the catalog unchanged. Most runs are manual; only the specific release commit has a guarded push trigger.
 
 on:
-  # One-shot v17.1 release automation; only the specific release commit runs on push.
+  # One-shot v17.2 release automation; only the specific release commit runs on push.
   push:
     branches: [main]
   workflow_dispatch:
@@ -38,7 +38,7 @@ permissions:
 
 jobs:
   build:
-    if: "${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && startsWith(github.event.head_commit.message, 'release: v4.4.8-ba7opf.17.1')) }}"
+    if: "${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && startsWith(github.event.head_commit.message, 'release: v4.4.8-ba7opf.17.2')) }}"
     runs-on: ubuntu-latest
     timeout-minutes: 50
     steps:
@@ -222,23 +222,15 @@ jobs:
           NOTES="$NOTES_IN"
           if [ "$GITHUB_EVENT_NAME" = "push" ]; then
             NOTES="$(cat <<'RELEASE_NOTES'
-          ## v17.1 — English
-          - Fixed the Settings LoTW sync progress bar by using the foreground-service progress for both the card and dialog, and removed the old ViewModel synchronization fallback.
-          - Unified RX/TX reference calibration for CAT and both frequency calculators, retained passband width/inversion, preserved per-transponder reference pairs across page reopening and app restarts, and prevented duplicate offset/Doppler correction.
-          - Made the CW console accessible from expanded named linear-transponder rows without a connected radio; added connect/tracking actions and nominal-frequency adjustment in 1 kHz steps while actual tuning remains Doppler-corrected.
-          - Improved L4S USB heartbeat and reconnection handling, plus N76 Bluetooth and reply handling.
-          - N76 recording now captures mono radio audio only; legacy stereo WAV playback/export remains supported. The default N76 power selection is HIGH with migration of the old default; RF-power mapping is not yet verified on hardware.
-          
-          Verification: GitHub Actions unit tests passed; APK signature, signing certificate, version name/code, and both packaged ABIs verified. Real-radio RF/PTT and N76 power output were not measured.
-          
-          ## v17.1 — 中文
-          - 设置页 LoTW 同步进度条改用与弹窗共享的前台服务进度，并删除旧 ViewModel 同步回退实现。
-          - CAT 和两个频率计算器统一 RX/TX 参考频率校准，保留通带宽度及反转特性，重新进入页面或重启应用后继续保留各转发器的参考频率，并避免重复施加偏移量或多普勒修正。
-          - 展开有名称的线性转发器条目后，无需连接电台也可打开 CW 控制台；新增连接/跟踪操作及 1 kHz 步进的标称频率调节，实际调谐仍进行多普勒修正。
-          - 改进 L4S USB 心跳及重连处理，以及 N76 蓝牙通信和应答处理。
-          - N76 录音改为仅录制单声道电台音频，仍支持播放及导出旧立体声 WAV；默认 N76 功率选择改为 HIGH，并迁移旧默认设置，射频功率映射尚未经硬件验证。
-          
-          验证：GitHub Actions 单元测试通过；APK 签名、签名证书、版本名称/代码及打包的两种 ABI 均已验证。未进行真实电台 RF/PTT 和 N76 输出功率实测。
+          ## v17.2 — English
+          - Moved the CW console Log button directly after Stop TX, keeping both buttons at matching heights.
+          - The quick Log action records the same satellite, frequency pair, station callsign and sent RST, following the radar log's pass-window rules.
+          - Removed the old inline Log button from the CW log list; other radar log screens are unchanged.
+
+          ## v17.2 — 中文
+          - 将 CW 控制台的 Log 按钮移至停止发射（Stop TX）右侧，保持按钮高度一致。
+          - 快捷日志使用相同的卫星、上下行频率、本台呼号、发出 RST 和过境时间窗口逻辑。
+          - 移除 CW 日志列表中原先的 Log 按钮，其他雷达日志页面保持不变。
           RELEASE_NOTES
           )"
           fi

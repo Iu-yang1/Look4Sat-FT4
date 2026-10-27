@@ -67,6 +67,7 @@ import com.rtbishop.look4sat.core.presentation.sheetDialogContainerColor
 import com.rtbishop.look4sat.core.presentation.sheetDialogShape
 import com.rtbishop.look4sat.core.presentation.gridsLabel
 import com.rtbishop.look4sat.core.presentation.LoTWPositionWarningDialog
+import com.rtbishop.look4sat.core.presentation.LoTWUploadResultDialog
 import com.rtbishop.look4sat.core.presentation.WavelogUploadPreviewDialog
 
 /** Shared radar log and CW quick-Log pass/frequency selection. */
@@ -272,6 +273,19 @@ fun LogPage(
             busy = logUiState.busy,
             onConfirm = logViewModel::confirmWavelogUpload,
             onDismiss = logViewModel::dismissWavelogPreview
+        )
+    }
+
+    logUiState.uploadIssueKind?.let { kind ->
+        LoTWUploadResultDialog(
+            kind = kind,
+            summary = logUiState.uploadIssueSummary,
+            technicalDetails = logUiState.uploadIssueTechnicalDetails,
+            onDismiss = logViewModel::clearMessage,
+            onRetry = {
+                logViewModel.clearMessage()
+                logViewModel.prepareUpload()
+            }
         )
     }
 

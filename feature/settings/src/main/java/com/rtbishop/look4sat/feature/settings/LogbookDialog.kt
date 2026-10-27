@@ -54,6 +54,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.rtbishop.look4sat.core.domain.logbook.LogbookFilter
 import com.rtbishop.look4sat.core.domain.logbook.QsoRecord
+import com.rtbishop.look4sat.core.domain.repository.LoTWUploadIssueKind
 import com.rtbishop.look4sat.core.domain.model.NominalFrequencies
 import com.rtbishop.look4sat.core.domain.logbook.displayMode
 import com.rtbishop.look4sat.core.domain.logbook.filterRecords
@@ -66,6 +67,7 @@ import com.rtbishop.look4sat.core.presentation.sheetDialogContainerColor
 import com.rtbishop.look4sat.core.presentation.sheetDialogShape
 import com.rtbishop.look4sat.core.presentation.gridsLabel
 import com.rtbishop.look4sat.core.presentation.LoTWPositionWarningDialog
+import com.rtbishop.look4sat.core.presentation.LoTWUploadResultDialog
 import com.rtbishop.look4sat.core.presentation.WavelogUploadPreviewDialog
 import com.rtbishop.look4sat.core.presentation.R
 import com.rtbishop.look4sat.core.presentation.SharedDialog
@@ -106,6 +108,9 @@ fun LogbookDialog(
     nominalFrequencies: suspend (String) -> NominalFrequencies? = { null },
     uploadBusy: Boolean,
     uploadMessage: String,
+    uploadErrorKind: LoTWUploadIssueKind? = null,
+    uploadErrorSummary: String = "",
+    uploadErrorTechnicalDetails: String = "",
     preview: com.rtbishop.look4sat.core.domain.repository.LoTWUploadPreview?,
     positionWarning: com.rtbishop.look4sat.core.domain.repository.LoTWPositionWarning? = null,
     onDismiss: () -> Unit,
@@ -332,6 +337,19 @@ fun LogbookDialog(
             onSwitchCertificate = onSwitchCertificate
         )
     }
+    uploadErrorKind?.let { kind ->
+        LoTWUploadResultDialog(
+            kind = kind,
+            summary = uploadErrorSummary,
+            technicalDetails = uploadErrorTechnicalDetails,
+            onDismiss = onDismissMessage,
+            onRetry = {
+                onDismissMessage()
+                if (selectionMode) onResubmitSelected() else onUpload()
+            }
+        )
+    }
+
     if (uploadMessage.isNotBlank()) {
         AlertDialog(
             onDismissRequest = onDismissMessage,

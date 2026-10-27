@@ -364,6 +364,9 @@ private fun SettingsScreen(
             nominalFrequencies = nominalFrequencies,
             uploadBusy = uiState.logbookUploadBusy,
             uploadMessage = uiState.logbookUploadMessage,
+            uploadErrorKind = uiState.logbookUploadErrorKind,
+            uploadErrorSummary = uiState.logbookUploadErrorSummary,
+            uploadErrorTechnicalDetails = uiState.logbookUploadErrorTechnicalDetails,
             preview = uiState.logbookPreview,
             positionWarning = uiState.logbookPositionWarning,
             onDismiss = {

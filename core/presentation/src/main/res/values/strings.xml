@@ -665,4 +665,19 @@ Upstream: https://github.com/rt-bishop/Look4Sat</string>
     <string name="rc_usb_permission_required">USB access is required. Select the CAT port again and allow access.</string>
     <string name="rc_usb_permission_tap">Tap to grant USB access before selecting this CAT port.</string>
     <string name="rc_usb_port_incompatible">This CP2105 secondary port cannot provide the 8N2 link required by Yaesu CAT.</string>
+
+    <string name="lotw_upload_result_not_sent_title">Upload not sent</string>
+    <string name="lotw_upload_result_rejected_title">LoTW rejected the upload</string>
+    <string name="lotw_upload_result_unknown_title">Upload result unknown</string>
+    <string name="lotw_upload_result_previous_unknown_title">Previous upload needs checking</string>
+    <string name="lotw_upload_result_not_sent_guidance">The connection failed before the upload request started. No QSO data was sent, so it is safe to try again.</string>
+    <string name="lotw_upload_result_rejected_guidance">LoTW explicitly rejected this upload. Review the server reason above, correct the issue, and then prepare a new upload.</string>
+    <string name="lotw_upload_result_unknown_guidance">Look4Sat could not confirm whether LoTW accepted the upload. The server may already have received it. Check LoTW before resubmitting; this result will not be retried automatically.</string>
+    <string name="lotw_upload_result_previous_unknown_guidance">An earlier attempt may have reached LoTW. Check your LoTW account first. If the QSO is absent, select the record in Settings → Logbook and use Resubmit.</string>
+    <string name="lotw_upload_result_show_details">Show technical details</string>
+    <string name="lotw_upload_result_hide_details">Hide technical details</string>
+    <string name="lotw_upload_result_no_details">No additional technical details are available.</string>
+    <string name="lotw_upload_result_copy_details">Copy error details</string>
+    <string name="lotw_upload_result_retry">Retry safely</string>
+    <string name="lotw_upload_result_close">Close</string>
 </resources>

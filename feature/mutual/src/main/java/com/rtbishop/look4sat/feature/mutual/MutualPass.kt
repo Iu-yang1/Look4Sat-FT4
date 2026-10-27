@@ -75,3 +75,34 @@ internal fun visibleMutualPasses(
 ): List<Pair<Int, MutualPass>> =
     passes.mapIndexed { index, pass -> index to pass }
         .filter { (_, pass) -> focusedCatNum == null || pass.catNum == focusedCatNum }
+
+/**
+ * Finds the nearest mutual-visibility horizon crossing at one-second resolution.
+ * The coarse AOS is normally already above 0°, while coarse LOS is normally
+ * below 0°. Search toward the opposite side of the horizon in either case,
+ * returning an above-horizon sample so neither curve extends below 0°.
+ *
+ * Returns null when no crossing can be bracketed in 70 seconds.
+ */
+internal fun refineMutualHorizonEdge(
+    approxTime: Long,
+    stepMs: Long,
+    goingUp: Boolean,
+    isMutuallyVisible: (Long) -> Boolean
+): Long? {
+    if (stepMs <= 0L) return null
+    val initiallyVisible = isMutuallyVisible(approxTime)
+    val direction = if (initiallyVisible == goingUp) -stepMs else stepMs
+    var time = approxTime
+
+    repeat((70_000L / stepMs).toInt()) {
+        val next = time + direction
+        val nextVisible = isMutuallyVisible(next)
+        if (nextVisible != initiallyVisible) {
+            return if (nextVisible) next else time
+        }
+        time = next
+    }
+    return null
+}
+

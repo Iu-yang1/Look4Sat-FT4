@@ -510,7 +510,7 @@ class MutualViewModel(
 
                 val refinedAos = refineEdge(sat, posA, posB, aos, 1_000L, true)
                 val refinedLos = refineEdge(sat, posA, posB, los, 1_000L, false)
-                if (refinedLos <= refinedAos) {
+                if (refinedAos == null || refinedLos == null || refinedLos <= refinedAos) {
                     searchStart = los + 120_000L
                     continue
                 }
@@ -537,7 +537,7 @@ class MutualViewModel(
         var maxElevB = 0.0
 
         var tSample = refinedAos
-        while (tSample <= refinedLos) {
+        while (true) {
             // Use getElevation for elevation, matching the main pass predictor; use
             // getFullPosition only for azimuth needed by the radar plot.
             val elevA = elevationDeg(sat, posA, tSample)
@@ -556,7 +556,10 @@ class MutualViewModel(
                     elevationB = elevB
                 )
             )
-            tSample += sampleInterval
+            // Always include the refined LOS as the final chart/radar sample,
+            // even when the 5-second sampling interval does not divide the pass.
+            if (tSample == refinedLos) break
+            tSample = minOf(tSample + sampleInterval, refinedLos)
         }
 
         if (maxElevA > minElevADeg && maxElevB > minElevBDeg) {
@@ -574,40 +577,12 @@ class MutualViewModel(
         return null
     }
 
-    /** Refine the AOS (goingUp=true) or LOS (goingUp=false) to ~1s precision at the 0° horizon. */
+    /** Refine both AOS and LOS to the nearest above-horizon second. */
     private fun refineEdge(
         sat: OrbitalObject, posA: GeoPos, posB: GeoPos,
         approxTime: Long, step: Long, goingUp: Boolean
-    ): Long {
-        if (goingUp) {
-            // AOS: walk backward from approxTime to find the last sample where either is below
-            // the horizon, then AOS is the next step after that.
-            var t = approxTime
-            while (t > approxTime - 70_000L) {
-                val eA = elevationDeg(sat, posA, t)
-                val eB = elevationDeg(sat, posB, t)
-                if (eA > 0.0 && eB > 0.0) {
-                    t -= step
-                } else {
-                    return t + step
-                }
-            }
-            return approxTime - 70_000L + step
-        } else {
-            // LOS: walk forward from approxTime to find the first sample where either drops
-            // below the horizon, then LOS is the step before that.
-            var t = approxTime
-            while (t < approxTime + 70_000L) {
-                val eA = elevationDeg(sat, posA, t)
-                val eB = elevationDeg(sat, posB, t)
-                if (eA > 0.0 && eB > 0.0) {
-                    t += step
-                } else {
-                    return t - step
-                }
-            }
-            return approxTime + 70_000L - step
-        }
+    ): Long? = refineMutualHorizonEdge(approxTime, step, goingUp) { time ->
+        elevationDeg(sat, posA, time) > 0.0 && elevationDeg(sat, posB, time) > 0.0
     }
 
     private fun elevationDeg(sat: OrbitalObject, pos: GeoPos, time: Long): Double {

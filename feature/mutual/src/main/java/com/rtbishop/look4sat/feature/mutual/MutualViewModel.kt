@@ -537,7 +537,7 @@ class MutualViewModel(
         var maxElevB = 0.0
 
         var tSample = refinedAos
-        while (tSample <= refinedLos) {
+        while (true) {
             // Use getElevation for elevation, matching the main pass predictor; use
             // getFullPosition only for azimuth needed by the radar plot.
             val elevA = elevationDeg(sat, posA, tSample)
@@ -556,7 +556,10 @@ class MutualViewModel(
                     elevationB = elevB
                 )
             )
-            tSample += sampleInterval
+            // Always include the refined LOS as the final chart/radar sample,
+            // even when the 5-second sampling interval does not divide the pass.
+            if (tSample == refinedLos) break
+            tSample = minOf(tSample + sampleInterval, refinedLos)
         }
 
         if (maxElevA > minElevADeg && maxElevB > minElevBDeg) {

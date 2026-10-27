@@ -77,12 +77,18 @@ internal fun visibleMutualPasses(
         .filter { (_, pass) -> focusedCatNum == null || pass.catNum == focusedCatNum }
 
 /**
- * Finds the nearest mutual-visibility horizon crossing at one-second resolution.
- * The coarse AOS is normally already above 0°, while coarse LOS is normally
- * below 0°. Search toward the opposite side of the horizon in either case,
- * returning an above-horizon sample so neither curve extends below 0°.
+ * Refine an AOS (rising edge) or LOS (falling edge) at one-second resolution.
+ * Coarse times can lie on either side of the horizon; in particular an AOS
+ * estimate can fall *after* the LOS of a short pass. Never mistake the nearer
+ * LOS for the requested AOS merely because both are visibility transitions.
  *
- * Returns null when no crossing can be bracketed in 70 seconds.
+ * Search backwards first for AOS, towards the expected LOS for a visible
+ * coarse sample, and backwards for an already-below-horizon LOS. Fall back to
+ * the other direction when necessary. The returned timestamp is always an
+ * above-horizon sample, so the chart cannot extend below 0°.
+ *
+ * Returns null if there is no crossing of the requested type within 70 seconds
+ * in either search direction.
  */
 internal fun refineMutualHorizonEdge(
     approxTime: Long,
@@ -91,18 +97,33 @@ internal fun refineMutualHorizonEdge(
     isMutuallyVisible: (Long) -> Boolean
 ): Long? {
     if (stepMs <= 0L) return null
-    val initiallyVisible = isMutuallyVisible(approxTime)
-    val direction = if (initiallyVisible == goingUp) -stepMs else stepMs
-    var time = approxTime
+    val steps = (70_000L / stepMs).toInt()
+    if (steps == 0) return null
 
-    repeat((70_000L / stepMs).toInt()) {
-        val next = time + direction
-        val nextVisible = isMutuallyVisible(next)
-        if (nextVisible != initiallyVisible) {
-            return if (nextVisible) next else time
+    fun search(direction: Long): Long? {
+        var time = approxTime
+        var visible = isMutuallyVisible(time)
+        repeat(steps) {
+            val next = time + direction
+            val nextVisible = isMutuallyVisible(next)
+            // Visibility transitions are classified in chronological order,
+            // regardless of whether the search itself is running backwards.
+            val before = if (direction > 0L) visible else nextVisible
+            val after = if (direction > 0L) nextVisible else visible
+            if (before != after && after == goingUp) {
+                return if (visible) time else next
+            }
+            time = next
+            visible = nextVisible
         }
-        time = next
+        return null
     }
-    return null
+
+    val firstDirection = when {
+        goingUp -> -stepMs
+        isMutuallyVisible(approxTime) -> stepMs
+        else -> -stepMs
+    }
+    return search(firstDirection) ?: search(-firstDirection)
 }
 

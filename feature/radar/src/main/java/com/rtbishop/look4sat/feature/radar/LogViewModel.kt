@@ -36,6 +36,7 @@ import com.rtbishop.look4sat.core.domain.repository.IWavelogUploadRepository
 import com.rtbishop.look4sat.core.domain.repository.LoTWOperationException
 import com.rtbishop.look4sat.core.domain.repository.LoTWPositionWarning
 import com.rtbishop.look4sat.core.domain.repository.LoTWUploadPreview
+import com.rtbishop.look4sat.core.domain.repository.LoTWUploadIssueKind
 import com.rtbishop.look4sat.core.domain.repository.LoTWUploadResult
 import com.rtbishop.look4sat.core.domain.repository.WavelogUploadOutcome
 import com.rtbishop.look4sat.core.domain.repository.WavelogUploadPreview
@@ -101,6 +102,10 @@ data class LogUiState(
     val stationMismatch: LoTWPositionWarning? = null,
     /** User-facing upload / record message ("" when none). */
     val message: String = "",
+    /** Structured LoTW upload failure; Wavelog messages continue to use [message]. */
+    val uploadIssueKind: LoTWUploadIssueKind? = null,
+    val uploadIssueSummary: String = "",
+    val uploadIssueTechnicalDetails: String = "",
     val postText: String? = null,
     val busy: Boolean = false,
     /** True when uploads route through Wavelog (Wavelog configured — LoTW paused). */
@@ -331,7 +336,15 @@ class LogViewModel(
     fun prepareUpload() {
         if (_uiState.value.busy) return
         viewModelScope.launch {
-            _uiState.update { it.copy(busy = true, message = "") }
+            _uiState.update {
+                it.copy(
+                    busy = true,
+                    message = "",
+                    uploadIssueKind = null,
+                    uploadIssueSummary = "",
+                    uploadIssueTechnicalDetails = ""
+                )
+            }
             try {
                 val all = qsoRepository.records.first()
                 val wavelogSettings = settingsRepo.wavelogUploadSettings.value
@@ -348,15 +361,25 @@ class LogViewModel(
                 // carries the rewrite / use-another-certificate actions. Without this the operator
                 // gets a dead-end message and those records can never be uploaded.
                 if (audit.pending == 0 && !audit.needsPreviewForConflicts()) {
-                    val msg = when {
-                        audit.unavailable > 0 -> unavailableUploadSummary(
-                            audit.unavailable, audit.reasons, audit.details, audit.duplicates, audit.incomplete
-                        )
-
-                        audit.unknown > 0 -> "${audit.unknown} QSO(s) had an unknown upload result — not retried automatically"
-                        else -> "No pending QSOs to upload"
+                    when {
+                        audit.unavailable > 0 -> _uiState.update {
+                            it.copy(
+                                busy = false,
+                                message = unavailableUploadSummary(
+                                    audit.unavailable, audit.reasons, audit.details, audit.duplicates, audit.incomplete
+                                )
+                            )
+                        }
+                        audit.unknown > 0 -> _uiState.update {
+                            it.copy(
+                                busy = false,
+                                message = "",
+                                uploadIssueKind = LoTWUploadIssueKind.PREVIOUS_UNKNOWN,
+                                uploadIssueSummary = "${audit.unknown} QSO(s) had an unresolved upload result from an earlier attempt."
+                            )
+                        }
+                        else -> _uiState.update { it.copy(busy = false, message = "No pending QSOs to upload") }
                     }
-                    _uiState.update { it.copy(busy = false, message = msg) }
                     return@launch
                 }
                 val preview = lotwUploadRepository.prepare(pending, false)
@@ -407,13 +430,44 @@ class LogViewModel(
                 qsoRepository.markUploaded(lastUploadedIds, preview.grids, preview.callsign)
                 lastUploadedIds = emptyList()
             }
+            val issueKind = when (result) {
+                is LoTWUploadResult.Rejected -> LoTWUploadIssueKind.REJECTED
+                is LoTWUploadResult.NotSent -> LoTWUploadIssueKind.NOT_SENT
+                is LoTWUploadResult.Unknown -> LoTWUploadIssueKind.UNKNOWN
+                else -> null
+            }
+            val issueSummary = when (result) {
+                is LoTWUploadResult.Rejected -> result.message.ifBlank { "LoTW rejected the upload." }
+                else -> ""
+            }
+            val issueDetails = when (result) {
+                is LoTWUploadResult.Rejected -> buildList {
+                    result.httpStatus?.let { add("HTTP status: $it") }
+                    result.responseSummary.takeIf(String::isNotBlank)?.let { add("Server response: $it") }
+                }.joinToString("\n")
+                is LoTWUploadResult.NotSent -> result.reason
+                is LoTWUploadResult.Unknown -> buildList {
+                    result.httpStatus?.let { add("HTTP status: $it") }
+                    result.reason.takeIf(String::isNotBlank)?.let { add("Details: $it") }
+                    result.responseSummary.takeIf(String::isNotBlank)?.let { add("Server response: $it") }
+                }.joinToString("\n")
+                else -> ""
+            }
             val msg = when (result) {
                 is LoTWUploadResult.Accepted -> "Uploaded ${result.count} QSO(s) — accepted by LoTW"
-                is LoTWUploadResult.Rejected -> "Rejected: ${result.message}"
-                LoTWUploadResult.Unknown -> "Unknown result — will not auto-retry"
-                LoTWUploadResult.ExpiredPreview -> "Preview expired — tap upload again"
+                is LoTWUploadResult.ExpiredPreview -> "Preview expired — tap upload again"
+                else -> ""
             }
-            _uiState.update { it.copy(busy = false, preview = null, message = msg) }
+            _uiState.update {
+                it.copy(
+                    busy = false,
+                    preview = null,
+                    message = msg,
+                    uploadIssueKind = issueKind,
+                    uploadIssueSummary = issueSummary,
+                    uploadIssueTechnicalDetails = issueDetails
+                )
+            }
         }
     }
 
@@ -503,7 +557,14 @@ class LogViewModel(
         }
     }
 
-    fun clearMessage() = _uiState.update { it.copy(message = "") }
+    fun clearMessage() = _uiState.update {
+        it.copy(
+            message = "",
+            uploadIssueKind = null,
+            uploadIssueSummary = "",
+            uploadIssueTechnicalDetails = ""
+        )
+    }
 
     companion object {
         fun factory(container: IMainContainer) = viewModelFactory {

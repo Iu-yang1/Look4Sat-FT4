@@ -25,6 +25,7 @@ import com.rtbishop.look4sat.core.domain.model.RadioControlSettings
 import com.rtbishop.look4sat.core.domain.model.WavelogUploadSettings
 import com.rtbishop.look4sat.core.domain.predict.GeoPos
 import com.rtbishop.look4sat.core.domain.repository.CompassAccuracy
+import com.rtbishop.look4sat.core.domain.repository.LoTWUploadIssueKind
 import java.io.File
 
 data class PositionSettings(
@@ -104,6 +105,10 @@ data class SettingsState(
     val logbookUploadBusy: Boolean = false,
     /** User-facing upload message shown inside the logbook dialog ("" = none). */
     val logbookUploadMessage: String = "",
+    /** Structured LoTW failure shown in the shared actionable result dialog. */
+    val logbookUploadErrorKind: LoTWUploadIssueKind? = null,
+    val logbookUploadErrorSummary: String = "",
+    val logbookUploadErrorTechnicalDetails: String = "",
     /** Logbook multi-select mode (entered by long-pressing a row); checked records can be
      *  re-uploaded so a corrected station location updates them on LoTW (resubmit). */
     val logbookSelectionMode: Boolean = false,

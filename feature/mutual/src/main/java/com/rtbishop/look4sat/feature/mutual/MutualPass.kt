@@ -75,6 +75,7 @@ internal fun visibleMutualPasses(
 ): List<Pair<Int, MutualPass>> =
     passes.mapIndexed { index, pass -> index to pass }
         .filter { (_, pass) -> focusedCatNum == null || pass.catNum == focusedCatNum }
+
 /**
  * Finds the nearest mutual-visibility horizon crossing at one-second resolution.
  * The coarse AOS is normally already above 0°, while coarse LOS is normally
@@ -104,3 +105,4 @@ internal fun refineMutualHorizonEdge(
     }
     return null
 }
+

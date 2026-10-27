@@ -14,7 +14,7 @@ name: Build Look4Sat APK
 # Local Gradle builds keep using the catalog unchanged. Most runs are manual; only the specific release commit has a guarded push trigger.
 
 on:
-  # One-shot v17.2 release automation; only the specific release commit runs on push.
+  # One-shot v17.3 release automation; only the specific release commit runs on push.
   push:
     branches: [main]
   workflow_dispatch:
@@ -38,7 +38,7 @@ permissions:
 
 jobs:
   build:
-    if: "${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && startsWith(github.event.head_commit.message, 'release: v4.4.8-ba7opf.17.2')) }}"
+    if: "${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && startsWith(github.event.head_commit.message, 'release: v4.4.8-ba7opf.17.3')) }}"
     runs-on: ubuntu-latest
     timeout-minutes: 50
     steps:
@@ -222,15 +222,17 @@ jobs:
           NOTES="$NOTES_IN"
           if [ "$GITHUB_EVENT_NAME" = "push" ]; then
             NOTES="$(cat <<'RELEASE_NOTES'
-          ## v17.2 — English
-          - Moved the CW console Log button directly after Stop TX, keeping both buttons at matching heights.
-          - The quick Log action records the same satellite, frequency pair, station callsign and sent RST, following the radar log's pass-window rules.
-          - Removed the old inline Log button from the CW log list; other radar log screens are unchanged.
+          ## v17.3 — English
+          - Fixed Match-page elevation curves extending below the 0° horizon.
+          - Improved LoTW QSO upload error explanations in Radar Log and Settings Logbook, with actionable guidance and copyable technical details.
+          - Distinguished server rejection, confirmed pre-send failures, and unknown upload outcomes. Unknown results continue to block automatic retries to avoid duplicate submissions.
+          - Added LoTW upload response/error classification tests.
 
-          ## v17.2 — 中文
-          - 将 CW 控制台的 Log 按钮移至停止发射（Stop TX）右侧，保持按钮高度一致。
-          - 快捷日志使用相同的卫星、上下行频率、本台呼号、发出 RST 和过境时间窗口逻辑。
-          - 移除 CW 日志列表中原先的 Log 按钮，其他雷达日志页面保持不变。
+          ## v17.3 — 中文
+          - 修复匹配页过境仰角曲线绘制到 0° 地平线以下的问题。
+          - 优化雷达日志与设置日志本中的 LoTW QSO 上传错误提示，增加处理建议、可展开和可复制的技术详情。
+          - 区分服务器明确拒绝、确认未发送和上传结果未知。对结果未知的记录继续阻止自动重试，避免重复上传。
+          - 补充 LoTW 上传响应及错误分类测试。
           RELEASE_NOTES
           )"
           fi

@@ -637,4 +637,19 @@
     <string name="rc_usb_permission_required">需要 USB 访问权限。请重新选择 CAT 端口并允许访问。</string>
     <string name="rc_usb_permission_tap">点击并授权 USB 访问后，才能选择此 CAT 端口。</string>
     <string name="rc_usb_port_incompatible">此 CP2105 辅助端口无法提供 Yaesu CAT 所需的 8N2 串口格式。</string>
+
+    <string name="lotw_upload_result_not_sent_title">上传请求未发送</string>
+    <string name="lotw_upload_result_rejected_title">LoTW 拒绝了本次上传</string>
+    <string name="lotw_upload_result_unknown_title">上传结果不确定</string>
+    <string name="lotw_upload_result_previous_unknown_title">需要核查之前的上传</string>
+    <string name="lotw_upload_result_not_sent_guidance">连接在上传请求开始前失败，没有发送 QSO 数据，可以安全地重试。</string>
+    <string name="lotw_upload_result_rejected_guidance">LoTW 明确拒绝了本次上传。请查看上方服务器返回的原因，修正问题后重新准备上传。</string>
+    <string name="lotw_upload_result_unknown_guidance">Look4Sat 无法确认 LoTW 是否接收了本次上传，服务器可能已经收到数据。请先登录 LoTW 核查，不会自动重试。</string>
+    <string name="lotw_upload_result_previous_unknown_guidance">之前的上传可能已到达 LoTW。请先登录 LoTW 核查；如果没有这条 QSO，请在“设置 → 日志本”中选中该记录并使用“重传选中”。</string>
+    <string name="lotw_upload_result_show_details">查看技术详情</string>
+    <string name="lotw_upload_result_hide_details">隐藏技术详情</string>
+    <string name="lotw_upload_result_no_details">没有更多技术详情。</string>
+    <string name="lotw_upload_result_copy_details">复制错误详情</string>
+    <string name="lotw_upload_result_retry">安全重试</string>
+    <string name="lotw_upload_result_close">关闭</string>
 </resources>

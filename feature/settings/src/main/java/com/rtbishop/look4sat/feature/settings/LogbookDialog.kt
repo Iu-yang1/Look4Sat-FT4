@@ -345,7 +345,7 @@ fun LogbookDialog(
             onDismiss = onDismissMessage,
             onRetry = {
                 onDismissMessage()
-                onUpload()
+                if (selectionMode) onResubmitSelected() else onUpload()
             }
         )
     }

@@ -438,6 +438,18 @@ class LogViewModel(
             }
             val issueSummary = when (result) {
                 is LoTWUploadResult.Rejected -> result.message.ifBlank { "LoTW rejected the upload." }
+                is LoTWUploadResult.NotSent -> "The request failed before any QSO data was sent."
+                is LoTWUploadResult.Unknown -> when {
+                    result.reason.contains("timeout", ignoreCase = true) ->
+                        "The request timed out; LoTW may already have received the QSO data."
+                    result.reason.contains("Unable to read LoTW response", ignoreCase = true) ->
+                        "LoTW responded, but Look4Sat could not read the complete response."
+                    result.httpStatus != null && result.httpStatus !in 200..299 ->
+                        "LoTW returned HTTP ${result.httpStatus} without confirming whether the upload was accepted."
+                    result.reason.contains("recognized accepted/rejected marker", ignoreCase = true) ->
+                        "LoTW responded without an explicit upload acceptance or rejection."
+                    else -> "The connection ended after the upload may have started."
+                }
                 else -> ""
             }
             val issueDetails = when (result) {

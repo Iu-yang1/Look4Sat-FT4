@@ -30,6 +30,7 @@ import com.rtbishop.look4sat.core.domain.repository.ISatelliteRepo
 import com.rtbishop.look4sat.core.domain.repository.ISensorsRepo
 import com.rtbishop.look4sat.core.domain.repository.ISettingsRepo
 import com.rtbishop.look4sat.core.domain.repository.IUpdateRepository
+import com.rtbishop.look4sat.core.domain.repository.LoTWUploadIssueKind
 import com.rtbishop.look4sat.core.domain.repository.lotwCursorEpochMs
 import com.rtbishop.look4sat.core.domain.repository.positionWarning
 import com.rtbishop.look4sat.core.domain.repository.IWavelogUploadRepository
@@ -515,7 +516,15 @@ class SettingsViewModel(
     private fun prepareLogbookUpload() {
         if (_uiState.value.logbookUploadBusy) return
         viewModelScope.launch {
-            _uiState.update { it.copy(logbookUploadBusy = true, logbookUploadMessage = "") }
+            _uiState.update {
+                it.copy(
+                    logbookUploadBusy = true,
+                    logbookUploadMessage = "",
+                    logbookUploadErrorKind = null,
+                    logbookUploadErrorSummary = "",
+                    logbookUploadErrorTechnicalDetails = ""
+                )
+            }
             try {
                 val all = qsoRepository.records.first()
                 val wavelogSettings = settingsRepo.wavelogUploadSettings.value
@@ -532,15 +541,27 @@ class SettingsViewModel(
                 // carries the rewrite / use-another-certificate actions. Without this the operator
                 // gets a dead-end message and those records can never be uploaded.
                 if (audit.pending == 0 && !audit.needsPreviewForConflicts()) {
-                    val msg = when {
-                        audit.unavailable > 0 -> com.rtbishop.look4sat.core.domain.logbook.unavailableUploadSummary(
-                            audit.unavailable, audit.reasons, audit.details, audit.duplicates, audit.incomplete
-                        )
-
-                        audit.unknown > 0 -> "${audit.unknown} QSO(s) had an unknown upload result — not retried automatically"
-                        else -> "No pending QSOs to upload"
+                    when {
+                        audit.unavailable > 0 -> _uiState.update {
+                            it.copy(
+                                logbookUploadBusy = false,
+                                logbookUploadMessage = com.rtbishop.look4sat.core.domain.logbook.unavailableUploadSummary(
+                                    audit.unavailable, audit.reasons, audit.details, audit.duplicates, audit.incomplete
+                                )
+                            )
+                        }
+                        audit.unknown > 0 -> _uiState.update {
+                            it.copy(
+                                logbookUploadBusy = false,
+                                logbookUploadMessage = "",
+                                logbookUploadErrorKind = LoTWUploadIssueKind.PREVIOUS_UNKNOWN,
+                                logbookUploadErrorSummary = "${audit.unknown} QSO(s) had an unresolved upload result from an earlier attempt."
+                            )
+                        }
+                        else -> _uiState.update {
+                            it.copy(logbookUploadBusy = false, logbookUploadMessage = "No pending QSOs to upload")
+                        }
                     }
-                    _uiState.update { it.copy(logbookUploadBusy = false, logbookUploadMessage = msg) }
                     return@launch
                 }
                 val preview = lotwUploadRepository.prepare(pending, false)
@@ -615,17 +636,43 @@ class SettingsViewModel(
                 qsoRepository.markUploaded(lastLogbookUploadIds, preview.grids, preview.callsign)
                 lastLogbookUploadIds = emptyList()
             }
+            val issueKind = when (result) {
+                is com.rtbishop.look4sat.core.domain.repository.LoTWUploadResult.Rejected -> LoTWUploadIssueKind.REJECTED
+                is com.rtbishop.look4sat.core.domain.repository.LoTWUploadResult.NotSent -> LoTWUploadIssueKind.NOT_SENT
+                is com.rtbishop.look4sat.core.domain.repository.LoTWUploadResult.Unknown -> LoTWUploadIssueKind.UNKNOWN
+                else -> null
+            }
+            val issueSummary = when (result) {
+                is com.rtbishop.look4sat.core.domain.repository.LoTWUploadResult.Rejected ->
+                    result.message.ifBlank { "LoTW rejected the upload." }
+                else -> ""
+            }
+            val issueDetails = when (result) {
+                is com.rtbishop.look4sat.core.domain.repository.LoTWUploadResult.Rejected -> buildList {
+                    result.httpStatus?.let { add("HTTP status: $it") }
+                    result.responseSummary.takeIf(String::isNotBlank)?.let { add("Server response: $it") }
+                }.joinToString("\n")
+                is com.rtbishop.look4sat.core.domain.repository.LoTWUploadResult.NotSent -> result.reason
+                is com.rtbishop.look4sat.core.domain.repository.LoTWUploadResult.Unknown -> buildList {
+                    result.httpStatus?.let { add("HTTP status: $it") }
+                    result.reason.takeIf(String::isNotBlank)?.let { add("Details: $it") }
+                    result.responseSummary.takeIf(String::isNotBlank)?.let { add("Server response: $it") }
+                }.joinToString("\n")
+                else -> ""
+            }
             val msg = when (result) {
                 is com.rtbishop.look4sat.core.domain.repository.LoTWUploadResult.Accepted -> "Uploaded ${result.count} QSO(s) — accepted by LoTW"
-                is com.rtbishop.look4sat.core.domain.repository.LoTWUploadResult.Rejected -> "Rejected: ${result.message}"
-                com.rtbishop.look4sat.core.domain.repository.LoTWUploadResult.Unknown -> "Unknown result — will not auto-retry"
-                com.rtbishop.look4sat.core.domain.repository.LoTWUploadResult.ExpiredPreview -> "Preview expired — tap upload again"
+                is com.rtbishop.look4sat.core.domain.repository.LoTWUploadResult.ExpiredPreview -> "Preview expired — tap upload again"
+                else -> ""
             }
             _uiState.update {
                 it.copy(
                     logbookUploadBusy = false,
                     logbookPreview = null,
                     logbookUploadMessage = msg,
+                    logbookUploadErrorKind = issueKind,
+                    logbookUploadErrorSummary = issueSummary,
+                    logbookUploadErrorTechnicalDetails = issueDetails,
                     // An accepted resubmit is done — drop the checks; a failed one keeps
                     // them so retrying stays one tap away.
                     logbookSelectionMode = if (accepted) false else it.logbookSelectionMode,
@@ -767,7 +814,14 @@ class SettingsViewModel(
         }
     }
 
-    private fun clearLogbookMessage() = _uiState.update { it.copy(logbookUploadMessage = "") }
+    private fun clearLogbookMessage() = _uiState.update {
+        it.copy(
+            logbookUploadMessage = "",
+            logbookUploadErrorKind = null,
+            logbookUploadErrorSummary = "",
+            logbookUploadErrorTechnicalDetails = ""
+        )
+    }
 
     private fun loadLoTWUploadStatus() {
         viewModelScope.launch {

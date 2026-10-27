@@ -28,7 +28,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
@@ -51,6 +50,11 @@ fun LoTWUploadResultDialog(
 ) {
     var detailsExpanded by remember { mutableStateOf(false) }
     val clipboard = LocalClipboardManager.current
+    val noDetailsText = stringResource(R.string.lotw_upload_result_no_details)
+    val copyText = listOf(summary, technicalDetails)
+        .filter(String::isNotBlank)
+        .joinToString("\n\n")
+        .ifBlank { noDetailsText }
     val title = when (kind) {
         LoTWUploadIssueKind.NOT_SENT -> R.string.lotw_upload_result_not_sent_title
         LoTWUploadIssueKind.REJECTED -> R.string.lotw_upload_result_rejected_title
@@ -83,16 +87,12 @@ fun LoTWUploadResultDialog(
                 }
                 if (detailsExpanded) {
                     Text(
-                        text = technicalDetails.ifBlank {
-                            stringResource(R.string.lotw_upload_result_no_details)
-                        },
+                        text = technicalDetails.ifBlank { noDetailsText },
                         fontSize = 12.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     TextButton(onClick = {
-                        clipboard.setText(AnnotatedString(technicalDetails.ifBlank {
-                            stringResource(R.string.lotw_upload_result_no_details)
-                        }))
+                        clipboard.setText(AnnotatedString(copyText))
                     }) {
                         Text(stringResource(R.string.lotw_upload_result_copy_details))
                     }

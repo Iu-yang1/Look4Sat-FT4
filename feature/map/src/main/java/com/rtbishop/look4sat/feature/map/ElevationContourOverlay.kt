@@ -51,8 +51,8 @@ internal fun elevationContour(satellite: OrbitalPos, elevationDegrees: Double): 
  * Shared with the matching-station marker in MapScreen: labels and markers must
  * use precisely the same shade of blue.
  */
-internal val MATCHED_STATION_BLUE = Color.rgb(25, 118, 210)
-private val LOCAL_ELEVATION_YELLOW = Color.rgb(245, 230, 166)
+internal val MATCHED_STATION_BLUE = 0xFF1976D2.toInt()
+private val LOCAL_ELEVATION_YELLOW = 0xFFF5E6A6.toInt()
 
 /**
  * Topocentric elevation of the selected satellite from another ground location.

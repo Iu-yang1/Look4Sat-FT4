@@ -781,6 +781,13 @@ private fun MapScreen(
                     contourOverlay.update(uiState.footprint, elevationAngles, showElevationContours && !uiState.isGridMode)
                     stationElevationOverlay.position = if (uiState.isGridMode) null else uiState.stationPosition
                     stationElevationOverlay.elevation = if (uiState.isGridMode) null else uiState.mapData?.elevation
+                    // In matched passes, compute the other station's elevation at the exact
+                    // same predicted (possibly scrubbed) satellite instant.
+                    stationElevationOverlay.otherPosition =
+                        if (uiState.isGridMode) null else otherStationPosition
+                    stationElevationOverlay.otherElevation =
+                        if (uiState.isGridMode) null
+                        else elevationAtGroundStation(uiState.footprint, otherStationPosition)
                     scrubInProgress = uiState.isScrubbing
                     view.invalidate()
                 }
@@ -2231,7 +2238,7 @@ private fun setOtherStationPosition(position: GeoPos?, grid: String?, mapView: M
             it.setInfoWindow(null)
             it.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
             it.icon = ContextCompat.getDrawable(mapView.context, R.drawable.ic_position)?.apply {
-                setTint("#1976D2".toColorInt())
+                setTint(MATCHED_STATION_BLUE)
             }
             it.relatedObject = OTHER_STATION_MARKER_STYLE
             mapView.overlays[OVERLAY_OTHER_STATION] = it
@@ -2240,7 +2247,7 @@ private fun setOtherStationPosition(position: GeoPos?, grid: String?, mapView: M
         marker.title = grid.orEmpty()
         if (marker.relatedObject != OTHER_STATION_MARKER_STYLE) {
             marker.icon = ContextCompat.getDrawable(mapView.context, R.drawable.ic_position)?.apply {
-                setTint("#1976D2".toColorInt())
+                setTint(MATCHED_STATION_BLUE)
             }
             marker.relatedObject = OTHER_STATION_MARKER_STYLE
         }

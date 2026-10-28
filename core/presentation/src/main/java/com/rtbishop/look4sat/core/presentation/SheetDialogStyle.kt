@@ -27,7 +27,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.sp
 
 /**
- * Styling of the app's sheet dialogs ([DialogShell] / [SharedDialog] / [InfoDialog], now presented as centered cards). AlertDialog-based dialogs (logbook, QSO editor, upload preview) use these so
+ * Styling of the app's sheet dialogs ([DialogShell] / [SharedDialog] / [InfoDialog], all built on
+ * ModalBottomSheet). AlertDialog-based dialogs (logbook, QSO editor, upload preview) use these so
  * their container colour, corner radius and title look identical to the bottom sheets.
  */
 
@@ -48,8 +49,8 @@ fun sheetDialogShape(): Shape = MaterialTheme.shapes.medium
 fun SheetDialogTitle(text: String) {
     Text(
         text = text,
-        style = MaterialTheme.typography.titleLarge,
-        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+        fontSize = 16.sp,
+        fontWeight = FontWeight.Medium,
         color = MaterialTheme.colorScheme.primary,
         maxLines = 1,
         overflow = TextOverflow.Ellipsis

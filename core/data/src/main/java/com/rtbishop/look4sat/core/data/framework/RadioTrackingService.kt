@@ -249,6 +249,12 @@ class RadioTrackingService(
         val txAddr     = rcSettings.txRadioAddress
         val rxAddr     = rcSettings.rxRadioAddress
         val profile    = radioProfile(rcSettings.radioModel, rcSettings.civAddress)
+        if(rcSettings.radioAudio.networkCat && (!rcSettings.splitMode ||
+                rcSettings.radioModel!=RadioControlSettings.MODEL_ICOM_IC705 ||
+                rcSettings.radioAudio.backend!=com.rtbishop.look4sat.core.domain.audio.RadioAudioBackend.ICOM_WLAN)) {
+            _state.update { it.copy(errorMessage="WLAN CAT requires one IC-705 controller and WLAN audio") }
+            return
+        }
         if (profile.isN76 && rcSettings.catTransport != RadioControlSettings.TRANSPORT_BLUETOOTH) {
             _state.update { it.copy(errorMessage = "N76 requires Bluetooth") }
             return

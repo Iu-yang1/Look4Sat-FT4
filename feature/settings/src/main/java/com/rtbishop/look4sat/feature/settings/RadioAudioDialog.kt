@@ -26,6 +26,7 @@ internal fun RadioAudioDialog(
     var host by remember { mutableStateOf(initial.host) }
     var port by remember { mutableStateOf(initial.controlPort.toString()) }
     var networkCat by remember { mutableStateOf(initial.networkCat) }
+    var txLatency by remember { mutableStateOf(initial.txLatencyMillis.toString()) }
     var username by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
@@ -35,7 +36,9 @@ internal fun RadioAudioDialog(
     val devices=remember { session.devices() }
     SharedDialog(title=stringResource(R.string.radio_audio_title),onCancel=onDismiss,onAccept={
         try {
-            val value=RadioAudioSettings(backend,input,output,host.trim(),port.toIntOrNull() ?: 0,networkCat && backend==RadioAudioBackend.ICOM_WLAN)
+            val correction=txLatency.toLongOrNull()
+            require(correction!=null && correction in -500..1000) { "Audio timing correction must be between -500 and 1000 ms" }
+            val value=RadioAudioSettings(backend,input,output,host.trim(),port.toIntOrNull() ?: 0,networkCat && backend==RadioAudioBackend.ICOM_WLAN,correction)
             when(backend) {
                 RadioAudioBackend.ANDROID_DEVICE -> require(input.isNotBlank() && output.isNotBlank()) { "Select RX and TX audio devices" }
                 RadioAudioBackend.ICOM_WLAN -> {
@@ -82,6 +85,9 @@ internal fun RadioAudioDialog(
                 } }) { Text(stringResource(R.string.radio_audio_discover)) }
                 discovered.forEach { address -> TextButton(onClick={ host=address }) { Text(address) } }
             }
+            if(backend!=RadioAudioBackend.UNCONFIGURED) OutlinedTextField(txLatency,{ txLatency=it },
+                label={ Text(stringResource(R.string.radio_audio_tx_latency)) },singleLine=true,
+                supportingText={ Text(stringResource(R.string.radio_audio_tx_latency_hint)) })
             error?.let { Text(it,color=MaterialTheme.colorScheme.error) }
         }
     }

@@ -12,7 +12,11 @@
     <string name="radio_audio_password">网络密码（留空保留）</string>
     <string name="radio_audio_network_cat">使用 WLAN CAT 替代蓝牙 CAT</string>
     <string name="radio_audio_discover">查找局域网电台</string>
-    <string name="radio_audio_wireless_manual">WLAN 发射仅开放手动 FT4，实机时延待验证。</string>
+    <string name="radio_audio_wireless_manual">自动 FT4 需音频链路自检通过，并由用户启动。</string>
+    <string name="radio_audio_tx_latency">发送时延修正（ms）</string>
+    <string name="radio_audio_tx_latency_hint">正值会提前发送音频。</string>
+    <string name="radio_audio_selfcheck">正在检查电台音频链路</string>
+    <string name="radio_audio_timing_unverified">端到端调制时延未校准</string>
     <string name="radio_audio_ready">音频就绪</string>
     <string name="radio_audio_waiting">电台音频未就绪</string>
 </resources>

@@ -56,7 +56,8 @@ class Ft4AudioTransmitter(
     private val ft4Service: IFt4Service,
     private val coordinator: IFt4TransmitCoordinator,
     private val clock: IDisciplinedClock,
-    outputFactory: Ft4AudioOutputFactory? = null
+    outputFactory: Ft4AudioOutputFactory? = null,
+    private val outputLatencyMillis: ()->Long = { 0L }
 ) : IFt4AudioTransmitter {
     private val outputFactory = outputFactory ?: AndroidFt4AudioOutputFactory(requireNotNull(context))
     private val executionMutex = Mutex()
@@ -68,7 +69,8 @@ class Ft4AudioTransmitter(
     override val playbackTiming: StateFlow<Ft4PlaybackTiming> = mutablePlaybackTiming.asStateFlow()
 
     override fun recommendedSchedulingLeadMillis(): Long =
-        coordinator.recommendedPrepareLeadMillis() + SCHEDULING_MARGIN_MILLIS
+        coordinator.recommendedPrepareLeadMillis() + SCHEDULING_MARGIN_MILLIS +
+            (outputLatencyMillis()-500).coerceAtLeast(0)
 
     override suspend fun transmit(request: Ft4TransmissionRequest) = executionMutex.withLock {
         check(activeJob == null) { "FT4 transmitter is already active" }
@@ -79,7 +81,9 @@ class Ft4AudioTransmitter(
             require(request.audioFrequencyHz in 0f..3_000f) { "FT4 audio frequency is outside 0-3000 Hz" }
             require(request.volume in 0f..1f) { "FT4 output volume is outside 0-1" }
             checkAutomaticClock(request)
-            val timing = TransmissionTiming.from(clock.snapshot(), request.slotStartUtcMillis)
+            val specification=ft4Service.waveformSpec(OUTPUT_SAMPLE_RATE)
+            val compensation=outputLatencyMillis()
+            val timing = TransmissionTiming.from(clock.snapshot(), request.slotStartUtcMillis+specification.startOffsetMillis-compensation)
             val prepareLeadMillis = coordinator.recommendedPrepareLeadMillis()
             Log.i(
                 TAG,
@@ -93,9 +97,10 @@ class Ft4AudioTransmitter(
                 audioFrequencyHz = request.audioFrequencyHz,
                 outputSampleRate = OUTPUT_SAMPLE_RATE
             )
-            check(waveform.size == EXPECTED_WAVEFORM_SAMPLES) { "Unexpected FT4 waveform length" }
+            check(waveform.size == specification.sampleCount) { "Unexpected FT4 waveform length" }
             check(waveform.all(Float::isFinite)) { "FT4 waveform contains invalid samples" }
             output = outputFactory.create(OUTPUT_SAMPLE_RATE, request.volume)
+            check(output.latencyCompensationMillis==compensation) { "Audio timing configuration changed" }
             output.prepareTransmit(request.automatic)
             output.prepare(waveform)
 
@@ -106,8 +111,8 @@ class Ft4AudioTransmitter(
             lease = coordinator.beginTransmit(
                 TxRequest(
                     sessionGeneration = request.sessionGeneration,
-                    waveformStartUtcMillis = request.slotStartUtcMillis,
-                    waveformDurationMillis = WAVEFORM_DURATION_MILLIS,
+                    waveformStartUtcMillis = request.slotStartUtcMillis+specification.startOffsetMillis,
+                    waveformDurationMillis = specification.durationMillis,
                     expectedSatelliteCatalogNumber = request.satelliteCatalogNumber,
                     expectedTransponderUuid = request.transponderUuid,
                     automatic = request.automatic
@@ -226,8 +231,6 @@ class Ft4AudioTransmitter(
     private companion object {
         const val TAG = "Ft4AudioTransmitter"
         const val OUTPUT_SAMPLE_RATE = 48_000
-        const val EXPECTED_WAVEFORM_SAMPLES = 241_920
-        const val WAVEFORM_DURATION_MILLIS = 5_040L
         const val MAX_START_LATENESS_MILLIS = 150L
         const val WAIT_UPDATE_MILLIS = 100L
         const val SCHEDULING_MARGIN_MILLIS = 500L
@@ -266,6 +269,7 @@ fun interface Ft4AudioOutputFactory {
 }
 
 interface Ft4AudioOutput : AutoCloseable {
+    val latencyCompensationMillis: Long get()=0
     suspend fun prepareTransmit(automatic: Boolean) = Unit
     suspend fun prepare(samples: FloatArray) = Unit
     suspend fun play(samples: FloatArray): Ft4AudioPlaybackResult

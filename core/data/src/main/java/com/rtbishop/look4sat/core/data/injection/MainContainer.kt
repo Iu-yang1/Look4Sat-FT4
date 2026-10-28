@@ -226,6 +226,9 @@ class MainContainer(private val context: Context) : IMainContainer {
                     settings.radioAudio.backend==com.rtbishop.look4sat.core.domain.audio.RadioAudioBackend.UNCONFIGURED)
                     com.rtbishop.look4sat.core.data.ft4.AndroidFt4AudioOutputFactory(context).create(rate,volume)
                 else radioAudioSession.createOutput(rate,volume)
+            },outputLatencyMillis={
+                val audio=settingsRepo.radioControlSettings.value.radioAudio
+                if(audio.backend==com.rtbishop.look4sat.core.domain.audio.RadioAudioBackend.UNCONFIGURED) 0 else audio.txLatencyMillis
             })
     }
     override val locationRepo: ILocationRepo by lazy {

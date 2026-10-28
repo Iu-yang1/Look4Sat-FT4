@@ -7,10 +7,13 @@ class RadioAudioPolicyTest {
     @Test fun catConnectionDoesNotMakeAnUnconfiguredAudioRouteUsable() {
         assertTrue(runCatching { RadioAudioPolicy.requireTransmit(RadioAudioSettings(),false) }.isFailure)
     }
-    @Test fun wlanManualTransmissionDoesNotEnableAutomaticTransmission() {
+    @Test fun wlanAutomaticNeedsRuntimeSelfCheckButNotAnExperimentalFlag() {
         val settings=RadioAudioSettings(RadioAudioBackend.ICOM_WLAN)
         RadioAudioPolicy.requireTransmit(settings,false)
-        assertTrue(runCatching { RadioAudioPolicy.requireTransmit(settings,true) }.isFailure)
+        RadioAudioPolicy.requireTransmit(settings,true)
+        assertTrue(runCatching { RadioAudioPolicy.requireAutomaticReady(RadioAudioState(transmittingReady=true)) }.isFailure)
+        RadioAudioPolicy.requireAutomaticReady(RadioAudioState(transmittingReady=true,linkSelfCheckPassed=true))
+        assertTrue(runCatching { RadioAudioPolicy.requireAutomaticReady(RadioAudioState(transmittingReady=true,linkSelfCheckPassed=true,error="lost")) }.isFailure)
     }
     @Test fun usbOutputMustBeExplicitWhileAutomaticOperationIsPreserved() {
         assertTrue(runCatching { RadioAudioPolicy.requireTransmit(RadioAudioSettings(RadioAudioBackend.ANDROID_DEVICE),false) }.isFailure)

@@ -269,9 +269,12 @@ private fun Ft4Shell(
                     modifier = Modifier.fillMaxWidth().height(3.dp)
                 )
                 Text(state.radioAudio.error ?: (state.transmitState as? com.rtbishop.look4sat.core.domain.ft4.Ft4TransmitState.Failed)?.reason ?: stringResource(
-                    if(state.radioAudio.transmittingReady) R.string.radio_audio_ready else R.string.radio_audio_waiting),
+                    if(state.usesNetworkAudio && state.radioAudio.transmittingReady && !state.radioAudio.linkSelfCheckPassed) R.string.radio_audio_selfcheck
+                    else if(state.radioAudio.transmittingReady) R.string.radio_audio_ready else R.string.radio_audio_waiting),
                     style=MaterialTheme.typography.bodySmall,
                     color=if(state.radioAudio.error!=null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface)
+                if(state.usesNetworkAudio && !state.radioAudio.endToEndTimingVerified)
+                    Text(stringResource(R.string.radio_audio_timing_unverified),style=MaterialTheme.typography.bodySmall)
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     Text(
                         stringResource(R.string.ft4_slot_progress, (timing.slotProgress * 100).roundToInt()),

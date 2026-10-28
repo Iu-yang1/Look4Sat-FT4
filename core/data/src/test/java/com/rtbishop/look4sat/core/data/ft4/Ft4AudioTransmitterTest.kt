@@ -225,7 +225,7 @@ class Ft4AudioTransmitterTest {
 
         transmitter.transmit(request(slotStart = 1_000L, automatic = true))
 
-        assertEquals(1_000L, playMonotonicMillis)
+        assertEquals(1_500L, playMonotonicMillis)
         assertTrue("play" in events)
     }
 
@@ -241,7 +241,7 @@ class Ft4AudioTransmitterTest {
         )
 
         val failure = runCatching {
-            transmitter.transmit(request(slotStart = -200L, automatic = false))
+            transmitter.transmit(request(slotStart = -700L, automatic = false))
         }.exceptionOrNull()
 
         assertTrue(failure?.message?.contains("before radio preparation") == true)

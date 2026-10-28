@@ -40,6 +40,8 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -171,8 +173,23 @@ class Ft4ViewModel(
     }
 
     private fun collectState() {
+        viewModelScope.launch {
+            uiState.map { Triple(it.settings.operatorCallsign,it.targetCall,
+                "${it.trackingPass?.catNum}:${it.trackingPass?.aosTime}:${it.radio.selectedTransponder?.uuid}:$activeQsoSessionId") }
+                .distinctUntilChanged().collect { (own,other,key) -> ft4Service.updateDecodeContext(own,other,key) }
+        }
         runCatching { container.radioAudioSession }.getOrNull()?.let { session ->
-            viewModelScope.launch { session.state.collect { audio -> mutableState.update { it.copy(radioAudio=audio) } } }
+            viewModelScope.launch {
+                var epoch=session.state.value.generation
+                session.state.collect { audio ->
+                    mutableState.update { it.copy(radioAudio=audio) }
+                    if(mutableState.value.usesNetworkAudio && automationController.snapshot.phase.isRunning() &&
+                        (audio.generation!=epoch || !audio.linkSelfCheckPassed || audio.error!=null)) {
+                        stopAutomationNow(Ft4AutomationAbortReason.CONTEXT_UNAVAILABLE)
+                    }
+                    epoch=audio.generation
+                }
+            }
         }
         viewModelScope.launch {
             container.settingsRepo.ft4Settings.collect { settings ->
@@ -400,7 +417,8 @@ class Ft4ViewModel(
 
     private fun armAutomation() {
         if (automationJob?.isActive == true || automationStopping) return
-        if(mutableState.value.usesNetworkAudio) return setError(Ft4UiError.RADIO_NOT_READY)
+        if(mutableState.value.usesNetworkAudio && !mutableState.value.radioAudio.linkSelfCheckPassed)
+            return setError(Ft4UiError.RADIO_NOT_READY)
         val state = mutableState.value
         val radio = state.radio
         val usesVox = state.radioTransport == RadioControlSettings.TRANSPORT_VOX

@@ -1281,6 +1281,7 @@ class SettingsRepo(
                 put("backend",normalized.radioAudio.backend.name);put("rx",normalized.radioAudio.rxDeviceKey)
                 put("tx",normalized.radioAudio.txDeviceKey);put("host",normalized.radioAudio.host)
                 put("port",normalized.radioAudio.controlPort);put("cat",normalized.radioAudio.networkCat)
+                put("txLatencyMillis",normalized.radioAudio.txLatencyMillis)
             }.toString())
         }
         _radioControlSettings.value = normalized
@@ -1291,7 +1292,8 @@ class SettingsRepo(
         com.rtbishop.look4sat.core.domain.audio.RadioAudioSettings(
             backend=com.rtbishop.look4sat.core.domain.audio.RadioAudioBackend.valueOf(audio.optString("backend","UNCONFIGURED")),
             rxDeviceKey=audio.optString("rx"),txDeviceKey=audio.optString("tx"),host=audio.optString("host"),
-            controlPort=audio.optInt("port",50001),networkCat=audio.optBoolean("cat"))
+            controlPort=audio.optInt("port",50001),networkCat=audio.optBoolean("cat"),
+            txLatencyMillis=audio.optLong("txLatencyMillis",0).coerceIn(-500,1000))
     }.getOrDefault(com.rtbishop.look4sat.core.domain.audio.RadioAudioSettings())
 
     private fun getRadioControlSettings(): RadioControlSettings {

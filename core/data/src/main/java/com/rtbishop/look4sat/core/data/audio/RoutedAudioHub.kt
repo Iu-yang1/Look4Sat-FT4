@@ -3,6 +3,7 @@ package com.rtbishop.look4sat.core.data.audio
 import com.rtbishop.look4sat.core.domain.audio.*
 import com.rtbishop.look4sat.core.domain.repository.ISettingsRepo
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.flow.*
 
 /** One source and one subscription shared by every decoder; never opens a second microphone. */
@@ -13,7 +14,12 @@ internal class RoutedAudioHub(
     private val settings: ISettingsRepo,
     scope: CoroutineScope
 ) : IAudioHub {
-    private val network=session.receive().shareIn(scope,SharingStarted.WhileSubscribed(0),0)
+    // An exhausted receive attempt must not permanently kill the sharing coroutine.
+    // Error state remains visible; stop/start creates a new attempt with a fresh generation.
+    private val network=session.receive().catch { error ->
+        if(error !is Exception) throw error
+        awaitCancellation()
+    }.shareIn(scope,SharingStarted.WhileSubscribed(0),0)
     override val state: StateFlow<AudioHubState> = combine(local.state,session.state,settings.radioControlSettings) { mic,radio,config ->
         if(config.radioAudio.backend!=RadioAudioBackend.ICOM_WLAN) mic
         else if(radio.error!=null) AudioHubState.Failed(checkNotNull(radio.error))

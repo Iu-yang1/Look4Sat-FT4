@@ -10,6 +10,7 @@ import kotlinx.coroutines.flow.*
 import java.net.*
 import java.security.SecureRandom
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicBoolean
 
 internal class IcomLanSession(
     private val settings: RadioAudioSettings,
@@ -19,7 +20,7 @@ internal class IcomLanSession(
     private val nowNanos: ()->Long = System::nanoTime,
     private val tokenRenewalMillis: Long = 60_000
 ) {
-    private val status=MutableStateFlow(RadioAudioState(route="IC-705 WLAN"))
+    private val status=MutableStateFlow(RadioAudioState(route="IC-705 WLAN",phase=RadioAudioConnectionPhase.CONNECTING))
     val state: StateFlow<RadioAudioState> = status
     private val pcm=MutableSharedFlow<TimestampedAudioChunk>(extraBufferCapacity=32)
     val audio: Flow<TimestampedAudioChunk> = pcm
@@ -41,11 +42,19 @@ internal class IcomLanSession(
     private var civSeq=0
     @Volatile private var sending=false
     private var gapCount=0L
+    private var stableAudioAt=0L
+    private var audioPackets=0L
+    private var previousPacketAt=0L
+    private var previousPacketDuration=0L
+    private var jitterNanos=0L
+    private val resumeTimeline=AtomicBoolean(false)
+    @Volatile private var lastCivRead=0L
     @Volatile private var lastAudio=0L
     private val reorder=IcomAudioReorder()
     private val sessionJob=SupervisorJob(scope.coroutineContext[Job])
     private val workers=CoroutineScope(scope.coroutineContext+sessionJob)
     @Volatile private var closed=false
+    val isConnected: Boolean get()=!closed && ready.isCompleted && state.value.error==null
 
     suspend fun open() = withContext(Dispatchers.IO) {
         val address=InetAddress.getByName(settings.host)
@@ -69,12 +78,16 @@ internal class IcomLanSession(
         private var pingSequence=0
         private var connected=false
         private val history=linkedMapOf<Int,ByteArray>()
+        private val historyRetries=mutableMapOf<Int,Int>()
         fun packet(size: Int,type: Int=0) = IcomLanProtocol.header(size,id,remote,seq.getAndIncrement(),type)
         private fun untracked(size: Int,type: Int,sequence: Int=0)=IcomLanProtocol.header(size,id,remote,sequence,type)
         @Synchronized fun send(b: ByteArray, remember: Boolean=false) {
             check(!closed && !socket.isClosed) { "WLAN session closed" }
             socket.send(DatagramPacket(b,b.size))
-            if(remember) { history[IcomLanProtocol.u16(b,6)]=b.copyOf(); while(history.size>32) history.remove(history.keys.first()) }
+            if(remember) {
+                val number=IcomLanProtocol.u16(b,6);history[number]=b.copyOf();historyRetries[number]=0
+                while(history.size>32) { val old=history.keys.first();history.remove(old);historyRetries.remove(old) }
+            }
         }
         fun start() { workers.launch(Dispatchers.IO) {
             try {
@@ -101,11 +114,23 @@ internal class IcomLanSession(
                             4 -> { remote=p.getInt(8); connected=true; send(untracked(16,6,1)) }
                             5 -> error("Radio closed WLAN connection")
                             1 -> { // Only retransmit idempotent login/control packets, never CAT or audio.
-                                if(b.size==16) synchronized(this@Link) { history[IcomLanProtocol.u16(b,6)]?.let { send(it) } }
+                                val numbers=if(b.size==16) listOf(IcomLanProtocol.u16(b,6))
+                                    else if(b.size<=80 && b.size%2==0) (16 until b.size step 2).map { IcomLanProtocol.u16(b,it) }
+                                    else emptyList()
+                                synchronized(this@Link) { for(number in numbers.distinct()) {
+                                    val retries=historyRetries[number] ?: 0
+                                    if(retries<3) history[number]?.let { historyRetries[number]=retries+1;send(it) }
+                                } }
                             }
-                            7 -> if(b.size==21 && b[16]==0.toByte()) send(b.copyOf().also { reply ->
-                                IcomLanProtocol.le(reply).putInt(8,id).putInt(12,remote);reply[16]=1
-                            })
+                            7 -> if(b.size==21) {
+                                if(b[16]==0.toByte()) send(b.copyOf().also { reply ->
+                                    IcomLanProtocol.le(reply).putInt(8,id).putInt(12,remote);reply[16]=1
+                                }) else if(this@Link===control) {
+                                    val sent=p.getInt(17).toLong() and 0xffffffffL
+                                    val rtt=((received/1_000_000L)-sent) and 0xffffffffL
+                                    if(rtt<=5000) status.update { it.copy(latencyMillis=rtt) }
+                                }
+                            }
                         }
                         if(IcomLanProtocol.u16(b,4)!=1) consumePacket(b)
                     } catch (_: SocketTimeoutException) { }
@@ -116,7 +141,8 @@ internal class IcomLanSession(
             } catch (e: CancellationException) { throw e }
             catch (e: Exception) {
                 if(!closed) {
-                    status.update { it.copy(receivingReady=false,transmittingReady=false,error=e.message ?: "WLAN failure") }
+                    status.update { it.copy(receivingReady=false,transmittingReady=false,linkSelfCheckPassed=false,
+                        phase=RadioAudioConnectionPhase.FAILED,error=e.message ?: "WLAN failure") }
                     ready.completeExceptionally(e)
                     close()
                 }
@@ -125,7 +151,7 @@ internal class IcomLanSession(
         fun dispose() {
             runCatching { val b=untracked(16,5);socket.send(DatagramPacket(b,b.size)) }
             socket.close()
-            synchronized(this) { history.clear() }
+            synchronized(this) { history.clear();historyRetries.clear() }
         }
     }
     private fun auth(size: Int, request: Int): ByteArray {
@@ -141,20 +167,23 @@ internal class IcomLanSession(
     }
     private suspend fun controlPacket(b: ByteArray) {
         if(b.size==16 && IcomLanProtocol.u16(b,4)==6 && !authenticated) {
+            status.update { it.copy(phase=RadioAudioConnectionPhase.AUTHENTICATING) }
             checkNotNull(control).send(auth(128,0).also {
                 IcomLanProtocol.credential(credentials.first).copyInto(it,64)
                 IcomLanProtocol.credential(credentials.second).copyInto(it,80)
                 "Look4Sat".toByteArray().copyInto(it,96)
             },true)
         } else if(b.size==96) {
+            if(authenticated || IcomLanProtocol.u16(b,26)!=tokenRequest) return
             check(IcomLanProtocol.le(b).getInt(48)==0) { "Icom network login rejected" }
-            check(IcomLanProtocol.u16(b,26)==tokenRequest) { "Stale Icom login reply" }
             token=IcomLanProtocol.le(b).getInt(28);authenticated=true
+            status.update { it.copy(phase=RadioAudioConnectionPhase.NEGOTIATING) }
             lastRenew=System.nanoTime();sendToken(2)
         } else if(b.size>=0x42+0x66 && (b.size-0x42)%0x66==0) {
             check(IcomLanProtocol.u16(b,64)==1) { "Select a single IC-705 network radio" }
             capability=b.copyOfRange(0x42,0x42+0x66)
         } else if(b.size==80) {
+            if(!authenticated || !streamRequested) return
             check(IcomLanProtocol.le(b).getInt(48)==0 && b[64]==0.toByte()) { "Radio rejected or closed the audio stream" }
             val serialPort=IcomLanProtocol.be(b).getShort(66).toInt() and 65535
             val audioPort=IcomLanProtocol.be(b).getShort(70).toInt() and 65535
@@ -195,42 +224,59 @@ internal class IcomLanSession(
                 IcomLanProtocol.le(it).putShort(16,0x01c0);it[21]=4
                 IcomLanProtocol.be(it).putShort(19,(civSeq++).toShort())
             })
-            if(b.size>21 && b[16]==0xc1.toByte() && IcomLanProtocol.u16(b,17)==b.size-21) {
+            if(settings.networkCat && System.nanoTime()-lastCivRead<2_000_000_000L &&
+                b.size>21 && b[16]==0xc1.toByte() && IcomLanProtocol.u16(b,17)==b.size-21) {
                 check(civ.trySend(b.copyOfRange(21,b.size)).isSuccess) { "Network CAT receive overflow" }
             }
         }
         soundLink.consumePacket = { b ->
             if(b.size>24 && IcomLanProtocol.u16(b,4)==0) {
-                lastAudio=System.nanoTime()
+                val received=System.nanoTime()
+                lastAudio=received
                 val samples=IcomLanProtocol.pcm(b)
                 for((data,gap) in reorder.offer(IcomLanProtocol.be(b).getShort(18).toInt() and 65535,samples)) {
+                    val resumed=resumeTimeline.getAndSet(false)
+                    val arrivalGap=previousPacketAt>0 && received-previousPacketAt>500_000_000L
+                    val networkGap=(gap || arrivalGap) && !resumed
+                    if(stableAudioAt==0L || networkGap) { stableAudioAt=received;audioPackets=0 }
+                    if(previousPacketAt>0 && !resumed) {
+                        val residual=kotlin.math.abs(received-previousPacketAt-previousPacketDuration)
+                        jitterNanos=(7*jitterNanos+residual)/8
+                    }
+                    previousPacketAt=received;previousPacketDuration=data.size*1_000_000_000L/48000
+                    audioPackets++
                     if(firstNanos==0L) firstNanos=nowNanos()
-                    if(gap) {
-                        gapCount++
+                    val timelineGap=gap || arrivalGap || resumed
+                    if(timelineGap) {
+                        if(networkGap) gapCount++
                         // The missing packet's sample count is unknown. Re-anchor an invalidated timeline;
                         // never invent PCM to fill an FT4 cycle or claim a radio-side sample timestamp.
                         firstNanos=nowNanos()-timeline*1_000_000_000L/48000
                     }
-                    val chunk=TimestampedAudioChunk(data,48000,timeline,firstNanos+timeline*1_000_000_000L/48000,AudioSampleFormat.PCM_16,gap)
+                    val chunk=TimestampedAudioChunk(data,48000,timeline,firstNanos+timeline*1_000_000_000L/48000,AudioSampleFormat.PCM_16,timelineGap)
                     check(pcm.tryEmit(chunk)) { "Network audio consumer overflow" }
                     timeline+=data.size
-                    status.update { it.copy(receivingReady=true,transmittingReady=true,discontinuities=gapCount) }
+                    status.update { it.copy(receivingReady=true,transmittingReady=true,discontinuities=gapCount,
+                        phase=RadioAudioConnectionPhase.READY,jitterMillis=jitterNanos/1_000_000L,
+                        linkSelfCheckPassed=audioPackets>=20 && received-stableAudioAt>=1_000_000_000L &&
+                            it.latencyMillis?.let { rtt -> rtt<=500 }==true && jitterNanos<=100_000_000L) }
                 }
             }
         }
         serialLink.start();soundLink.start()
-        status.value=RadioAudioState(route="IC-705 WLAN",generation=System.nanoTime())
+        status.value=RadioAudioState(route="IC-705 WLAN",generation=System.nanoTime(),phase=RadioAudioConnectionPhase.NEGOTIATING)
         ready.complete(Unit)
     }
     suspend fun writeCiv(bytes: ByteArray): Boolean = withContext(Dispatchers.IO) {
         check(settings.networkCat) { "WLAN CAT is disabled for this session" }
+        lastCivRead=System.nanoTime()
         val link=checkNotNull(serial)
         link.send(link.packet(21+bytes.size).also {
             it[16]=0xc1.toByte(); IcomLanProtocol.le(it).putShort(17,bytes.size.toShort());
             IcomLanProtocol.be(it).putShort(19,(civSeq++).toShort());bytes.copyInto(it,21)
         });true
     }
-    fun readCiv()=civ.tryReceive().getOrNull() ?: byteArrayOf()
+    fun readCiv(): ByteArray { lastCivRead=System.nanoTime();return civ.tryReceive().getOrNull() ?: byteArrayOf() }
     suspend fun transmit(samples: FloatArray, rate: Int) = withContext(Dispatchers.IO) {
         require(rate==48000 && samples.all(Float::isFinite))
         check(state.value.transmittingReady && !closed)
@@ -251,7 +297,7 @@ internal class IcomLanSession(
             }
             val remaining=start+samples.size*1_000_000_000L/rate-System.nanoTime()
             if(remaining>0) delay((remaining+999999)/1000000)
-        } finally { sending=false;lastAudio=System.nanoTime() }
+        } finally { sending=false;lastAudio=System.nanoTime();resumeTimeline.set(true) }
     }
     fun stopTransmit() { sending=false }
     @Synchronized fun close() {
@@ -260,6 +306,7 @@ internal class IcomLanSession(
         ready.completeExceptionally(CancellationException("WLAN session closed"))
         control?.dispose();serial?.dispose();sound?.dispose()
         sessionJob.cancel();civ.close()
-        status.update { it.copy(receivingReady=false,transmittingReady=false) }
+        status.update { it.copy(receivingReady=false,transmittingReady=false,linkSelfCheckPassed=false,
+            phase=if(it.error==null) RadioAudioConnectionPhase.DISCONNECTED else RadioAudioConnectionPhase.FAILED) }
     }
 }

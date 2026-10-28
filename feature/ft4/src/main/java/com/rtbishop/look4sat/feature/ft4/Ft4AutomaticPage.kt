@@ -224,6 +224,7 @@ private fun automaticGateReason(state: Ft4State): String? {
         !state.capability.receiveAvailable -> R.string.ft4_gate_rx_unavailable
         !state.capability.transmitAvailable -> R.string.ft4_gate_tx_unavailable
         !state.hasMicrophonePermission -> R.string.ft4_gate_microphone
+        state.usesNetworkAudio && !state.radioAudio.linkSelfCheckPassed -> R.string.radio_audio_selfcheck
         state.clock.source == ClockSource.SYSTEM -> R.string.ft4_gate_system
         state.clock.sampleAgeMillis > MAX_TIME_SAMPLE_AGE_MILLIS -> R.string.ft4_gate_expired
         state.clock.uncertaintyMillis > 250.0 -> R.string.ft4_gate_uncertain

@@ -12,7 +12,11 @@
     <string name="radio_audio_password">Network password (blank to keep)</string>
     <string name="radio_audio_network_cat">Use WLAN CAT instead of Bluetooth CAT</string>
     <string name="radio_audio_discover">Find radios on LAN</string>
-    <string name="radio_audio_wireless_manual">WLAN transmit: manual FT4 only; hardware timing awaits verification.</string>
+    <string name="radio_audio_wireless_manual">Automatic FT4 requires a healthy audio link and explicit start.</string>
+    <string name="radio_audio_tx_latency">TX timing correction (ms)</string>
+    <string name="radio_audio_tx_latency_hint">Positive values send audio earlier.</string>
+    <string name="radio_audio_selfcheck">Checking radio audio link</string>
+    <string name="radio_audio_timing_unverified">End-to-end modulation timing uncalibrated</string>
     <string name="radio_audio_ready">Audio ready</string>
     <string name="radio_audio_waiting">Radio audio not ready</string>
 </resources>

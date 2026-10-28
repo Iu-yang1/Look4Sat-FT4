@@ -13,6 +13,37 @@ import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicBoolean
 
 class IcomLanSessionTest {
+    @Test fun staleCatTransportCannotReadOrCloseAReplacementSession()=runBlocking {
+        FakeRadio().use { radio ->
+            val settings=RadioAudioSettings(RadioAudioBackend.ICOM_WLAN,host="127.0.0.1",controlPort=radio.port,networkCat=true)
+            val first=IcomLanSession(settings,"user" to "pass",this,allowLoopback=true)
+            val second=IcomLanSession(settings,"user" to "pass",this,allowLoopback=true)
+            try {
+                first.open();var current:IcomLanSession?=first
+                val transport=IcomLanTransport({ checkNotNull(current) },{ current },{ it.close() })
+                assertTrue(transport.connect())
+                second.open();current=second
+                assertFalse(transport.isConnected)
+                assertFalse(transport.write(byteArrayOf(1)))
+                assertTrue(transport.readAvailable(8).isEmpty())
+                transport.disconnect()
+                assertTrue(second.isConnected)
+            } finally { first.close();second.close() }
+        }
+    }
+    @Test fun selfCheckNeedsStableAudioAndMeasuredRoundTrip()=runBlocking {
+        FakeRadio().use { radio ->
+            val client=IcomLanSession(RadioAudioSettings(RadioAudioBackend.ICOM_WLAN,host="127.0.0.1",controlPort=radio.port),
+                "user" to "pass",this,allowLoopback=true)
+            try {
+                client.open()
+                assertFalse(client.state.value.linkSelfCheckPassed)
+                val ready=withTimeout(6000) { client.state.first { it.linkSelfCheckPassed } }
+                assertTrue(ready.latencyMillis!!<=500)
+                assertFalse(ready.endToEndTimingVerified)
+            } finally { client.close() }
+        }
+    }
     @Test fun rejectedTokenRenewalClosesAudioInsteadOfReconnectingIntoTransmission()=runBlocking {
         FakeRadio(rejectRenewal=true).use { radio ->
             val client=IcomLanSession(RadioAudioSettings(RadioAudioBackend.ICOM_WLAN,host="127.0.0.1",controlPort=radio.port),
@@ -107,7 +138,7 @@ class IcomLanSessionTest {
         @Volatile var duplicateAudioEnvelopeSequences=0
         private val running=AtomicBoolean(true)
         private val threads=sockets.mapIndexed { index,socket -> Thread {
-            var target: SocketAddress?=null;var peer=0;var seq=1;var lastAudio=0L
+            var target: SocketAddress?=null;var peer=0;var seq=1;var lastAudio=0L;var audioSequence=0
             val receivedSequences=mutableSetOf<Int>()
             while(running.get()) try {
                 val packet=DatagramPacket(ByteArray(8192),8192);socket.receive(packet)
@@ -123,7 +154,7 @@ class IcomLanSessionTest {
                 when(p.getShort(4).toInt()) {
                     3 -> send(response(16,4))
                     6 -> send(response(16,6))
-                    7 -> if(b[16]==0.toByte()) send(response(21,7).also { it[16]=1 })
+                    7 -> if(b[16]==0.toByte()) send(response(21,7).also { it[16]=1;b.copyInto(it,17,17,21) })
                     0 -> when {
                         index==0 && b.size==128 -> {
                             validLogin.set(b.copyOfRange(64,68).contentEquals(byteArrayOf(0x5c,0x22,0x55,0x5c)))
@@ -149,7 +180,7 @@ class IcomLanSessionTest {
                 }
                 if(index==2 && System.nanoTime()-lastAudio>10_000_000) {
                     send(response(24+960).also { audio ->
-                        ByteBuffer.wrap(audio).order(ByteOrder.BIG_ENDIAN).putShort(18,seq.toShort()).putShort(22,960)
+                        ByteBuffer.wrap(audio).order(ByteOrder.BIG_ENDIAN).putShort(18,(audioSequence++).toShort()).putShort(22,960)
                     });lastAudio=System.nanoTime()
                 }
             } catch(_:SocketTimeoutException) { } catch(_:SocketException) { break }

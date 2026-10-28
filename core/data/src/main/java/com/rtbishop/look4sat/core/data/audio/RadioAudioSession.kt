@@ -16,6 +16,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.net.*
 
+@OptIn(kotlinx.coroutines.FlowPreview::class)
 class RadioAudioSession(
     private val context: Context,
     private val settingsRepo: ISettingsRepo,
@@ -46,6 +47,11 @@ class RadioAudioSession(
     }
     init {
         scope.launch {
+            state.sample(1000).map { "phase=${it.phase} rttMs=${it.latencyMillis} jitterMs=${it.jitterMillis} gaps=${it.discontinuities} checked=${it.linkSelfCheckPassed}" }
+                .distinctUntilChanged().collect { message -> diagnostics.record(
+                    com.rtbishop.look4sat.core.domain.control.ControlDiagnosticSource.RADIO,"audio/link",message) }
+        }
+        scope.launch {
             state.map { Triple(it.receivingReady,it.transmittingReady,it.error) }.distinctUntilChanged().collect {
                 diagnostics.record(com.rtbishop.look4sat.core.domain.control.ControlDiagnosticSource.RADIO,
                     "audio/state","rx=${it.first} tx=${it.second} route=${state.value.route} error=${it.third.orEmpty()}",
@@ -56,7 +62,7 @@ class RadioAudioSession(
         scope.launch {
             localHub.state.collect { capture ->
                 if(settings().backend==RadioAudioBackend.ANDROID_DEVICE && capture is AudioHubState.Failed) {
-                    status.update { it.copy(receivingReady=false,transmittingReady=false,error=capture.reason) }
+                    status.update { it.copy(receivingReady=false,transmittingReady=false,phase=RadioAudioConnectionPhase.FAILED,error=capture.reason) }
                     abortTransmit()
                 }
             }
@@ -74,7 +80,8 @@ class RadioAudioSession(
         try { prepareConnection(receive) }
         catch(cancelled: CancellationException) { throw cancelled }
         catch(error: Exception) {
-            status.update { it.copy(receivingReady=false,transmittingReady=false,error=error.message ?: "Radio audio is unavailable") }
+            status.update { it.copy(receivingReady=false,transmittingReady=false,linkSelfCheckPassed=false,
+                phase=RadioAudioConnectionPhase.FAILED,error=error.message ?: "Radio audio is unavailable") }
             throw error
         }
     }
@@ -90,8 +97,10 @@ class RadioAudioSession(
                 val session=IcomLanSession(config,credentials,scope,nowNanos=SystemClock::elapsedRealtimeNanos)
                 lan=session
                 lanObserver=scope.launch { session.state.collect { s ->
-                    status.value=s
-                    if(s.error!=null) abortTransmit()
+                    if(lan===session && configured==config) {
+                        status.value=s
+                        if(s.error!=null) abortTransmit()
+                    }
                 } }
                 session.open()
             }
@@ -118,20 +127,40 @@ class RadioAudioSession(
         }
     }
     override fun receive(): Flow<TimestampedAudioChunk> = flow {
-        prepare(true)
-        if(settings().backend==RadioAudioBackend.ICOM_WLAN) {
-            val current=checkNotNull(lan)
-            coroutineScope {
-                val monitor=launch { current.state.collect { check(it.error==null) { it.error ?: "WLAN failure" } } }
-                try { emitAll(current.audio) } finally {
-                    monitor.cancel()
-                    if(!settings().networkCat) withContext(NonCancellable) { close() }
+        var retries=0
+        while(currentCoroutineContext().isActive) {
+            try {
+                prepare(true)
+                if(settings().backend==RadioAudioBackend.ICOM_WLAN) {
+                    val current=checkNotNull(lan)
+                    coroutineScope {
+                        val monitor=launch { current.state.collect { check(it.error==null) { it.error ?: "WLAN failure" } } }
+                        try { emitAll(current.audio) } finally {
+                            monitor.cancel()
+                            if(!settings().networkCat) withContext(NonCancellable) { close() }
+                        }
+                    }
+                } else emitAll(localHub.audioFlow(AudioConsumer.FT4_DECODE).onEach {
+                    val capture=localHub.state.value as? AudioHubState.Capturing
+            status.update { old -> old.copy(receivingReady=capture!=null,error=null,route=capture?.deviceName.orEmpty(),
+                phase=if(capture!=null) RadioAudioConnectionPhase.READY else RadioAudioConnectionPhase.CONNECTING) }
+                })
+                break
+            } catch(cancelled:CancellationException) { throw cancelled }
+            catch(error:Exception) {
+                if(settings().backend!=RadioAudioBackend.ICOM_WLAN || retries>=3 ||
+                    error.message.orEmpty().contains("login rejected",true) || error.message.orEmpty().contains("credentials",true)) {
+                    status.update { it.copy(receivingReady=false,transmittingReady=false,linkSelfCheckPassed=false,
+                        phase=RadioAudioConnectionPhase.FAILED,error=error.message ?: "Audio reconnect failed") }
+                    throw error
                 }
+                abortTransmit()
+                withContext(NonCancellable) { close() }
+                status.value=RadioAudioState(generation=System.nanoTime(),phase=RadioAudioConnectionPhase.RECONNECTING)
+                delay(500L shl retries)
+                retries++
             }
-        } else emitAll(localHub.audioFlow(AudioConsumer.FT4_DECODE).onEach {
-            val capture=localHub.state.value as? AudioHubState.Capturing
-            status.update { old -> old.copy(receivingReady=capture!=null,error=null,route=capture?.deviceName.orEmpty()) }
-        })
+        }
     }
     override suspend fun prepareTransmit(automatic: Boolean) {
         RadioAudioPolicy.requireTransmit(settings(),automatic)
@@ -139,12 +168,14 @@ class RadioAudioSession(
         if(settings().backend==RadioAudioBackend.ICOM_WLAN) {
             withTimeout(4000) { state.first { it.transmittingReady || it.error!=null } }
             check(state.value.transmittingReady && state.value.error==null) { state.value.error ?: "Radio audio is not ready" }
+            if(automatic) RadioAudioPolicy.requireAutomaticReady(state.value)
         }
     }
     fun createOutput(rate: Int, volume: Float): Ft4AudioOutput {
         val config=settings()
         val generation=++transmitGeneration
         return object: Ft4AudioOutput {
+            override val latencyCompensationMillis=config.txLatencyMillis
             private var delegate: Ft4AudioOutput?=null
             override suspend fun prepareTransmit(automatic: Boolean) { this@RadioAudioSession.prepareTransmit(automatic) }
             override suspend fun prepare(samples: FloatArray) {
@@ -152,7 +183,7 @@ class RadioAudioSession(
                 if(config.backend==RadioAudioBackend.ANDROID_DEVICE) {
                     delegate=AndroidFt4AudioOutputFactory(context,config.txDeviceKey).create(rate,volume)
                     delegate!!.prepare(samples)
-                    status.update { it.copy(transmittingReady=true,route=config.txDeviceKey,error=null) }
+                    status.update { it.copy(transmittingReady=true,route=config.txDeviceKey,error=null,phase=RadioAudioConnectionPhase.READY) }
                 }
                 output=this
             }
@@ -186,21 +217,10 @@ class RadioAudioSession(
         }
         Unit
     }
-    fun transport(): RadioTransport = object: RadioTransport {
-        private var pending=byteArrayOf()
-        override val isConnected get()=lan!=null && state.value.error==null && configured?.networkCat==true
-        override val connectionDescription="icom/wlan"
-        override suspend fun connect(): Boolean { prepare(false);return isConnected }
-        override suspend fun disconnect() { this@RadioAudioSession.close() }
-        override suspend fun write(bytes: ByteArray)=checkNotNull(lan).writeCiv(bytes)
-        override suspend fun readAvailable(maxBytes: Int): ByteArray {
-            require(maxBytes>=0)
-            if(maxBytes==0) return byteArrayOf()
-            if(pending.isEmpty()) pending=checkNotNull(lan).readCiv()
-            val count=minOf(maxBytes,pending.size)
-            return pending.copyOfRange(0,count).also { pending=pending.copyOfRange(count,pending.size) }
-        }
-    }
+    fun transport(): RadioTransport = IcomLanTransport(
+        prepareSession={ prepare(false);check(settings().networkCat);checkNotNull(lan) },
+        currentSession={ lan },
+        releaseSession={ old -> if(old===lan) close() else old.close() })
     override suspend fun discover(): List<String> = withContext(Dispatchers.IO) {
         DatagramSocket().use { socket ->
             socket.broadcast=true;socket.soTimeout=150

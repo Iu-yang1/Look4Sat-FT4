@@ -455,7 +455,8 @@ private fun MapScreen(
         (mapView.context.applicationContext as IContainerProvider).getMainContainer().settingsRepo
     }
     val elevationAngles by elevationSettingsRepo.mapElevationAngles.collectAsStateWithLifecycle()
-    var showElevationContours by remember { mutableStateOf(false) }
+    // Shared by the satellite map and every radar/matching pass map; survives restarts.
+    val showElevationContours by elevationSettingsRepo.mapElevationContoursEnabled.collectAsStateWithLifecycle()
     var showElevationSettings by remember { mutableStateOf(false) }
     var elevationInputs by remember { mutableStateOf(listOf("10")) }
     fun openElevationSettings() {
@@ -850,10 +851,10 @@ private fun MapScreen(
                             Text("仰角圆", color = ComposeColor.White, fontSize = 12.sp, modifier = Modifier.padding(end = 2.dp))
                             Switch(
                                 checked = showElevationContours,
-                                onCheckedChange = { enabled ->
-                                    showElevationContours = enabled
-                                    if (enabled) openElevationSettings()
-                                },
+                                // The switch itself only toggles visibility. Tapping the
+                                // *rest* of the capsule opens the settings dialog via
+                                // the surrounding Row's clickable modifier.
+                                onCheckedChange = elevationSettingsRepo::setMapElevationContoursEnabled,
                                 modifier = Modifier.scale(0.75f)
                             )
                         }

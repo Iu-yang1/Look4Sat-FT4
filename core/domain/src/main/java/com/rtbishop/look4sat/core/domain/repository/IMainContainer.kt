@@ -46,8 +46,14 @@ interface IMainContainer {
     val radioAudioSession: com.rtbishop.look4sat.core.domain.audio.IRadioAudioSession
         get() = error("Radio audio is unavailable")
     val ft4Service: IFt4Service
+    val jttyService: com.rtbishop.look4sat.core.domain.jtty.IJttyService
+        get() = error("JTTY is unavailable")
+    val jttyTransmitter: com.rtbishop.look4sat.core.domain.jtty.IJttyTransmitter
+        get() = error("JTTY transmitter is unavailable")
     val ft4AudioTransmitter: IFt4AudioTransmitter
     val ft4TransmitCoordinator: IFt4TransmitCoordinator
+    val digitalTransmitCoordinator: com.rtbishop.look4sat.core.domain.ft4.IDigitalTransmitCoordinator
+        get() = ft4TransmitCoordinator
     val disciplinedClock: IDisciplinedClock
     val timeSynchronizationService: ITimeSynchronizationService
     val updateRepo: IUpdateRepository

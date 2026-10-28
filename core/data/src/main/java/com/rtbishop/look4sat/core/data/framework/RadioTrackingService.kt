@@ -572,12 +572,12 @@ class RadioTrackingService(
         diagnose("disconnect/result", "radio controllers disconnected")
     }
 
-    // ── FT4 transmit lease ──────────────────────────────────────────────────
+    // ── Digital transmit lease ──────────────────────────────────────────────
 
     override suspend fun beginTransmit(request: TxRequest): TxLease = transmitMutex.withLock {
         val startedNanos = System.nanoTime()
-        require(request.waveformDurationMillis in 1L..MAX_WAVEFORM_MILLIS) {
-            "Invalid FT4 waveform duration"
+        require(request.waveformDurationMillis in 1L..request.mode.maximumWaveformMillis) {
+            "Invalid ${request.mode} waveform duration"
         }
         require(request.maximumPttMillis >= request.waveformDurationMillis) {
             "PTT watchdog is shorter than the waveform"
@@ -603,10 +603,10 @@ class RadioTrackingService(
             val txMode = current.txMode
             val rxMode = current.rxMode
             check(txMode in setOf("USB", "LSB") && rxMode in setOf("USB", "LSB")) {
-                "FT4 requires confirmed USB/LSB modes"
+                "${request.mode} requires confirmed USB/LSB modes"
             }
             check(TransponderMapper.mapUplinkModeToDownlinkMode(checkNotNull(txMode), transponder.isInverted) == rxMode) {
-                "FT4 sidebands do not match transponder inversion"
+                "${request.mode} sidebands do not match transponder inversion"
             }
             if (request.automatic) {
                 check(current.trackingPhase == TrackingPhase.READY) { "Satellite tracking is not ready" }
@@ -692,7 +692,7 @@ class RadioTrackingService(
                 waveformStartUtcMillis = request.waveformStartUtcMillis,
                 waveformMidpointUtcMillis = midpoint,
                 waveformDurationMillis = request.waveformDurationMillis,
-                maximumPttMillis = request.maximumPttMillis.coerceAtMost(MAX_PTT_MILLIS),
+                maximumPttMillis = request.maximumPttMillis.coerceAtMost(request.mode.maximumPttMillis),
                 expectedSatelliteCatalogNumber = request.expectedSatelliteCatalogNumber,
                 expectedTransponderUuid = request.expectedTransponderUuid,
                 pttSafetyGeneration = checkNotNull(safetyGeneration),
@@ -926,7 +926,7 @@ class RadioTrackingService(
             waveformStartUtcMillis = request.waveformStartUtcMillis,
             waveformMidpointUtcMillis = midpoint,
             waveformDurationMillis = request.waveformDurationMillis,
-            maximumPttMillis = request.maximumPttMillis.coerceAtMost(MAX_PTT_MILLIS),
+            maximumPttMillis = request.maximumPttMillis.coerceAtMost(request.mode.maximumPttMillis),
             expectedSatelliteCatalogNumber = request.expectedSatelliteCatalogNumber,
             expectedTransponderUuid = request.expectedTransponderUuid,
             pttSafetyGeneration = 0L,
@@ -2092,8 +2092,6 @@ class RadioTrackingService(
 
     private companion object {
         const val PTT_COMMAND_TIMEOUT_MILLIS = 2_500L
-        const val MAX_WAVEFORM_MILLIS = 6_000L
-        const val MAX_PTT_MILLIS = 12_000L
         const val MAX_AUTOMATIC_START_LATENESS_MILLIS = 150L
     }
 }

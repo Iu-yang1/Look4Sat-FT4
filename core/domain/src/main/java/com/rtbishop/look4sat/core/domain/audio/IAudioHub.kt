@@ -18,6 +18,7 @@ enum class AudioConsumer {
     MORSE_EXPERT,
     FT4_DECODE,
     FT4_SPECTRUM,
+    JTTY,
     N76_VOICE
 }
 

@@ -105,6 +105,11 @@ class WavelogUploadRepository internal constructor(
                 val unique = hashSetOf<String>()
                 val submitted = records.sortedBy { it.startUtcMillis }.filter { record ->
                     when {
+                        record.mode.equals("JTTY",true) -> {
+                            skipped++
+                            reasons[WavelogProblem.MODE_UNSUPPORTED]=(reasons[WavelogProblem.MODE_UNSUPPORTED] ?: 0)+1
+                            false
+                        }
                         record.status != QsoStatus.COMPLETE -> {
                             skipped++
                             false

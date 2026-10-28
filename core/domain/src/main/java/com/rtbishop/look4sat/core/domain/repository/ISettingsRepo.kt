@@ -89,6 +89,8 @@ interface ISettingsRepo {
 
     //region # FT4 settings
     val ft4Settings: StateFlow<Ft4Settings>
+    fun jttyPresets(): List<String> = listOf("CQ {MYCALL} {GRID}","{CALL} DE {MYCALL}","{CALL} {RST} {RST}","{CALL} TNX 73")
+    fun saveJttyPreset(index: Int, text: String) = Unit
     fun updateFt4Settings(transform: (Ft4Settings) -> Ft4Settings)
     //endregion
 

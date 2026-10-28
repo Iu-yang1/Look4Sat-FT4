@@ -1051,6 +1051,14 @@ class SettingsRepo(
 
     //region # FT4 settings
     private val _ft4Settings = MutableStateFlow(getFt4Settings())
+    override fun jttyPresets(): List<String> {
+        val defaults=super<ISettingsRepo>.jttyPresets()
+        return List(4) { preferences.getString("jtty.preset.$it",defaults[it]) ?: defaults[it] }
+    }
+    override fun saveJttyPreset(index: Int, text: String) {
+        require(index in 0..3 && text.length<=240)
+        preferences.edit { putString("jtty.preset.$index",text) }
+    }
     override val ft4Settings: StateFlow<Ft4Settings> = _ft4Settings
 
     override fun updateFt4Settings(transform: (Ft4Settings) -> Ft4Settings) {

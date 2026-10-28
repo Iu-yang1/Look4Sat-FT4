@@ -1339,6 +1339,22 @@ class RadioTrackingServiceTest {
     }
 
     @Test
+    fun jttyLongWaveUsesOwnWatchdogWithoutRelaxingFt4Limit() = runTest {
+        val tx=FakeRadioController()
+        val fixture=Fixture(backgroundScope,tx,FakeRadioController())
+        fixture.service.connectRadios();fixture.startTracking();runCurrent()
+        val long=fixture.request(generation=91L).copy(waveformDurationMillis=30_208,maximumPttMillis=35_000)
+        assertTrue(runCatching { fixture.service.beginTransmit(long) }.isFailure)
+        val lease=fixture.service.beginTransmit(long.copy(mode=com.rtbishop.look4sat.core.domain.ft4.DigitalTransmitMode.JTTY))
+        fixture.service.confirmTransmitReady(lease)
+        advanceTimeBy(13_000);runCurrent()
+        assertEquals(PttState.ON,fixture.service.state.value.pttState)
+        advanceTimeBy(22_001);runCurrent()
+        assertEquals(PttState.OFF,fixture.service.state.value.pttState)
+        fixture.close()
+    }
+
+    @Test
     fun failedPttConfirmationCannotStartAudioLease() = runTest {
         val tx = FakeRadioController(pttOnSucceeds = false)
         val fixture = Fixture(backgroundScope, tx, FakeRadioController())

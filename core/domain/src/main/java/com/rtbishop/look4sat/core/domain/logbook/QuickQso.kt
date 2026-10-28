@@ -23,7 +23,7 @@ fun quickLogValidation(call: String, sent: String, received: String, mode: Strin
         !normalized.any(Char::isLetter) || !normalized.any(Char::isDigit)) return QuickLogError.CALLSIGN
     val reports = listOf(sent.trim(), received.trim())
     val valid = when (mode.uppercase(Locale.US)) {
-        "CW", "RTTY" -> reports.all { Regex("[1-5][1-9][1-9]").matches(it) }
+        "CW", "RTTY", "JTTY" -> reports.all { Regex("[1-5][1-9][1-9]").matches(it) }
         "FT4", "FT8" -> reports.all { report ->
             Regex("[+-]?[0-9]{1,2}").matches(report) &&
                 report.toIntOrNull()?.let { it in -50..49 } == true
@@ -47,7 +47,7 @@ fun quickQsoRecord(
     details: QuickQsoDetails = QuickQsoDetails()
 ): QsoRecord {
     val normalizedMode = mode.uppercase(Locale.US)
-    require(normalizedMode in listOf("CW", "SSB", "FM", "AM", "FT4", "FT8", "RTTY"))
+    require(normalizedMode in listOf("CW", "SSB", "FM", "AM", "FT4", "FT8", "RTTY", "JTTY"))
     require(quickLogValidation(callsign, sent, received, mode) == null)
     val tracking = radio.takeIf { it.isActive && it.currentPass?.catNum == pass.catNum }
     val channel = transponder ?: tracking?.selectedTransponder

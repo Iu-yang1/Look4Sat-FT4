@@ -39,8 +39,10 @@ object AdifCodec {
             }
             append(field("CALL", record.theirCallsign))
             if (includeStationCallsign) append(field("STATION_CALLSIGN", record.myCallsign))
-            appendOptional("MODE", record.mode)
-            appendOptional("SUBMODE", record.submode)
+            val jtty=record.mode.equals("JTTY",true)
+            appendOptional("MODE", if(jtty) "MFSK" else record.mode)
+            appendOptional("SUBMODE", if(jtty) "" else record.submode)
+            if(jtty) append(field("APP_LOOK4SAT_MODE","JTTY"))
             appendOptional("GRIDSQUARE", record.theirGrid)
             // The OPPOSITE station's multi-grid set (2+ grids: a grid line or corner).
             // A single grid is carried by GRIDSQUARE; one value inside the VUCC field
@@ -123,7 +125,7 @@ object AdifCodec {
             rxFrequencyHz = mhzToHz(values["FREQ_RX"]),
             band = values["BAND"].orEmpty(),
             rxBand = values["BAND_RX"].orEmpty(),
-            mode = values["MODE"].orEmpty(),
+            mode = if(values["APP_LOOK4SAT_MODE"].equals("JTTY",true)) "JTTY" else values["MODE"].orEmpty(),
             submode = values["SUBMODE"].orEmpty(),
             satelliteName = values["SAT_NAME"].orEmpty(),
             transponderName = values["APP_LOOK4SAT_TRANSPONDER"].orEmpty(),

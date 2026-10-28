@@ -151,12 +151,28 @@ class MainContainer(private val context: Context) : IMainContainer {
     override val radioAudioSession: com.rtbishop.look4sat.core.data.audio.RadioAudioSession by lazy {
         com.rtbishop.look4sat.core.data.audio.RadioAudioSession(context,settingsRepo,localAudioHub,appScope,controlDiagnostics) {
             ft4AudioTransmitter.stop()
+            jttyTransmitter.stop()
         }
     }
     override val audioHub: IAudioHub by lazy {
         com.rtbishop.look4sat.core.data.audio.RoutedAudioHub(localAudioHub,radioAudioSession,settingsRepo,appScope)
     }
-    override val ft4Service: IFt4Service by lazy { Ft4Service(appScope, audioHub, disciplinedClock) }
+    override val ft4Service: IFt4Service by lazy { Ft4Service(appScope,audioHub,disciplinedClock) }
+    override val jttyService by lazy {
+        com.rtbishop.look4sat.core.data.jtty.JttyService(appScope,audioHub,nowMillis=disciplinedClock::nowMillis,stopOtherModes={
+            ft4AudioTransmitter.stop();ft4Service.stopReceiving()
+        })
+    }
+    override val jttyTransmitter by lazy {
+        com.rtbishop.look4sat.core.data.jtty.JttyTransmitter(jttyService,ft4TransmitCoordinator,
+            com.rtbishop.look4sat.core.data.ft4.Ft4AudioOutputFactory { rate,volume ->
+                val config=settingsRepo.radioControlSettings.value
+                if(config.catTransport==com.rtbishop.look4sat.core.domain.model.RadioControlSettings.TRANSPORT_VOX &&
+                    config.radioAudio.backend==com.rtbishop.look4sat.core.domain.audio.RadioAudioBackend.UNCONFIGURED)
+                    com.rtbishop.look4sat.core.data.ft4.AndroidFt4AudioOutputFactory(context).create(rate,volume)
+                else radioAudioSession.createOutput(rate,volume)
+            },disciplinedClock::nowMillis)
+    }
     override val disciplinedClock: IDisciplinedClock by lazy {
         SystemDisciplinedClock(AndroidMonotonicTimeSource)
     }

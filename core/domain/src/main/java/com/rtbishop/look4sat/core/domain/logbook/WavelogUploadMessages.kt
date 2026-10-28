@@ -39,6 +39,7 @@ fun WavelogProblem.label(): String = when (this) {
     WavelogProblem.NOT_CONFIGURED -> "Wavelog upload not configured"
     WavelogProblem.NO_STATION -> "no station profile selected"
     WavelogProblem.GRID_MISMATCH -> "logged grid outside the Wavelog station grid"
+    WavelogProblem.MODE_UNSUPPORTED -> "JTTY upload is unavailable; export ADIF instead"
 }
 
 /** One-line summary of the records excluded before a Wavelog upload (empty when none). */

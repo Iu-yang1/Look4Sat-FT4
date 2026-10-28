@@ -60,6 +60,7 @@ internal class LoTWConfig(input: InputStream) {
     private val modes = config.elements("modes").single().elements("mode").map { it.textContent }.toSet()
 
     fun mode(record: QsoRecord): String {
+        if(record.mode.equals("JTTY",true)) fail(LoTWProblem.MODE,"JTTY: export ADIF until the service supports this mode")
         val display = record.displayMode
         if (display in modes) return display
         val mapped = config.elements("adifmode").firstOrNull { it.textContent.equals(display, true) }?.getAttribute("mode")

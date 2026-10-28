@@ -9,6 +9,10 @@
  */
 package com.rtbishop.look4sat.core.domain.ft4
 
+enum class DigitalTransmitMode(val maximumWaveformMillis: Long, val maximumPttMillis: Long) {
+    FT4(6_000, 12_000), JTTY(30_208, 35_000)
+}
+
 data class TxRequest(
     val sessionGeneration: Long,
     val waveformStartUtcMillis: Long,
@@ -16,7 +20,8 @@ data class TxRequest(
     val expectedSatelliteCatalogNumber: Int,
     val expectedTransponderUuid: String,
     val automatic: Boolean,
-    val maximumPttMillis: Long = 8_500L
+    val maximumPttMillis: Long = 8_500L,
+    val mode: DigitalTransmitMode = DigitalTransmitMode.FT4
 )
 
 data class TxLease(
@@ -36,7 +41,7 @@ data class TxLease(
     val usesVox: Boolean = false
 )
 
-interface IFt4TransmitCoordinator {
+interface IDigitalTransmitCoordinator {
     fun isTransmitLeaseValid(lease: TxLease): Boolean = true
     fun recommendedPrepareLeadMillis(): Long = 350L
     suspend fun beginTransmit(request: TxRequest): TxLease
@@ -44,3 +49,6 @@ interface IFt4TransmitCoordinator {
     suspend fun endTransmit(lease: TxLease)
     suspend fun emergencyPttOff()
 }
+
+/** Compatibility boundary for the existing FT4 callers. */
+interface IFt4TransmitCoordinator : IDigitalTransmitCoordinator

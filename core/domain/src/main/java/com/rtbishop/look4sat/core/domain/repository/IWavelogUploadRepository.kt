@@ -34,7 +34,7 @@ data class WavelogStationInfo(
 data class WavelogProbe(val rights: String, val stations: List<WavelogStationInfo>)
 
 /** Why a record (or the whole upload) cannot be submitted. */
-enum class WavelogProblem { NOT_CONFIGURED, NO_STATION, GRID_MISMATCH }
+enum class WavelogProblem { NOT_CONFIGURED, NO_STATION, GRID_MISMATCH, MODE_UNSUPPORTED }
 
 /** Records skipped before the POST (with reasons), plus the records that will be submitted. */
 data class WavelogUploadPreview(

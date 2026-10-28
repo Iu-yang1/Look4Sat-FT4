@@ -51,6 +51,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
@@ -448,6 +450,20 @@ private fun MapScreen(
         sourceState
     }
     val rotateMod = Modifier.rotate(180f)
+    var showElevationContours by remember { mutableStateOf(false) }
+    var showElevationSettings by remember { mutableStateOf(false) }
+    var elevationInputs by remember { mutableStateOf(listOf("10")) }
+    val elevationAngles = elevationInputs.mapNotNull { it.toDoubleOrNull()?.takeIf { value -> value in 0.0..90.0 } }.distinct()
+    val contourOverlay = remember(mapView) { ElevationContourOverlay() }
+    val stationElevationOverlay = remember(mapView) { StationElevationOverlay() }
+    DisposableEffect(mapView) {
+        mapView.overlays.add(contourOverlay)
+        mapView.overlays.add(stationElevationOverlay)
+        onDispose {
+            mapView.overlays.remove(contourOverlay)
+            mapView.overlays.remove(stationElevationOverlay)
+        }
+    }
     val timeString = uiState.mapData?.aosTime ?: "00:00:00"
     val isTimeAos = uiState.mapData?.isTimeAos ?: true
     val usesTianditu = tiandituLayers(uiState.mapSource) != null && uiState.tiandituKey.isNotBlank()
@@ -762,6 +778,9 @@ private fun MapScreen(
                             lastFollowedScrubSerial = uiState.scrubSerial
                         }
                     }
+                    contourOverlay.update(uiState.footprint, elevationAngles, showElevationContours && !uiState.isGridMode)
+                    stationElevationOverlay.position = if (uiState.isGridMode) null else uiState.stationPosition
+                    stationElevationOverlay.elevation = if (uiState.isGridMode) null else uiState.mapData?.elevation
                     scrubInProgress = uiState.isScrubbing
                     view.invalidate()
                 }
@@ -799,6 +818,29 @@ private fun MapScreen(
                         modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
                     )
                 }
+                if (!uiState.isGridMode) {
+                    Surface(
+                        color = ComposeColor.Black.copy(alpha = 0.45f),
+                        shape = RoundedCornerShape(percent = 50),
+                        modifier = Modifier.align(Alignment.TopStart).padding(8.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.clickable { showElevationSettings = true }
+                                .padding(start = 12.dp, end = 6.dp, top = 2.dp, bottom = 2.dp)
+                        ) {
+                            Text("仰角圆", color = ComposeColor.White, fontSize = 12.sp, modifier = Modifier.padding(end = 2.dp))
+                            Switch(
+                                checked = showElevationContours,
+                                onCheckedChange = { enabled ->
+                                    showElevationContours = enabled
+                                    if (enabled) showElevationSettings = true
+                                },
+                                modifier = Modifier.scale(0.75f)
+                            )
+                        }
+                    }
+                }
                 // Top-left: 台址 selector for VUCC counting (grid mode only).
                 // Shown whenever per-grid QSO data exists; empty selection means All.
                 if (uiState.isGridMode && activeAward == AwardType.VUCC && stationGroups.isNotEmpty()) {
@@ -835,6 +877,42 @@ private fun MapScreen(
                 }
             }
         }
+    }
+    if (showElevationSettings) {
+        AlertDialog(
+            onDismissRequest = { showElevationSettings = false },
+            title = { Text("仰角圆设置") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("输入 0°–90° 的仰角，每种颜色对应一条虚线等仰角圆。")
+                    elevationInputs.forEachIndexed { index, value ->
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            OutlinedTextField(
+                                value = value,
+                                onValueChange = { input ->
+                                    elevationInputs = elevationInputs.toMutableList().also { it[index] = input }
+                                },
+                                label = { Text("仰角 " + (index + 1) + " (°)") },
+                                isError = value.toDoubleOrNull()?.let { it !in 0.0..90.0 } ?: true,
+                                singleLine = true,
+                                modifier = Modifier.weight(1f)
+                            )
+                            if (elevationInputs.size > 1) {
+                                TextButton(onClick = {
+                                    elevationInputs = elevationInputs.toMutableList().also { it.removeAt(index) }
+                                }) { Text("−") }
+                            }
+                        }
+                    }
+                    TextButton(onClick = { elevationInputs = elevationInputs + "" }) {
+                        Text("＋ 添加仰角圆")
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showElevationSettings = false }) { Text("完成") }
+            }
+        )
     }
     // Centered dialog listing the tapped worked grid's confirmed satellite QSOs.
     // Dismissed by tapping outside (no explicit close button). Unworked grids

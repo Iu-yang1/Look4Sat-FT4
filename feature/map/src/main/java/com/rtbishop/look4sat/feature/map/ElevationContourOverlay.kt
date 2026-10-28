@@ -107,7 +107,8 @@ internal class ElevationContourOverlay : FolderOverlay() {
             } ?: return@forEachIndexed
             val anchorGeo = circle[anchorIndex]
             val anchorPx = mapView.projection.toPixels(anchorGeo, Point())
-            val labelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 27f }
+            val labelTextSizePx = 12f * mapView.context.resources.displayMetrics.scaledDensity
+            val labelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = labelTextSizePx }
             val halfGapPx = labelPaint.measureText(text) / 2f + 9f
 
             // Cut enough actual contour points to fit the label in SCREEN pixels.
@@ -159,7 +160,7 @@ internal class ElevationContourOverlay : FolderOverlay() {
             flush()
             // Text is a separate overlay *above* the segmented dashed lines;
             // it takes exactly the space cleared on the ring's rightmost edge.
-            add(ElevationCircleLabelOverlay(anchorGeo, text, color))
+            add(ElevationCircleLabelOverlay(anchorGeo, text, color, labelTextSizePx))
         }
     }
 }
@@ -167,18 +168,19 @@ internal class ElevationContourOverlay : FolderOverlay() {
 private class ElevationCircleLabelOverlay(
     private val anchor: GeoPoint,
     private val text: String,
-    private val color: Int
+    private val color: Int,
+    private val textSizePx: Float
 ) : Overlay() {
     private val fill = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         this.color = this@ElevationCircleLabelOverlay.color
-        textSize = 27f
+        textSize = textSizePx
         textAlign = Paint.Align.CENTER
         style = Paint.Style.FILL
     }
     private val outline = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         this.color = Color.BLACK
         alpha = 210
-        textSize = 27f
+        textSize = textSizePx
         strokeWidth = 3f
         style = Paint.Style.STROKE
         textAlign = Paint.Align.CENTER

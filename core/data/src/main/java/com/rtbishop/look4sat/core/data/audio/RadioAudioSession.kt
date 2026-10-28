@@ -70,7 +70,15 @@ class RadioAudioSession(
     override fun devices()=manager.getDevices(AudioManager.GET_DEVICES_ALL).filter { it.type in TYPES }.map {
         RadioAudioDevice(deviceKey(it),it.productName.toString(),it.isSource)
     }
-    override suspend fun prepare(receive: Boolean) = mutex.withLock {
+    override suspend fun prepare(receive: Boolean) {
+        try { prepareConnection(receive) }
+        catch(cancelled: CancellationException) { throw cancelled }
+        catch(error: Exception) {
+            status.update { it.copy(receivingReady=false,transmittingReady=false,error=error.message ?: "Radio audio is unavailable") }
+            throw error
+        }
+    }
+    private suspend fun prepareConnection(receive: Boolean) = mutex.withLock {
         val config=settings()
         check(config.backend!=RadioAudioBackend.UNCONFIGURED) { "Select the radio audio connection in CAT settings" }
         if(configured!=config) { lan?.close();lan=null;configured=config;status.value=RadioAudioState(generation=System.nanoTime()) }
@@ -117,7 +125,7 @@ class RadioAudioSession(
                 val monitor=launch { current.state.collect { check(it.error==null) { it.error ?: "WLAN failure" } } }
                 try { emitAll(current.audio) } finally {
                     monitor.cancel()
-                    if(!settings().networkCat) close()
+                    if(!settings().networkCat) withContext(NonCancellable) { close() }
                 }
             }
         } else emitAll(localHub.audioFlow(AudioConsumer.FT4_DECODE).onEach {

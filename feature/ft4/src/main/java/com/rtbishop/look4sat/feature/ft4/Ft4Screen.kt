@@ -268,7 +268,7 @@ private fun Ft4Shell(
                     progress = { timing.slotProgress },
                     modifier = Modifier.fillMaxWidth().height(3.dp)
                 )
-                Text(state.radioAudio.error ?: stringResource(
+                Text(state.radioAudio.error ?: (state.transmitState as? com.rtbishop.look4sat.core.domain.ft4.Ft4TransmitState.Failed)?.reason ?: stringResource(
                     if(state.radioAudio.transmittingReady) R.string.radio_audio_ready else R.string.radio_audio_waiting),
                     style=MaterialTheme.typography.bodySmall,
                     color=if(state.radioAudio.error!=null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface)

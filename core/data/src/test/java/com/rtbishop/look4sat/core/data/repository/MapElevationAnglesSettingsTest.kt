@@ -47,4 +47,25 @@ class MapElevationAnglesSettingsTest {
         prefs.edit().putString("mapElevationAngles", "not-json").commit()
         assertEquals(listOf(10.0), repo().mapElevationAngles.value)
     }
+    @Test
+    fun visibilitySwitchDefaultsOffAndSurvivesPageChangesAndRestarts() {
+        val regularMap = repo()
+        assertEquals(false, regularMap.mapElevationContoursEnabled.value)
+        regularMap.setMapElevationContoursEnabled(true)
+        assertEquals(true, regularMap.mapElevationContoursEnabled.value)
+        val radarPassMap = repo()
+        assertEquals(true, radarPassMap.mapElevationContoursEnabled.value)
+        radarPassMap.setMapElevationContoursEnabled(false)
+        assertEquals(false, repo().mapElevationContoursEnabled.value)
+    }
+
+    @Test
+    fun visibilitySwitchDoesNotResetSavedRingAngles() {
+        val settings = repo()
+        settings.setMapElevationAngles(listOf(5.0, 15.0, 25.5))
+        settings.setMapElevationContoursEnabled(true)
+        settings.setMapElevationContoursEnabled(false)
+        assertEquals(listOf(5.0, 15.0, 25.5), repo().mapElevationAngles.value)
+    }
+
 }

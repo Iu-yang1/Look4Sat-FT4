@@ -9,15 +9,12 @@ android {
 
     defaultConfig {
         minSdk = libs.versions.minSdk.get().toInt()
-        ndk.abiFilters += listOf("arm64-v8a", "armeabi-v7a")
+        testInstrumentationRunner = "com.rtbishop.look4sat.core.ft4.Ft4NativeInstrument"
+        ndk.abiFilters += if(providers.gradleProperty("ft4Emulator").orNull=="true") listOf("x86_64") else listOf("arm64-v8a", "armeabi-v7a")
         consumerProguardFiles("consumer-rules.pro")
         externalNativeBuild {
             cmake {
-                arguments += listOfNotNull(
-                    System.getenv("FT4_FLANG_PATH")?.let { "-DFT4_FLANG_PATH=$it" },
-                    System.getenv("FT4_BOOST_HEADERS")?.let { "-DFT4_BOOST_HEADERS=$it" },
-                    System.getenv("FT4_LLVM_SOURCE_ROOT")?.let { "-DFT4_LLVM_SOURCE_ROOT=$it" }
-                )
+                arguments += "-DANDROID_STL=c++_static"
             }
         }
     }

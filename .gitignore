@@ -70,3 +70,4 @@ fastlane/readme.md
 /app/release/
 /.kotlin/sessions/
 dist/
+core/ft4-native/rust/target/

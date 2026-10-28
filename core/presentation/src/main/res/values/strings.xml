@@ -534,7 +534,7 @@
     <string name="prefs_ft4_time_ntp" translatable="false">NTP</string>
     <string name="prefs_ft4_time_gnss" translatable="false">GNSS</string>
     <string name="prefs_ft4_time_holdover">Holdover</string>
-    <string name="prefs_ft4_native_supported">%1$s · official FT4 core · self-test %2$s</string>
+    <string name="prefs_ft4_native_supported">%1$s · Rust FT4 engine · self-test %2$s</string>
     <string name="prefs_ft4_native_unsupported">%1$s · FT4 unavailable: %2$s</string>
     <string name="prefs_ft4_self_test_pending">pending</string>
     <string name="prefs_ft4_self_test_passed">passed</string>
@@ -654,7 +654,7 @@ Upstream: https://github.com/rt-bishop/Look4Sat</string>
     <string name="ft4_page_spectrum">Spectrum</string>
     <string name="ft4_page_decode">Decode / Call</string>
     <string name="ft4_page_automatic">Automatic</string>
-    <string name="ft4_status_ready">Official core ready · %1$s</string>
+    <string name="ft4_status_ready">Rust FT4 engine ready · %1$s</string>
     <string name="ft4_status_unavailable">FT4 is unavailable on this device</string>
     <string name="ft4_status_disabled">FT4 decoding is disabled in Settings</string>
     <string name="ft4_error_unavailable">FT4 receive or transmit is unavailable on this device</string>
@@ -798,7 +798,7 @@ Upstream: https://github.com/rt-bishop/Look4Sat</string>
     <string name="ft4_gate_uncertain">uncertainty exceeds 250 ms</string>
     <string name="ft4_gate_unhealthy">clock is unhealthy</string>
     <string name="ft4_gate_disabled">FT4 decoding is disabled</string>
-    <string name="ft4_gate_stub">official FT4 core is unavailable for this ABI</string>
+    <string name="ft4_gate_stub">Rust FT4 engine is unavailable for this ABI</string>
     <string name="ft4_gate_rx_unavailable">FT4 receive core is unavailable</string>
     <string name="ft4_gate_tx_unavailable">FT4 transmit core is unavailable</string>
     <string name="ft4_gate_microphone">microphone permission is missing</string>

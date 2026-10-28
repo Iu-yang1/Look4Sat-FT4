@@ -57,7 +57,7 @@ class Ft4Service(
     private val clock: IDisciplinedClock,
     private val decodeDispatcher: CoroutineDispatcher = Executors
         .newSingleThreadExecutor { runnable ->
-            // 官方 WSJT-X Fortran 解码器包含较大的局部工作区，Android 默认线程栈不足。
+            // One owned decoder worker; the Rust build does not spawn a Rayon pool.
             Thread(null, runnable, "Look4Sat-FT4-decode", DECODE_THREAD_STACK_BYTES)
         }
         .asCoroutineDispatcher()
@@ -68,6 +68,12 @@ class Ft4Service(
     private val mutableDecodeResults = MutableStateFlow<List<Ft4DecodeResult>>(emptyList())
     private var receiveJob: Job? = null
     private var sessionGeneration = 0L
+    @Volatile private var activeDecoder: Ft4NativeDecoder? = null
+    private data class DecodeContext(val myCall: String,val hisCall: String,val key: String)
+    @Volatile private var decodeContext=DecodeContext("","","")
+    override fun updateDecodeContext(myCall: String,hisCall: String,contextKey: String) {
+        decodeContext=DecodeContext(myCall.trim().uppercase(Locale.US),hisCall.trim().uppercase(Locale.US),contextKey)
+    }
 
     override val capability: StateFlow<Ft4Capability> = mutableCapability.asStateFlow()
     override val engineState: StateFlow<Ft4EngineState> = mutableEngineState.asStateFlow()
@@ -125,12 +131,14 @@ class Ft4Service(
             val native = Ft4Native.capabilities
             Ft4Capability(
                 abi = native.abi,
-                officialCoreAvailable = native.officialCoreAvailable,
+                engineAvailable = native.engineAvailable,
                 receiveAvailable = native.rxAvailable,
                 transmitAvailable = native.txAvailable,
                 nativeSelfTestPassed = mutableCapability.value.nativeSelfTestPassed,
                 unavailableReason = native.unavailableReason,
-                upstreamCommit = native.upstreamCommit
+                upstreamCommit = native.upstreamCommit,
+                engineId = native.engineId,
+                engineVersion = native.engineVersion
             )
         }.getOrElse { error ->
             Ft4Capability(unavailableReason = error.message ?: error.javaClass.simpleName)
@@ -163,6 +171,7 @@ class Ft4Service(
             sessionGeneration++
             receiveJob.also { receiveJob = null }
         }
+        activeDecoder?.cancel()
         job?.cancelAndJoin()
         mutableEngineState.value = if (capability.value.receiveAvailable) {
             Ft4EngineState.Idle
@@ -176,7 +185,7 @@ class Ft4Service(
         mutableDecodeResults.value = emptyList()
     }
 
-    override suspend fun validateMessage(message: String): Ft4MessageValidation = withContext(decodeDispatcher) {
+    override suspend fun validateMessage(message: String): Ft4MessageValidation = withContext(Dispatchers.Default) {
         val normalized = message.trim().uppercase(Locale.US).replace(WHITESPACE_REGEX, " ")
         if (!capability.value.transmitAvailable) {
             return@withContext Ft4MessageValidation(false, normalized, capability.value.unavailableReason)
@@ -193,7 +202,7 @@ class Ft4Service(
         message: String,
         audioFrequencyHz: Float,
         outputSampleRate: Int
-    ): FloatArray = withContext(decodeDispatcher) {
+    ): FloatArray = withContext(Dispatchers.Default) {
         val validation = validateMessage(message)
         require(validation.valid) { validation.error }
         Ft4Native.generateFt4Waveform(validation.normalizedMessage, audioFrequencyHz, outputSampleRate)
@@ -201,22 +210,30 @@ class Ft4Service(
 
     private suspend fun receiveLoop(generation: Long, options: Ft4DecoderOptions, myCall: String) {
         var decoder: Ft4NativeDecoder? = null
+        var previousContext: DecodeContext? = null
         try {
             val currentCapability = refreshCapability()
             if (!currentCapability.receiveAvailable || generation != sessionGeneration) return
             decoder = withContext(decodeDispatcher) { Ft4Native.createDecoder(clock.nowMillis()) }
+            activeDecoder = decoder
             mutableEngineState.value = Ft4EngineState.Receiving(null, 0f, 0L, null)
             Ft4ReceivePipeline(clock).run(
                 audio = audioHub.audioFlow(AudioConsumer.FT4_DECODE, AudioDelivery.RELIABLE),
                 decodeSlot = decode@ { slot ->
                     if (generation != sessionGeneration || !currentCoroutineContext().isActive) return@decode 0
+                    if(!slot.isFinal && !options.earlyDecodeEnabled) return@decode 0
+                    if(clock.nowMillis()-slot.utcStartMillis>15_000) return@decode 0
+                    val context=decodeContext.let { if(it.myCall.isBlank()) it.copy(myCall=myCall) else it }
                     val results = withContext(decodeDispatcher) {
+                        if(previousContext!=null && previousContext!=context) decoder?.reset()
+                        previousContext=context
                         Ft4Native.decodeFt4Slot(
                             decoder = requireNotNull(decoder),
                             samples12k = slot.samples,
                             slotUtcMillis = slot.utcStartMillis,
                             options = options.toNative(),
-                            myCall = myCall
+                            myCall = context.myCall,
+                            hintCalls = listOf(context.hisCall).filter(String::isNotBlank)
                         )
                     }.map { native ->
                         Ft4DecodeResult(
@@ -231,6 +248,9 @@ class Ft4Service(
                             messageHash = native.messageHash
                         )
                     }
+                    if(decodeContext.key!=context.key || decodeContext.hisCall!=context.hisCall ||
+                        (decodeContext.myCall.isNotBlank() && decodeContext.myCall!=context.myCall) ||
+                        clock.nowMillis()-slot.utcStartMillis>15_000) return@decode 0
                     addResults(results)
                     results.size
                 },
@@ -271,6 +291,7 @@ class Ft4Service(
             }
         } finally {
             withContext(NonCancellable + decodeDispatcher) { decoder?.close() }
+            if(activeDecoder===decoder) activeDecoder=null
         }
     }
 
@@ -283,7 +304,7 @@ class Ft4Service(
     }
 
     private companion object {
-        const val DECODE_THREAD_STACK_BYTES = 8L * 1024L * 1024L
+        const val DECODE_THREAD_STACK_BYTES = 2L * 1024L * 1024L
         const val FT4_SAMPLE_RATE = 12_000
         const val SLOT_MILLIS = 7_500L
         const val SPECTRUM_FFT_SIZE = 2_048

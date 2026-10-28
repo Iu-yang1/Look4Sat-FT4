@@ -16,11 +16,13 @@ import java.util.Locale
 
 data class Ft4NativeCapabilities(
     val abi: String,
-    val officialCoreAvailable: Boolean,
+    val engineAvailable: Boolean,
     val rxAvailable: Boolean,
     val txAvailable: Boolean,
     val unavailableReason: String,
-    val upstreamCommit: String
+    val upstreamCommit: String,
+    val engineId: String = "mfsk-core-rust",
+    val engineVersion: String = "0.14.0"
 )
 
 data class Ft4NativeDecodeResult(
@@ -40,10 +42,14 @@ data class Ft4NativeDecoderOptions(
     val multiDecodeRoundCount: Int = 3,
     val earlyDecodeEnabled: Boolean = true,
     val widebandSearchEnabled: Boolean = true,
-    val qsoFrequencyHz: Int = 1500
+    val qsoFrequencyHz: Int = 1500,
+    val budgetMillis: Long = 1500
 )
 
-class Ft4NativeDecoder internal constructor(private var handle: Long) : Closeable {
+class Ft4NativeDecoder internal constructor(@Volatile private var handle: Long) : Closeable {
+    fun cancel() { val current=handle;if(current!=0L) Ft4NativeBindings.nativeCancel(current) }
+    fun reset() { check(Ft4NativeBindings.nativeReset(requireHandle())) { "FT4 decoder is busy or closed" } }
+    val budgetExhausted: Boolean get() = Ft4NativeBindings.nativeBudgetExhausted(requireHandle())
     internal fun requireHandle(): Long = checkNotNull(handle.takeIf { it != 0L }) {
         "FT4 decoder is closed"
     }
@@ -67,11 +73,13 @@ object Ft4Native {
         val values = Ft4NativeBindings.nativeCapabilities()
         Ft4NativeCapabilities(
             abi = values.getOrElse(0) { "unknown" },
-            officialCoreAvailable = values.getOrElse(1) { "0" } == "1",
+            engineAvailable = values.getOrElse(1) { "0" } == "1",
             rxAvailable = values.getOrElse(2) { "0" } == "1",
             txAvailable = values.getOrElse(3) { "0" } == "1",
             unavailableReason = values.getOrElse(4) { "unknown" },
-            upstreamCommit = values.getOrElse(5) { "unknown" }
+            upstreamCommit = values.getOrElse(5) { "unknown" },
+            engineId = values.getOrElse(6) { "unknown" },
+            engineVersion = values.getOrElse(7) { "unknown" }
         )
     }
 
@@ -89,11 +97,11 @@ object Ft4Native {
         options: Ft4NativeDecoderOptions = Ft4NativeDecoderOptions(),
         myCall: String = "",
         hintCalls: List<String> = emptyList()
-    ): List<Ft4NativeDecodeResult> = requestMutex.withLock {
+    ): List<Ft4NativeDecodeResult> {
         require(samples12k.size == SLOT_SAMPLE_COUNT) {
             "FT4 slot must contain exactly $SLOT_SAMPLE_COUNT samples"
         }
-        Ft4NativeBindings.nativeDecode(
+        return Ft4NativeBindings.nativeDecode(
             handle = decoder.requireHandle(),
             samples = samples12k,
             utcMillis = slotUtcMillis,
@@ -103,24 +111,25 @@ object Ft4Native {
             wideband = options.widebandSearchEnabled,
             qsoFrequencyHz = options.qsoFrequencyHz.coerceIn(0, 3000),
             myCall = normalizeCall(myCall),
-            hintCalls = hintCalls.take(4).map(::normalizeCall).toTypedArray()
+            hintCalls = hintCalls.take(4).map(::normalizeCall).toTypedArray(),
+            budgetMillis = options.budgetMillis.coerceIn(1,10000)
         ).toList()
     }
 
-    suspend fun validateFt4Message(message: String): String? = requestMutex.withLock {
-        if (!capabilities.txAvailable) return@withLock null
-        Ft4NativeBindings.nativeValidate(normalizeMessage(message))
+    suspend fun validateFt4Message(message: String): String? {
+        if (!capabilities.txAvailable) return null
+        return Ft4NativeBindings.nativeValidate(normalizeMessage(message))
     }
 
     suspend fun generateFt4Waveform(
         message: String,
         audioFrequencyHz: Float,
         outputSampleRate: Int
-    ): FloatArray = requestMutex.withLock {
+    ): FloatArray {
         require(capabilities.txAvailable) { capabilities.unavailableReason }
         require(outputSampleRate == 12_000 || outputSampleRate == 24_000 || outputSampleRate == 48_000)
         require(audioFrequencyHz in 0f..3000f)
-        Ft4NativeBindings.nativeGenerate(normalizeMessage(message), audioFrequencyHz, outputSampleRate)
+        return Ft4NativeBindings.nativeGenerate(normalizeMessage(message), audioFrequencyHz, outputSampleRate)
             ?: error("FT4 message cannot be encoded")
     }
 
@@ -148,6 +157,9 @@ internal object Ft4NativeBindings {
     external fun nativeCapabilities(): Array<String>
     external fun nativeCreate(utcMillis: Long): Long
     external fun nativeDestroy(handle: Long)
+    external fun nativeCancel(handle: Long)
+    external fun nativeReset(handle: Long): Boolean
+    external fun nativeBudgetExhausted(handle: Long): Boolean
     external fun nativeDecode(
         handle: Long,
         samples: FloatArray,
@@ -158,7 +170,8 @@ internal object Ft4NativeBindings {
         wideband: Boolean,
         qsoFrequencyHz: Int,
         myCall: String,
-        hintCalls: Array<String>
+        hintCalls: Array<String>,
+        budgetMillis: Long
     ): Array<Ft4NativeDecodeResult>
     external fun nativeValidate(message: String): String?
     external fun nativeGenerate(message: String, frequencyHz: Float, sampleRate: Int): FloatArray?

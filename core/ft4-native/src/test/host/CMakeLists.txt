@@ -69,4 +69,7 @@ target_link_libraries(look4sat_ft4_host_test PRIVATE
 )
 
 enable_testing()
+add_library(look4sat_ft4_reference SHARED reference_exports.c)
+target_link_libraries(look4sat_ft4_reference PRIVATE
+    "-Wl,--whole-archive" look4sat_ft4_host_core "-Wl,--no-whole-archive")
 add_test(NAME look4sat_ft4_codec_and_waveform COMMAND look4sat_ft4_host_test)

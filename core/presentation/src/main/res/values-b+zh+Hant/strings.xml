@@ -499,7 +499,7 @@
     <string name="prefs_ft4_time_ntp" translatable="false">NTP</string>
     <string name="prefs_ft4_time_gnss" translatable="false">GNSS</string>
     <string name="prefs_ft4_time_holdover">守时</string>
-    <string name="prefs_ft4_native_supported">%1$s · 官方 FT4 核心 · 自检%2$s</string>
+    <string name="prefs_ft4_native_supported">%1$s · Rust FT4 内核 · 自检%2$s</string>
     <string name="prefs_ft4_native_unsupported">%1$s · FT4 不可用：%2$s</string>
     <string name="prefs_ft4_self_test_pending">待执行</string>
     <string name="prefs_ft4_self_test_passed">通过</string>
@@ -619,7 +619,7 @@
     <string name="ft4_page_spectrum">频谱</string>
     <string name="ft4_page_decode">解码/呼叫</string>
     <string name="ft4_page_automatic">自动</string>
-    <string name="ft4_status_ready">官方核心可用 · %1$s</string>
+    <string name="ft4_status_ready">Rust 内核可用 · %1$s</string>
     <string name="ft4_status_unavailable">此设备无法使用 FT4</string>
     <string name="ft4_status_disabled">设置中已关闭 FT4 解码</string>
     <string name="ft4_error_unavailable">此设备无法使用 FT4 接收或发射</string>
@@ -759,7 +759,7 @@
     <string name="ft4_gate_uncertain">不确定度超过 250 ms</string>
     <string name="ft4_gate_unhealthy">时钟状态不健康</string>
     <string name="ft4_gate_disabled">FT4 解码尚未启用</string>
-    <string name="ft4_gate_stub">当前 ABI 没有官方 FT4 核心</string>
+    <string name="ft4_gate_stub">当前 ABI 没有Rust FT4 内核</string>
     <string name="ft4_gate_rx_unavailable">FT4 接收核心不可用</string>
     <string name="ft4_gate_tx_unavailable">FT4 发射核心不可用</string>
     <string name="ft4_gate_microphone">缺少麦克风权限</string>

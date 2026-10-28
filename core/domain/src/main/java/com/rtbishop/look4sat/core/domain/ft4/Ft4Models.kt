@@ -14,12 +14,14 @@ import kotlinx.coroutines.flow.StateFlow
 
 data class Ft4Capability(
     val abi: String = "unknown",
-    val officialCoreAvailable: Boolean = false,
+    val engineAvailable: Boolean = false,
     val receiveAvailable: Boolean = false,
     val transmitAvailable: Boolean = false,
     val nativeSelfTestPassed: Boolean? = null,
     val unavailableReason: String = "",
-    val upstreamCommit: String = ""
+    val upstreamCommit: String = "",
+    val engineId: String = "mfsk-core-rust",
+    val engineVersion: String = "0.14.0"
 )
 
 data class Ft4DecoderOptions(
@@ -85,6 +87,8 @@ data class Ft4MessageValidation(
 )
 
 interface IFt4Service {
+    fun updateDecodeContext(myCall: String, hisCall: String, contextKey: String) = Unit
+    fun waveformSpec(sampleRate: Int): Ft4WaveformSpec = Ft4WaveformSpec.ft4(sampleRate)
     val capability: StateFlow<Ft4Capability>
     val engineState: StateFlow<Ft4EngineState>
     val decodeResults: StateFlow<List<Ft4DecodeResult>>
@@ -97,4 +101,14 @@ interface IFt4Service {
     fun clearDecodeResults()
     suspend fun validateMessage(message: String): Ft4MessageValidation
     suspend fun generateWaveform(message: String, audioFrequencyHz: Float, outputSampleRate: Int): FloatArray
+}
+
+data class Ft4WaveformSpec(val sampleRate: Int,val sampleCount: Int,val slotMillis: Long,val startOffsetMillis: Long) {
+    val durationMillis: Long get()=sampleCount*1000L/sampleRate
+    companion object {
+        fun ft4(rate: Int): Ft4WaveformSpec {
+            require(rate in setOf(12000,24000,48000))
+            return Ft4WaveformSpec(rate,rate*105*48/1000,7500,500)
+        }
+    }
 }

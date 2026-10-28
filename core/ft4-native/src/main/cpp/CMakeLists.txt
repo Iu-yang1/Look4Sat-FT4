@@ -1,124 +1,49 @@
 cmake_minimum_required(VERSION 3.22.1)
 project(look4sat_ft4 LANGUAGES C CXX)
-
-set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-
-set(FT4_CORE_OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/ft4-core")
-set(FT4_CORE_ARCHIVE "${FT4_CORE_OUTPUT}/liblook4sat_ft4_core.a")
-set(FT4_RUNTIME_ARCHIVE "${FT4_CORE_OUTPUT}/libflang_rt.runtime.a")
-set(FT4_BUILD_LOG "${FT4_CORE_OUTPUT}/configure-build.log")
-set(FT4_SOURCE_MANIFEST "${CMAKE_CURRENT_SOURCE_DIR}/ft4-core-sources.manifest")
-file(MAKE_DIRECTORY "${FT4_CORE_OUTPUT}")
-
+find_program(CARGO_EXECUTABLE NAMES cargo.exe cargo HINTS "$ENV{CARGO_HOME}/bin" REQUIRED)
+get_filename_component(RUST_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../../rust" ABSOLUTE)
+set(RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-target")
+if(ANDROID_ABI STREQUAL "arm64-v8a")
+    set(RUST_TARGET aarch64-linux-android)
+    set(CLANG_TARGET aarch64-linux-android24)
+elseif(ANDROID_ABI STREQUAL "armeabi-v7a")
+    set(RUST_TARGET armv7-linux-androideabi)
+    set(CLANG_TARGET armv7a-linux-androideabi24)
+elseif(ANDROID_ABI STREQUAL "x86_64")
+    set(RUST_TARGET x86_64-linux-android)
+    set(CLANG_TARGET x86_64-linux-android24)
+else()
+    message(FATAL_ERROR "Unsupported FT4 ABI: ${ANDROID_ABI}")
+endif()
+if(CMAKE_HOST_WIN32)
+    set(NDK_HOST windows-x86_64)
+    set(CLANG_SUFFIX .cmd)
+elseif(CMAKE_HOST_APPLE)
+    set(NDK_HOST darwin-x86_64)
+else()
+    set(NDK_HOST linux-x86_64)
+endif()
+string(TOUPPER "${RUST_TARGET}" RUST_TARGET_ENV)
+string(REPLACE "-" "_" RUST_TARGET_ENV "${RUST_TARGET_ENV}")
+set(RUST_LINKER "${CMAKE_ANDROID_NDK}/toolchains/llvm/prebuilt/${NDK_HOST}/bin/${CLANG_TARGET}-clang${CLANG_SUFFIX}")
+file(GLOB_RECURSE RUST_INPUTS CONFIGURE_DEPENDS "${RUST_ROOT}/src/*.rs")
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
-    "${FT4_SOURCE_MANIFEST}"
-    "${CMAKE_CURRENT_SOURCE_DIR}/tools/build-ft4-core.ps1"
-    "${CMAKE_CURRENT_SOURCE_DIR}/tools/build-flang-runtime.ps1"
-    "${CMAKE_CURRENT_SOURCE_DIR}/tools/toolchain-common.ps1"
-    "${CMAKE_CURRENT_SOURCE_DIR}/tools/patches/flang-rt-android-time.patch"
-    "${CMAKE_CURRENT_SOURCE_DIR}/tools/patches/flang-22.1-arm32-codegen.patch"
-)
-file(GLOB_RECURSE FT4_CORE_INPUTS CONFIGURE_DEPENDS
-    "${CMAKE_CURRENT_SOURCE_DIR}/vendor/*.f90"
-    "${CMAKE_CURRENT_SOURCE_DIR}/vendor/*.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/vendor/*.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/host/*.f90"
-    "${CMAKE_CURRENT_SOURCE_DIR}/host/*.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/android/*.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/fft/*.c"
-)
-set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${FT4_CORE_INPUTS})
-
-set(FT4_BUILD_PROFILE Release)
-if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-    set(FT4_BUILD_PROFILE Debug)
+    ${RUST_INPUTS} "${RUST_ROOT}/Cargo.toml" "${RUST_ROOT}/Cargo.lock" "${RUST_ROOT}/rust-toolchain.toml")
+execute_process(COMMAND "${CMAKE_COMMAND}" -E env
+    "CARGO_TARGET_${RUST_TARGET_ENV}_LINKER=${RUST_LINKER}"
+    "RUSTFLAGS=-C relocation-model=pic"
+    "${CARGO_EXECUTABLE}" +1.98.1 rustc --lib --crate-type staticlib --locked --release
+    --manifest-path "${RUST_ROOT}/Cargo.toml" --target "${RUST_TARGET}" --target-dir "${RUST_TARGET_DIR}"
+    RESULT_VARIABLE RUST_STATUS OUTPUT_VARIABLE RUST_STDOUT ERROR_VARIABLE RUST_STDERR)
+file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/rust-build.log" "${RUST_STDOUT}\n${RUST_STDERR}")
+if(NOT RUST_STATUS EQUAL 0)
+    message(FATAL_ERROR "FT4 Rust build failed: ${RUST_STDOUT}\n${RUST_STDERR}")
 endif()
-
-find_program(POWERSHELL_EXECUTABLE NAMES powershell.exe powershell REQUIRED)
-set(FT4_BUILD_COMMAND
-    "${POWERSHELL_EXECUTABLE}" -NoProfile -ExecutionPolicy Bypass
-    -File "${CMAKE_CURRENT_SOURCE_DIR}/tools/build-ft4-core.ps1"
-    -OutputDir "${FT4_CORE_OUTPUT}"
-    -Abi "${ANDROID_ABI}"
-    -CMakePath "${CMAKE_COMMAND}"
-    -NinjaPath "${CMAKE_MAKE_PROGRAM}"
-    -NdkRoot "${CMAKE_ANDROID_NDK}"
-    -BuildProfile "${FT4_BUILD_PROFILE}"
-)
-if(DEFINED FT4_FLANG_PATH AND NOT FT4_FLANG_PATH STREQUAL "")
-    list(APPEND FT4_BUILD_COMMAND -FlangPath "${FT4_FLANG_PATH}")
-endif()
-if(DEFINED FT4_BOOST_HEADERS AND NOT FT4_BOOST_HEADERS STREQUAL "")
-    list(APPEND FT4_BUILD_COMMAND -BoostHeaders "${FT4_BOOST_HEADERS}")
-endif()
-if(DEFINED FT4_LLVM_SOURCE_ROOT AND NOT FT4_LLVM_SOURCE_ROOT STREQUAL "")
-    list(APPEND FT4_BUILD_COMMAND -LlvmSourceRoot "${FT4_LLVM_SOURCE_ROOT}")
-endif()
-
-execute_process(
-    COMMAND ${FT4_BUILD_COMMAND}
-    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
-    RESULT_VARIABLE FT4_BUILD_RESULT
-    OUTPUT_VARIABLE FT4_BUILD_STDOUT
-    ERROR_VARIABLE FT4_BUILD_STDERR
-)
-file(WRITE "${FT4_BUILD_LOG}"
-    "ABI=${ANDROID_ABI}\nCOMMAND=${FT4_BUILD_COMMAND}\n\n${FT4_BUILD_STDOUT}\n${FT4_BUILD_STDERR}\n")
-
-set(FT4_OFFICIAL_CORE FALSE)
-if(FT4_BUILD_RESULT EQUAL 0 AND EXISTS "${FT4_CORE_ARCHIVE}" AND EXISTS "${FT4_RUNTIME_ARCHIVE}")
-    set(FT4_OFFICIAL_CORE TRUE)
-    message(STATUS "Look4Sat FT4 official core enabled for ${ANDROID_ABI}")
-else()
-    if(FT4_BUILD_PROFILE STREQUAL "Release")
-        message(FATAL_ERROR
-            "Look4Sat FT4 release requires the official core for ${ANDROID_ABI}. "
-            "Stub publication is forbidden. See ${FT4_BUILD_LOG}")
-    else()
-        message(WARNING
-            "Look4Sat FT4 official core unavailable for ${ANDROID_ABI}; building debug capability stub. "
-            "See ${FT4_BUILD_LOG}")
-    endif()
-endif()
-
 add_library(look4sat_ft4 SHARED ft4_jni.cpp)
-target_include_directories(look4sat_ft4 PRIVATE
-    "${CMAKE_CURRENT_SOURCE_DIR}"
-    "${CMAKE_CURRENT_SOURCE_DIR}/ftx_core/include"
-)
-target_compile_options(look4sat_ft4 PRIVATE
-    $<$<CONFIG:Debug>:-O0;-g>
-    $<$<NOT:$<CONFIG:Debug>>:-O2;-DNDEBUG>
-    -fno-fast-math
-)
 target_compile_definitions(look4sat_ft4 PRIVATE
-    FT4_ANDROID_ABI="${ANDROID_ABI}"
-    FT4_UPSTREAM_SHA="6f69c7281a99d0243824ac02ce5706e8e897776f"
-)
-
-if(FT4_OFFICIAL_CORE)
-    target_sources(look4sat_ft4 PRIVATE
-        ftx_core/ftx_decoder_api.c
-        ftx_core/ftx_encoder_api.c
-        ft8/constants.c
-        ft8/crc.c
-        ft8/encode.c
-        ft8/hash22.c
-        ft8/pack.c
-        ft8/text.c
-        ft8/unpack.c
-    )
-    target_compile_definitions(look4sat_ft4 PRIVATE FT4_OFFICIAL_CORE=1)
-    target_link_libraries(look4sat_ft4 PRIVATE
-        "-Wl,--whole-archive" "${FT4_CORE_ARCHIVE}" "-Wl,--no-whole-archive"
-        "${FT4_RUNTIME_ARCHIVE}" android log m dl
-    )
-else()
-    target_compile_definitions(look4sat_ft4 PRIVATE
-        FT4_OFFICIAL_CORE=0
-        FT4_UNAVAILABLE_REASON="official_core_unavailable_for_this_abi"
-    )
-    target_link_libraries(look4sat_ft4 PRIVATE android log)
-endif()
+    FT4_ANDROID_ABI="${ANDROID_ABI}" FT4_UPSTREAM_SHA="707ebed2fb2290279e16ac79146c7a14df8b793b")
+target_compile_options(look4sat_ft4 PRIVATE -fno-fast-math -Wall -Wextra -Werror)
+target_link_options(look4sat_ft4 PRIVATE -Wl,-z,max-page-size=16384 -Wl,-z,common-page-size=16384 -Wl,--exclude-libs,ALL)
+target_link_libraries(look4sat_ft4 PRIVATE "${RUST_TARGET_DIR}/${RUST_TARGET}/release/liblook4sat_ft4.a" android log m dl)

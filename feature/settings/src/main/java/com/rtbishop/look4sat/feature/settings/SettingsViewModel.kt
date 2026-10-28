@@ -150,7 +150,7 @@ class SettingsViewModel(
                 settingsRepo.updateFt4Settings { it.copy(decodeEnabled = false) }
                 ft4Service.stopReceiving()
             }
-            if (capability.officialCoreAvailable) ft4Service.runNativeSelfTest()
+            if (capability.engineAvailable) ft4Service.runNativeSelfTest()
         }
         viewModelScope.launch {
             settingsRepo.stationPosition.collect { geoPos ->

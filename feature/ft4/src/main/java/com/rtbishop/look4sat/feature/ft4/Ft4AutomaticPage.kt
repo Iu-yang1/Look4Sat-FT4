@@ -220,7 +220,7 @@ private fun compactSlotLabel(parity: Int?): String = when (parity) {
 private fun automaticGateReason(state: Ft4State): String? {
     val resource = when {
         !state.settings.decodeEnabled -> R.string.ft4_gate_disabled
-        !state.capability.officialCoreAvailable -> R.string.ft4_gate_stub
+        !state.capability.engineAvailable -> R.string.ft4_gate_stub
         !state.capability.receiveAvailable -> R.string.ft4_gate_rx_unavailable
         !state.capability.transmitAvailable -> R.string.ft4_gate_tx_unavailable
         !state.hasMicrophonePermission -> R.string.ft4_gate_microphone

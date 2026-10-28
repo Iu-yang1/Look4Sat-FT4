@@ -450,10 +450,21 @@ private fun MapScreen(
         sourceState
     }
     val rotateMod = Modifier.rotate(180f)
+    // The same saved angles are used by the normal satellite map and radar matching maps.
+    val elevationSettingsRepo = remember(mapView.context.applicationContext) {
+        (mapView.context.applicationContext as IContainerProvider).getMainContainer().settingsRepo
+    }
+    val elevationAngles by elevationSettingsRepo.mapElevationAngles.collectAsStateWithLifecycle()
     var showElevationContours by remember { mutableStateOf(false) }
     var showElevationSettings by remember { mutableStateOf(false) }
     var elevationInputs by remember { mutableStateOf(listOf("10")) }
-    val elevationAngles = elevationInputs.mapNotNull { it.toDoubleOrNull()?.takeIf { value -> value in 0.0..90.0 } }.distinct()
+    fun openElevationSettings() {
+        // Always seed from the shared, persisted state. Closing without Apply discards draft changes.
+        elevationInputs = elevationAngles.map { angle ->
+            if (angle % 1.0 == 0.0) angle.toInt().toString() else angle.toString()
+        }
+        showElevationSettings = true
+    }
     val contourOverlay = remember(mapView) { ElevationContourOverlay() }
     val stationElevationOverlay = remember(mapView) { StationElevationOverlay() }
     DisposableEffect(mapView) {
@@ -778,7 +789,7 @@ private fun MapScreen(
                             lastFollowedScrubSerial = uiState.scrubSerial
                         }
                     }
-                    contourOverlay.update(uiState.footprint, elevationAngles, showElevationContours && !uiState.isGridMode)
+                    contourOverlay.update(uiState.footprint, elevationAngles, showElevationContours && !uiState.isGridMode, view)
                     stationElevationOverlay.position = if (uiState.isGridMode) null else uiState.stationPosition
                     stationElevationOverlay.elevation = if (uiState.isGridMode) null else uiState.mapData?.elevation
                     // In matched passes, compute the other station's elevation at the exact
@@ -833,7 +844,7 @@ private fun MapScreen(
                     ) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.clickable { showElevationSettings = true }
+                            modifier = Modifier.clickable { openElevationSettings() }
                                 .padding(start = 12.dp, end = 6.dp, top = 2.dp, bottom = 2.dp)
                         ) {
                             Text("仰角圆", color = ComposeColor.White, fontSize = 12.sp, modifier = Modifier.padding(end = 2.dp))
@@ -841,7 +852,7 @@ private fun MapScreen(
                                 checked = showElevationContours,
                                 onCheckedChange = { enabled ->
                                     showElevationContours = enabled
-                                    if (enabled) showElevationSettings = true
+                                    if (enabled) openElevationSettings()
                                 },
                                 modifier = Modifier.scale(0.75f)
                             )
@@ -886,38 +897,13 @@ private fun MapScreen(
         }
     }
     if (showElevationSettings) {
-        AlertDialog(
-            onDismissRequest = { showElevationSettings = false },
-            title = { Text("仰角圆设置") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("输入 0°–90° 的仰角，每种颜色对应一条虚线等仰角圆。")
-                    elevationInputs.forEachIndexed { index, value ->
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            OutlinedTextField(
-                                value = value,
-                                onValueChange = { input ->
-                                    elevationInputs = elevationInputs.toMutableList().also { it[index] = input }
-                                },
-                                label = { Text("仰角 " + (index + 1) + " (°)") },
-                                isError = value.toDoubleOrNull()?.let { it !in 0.0..90.0 } ?: true,
-                                singleLine = true,
-                                modifier = Modifier.weight(1f)
-                            )
-                            if (elevationInputs.size > 1) {
-                                TextButton(onClick = {
-                                    elevationInputs = elevationInputs.toMutableList().also { it.removeAt(index) }
-                                }) { Text("−") }
-                            }
-                        }
-                    }
-                    TextButton(onClick = { elevationInputs = elevationInputs + "" }) {
-                        Text("＋ 添加仰角圆")
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = { showElevationSettings = false }) { Text("完成") }
+        ElevationSettingsDialog(
+            values = elevationInputs,
+            onValuesChange = { elevationInputs = it },
+            onDismiss = { showElevationSettings = false },
+            onApply = { values ->
+                elevationSettingsRepo.setMapElevationAngles(values)
+                showElevationSettings = false
             }
         )
     }
@@ -959,6 +945,101 @@ private fun MapScreen(
             isUtc = uiState.isUtc,
             onDismiss = { selectedRegion = null }
         )
+    }
+}
+
+/**
+ * Same centered-card dialog appearance as the map's worked-grid QSO details.
+ * This is the default dialog chrome for satellite-map overlays: 88% width,
+ * primary-colour monospace header, divider and a bounded scrolling body.
+ */
+@Composable
+private fun ElevationSettingsDialog(
+    values: List<String>,
+    onValuesChange: (List<String>) -> Unit,
+    onDismiss: () -> Unit,
+    onApply: (List<Double>) -> Unit
+) {
+    val parsed = values.map { it.trim().toDoubleOrNull() }
+    val valid = parsed.isNotEmpty() &&
+        parsed.all { it != null && it.isFinite() && it in 0.0..90.0 } &&
+        parsed.distinct().size == parsed.size
+
+    androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
+        Card(
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+            modifier = Modifier.fillMaxWidth(0.88f)
+        ) {
+            Column {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .defaultMinSize(minHeight = 48.dp)
+                        .padding(start = 16.dp, end = 8.dp, top = 4.dp, bottom = 4.dp)
+                ) {
+                    Text(
+                        "仰角圆设置",
+                        style = MaterialTheme.typography.titleLarge,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                        modifier = Modifier.weight(1f)
+                    )
+                    TextButton(onClick = onDismiss) { Text("取消") }
+                }
+                androidx.compose.material3.HorizontalDivider()
+                Column(
+                    modifier = Modifier
+                        .heightIn(max = 380.dp)
+                        .verticalScroll(rememberScrollState())
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        "在卫星覆盖范围内显示等仰角虚线（0°–90°）。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    values.forEachIndexed { index, input ->
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            OutlinedTextField(
+                                value = input,
+                                onValueChange = { newText ->
+                                    onValuesChange(values.toMutableList().also { it[index] = newText })
+                                },
+                                label = { Text("仰角 ${index + 1} (°)") },
+                                isError = input.trim().toDoubleOrNull()?.let { !it.isFinite() || it !in 0.0..90.0 } ?: true,
+                                singleLine = true,
+                                modifier = Modifier.weight(1f)
+                            )
+                            if (values.size > 1) {
+                                TextButton(onClick = {
+                                    onValuesChange(values.toMutableList().also { it.removeAt(index) })
+                                }) { Text("−") }
+                            }
+                        }
+                    }
+                    TextButton(onClick = { onValuesChange(values + "") }) { Text("＋ 添加仰角圆") }
+                    if (!valid) {
+                        Text(
+                            "请输入不重复的 0°–90° 仰角。",
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                }
+                androidx.compose.material3.HorizontalDivider()
+                Row(
+                    horizontalArrangement = Arrangement.End,
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp)
+                ) {
+                    TextButton(
+                        enabled = valid,
+                        onClick = { onApply(parsed.filterNotNull()) }
+                    ) { Text("保存") }
+                }
+            }
+        }
     }
 }
 

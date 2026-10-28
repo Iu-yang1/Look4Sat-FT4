@@ -11,7 +11,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 
 [dependencies]
 libm = "=0.2.16"
-mfsk-core = { git = "https://github.com/jl1nie/mfsk-core", rev = "707ebed2fb2290279e16ac79146c7a14df8b793b", default-features = false, features = ["std", "ft4", "fft-rustfft"] }
+mfsk-core = { git = "https://github.com/jl1nie/mfsk-core", rev = "707ebed2fb2290279e16ac79146c7a14df8b793b", default-features = false, features = ["std", "ft4", "jtty", "fft-rustfft"] }
 
 [profile.release]
 opt-level = 3

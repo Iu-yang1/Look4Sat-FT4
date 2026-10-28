@@ -1,0 +1,11 @@
+JTTY PHY, source coding and receiver: jl1nie/mfsk-core
+Pinned source: 707ebed2fb2290279e16ac79146c7a14df8b793b
+https://github.com/jl1nie/mfsk-core
+GPL-3.0-only; see mfsk-core-GPL-3.0.txt.
+Derived algorithms and independent oracle fixtures: WSJT-X, K1JT and collaborators.
+Fixtures: WSJT-X 3.2.0-rc1 567ad29ce6abf3d4a44f181cdbc7ceba0d73e5f4; pack cases from 3.3.0-beta1, as identified in their headers.
+Carrier search and tracking design reference: Iu-yang1/JTTY-Go, BH2VSQ and contributors.
+Pinned source: 9c740414c847e362ca98fc65fe5068ed63156324
+https://github.com/Iu-yang1/JTTY-Go
+GPL version 3; see mfsk-core-GPL-3.0.txt for the license text.
+No Go or Wails components are bundled.

@@ -2,6 +2,7 @@
 // FT4-only Android adapter for mfsk-core, Copyright Look4Sat contributors.
 // Algorithm source: jl1nie/mfsk-core 707ebed2fb2290279e16ac79146c7a14df8b793b,
 // a GPL-3.0 Rust implementation of WSJT-X by K1JT and collaborators.
+mod jtty;
 use mfsk_core::decoder::{DecodeParams, Decoder, Depth, Ft4Strategy, SlotInput};
 use mfsk_core::engine::tx::message_to_tones;
 use mfsk_core::ft4::Ft4;

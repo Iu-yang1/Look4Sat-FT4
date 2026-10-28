@@ -41,7 +41,7 @@ file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/rust-build.log" "${RUST_STDOUT}\n${RUST_
 if(NOT RUST_STATUS EQUAL 0)
     message(FATAL_ERROR "FT4 Rust build failed: ${RUST_STDOUT}\n${RUST_STDERR}")
 endif()
-add_library(look4sat_ft4 SHARED ft4_jni.cpp)
+add_library(look4sat_ft4 SHARED ft4_jni.cpp jtty_jni.cpp)
 target_compile_definitions(look4sat_ft4 PRIVATE
     FT4_ANDROID_ABI="${ANDROID_ABI}" FT4_UPSTREAM_SHA="707ebed2fb2290279e16ac79146c7a14df8b793b")
 target_compile_options(look4sat_ft4 PRIVATE -fno-fast-math -Wall -Wextra -Werror)

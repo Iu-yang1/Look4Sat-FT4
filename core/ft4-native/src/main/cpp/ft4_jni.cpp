@@ -102,9 +102,10 @@ JNINativeMethod methods[]={
     {const_cast<char*>("nativeSelfTest"),const_cast<char*>("()Ljava/lang/String;"),reinterpret_cast<void*>(native_self_test)}
 };
 }
+bool register_jtty(JNIEnv *env);
 JNIEXPORT jint JNI_OnLoad(JavaVM *vm,void*) {
     JNIEnv *env=nullptr;if(vm->GetEnv(reinterpret_cast<void**>(&env),JNI_VERSION_1_6)!=JNI_OK) return JNI_ERR;
     jclass type=env->FindClass("com/rtbishop/look4sat/core/ft4/Ft4NativeBindings");
     if(!type || env->RegisterNatives(type,methods,sizeof(methods)/sizeof(methods[0]))!=JNI_OK) return JNI_ERR;
-    env->DeleteLocalRef(type);return JNI_VERSION_1_6;
+    env->DeleteLocalRef(type);return register_jtty(env) ? JNI_VERSION_1_6 : JNI_ERR;
 }

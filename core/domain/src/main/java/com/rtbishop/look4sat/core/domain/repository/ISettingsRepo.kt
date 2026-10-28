@@ -114,6 +114,12 @@ interface ISettingsRepo {
     fun setAmSatCallsign(callsign: String)
     //endregion
 
+    //region # Shared elevation circles on all satellite maps
+    /** Persisted, ordered minimum-elevation contours (degrees, 0..90). Shared by regular and radar pass maps. */
+    val mapElevationAngles: StateFlow<List<Double>>
+    fun setMapElevationAngles(angles: List<Double>)
+    //endregion
+
     //region # Worked-grid data (written by the LoTW / Wavelog syncs)
     fun getWorkedGrids(): Set<String>
     fun setWorkedGrids(grids: Set<String>)

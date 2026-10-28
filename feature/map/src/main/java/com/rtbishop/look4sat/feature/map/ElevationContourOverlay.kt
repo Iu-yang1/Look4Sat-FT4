@@ -17,6 +17,7 @@ import kotlin.math.asin
 import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.sin
+import kotlin.math.sqrt
 
 /**
  * Equal-elevation contours: the observer's look angle to the satellite is constant at
@@ -44,6 +45,36 @@ internal fun elevationContour(satellite: OrbitalPos, elevationDegrees: Double): 
         )
         GeoPoint(Math.toDegrees(lat), Math.toDegrees(lon))
     }
+}
+
+/**
+ * Shared with the matching-station marker in MapScreen: labels and markers must
+ * use precisely the same shade of blue.
+ */
+internal val MATCHED_STATION_BLUE = Color.rgb(25, 118, 210)
+private val LOCAL_ELEVATION_YELLOW = Color.rgb(245, 230, 166)
+
+/**
+ * Topocentric elevation of the selected satellite from another ground location.
+ *
+ * OrbitalPos latitude/longitude are radians; GeoPos uses degrees. Both the
+ * matched-station reading and the existing local-station reading use the same
+ * selected satellite and scrubbed instant (MapState.footprint).
+ */
+internal fun elevationAtGroundStation(satellite: OrbitalPos?, station: GeoPos?): Double? {
+    if (satellite == null || station == null || !satellite.altitude.isFinite() ||
+        satellite.altitude <= 0.0
+    ) return null
+
+    val observerLat = Math.toRadians(station.latitude)
+    val observerLon = Math.toRadians(station.longitude)
+    val cosCentralAngle = (
+        sin(satellite.latitude) * sin(observerLat) +
+        cos(satellite.latitude) * cos(observerLat) * cos(satellite.longitude - observerLon)
+    ).coerceIn(-1.0, 1.0)
+    val earthToSatelliteRadius = 6370.0 / (6370.0 + satellite.altitude)
+    val sinCentralAngle = sqrt((1.0 - cosCentralAngle * cosCentralAngle).coerceAtLeast(0.0))
+    return Math.toDegrees(atan2(cosCentralAngle - earthToSatelliteRadius, sinCentralAngle))
 }
 
 internal class ElevationContourOverlay : FolderOverlay() {
@@ -84,13 +115,19 @@ internal class ElevationContourOverlay : FolderOverlay() {
     }
 }
 
-/** On-map real/scrubbed elevation readout beside the local station marker. */
+/**
+ * On-map elevation readouts at both ground stations. The local reading is
+ * supplied by the existing predictor, while the matched station's elevation
+ * is calculated from the same OrbitalPos instant.
+ */
 internal class StationElevationOverlay : Overlay() {
     var position: GeoPos? = null
     var elevation: Double? = null
+    var otherPosition: GeoPos? = null
+    var otherElevation: Double? = null
+
     private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         textSize = 32f
-        color = Color.WHITE
         style = Paint.Style.FILL
         setShadowLayer(3f, 1f, 1f, Color.BLACK)
     }
@@ -103,12 +140,24 @@ internal class StationElevationOverlay : Overlay() {
 
     override fun draw(canvas: Canvas, mapView: MapView, shadow: Boolean) {
         if (shadow) return
-        val station = position ?: return
-        val angle = elevation?.takeIf { it >= 0.0 && it.isFinite() } ?: return
-        val point = mapView.projection.toPixels(GeoPoint(station.latitude, station.longitude), Point())
+        drawElevation(canvas, mapView, position, elevation, LOCAL_ELEVATION_YELLOW)
+        drawElevation(canvas, mapView, otherPosition, otherElevation, MATCHED_STATION_BLUE)
+    }
+
+    private fun drawElevation(
+        canvas: Canvas,
+        mapView: MapView,
+        station: GeoPos?,
+        value: Double?,
+        color: Int
+    ) {
+        val position = station ?: return
+        val angle = value?.takeIf { it.isFinite() && it >= 0.0 } ?: return
+        val point = mapView.projection.toPixels(GeoPoint(position.latitude, position.longitude), Point())
         val label = String.format(java.util.Locale.US, "%.1f°", angle)
         val x = point.x + 18f
         val y = point.y - 12f
+        textPaint.color = color
         canvas.drawText(label, x, y, outlinePaint)
         canvas.drawText(label, x, y, textPaint)
     }

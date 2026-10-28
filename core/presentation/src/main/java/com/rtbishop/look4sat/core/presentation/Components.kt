@@ -28,8 +28,6 @@ import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -61,7 +59,6 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.adaptive.currentWindowAdaptiveInfo
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
@@ -456,30 +453,23 @@ private fun DialogShell(
     content: @Composable (padding: Dp) -> Unit
 ) {
     val padding = LocalSpacing.current.large
-    Dialog(
-        onDismissRequest = onDismissRequest,
-        properties = DialogProperties(usePlatformDefaultWidth = false)
-    ) {
-        BoxWithConstraints(
-            modifier = Modifier.fillMaxSize(),
-            contentAlignment = Alignment.Center
+    // Let the platform dialog window handle outside taps and back presses, just
+    // like the map's QSO detail dialog. A full-screen Dialog container would
+    // swallow outside taps instead of dismissing the popup.
+    Dialog(onDismissRequest = onDismissRequest) {
+        Card(
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+            ),
+            shape = MaterialTheme.shapes.medium,
+            modifier = Modifier.fillMaxWidth(0.88f)
         ) {
-            Card(
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceContainerLow
-                ),
-                shape = MaterialTheme.shapes.medium,
-                modifier = Modifier
-                    .fillMaxWidth(0.88f)
-                    .heightIn(max = maxHeight * 0.88f)
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(padding),
+                modifier = Modifier.fillMaxWidth()
             ) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(padding),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    content(padding)
-                }
+                content(padding)
             }
         }
     }

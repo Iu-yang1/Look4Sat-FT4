@@ -70,6 +70,7 @@ class JttyViewModel(private val container: IMainContainer): ViewModel() {
         viewModelScope.launch { transmitter.busy.collect { busy -> mutable.update { it.copy(busy=busy) } } }
         viewModelScope.launch { container.radioTrackingService.state.collect { radio -> mutable.update { it.copy(radio=radio) } } }
         viewModelScope.launch { container.radioAudioSession.state.collect { audio -> mutable.update { it.copy(audioReady=audio.transmittingReady,audioRoute=audio.route) } } }
+        viewModelScope.launch { container.settingsRepo.stationPosition.collect { position -> mutable.update { it.copy(grid=position.qthLocator) } } }
         viewModelScope.launch { container.settingsRepo.radioControlSettings.collect { config ->
             mutable.update { it.copy(networkAudio=config.radioAudio.backend==RadioAudioBackend.ICOM_WLAN,
                 usesVox=config.catTransport==RadioControlSettings.TRANSPORT_VOX,
@@ -104,8 +105,11 @@ class JttyViewModel(private val container: IMainContainer): ViewModel() {
     }
     suspend fun enter() {
         if(entered) return
-        entered=true
-        container.ft4AudioTransmitter.stop();container.ft4Service.stopReceiving()
+        try {
+            container.ft4AudioTransmitter.stop();container.ft4Service.stopReceiving()
+            entered=true
+        } catch(cancelled: CancellationException) { throw cancelled }
+        catch(error: Exception) { mutable.update { it.copy(error=error.message) } }
     }
     fun leave() {
         entered=false;generation++;transmitJob?.cancel()
@@ -126,7 +130,13 @@ class JttyViewModel(private val container: IMainContainer): ViewModel() {
             }
             is JttyAction.TxFrequency -> if(!state.value.busy && action.value.isFinite() && action.value in 100f..2800f) mutable.update { it.copy(txHz=action.value) }
             is JttyAction.RxFrequency -> if(action.value.isFinite()) service.selectReceiveFrequency(action.value.coerceIn(100f,2800f))
-            is JttyAction.Transponder -> { generation++;container.radioTrackingService.setTransponder(action.value) }
+            is JttyAction.Transponder -> if(!transmitter.busy.value && transmitJob?.isActive!=true) launch {
+                val resume=state.value.receive.receiving
+                generation++
+                service.stopReceiving()
+                container.radioTrackingService.setTransponder(action.value)
+                if(resume && entered) service.startReceiving()
+            }
             is JttyAction.Preset -> launch {
                 val current=state.value
                 val text=JttyText.expand(current.presets[action.index],mapOf("CALL" to current.theirCall,"MYCALL" to current.myCall,"RST" to current.sentReport,"GRID" to current.grid))
@@ -136,7 +146,10 @@ class JttyViewModel(private val container: IMainContainer): ViewModel() {
                 container.settingsRepo.saveJttyPreset(action.index,action.text)
                 mutable.update { it.copy(presets=container.settingsRepo.jttyPresets()) }
             }
-            JttyAction.Receive -> launch { enter();if(state.value.receive.receiving) service.stopReceiving() else service.startReceiving() }
+            JttyAction.Receive -> launch {
+                enter();check(entered) { state.value.error ?: "Could not release the previous radio session" }
+                if(state.value.receive.receiving) service.stopReceiving() else service.startReceiving()
+            }
             JttyAction.Clear -> service.clear()
             JttyAction.Connect -> launch { container.radioTrackingService.connectRadios() }
             JttyAction.Track -> launch {
@@ -168,6 +181,7 @@ class JttyViewModel(private val container: IMainContainer): ViewModel() {
         val current=state.value;val expected=generation
         transmitJob=launch {
             enter()
+            check(entered) { state.value.error ?: "Could not release the previous radio session" }
             val pass=checkNotNull(current.pass) { "Select a satellite pass" }
             val transponder=checkNotNull(current.radio.selectedTransponder) { "Select a transponder" }
             transmitter.transmit(JttyTransmitRequest(current.draft,current.txHz,pass.catNum,transponder.uuid,expected,

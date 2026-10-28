@@ -123,9 +123,12 @@ fun Ft4ShellDestination(navigateUp: () -> Unit, navigateToLogbook: () -> Unit) {
     val container = (context.applicationContext as IContainerProvider).getMainContainer()
     var digitalModeReady by remember { mutableStateOf(false) }
     LaunchedEffect(container) {
-        container.jttyTransmitter.stop()
-        container.jttyService.stopReceiving()
-        digitalModeReady=true
+        try {
+            container.jttyTransmitter.stop()
+            container.jttyService.stopReceiving()
+            digitalModeReady=true
+        } catch(cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+        catch(_: Exception) { digitalModeReady=false }
     }
     val viewModel: Ft4ViewModel = viewModel(factory = Ft4ViewModel.factory(container))
     val state by viewModel.uiState.collectAsStateWithLifecycle()

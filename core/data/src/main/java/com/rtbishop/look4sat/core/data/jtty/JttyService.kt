@@ -147,6 +147,7 @@ class JttyService(
                 }
             } finally { decoders.forEach { it.close() };decoders=emptyList() }
         } } catch(cancelled: CancellationException) { throw cancelled }
+        catch(error: LinkageError) { mutable.update { it.copy(error=error.message ?: "JTTY native library is unavailable",receiving=false) } }
         catch(error: Exception) { mutable.update { it.copy(error=error.message,receiving=false) } }
         finally { capture.cancel();queue.cancel();mutable.update { it.copy(receiving=false) } }
     }

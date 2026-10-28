@@ -49,4 +49,14 @@ class JttyReceiveTest {
         service.selectReceiveFrequency(1300f);assertEquals(1300f,service.state.value.selectedRxHz)
         service.stopReceiving()
     }
+    @Test fun unavailableNativeLibraryIsReportedInsteadOfCrashingTheCaptureScope()=runTest {
+        val hub=Hub()
+        val service=JttyService(backgroundScope,hub,worker=StandardTestDispatcher(testScheduler),
+            decoderFactory={throw UnsatisfiedLinkError("Unsupported native ABI")})
+        service.startReceiving();runCurrent()
+        assertFalse(service.state.value.receiving)
+        assertEquals("Unsupported native ABI",service.state.value.error)
+        assertEquals(0,hub.subscriptions)
+        service.stopReceiving()
+    }
 }

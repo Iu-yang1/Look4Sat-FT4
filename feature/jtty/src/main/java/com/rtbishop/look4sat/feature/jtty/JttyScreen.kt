@@ -33,6 +33,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.rtbishop.look4sat.core.domain.repository.IContainerProvider
+import com.rtbishop.look4sat.core.domain.model.RadioControlSettings
 import com.rtbishop.look4sat.core.presentation.DigitalRadarSizeButton
 import com.rtbishop.look4sat.core.presentation.DigitalSatellitePanel
 import com.rtbishop.look4sat.core.presentation.R
@@ -64,7 +65,9 @@ fun JttyDestination(navigateUp: () -> Unit, navigateToLogbook: () -> Unit) {
                 model.onAction(JttyAction.Receive)
             else microphone.launch(Manifest.permission.RECORD_AUDIO)
         },connect={
-            if(Build.VERSION.SDK_INT>=31 && ContextCompat.checkSelfPermission(context,Manifest.permission.BLUETOOTH_CONNECT)!=PackageManager.PERMISSION_GRANTED)
+            val config=container.settingsRepo.radioControlSettings.value
+            val needsBluetooth=config.catTransport==RadioControlSettings.TRANSPORT_BLUETOOTH && !config.radioAudio.networkCat
+            if(needsBluetooth && Build.VERSION.SDK_INT>=31 && ContextCompat.checkSelfPermission(context,Manifest.permission.BLUETOOTH_CONNECT)!=PackageManager.PERMISSION_GRANTED)
                 bluetooth.launch(Manifest.permission.BLUETOOTH_CONNECT)
             else model.onAction(JttyAction.Connect)
         })

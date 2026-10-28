@@ -78,9 +78,14 @@ internal fun elevationAtGroundStation(satellite: OrbitalPos?, station: GeoPos?):
 }
 
 internal class ElevationContourOverlay : FolderOverlay() {
+    // Muted Morandi palette (Option A); keep the order stable when users add rings.
     private val palette = intArrayOf(
-        Color.CYAN, Color.YELLOW, Color.MAGENTA, Color.GREEN,
-        Color.rgb(255, 145, 0), Color.rgb(142, 119, 255)
+        0xFFA8C3CC.toInt(), // powder blue
+        0xFFB4C3A5.toInt(), // sage
+        0xFFD1BDCF.toInt(), // dusty lilac
+        0xFFD8C29F.toInt(), // sand
+        0xFFCBAEAC.toInt(), // dusty rose
+        0xFFABB8C5.toInt()  // blue grey
     )
 
     fun update(satellite: OrbitalPos?, elevations: List<Double>, enabled: Boolean) {
@@ -95,8 +100,9 @@ internal class ElevationContourOverlay : FolderOverlay() {
                 if (segment.size < 2) return
                 val stroke = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                     color = palette[index % palette.size]
+                    alpha = 217 // 85% opacity, gentle on dark map tiles
                     style = Paint.Style.STROKE
-                    strokeWidth = 3f
+                    strokeWidth = 2f
                     pathEffect = DashPathEffect(floatArrayOf(13f, 9f), 0f)
                 }
                 add(Polyline().apply {

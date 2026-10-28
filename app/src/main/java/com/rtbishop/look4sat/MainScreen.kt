@@ -110,6 +110,7 @@ import com.rtbishop.look4sat.core.presentation.popCurrentEntry
 import com.rtbishop.look4sat.core.presentation.hasEnoughHeight
 import com.rtbishop.look4sat.core.presentation.hasEnoughWidth
 import com.rtbishop.look4sat.feature.ft4.Ft4ShellDestination
+import com.rtbishop.look4sat.feature.jtty.JttyDestination
 import com.rtbishop.look4sat.feature.logbook.LogbookScreenDestination
 import com.rtbishop.look4sat.feature.gridfinder.GridFinderDestination
 import com.rtbishop.look4sat.feature.map.MapDestination
@@ -162,6 +163,7 @@ fun NavRoot(deeplink: String? = null) {
     }
     val navigateToRadar: () -> Unit = { rootBackStack.add(RadarRoute) }
     val navigateToFt4: () -> Unit = { rootBackStack.add(Screen.Ft4) }
+    val navigateToJtty: () -> Unit = { if(rootBackStack.lastOrNull()!=Screen.Jtty) rootBackStack.add(Screen.Jtty) }
     val navigateToLogbook: () -> Unit = { rootBackStack.add(LogbookDestination) }
     val navigateToMap: () -> Unit = {
         while (rootBackStack.size > 1) rootBackStack.removeAt(rootBackStack.size - 1)
@@ -229,6 +231,7 @@ fun NavRoot(deeplink: String? = null) {
                     MainScreen(
                         navigateToRadar = navigateToRadar,
                         navigateToFt4 = navigateToFt4,
+                        navigateToJtty = navigateToJtty,
                         navigateToLoTWStation = navigateToLoTWStation,
                         openMapRequest = openMapRequest,
                         onOpenMapRequestHandled = { openMapRequest = 0 },
@@ -294,6 +297,7 @@ fun NavRoot(deeplink: String? = null) {
                             while (rootBackStack.size > 1) rootBackStack.removeLastOrNull()
                         },
                         navigateToFt4 = navigateToFt4,
+                        navigateToJtty = navigateToJtty,
                         allowReselect = true
                     ) {
                         Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
@@ -323,6 +327,11 @@ fun NavRoot(deeplink: String? = null) {
                         LoTWUploadDestination(navigateUp = { navigateBackFrom(LoTWUploadRoute) })
                     }
                 }
+            entry<Screen.Jtty> {
+                Surface(Modifier.fillMaxSize(),color=MaterialTheme.colorScheme.background) {
+                    JttyDestination(navigateUp={navigateBackFrom(Screen.Jtty)},navigateToLogbook=navigateToLogbook)
+                }
+            }
             entry<Screen.Ft4> {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
@@ -349,6 +358,7 @@ private fun Look4SatNavigationScaffold(
     selectedScreen: Screen?,
     onSelectScreen: (Screen) -> Unit,
     navigateToFt4: () -> Unit,
+    navigateToJtty: () -> Unit,
     allowReselect: Boolean = false,
     content: @Composable () -> Unit
 ) {
@@ -374,6 +384,7 @@ private fun Look4SatNavigationScaffold(
         add(Screen.Mutual)
         add(Screen.AMSAT)
         add(Screen.PassSchedule)
+        add(Screen.Jtty)
         if (primaryTool != Screen.Ft4) add(Screen.Ft4)
     }
     if (showMoreSheet) {
@@ -389,7 +400,9 @@ private fun Look4SatNavigationScaffold(
             },
             onDestinationSelected = { screen ->
                 showMoreSheet = false
-                if (screen is Screen.Ft4) {
+                if(screen is Screen.Jtty) {
+                    navigateToJtty()
+                } else if (screen is Screen.Ft4) {
                     navigateToFt4()
                 } else if (selectedScreen != screen || allowReselect) {
                     onSelectScreen(screen)
@@ -424,7 +437,10 @@ private fun Look4SatNavigationScaffold(
                             return@item
                         }
                         if (isSelected && !allowReselect) return@item
-                        if (screen is Screen.Ft4) {
+                        if (screen is Screen.Jtty) {
+                            navigateToJtty()
+                            return@item
+                        } else if (screen is Screen.Ft4) {
                             navigateToFt4()
                             return@item
                         }
@@ -450,6 +466,7 @@ private fun Look4SatNavigationScaffold(
 fun MainScreen(
     navigateToRadar: () -> Unit = {},
     navigateToFt4: () -> Unit = {},
+    navigateToJtty: () -> Unit = {},
     navigateToLoTWStation: () -> Unit = {},
     openMapRequest: Int = 0,
     onOpenMapRequestHandled: () -> Unit = {},
@@ -521,7 +538,8 @@ fun MainScreen(
         Look4SatNavigationScaffold(
             selectedScreen = currentKey as? Screen,
             onSelectScreen = navigateToScreen,
-            navigateToFt4 = navigateToFt4
+            navigateToFt4 = navigateToFt4,
+            navigateToJtty = navigateToJtty
         ) {
             Column {
                 NavDisplay(

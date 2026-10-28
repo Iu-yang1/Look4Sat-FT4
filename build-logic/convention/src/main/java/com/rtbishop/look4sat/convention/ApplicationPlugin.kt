@@ -33,6 +33,7 @@ internal class ApplicationPlugin : Plugin<Project> {
             implementation(project(":core:presentation"))
             implementation(project(":feature:map"))
             implementation(project(":feature:ft4"))
+            implementation(project(":feature:jtty"))
             implementation(project(":feature:logbook"))
             implementation(project(":feature:gridfinder"))
             implementation(project(":feature:mutual"))

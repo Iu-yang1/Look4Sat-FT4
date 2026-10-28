@@ -121,6 +121,12 @@ fun Ft4ShellDestination(navigateUp: () -> Unit, navigateToLogbook: () -> Unit) {
     val lifecycleOwner = LocalLifecycleOwner.current
     val activity = remember(context) { context.findActivity() }
     val container = (context.applicationContext as IContainerProvider).getMainContainer()
+    var digitalModeReady by remember { mutableStateOf(false) }
+    LaunchedEffect(container) {
+        container.jttyTransmitter.stop()
+        container.jttyService.stopReceiving()
+        digitalModeReady=true
+    }
     val viewModel: Ft4ViewModel = viewModel(factory = Ft4ViewModel.factory(container))
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     var lifecycleResumed by remember {
@@ -156,12 +162,13 @@ fun Ft4ShellDestination(navigateUp: () -> Unit, navigateToLogbook: () -> Unit) {
         }
     }
     LaunchedEffect(
+        digitalModeReady,
         lifecycleResumed,
         state.settings.decodeEnabled,
         state.capability.receiveAvailable,
         state.usesNetworkAudio
     ) {
-        if (!lifecycleResumed) return@LaunchedEffect
+        if (!lifecycleResumed || !digitalModeReady) return@LaunchedEffect
         val granted = ContextCompat.checkSelfPermission(
             context,
             Manifest.permission.RECORD_AUDIO
@@ -237,6 +244,7 @@ private fun Ft4Shell(
     val current = backStack.lastOrNull()
     val pages = listOf(Ft4Page.Spectrum, Ft4Page.Decode, Ft4Page.Automatic)
     var satelliteExpanded by rememberSaveable { mutableStateOf(true) }
+    var largeRadar by rememberSaveable { mutableStateOf(false) }
     val satellitePanel = remember(
         state.radio,
         state.trackingPass,
@@ -377,6 +385,8 @@ private fun Ft4Shell(
                                 onAction = onAction,
                                 connectRadios = connectRadios,
                                 navigateToPasses = navigateUp,
+                                largeRadar = largeRadar,
+                                onRadarSizeChange = { largeRadar = it },
                                 expanded = satelliteExpanded,
                                 onExpandedChange = { satelliteExpanded = it },
                                 modifier = Modifier.fillMaxWidth()
@@ -400,6 +410,8 @@ private fun Ft4Shell(
                                 onAction = onAction,
                                 connectRadios = connectRadios,
                                 navigateToPasses = navigateUp,
+                                largeRadar = largeRadar,
+                                onRadarSizeChange = { largeRadar = it },
                                 expanded = satelliteExpanded,
                                 onExpandedChange = { satelliteExpanded = it },
                                 modifier = Modifier.fillMaxWidth()
@@ -417,6 +429,8 @@ private fun Ft4Shell(
                                 onAction = onAction,
                                 connectRadios = connectRadios,
                                 navigateToPasses = navigateUp,
+                                largeRadar = largeRadar,
+                                onRadarSizeChange = { largeRadar = it },
                                 expanded = satelliteExpanded,
                                 onExpandedChange = { satelliteExpanded = it },
                                 modifier = Modifier.fillMaxWidth()
@@ -436,6 +450,8 @@ private fun SatelliteRadioStatus(
     onAction: (Ft4Action) -> Unit,
     connectRadios: () -> Unit,
     navigateToPasses: () -> Unit,
+    largeRadar: Boolean,
+    onRadarSizeChange: (Boolean) -> Unit,
     expanded: Boolean,
     onExpandedChange: (Boolean) -> Unit,
     modifier: Modifier = Modifier
@@ -458,6 +474,7 @@ private fun SatelliteRadioStatus(
                     else MaterialTheme.colorScheme.onSurfaceVariant,
                     fontSize = 12.sp
                 )
+                com.rtbishop.look4sat.core.presentation.DigitalRadarSizeButton(largeRadar,onRadarSizeChange)
                 Icon(
                     painterResource(if (expanded) R.drawable.ic_arrow else R.drawable.ic_add),
                     contentDescription = stringResource(
@@ -475,23 +492,12 @@ private fun SatelliteRadioStatus(
                 )
             } else {
                 if (expanded) {
-                    Text(
-                        stringResource(R.string.ft4_satellite_value, pass.name),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Text(
-                        transponder.info,
-                        fontSize = 12.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    state.orbitalPosition?.let { position ->
-                        SatelliteRadar(state, position)
-                    }
+                    com.rtbishop.look4sat.core.presentation.DigitalSatellitePanel(
+                        pass.name,transponder.info,state.orbitalPosition,state.satelliteTrack,largeRadar,
+                        state.orientationValues,state.shouldShowSweep,state.shouldUseCompass
+                    ) { if(!largeRadar) FrequencyStatus(state) }
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                    FrequencyStatus(state)
+                    if(largeRadar) FrequencyStatus(state)
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                     RadioControlStatus(radio)
                     radio.lastCommandError?.let {
@@ -562,85 +568,6 @@ private fun FrequencyStatus(state: Ft4SatelliteRadioPanelState) {
             correctionHz = radio.rxDopplerCorrectionHz,
             connected = radio.rxConnected
         )
-    }
-}
-
-@Composable
-private fun SatelliteRadar(state: Ft4SatelliteRadioPanelState, position: OrbitalPos) {
-    Box(
-        contentAlignment = Alignment.Center,
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp)
-    ) {
-        RadarViewCompose(
-            item = position,
-            items = state.satelliteTrack,
-            azimElev = state.orientationValues,
-            shouldShowSweep = state.shouldShowSweep,
-            shouldUseCompass = state.shouldUseCompass,
-            modifier = Modifier.fillMaxWidth()
-        )
-        SatellitePositionOverlay(position, Modifier.matchParentSize())
-    }
-}
-
-@Composable
-private fun SatellitePositionOverlay(position: OrbitalPos, modifier: Modifier = Modifier) {
-    Column(
-        verticalArrangement = Arrangement.SpaceBetween,
-        modifier = modifier.padding(horizontal = 6.dp, vertical = 4.dp)
-    ) {
-        Row(
-            horizontalArrangement = Arrangement.SpaceBetween,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            SatellitePositionLabel(
-                value = stringResource(R.string.radar_az_value, Math.toDegrees(position.azimuth)),
-                label = stringResource(R.string.radar_az_text),
-                alignment = Alignment.Start,
-                labelFirst = false
-            )
-            SatellitePositionLabel(
-                value = stringResource(R.string.radar_el_value, Math.toDegrees(position.elevation)),
-                label = stringResource(R.string.radar_el_text),
-                alignment = Alignment.End,
-                labelFirst = false
-            )
-        }
-        Row(
-            horizontalArrangement = Arrangement.SpaceBetween,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            SatellitePositionLabel(
-                value = stringResource(R.string.radar_alt_value, position.altitude),
-                label = stringResource(R.string.radar_alt_text),
-                alignment = Alignment.Start,
-                labelFirst = true
-            )
-            SatellitePositionLabel(
-                value = stringResource(R.string.radar_dist_value, position.distance),
-                label = stringResource(R.string.radar_dist_text),
-                alignment = Alignment.End,
-                labelFirst = true
-            )
-        }
-    }
-}
-
-@Composable
-private fun SatellitePositionLabel(
-    value: String,
-    label: String,
-    alignment: Alignment.Horizontal,
-    labelFirst: Boolean
-) {
-    Column(horizontalAlignment = alignment) {
-        if (labelFirst) {
-            Text(text = label, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text(text = value, fontSize = 16.sp)
-        } else {
-            Text(text = value, fontSize = 16.sp)
-            Text(text = label, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
     }
 }
 

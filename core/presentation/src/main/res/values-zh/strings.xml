@@ -965,4 +965,33 @@
     <string name="rc_cw_spacing_off">关闭</string>
     <string name="rc_cw_save_on_radio">应用后，在手台 MENU 确认永久保存。</string>
 
+    <string name="nav_jtty">JTTY</string>
+    <string name="jtty_back">返回</string>
+    <string name="jtty_page_radio">收发</string>
+    <string name="jtty_transponder">转发器</string>
+    <string name="jtty_control_connected">控制已连接</string>
+    <string name="jtty_control_disconnected">控制未连接</string>
+    <string name="jtty_start_receive">开始接收</string>
+    <string name="jtty_stop_receive">停止接收</string>
+    <string name="jtty_clear">清空</string>
+    <string name="jtty_rx_carriers">接收载波</string>
+    <string name="jtty_waiting">正在等待 JTTY 音频…</string>
+    <string name="jtty_incomplete">未完整接收</string>
+    <string name="jtty_their_call">对方呼号</string>
+    <string name="jtty_my_call">自己呼号</string>
+    <string name="jtty_grid">网格：%1$s</string>
+    <string name="jtty_sent">发送报告</string>
+    <string name="jtty_received">接收报告</string>
+    <string name="jtty_message">JTTY 文本</string>
+    <string name="jtty_tx_frequency">TX 音频频率（Hz）</string>
+    <string name="jtty_duration">%1$d 帧 · %2$.3f 秒</string>
+    <string name="jtty_send">发送</string>
+    <string name="jtty_stop_tx">停止发射</string>
+    <string name="jtty_save_log">保存通联</string>
+    <string name="jtty_saved">通联已保存</string>
+    <string name="jtty_local_log">JTTY 通联支持本地保存和 ADIF 导出，暂不支持在线上传。</string>
+    <string name="jtty_template">模板</string>
+    <string name="jtty_variables">{CALL} · {MYCALL} · {RST} · {GRID}</string>
+    <string name="jtty_save">保存</string>
+    <string name="jtty_cancel">取消</string>
 </resources>

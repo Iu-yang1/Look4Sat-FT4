@@ -24,6 +24,7 @@ include(
 )
 include(
     ":feature:ft4",
+    ":feature:jtty",
     ":feature:logbook",
     ":feature:gridfinder",
     ":feature:map",

@@ -1013,4 +1013,33 @@ Upstream: https://github.com/rt-bishop/Look4Sat</string>
     <string name="rc_cw_spacing_off">Off</string>
     <string name="rc_cw_save_on_radio">Apply here; save permanently with handset MENU.</string>
 
+    <string name="nav_jtty">JTTY</string>
+    <string name="jtty_back">Back</string>
+    <string name="jtty_page_radio">Radio</string>
+    <string name="jtty_transponder">Transponder</string>
+    <string name="jtty_control_connected">Control connected</string>
+    <string name="jtty_control_disconnected">Control disconnected</string>
+    <string name="jtty_start_receive">Receive</string>
+    <string name="jtty_stop_receive">Stop receiving</string>
+    <string name="jtty_clear">Clear</string>
+    <string name="jtty_rx_carriers">RX carriers</string>
+    <string name="jtty_waiting">Waiting for JTTY audio…</string>
+    <string name="jtty_incomplete">Incomplete</string>
+    <string name="jtty_their_call">Their callsign</string>
+    <string name="jtty_my_call">My callsign</string>
+    <string name="jtty_grid">Grid: %1$s</string>
+    <string name="jtty_sent">Sent RST</string>
+    <string name="jtty_received">Received RST</string>
+    <string name="jtty_message">JTTY text</string>
+    <string name="jtty_tx_frequency">TX audio (Hz)</string>
+    <string name="jtty_duration">%1$d frames · %2$.3f s</string>
+    <string name="jtty_send">Send</string>
+    <string name="jtty_stop_tx">Stop TX</string>
+    <string name="jtty_save_log">Save contact</string>
+    <string name="jtty_saved">Contact saved</string>
+    <string name="jtty_local_log">JTTY contacts support local storage and ADIF export. Online upload is unavailable.</string>
+    <string name="jtty_template">Template</string>
+    <string name="jtty_variables">{CALL} · {MYCALL} · {RST} · {GRID}</string>
+    <string name="jtty_save">Save</string>
+    <string name="jtty_cancel">Cancel</string>
 </resources>

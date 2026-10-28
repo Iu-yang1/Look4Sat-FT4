@@ -47,15 +47,16 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ElevatedButton
 import androidx.compose.material3.ElevatedCard
-import androidx.compose.material3.Card
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.adaptive.currentWindowAdaptiveInfo
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.window.Dialog
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
@@ -71,6 +72,9 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.onSizeChanged
@@ -91,6 +95,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
+import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.rtbishop.look4sat.core.domain.predict.NearEarthObject
@@ -323,9 +328,8 @@ fun InfoDialog(
         ) {
             Text(
                 text = title,
-                fontSize = 20.sp,
+                fontSize = 16.sp,
                 fontWeight = FontWeight.Medium,
-                fontFamily = FontFamily.Monospace,
                 color = MaterialTheme.colorScheme.primary,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -377,7 +381,7 @@ fun SharedDialog(
     /** Optional second leading button, drawn next to the leading one (logbook's Query). */
     extraText: String? = null,
     onExtra: (() -> Unit)? = null,
-    titleFontSize: Int = 20,
+    titleFontSize: Int = 16,
     titleTextAlign: TextAlign = if (onCancel != null && onAccept != null) TextAlign.Center else TextAlign.Start,
     content: @Composable (padding: Dp) -> Unit
 ) {
@@ -407,7 +411,6 @@ fun SharedDialog(
                 text = title,
                 fontSize = titleFontSize.sp,
                 fontWeight = FontWeight.Medium,
-                fontFamily = FontFamily.Monospace,
                 color = MaterialTheme.colorScheme.primary,
                 textAlign = titleTextAlign,
                 maxLines = 1,
@@ -436,34 +439,42 @@ fun SharedDialog(
     }
 }
 
-/**
- * Default app dialog presentation matches the centered worked-grid QSO detail card
- * instead of a bottom sheet. Individual dialog bodies keep their own scrolling.
- */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun DialogShell(
     onDismissRequest: () -> Unit,
     content: @Composable (padding: Dp) -> Unit
 ) {
     val padding = LocalSpacing.current.large
-    // Let the platform dialog window handle outside taps and back presses, just
-    // like the map's QSO detail dialog. A full-screen Dialog container would
-    // swallow outside taps instead of dismissing the popup.
-    Dialog(onDismissRequest = onDismissRequest) {
-        Card(
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceContainerLow
-            ),
-            shape = MaterialTheme.shapes.medium,
-            modifier = Modifier.fillMaxWidth(0.88f)
-        ) {
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(padding),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                content(padding)
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val stopSheetFling = remember {
+        object : NestedScrollConnection {
+            override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity {
+                return available
             }
+
+            override fun onPostScroll(
+                consumed: Offset,
+                available: Offset,
+                source: NestedScrollSource
+            ): Offset = Offset.Zero
+        }
+    }
+    ModalBottomSheet(
+        onDismissRequest = onDismissRequest,
+        sheetState = sheetState,
+        dragHandle = null,
+        shape = MaterialTheme.shapes.medium,
+        scrimColor = Color.Black.copy(alpha = 0.64f)
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(padding),
+            modifier = Modifier
+                .fillMaxWidth()
+                .nestedScroll(stopSheetFling)
+        ) {
+            content(padding)
         }
     }
 }

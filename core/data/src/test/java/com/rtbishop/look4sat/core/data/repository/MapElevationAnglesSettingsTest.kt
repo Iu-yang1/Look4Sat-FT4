@@ -36,6 +36,22 @@ class MapElevationAnglesSettingsTest {
     }
 
     @Test
+    fun contourSwitchIsSharedByMapsAndSurvivesRestart() {
+        val satelliteMap = repo()
+        assertEquals(false, satelliteMap.mapElevationContoursEnabled.value)
+        satelliteMap.setMapElevationContoursEnabled(true)
+        assertEquals(true, satelliteMap.mapElevationContoursEnabled.value)
+
+        // The radar-pass map uses the same underlying preference and observes the
+        // same singleton SettingsRepo StateFlow while the app is running.
+        val radarMapAfterRestart = repo()
+        assertEquals(true, radarMapAfterRestart.mapElevationContoursEnabled.value)
+
+        radarMapAfterRestart.setMapElevationContoursEnabled(false)
+        assertEquals(false, repo().mapElevationContoursEnabled.value)
+    }
+
+    @Test
     fun invalidValuesAreNotPersisted() {
         val settings = repo()
         settings.setMapElevationAngles(listOf(-1.0, 15.0, 15.0, 91.0, Double.NaN, 40.0))

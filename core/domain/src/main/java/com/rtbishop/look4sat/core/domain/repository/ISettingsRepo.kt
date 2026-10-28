@@ -33,6 +33,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 
 interface ISettingsRepo {
+    fun getRadioAudioSettings(model: String): com.rtbishop.look4sat.core.domain.audio.RadioAudioSettings =
+        radioControlSettings.value.takeIf { it.radioModel==model }?.radioAudio ?: com.rtbishop.look4sat.core.domain.audio.RadioAudioSettings()
 
     val appVersionName: String
 

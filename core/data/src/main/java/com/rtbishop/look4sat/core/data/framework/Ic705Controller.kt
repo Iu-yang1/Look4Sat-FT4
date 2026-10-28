@@ -646,6 +646,39 @@ class Ic705Controller(
         return true
     }
 
+    override suspend fun captureAudioState(split: Boolean): com.rtbishop.look4sat.core.domain.repository.RadioTransmitAudioSnapshot? =
+        withContext(Dispatchers.IO) { ioMutex.withLock {
+            if(variant!=IcomCivVariant.IC705) return@withLock null
+            val selected=!split
+            val mode=sendAndReadResponse(IcomCivProtocol.buildReadVfoModeCommand(selected),IcomCivProtocol.CMD_SELECTED_VFO_MODE) {
+                it.firstOrNull()==(if(selected) 0 else 1).toByte()
+            } ?: return@withLock null
+            val input=readAudioInputLocked() ?: return@withLock null
+            if(mode.size<3 || mode[2].toInt() !in 0..1) return@withLock null
+            com.rtbishop.look4sat.core.domain.repository.RadioTransmitAudioSnapshot(selected,
+                IcomCivProtocol.parseVfoModePayload(mode,selected) ?: return@withLock null,mode[2]==1.toByte(),input)
+        } }
+
+    private suspend fun readAudioInputLocked(): Int? = sendAndReadResponse(
+        IcomCivProtocol.buildDataModInput(),0x1a) {
+            it.size==4 && it[0]==5.toByte() && it[1]==1.toByte() && it[2]==0x19.toByte()
+        }?.get(3)?.toInt()?.takeIf { it in 0..3 }
+
+    override suspend fun setAudioInput(wlan: Boolean): Boolean = withContext(Dispatchers.IO) { ioMutex.withLock {
+        if(variant!=IcomCivVariant.IC705) return@withLock false
+        val input=if(wlan) 3 else 1
+        sendAndWaitAck(IcomCivProtocol.buildDataModInput(input)) && readAudioInputLocked()==input
+    } }
+
+    override suspend fun restoreAudioState(snapshot: com.rtbishop.look4sat.core.domain.repository.RadioTransmitAudioSnapshot): Boolean =
+        withContext(Dispatchers.IO) { ioMutex.withLock {
+            if(variant!=IcomCivVariant.IC705) return@withLock false
+            val inputRestored=sendAndWaitAck(IcomCivProtocol.buildDataModInput(snapshot.modulationInput)) &&
+                readAudioInputLocked()==snapshot.modulationInput
+            val modeRestored=setIc705DataModeLocked(snapshot.selected,snapshot.dataEnabled,snapshot.mode)
+            inputRestored && modeRestored
+        } }
+
     private suspend fun readVfoModeLocked(selected: Boolean): String? {
         val payload = sendAndReadResponse(
             IcomCivProtocol.buildReadVfoModeCommand(selected),

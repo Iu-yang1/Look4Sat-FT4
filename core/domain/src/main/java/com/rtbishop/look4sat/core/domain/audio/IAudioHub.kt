@@ -39,7 +39,8 @@ data class TimestampedAudioChunk(
     val sampleRate: Int,
     val framePosition: Long,
     val elapsedRealtimeNanos: Long,
-    val format: AudioSampleFormat
+    val format: AudioSampleFormat,
+    val discontinuity: Boolean = false
 )
 
 data class AudioInputDevice(

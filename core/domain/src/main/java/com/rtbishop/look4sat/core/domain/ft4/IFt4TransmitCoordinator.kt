@@ -37,6 +37,7 @@ data class TxLease(
 )
 
 interface IFt4TransmitCoordinator {
+    fun isTransmitLeaseValid(lease: TxLease): Boolean = true
     fun recommendedPrepareLeadMillis(): Long = 350L
     suspend fun beginTransmit(request: TxRequest): TxLease
     suspend fun confirmTransmitReady(lease: TxLease)

@@ -181,7 +181,9 @@ data class RadioControlSettings(
     val l4sDopplerStepHz: Long = 250L,
     val l4sCorrectionEditStepHz: Long = 10L,
     val n76BluetoothAudio: Boolean = false,
-    val n76Options: N76ControlOptions = N76ControlOptions()
+    val n76Options: N76ControlOptions = N76ControlOptions(),
+    val radioAudio: com.rtbishop.look4sat.core.domain.audio.RadioAudioSettings =
+        com.rtbishop.look4sat.core.domain.audio.RadioAudioSettings()
 ) {
     companion object {
         const val MODEL_YAESU_FT817 = "Yaesu FT-817/818"

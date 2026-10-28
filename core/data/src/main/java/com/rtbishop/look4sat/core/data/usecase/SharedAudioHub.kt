@@ -123,6 +123,7 @@ class SharedAudioHub(
 
     override suspend fun selectInputDevice(deviceKey: String?) {
         lifecycleMutex.withLock {
+            if(preferredDeviceKey==deviceKey && (captureJob==null || captureJob?.isActive==true)) return@withLock
             preferredDeviceKey = deviceKey
             val job = captureJob
             captureJob = null
@@ -211,6 +212,9 @@ class SharedAudioHub(
             }
             check(count >= 0) { "AudioRecord.read 失败: $count" }
             if (count == 0) continue
+            preferredDeviceKey?.let { expected ->
+                check(recorder.routedDevice?.let(::deviceKey)==expected) { "Selected radio audio input route changed" }
+            }
             updateSystemSilenced(recorder)
 
             val samples = if (candidate.format == AudioSampleFormat.PCM_FLOAT) {

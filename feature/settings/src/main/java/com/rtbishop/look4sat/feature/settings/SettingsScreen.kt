@@ -123,14 +123,18 @@ fun SettingsDestination() {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     SettingsScreen(
         uiState = uiState,
-        onAction = viewModel::onAction
+        onAction = viewModel::onAction,
+        radioAudioSession=container.radioAudioSession,
+        audioSettingsForModel=container.settingsRepo::getRadioAudioSettings
     )
 }
 
 @Composable
 private fun SettingsScreen(
     uiState: SettingsState,
-    onAction: (SettingsAction) -> Unit
+    onAction: (SettingsAction) -> Unit,
+    radioAudioSession: com.rtbishop.look4sat.core.domain.audio.IRadioAudioSession,
+    audioSettingsForModel: (String)->com.rtbishop.look4sat.core.domain.audio.RadioAudioSettings
 ) {
     val context = LocalContext.current
     var showUpdateChecker by rememberSaveable { mutableStateOf(false) }
@@ -336,7 +340,9 @@ private fun SettingsScreen(
             initialSettings = uiState.radioControlSettings,
             onDismiss = { dialogs.radioControl = false },
             onSave = { onAction(SettingsAction.UpdateRadioControl(it)) },
-            frequencyLocked = uiState.radioTrackingState.frequencyEditingLocked
+            frequencyLocked = uiState.radioTrackingState.frequencyEditingLocked,
+            radioAudioSession=radioAudioSession,
+            audioSettingsForModel=audioSettingsForModel
         )
     }
     if (dialogs.rotatorControl) {

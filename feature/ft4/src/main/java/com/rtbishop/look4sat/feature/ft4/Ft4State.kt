@@ -47,6 +47,8 @@ data class Ft4State(
     val radio: RadioTrackingState,
     val audioHub: AudioHubState,
     val transmitState: Ft4TransmitState,
+    val radioAudio: com.rtbishop.look4sat.core.domain.audio.RadioAudioState = com.rtbishop.look4sat.core.domain.audio.RadioAudioState(),
+    val usesNetworkAudio: Boolean = false,
     val automation: Ft4AutomationSnapshot = Ft4AutomationSnapshot(),
     val radioTransport: String = RadioControlSettings.TRANSPORT_BLUETOOTH,
     val stationGrid: String = "",

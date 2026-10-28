@@ -1195,12 +1195,19 @@ fun RadioControlDialog(
     initialSettings: RadioControlSettings,
     onDismiss: () -> Unit,
     onSave: (RadioControlSettings) -> Unit,
-    frequencyLocked:Boolean=false
+    frequencyLocked:Boolean=false,
+    radioAudioSession: com.rtbishop.look4sat.core.domain.audio.IRadioAudioSession? = null,
+    audioSettingsForModel: (String)->com.rtbishop.look4sat.core.domain.audio.RadioAudioSettings = {
+        if(it==initialSettings.radioModel) initialSettings.radioAudio else com.rtbishop.look4sat.core.domain.audio.RadioAudioSettings()
+    }
 ) {
     val context    = androidx.compose.ui.platform.LocalContext.current
     val padding    = LocalSpacing.current.large
     val enabled    = rememberSaveable { mutableStateOf(initialSettings.enabled) }
     val radioModel = rememberSaveable { mutableStateOf(initialSettings.radioModel) }
+    var audioSettings by remember(radioModel.value) { mutableStateOf(
+        audioSettingsForModel(radioModel.value)) }
+    var showAudioSettings by remember { mutableStateOf(false) }
     val initialBaudRates = radioBaudRates(initialSettings.radioModel)
     val splitMode  = rememberSaveable { mutableStateOf(initialSettings.splitMode) }
     val duplexMode = rememberSaveable { mutableStateOf(initialSettings.duplexMode) }
@@ -1459,7 +1466,7 @@ fun RadioControlDialog(
 
     val onAccept = accept@{
         if (isVox) {
-            onSave(voxControlSettings(initialSettings, enabled.value))
+            onSave(voxControlSettings(initialSettings, enabled.value).copy(radioAudio=audioSettings))
             onDismiss()
             return@accept
         }
@@ -1549,7 +1556,8 @@ fun RadioControlDialog(
                 l4sDopplerStepHz = parsedL4sStep ?: 250L,
                 l4sCorrectionEditStepHz = correctionStep ?: 10L,
                 n76BluetoothAudio = n76BluetoothAudio.value,
-                n76Options = n76Options
+                n76Options = n76Options,
+                radioAudio = audioSettings
             )
         if (issues.isEmpty()) {
             onSave(draft)
@@ -1560,6 +1568,16 @@ fun RadioControlDialog(
         }
     }
 
+    if(showAudioSettings && radioAudioSession!=null) RadioAudioDialog(audioSettings,radioModel.value,radioAudioSession,
+        onDismiss={ showAudioSettings=false },onSave={ value ->
+            audioSettings=value
+            if(value.networkCat) {
+                catTransport.value=RadioControlSettings.TRANSPORT_TCP
+                txAddress.value="${value.host}:${value.controlPort}"
+                splitMode.value=true
+                tcpProtocol.value=RadioControlSettings.TCP_PROTOCOL_RAW_CAT
+            }
+        })
     rejectedDraft?.let { draft ->
         AlertDialog(
             onDismissRequest = { rejectedDraft = null },
@@ -1604,6 +1622,9 @@ fun RadioControlDialog(
             Spacer(modifier = Modifier.height(6.dp))
 
             Text(stringResource(R.string.rc_cat_transport), fontWeight = FontWeight.Medium)
+            if(radioAudioSession!=null) OutlinedButton(onClick={ showAudioSettings=true },enabled=!frequencyLocked) {
+                Text(stringResource(R.string.radio_audio_title))
+            }
             FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 radioControlTransports(radioModel.value).forEach { transport ->
                     FilterChip(

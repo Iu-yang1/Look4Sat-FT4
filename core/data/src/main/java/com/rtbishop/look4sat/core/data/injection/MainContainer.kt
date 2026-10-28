@@ -141,12 +141,20 @@ class MainContainer(private val context: Context) : IMainContainer {
     override val lotwRepo: ILoTWRepository by lazy { LoTWRepository() }
     override val lotwUploadRepository by lazy { LoTWUploadRepository(context) }
     override val updateRepo by lazy { UpdateRepository(remoteSource, context) }
-    override val audioHub: IAudioHub by lazy {
+    private val localAudioHub: IAudioHub by lazy {
         SharedAudioHub(
             context = context,
             scope = appScope,
             initialDeviceKey = settingsRepo.ft4Settings.value.audioInputDeviceKey.ifBlank { null }
         )
+    }
+    override val radioAudioSession: com.rtbishop.look4sat.core.data.audio.RadioAudioSession by lazy {
+        com.rtbishop.look4sat.core.data.audio.RadioAudioSession(context,settingsRepo,localAudioHub,appScope,controlDiagnostics) {
+            ft4AudioTransmitter.stop()
+        }
+    }
+    override val audioHub: IAudioHub by lazy {
+        com.rtbishop.look4sat.core.data.audio.RoutedAudioHub(localAudioHub,radioAudioSession,settingsRepo,appScope)
     }
     override val ft4Service: IFt4Service by lazy { Ft4Service(appScope, audioHub, disciplinedClock) }
     override val disciplinedClock: IDisciplinedClock by lazy {
@@ -167,7 +175,12 @@ class MainContainer(private val context: Context) : IMainContainer {
             satelliteRepo,
             settingsRepo,
             disciplinedClock,
-            transportFactory = transportFactory::create,
+            transportFactory = { type,address,baud,stopBits ->
+                if(settingsRepo.radioControlSettings.value.radioAudio.networkCat &&
+                    settingsRepo.radioControlSettings.value.radioModel==com.rtbishop.look4sat.core.domain.model.RadioControlSettings.MODEL_ICOM_IC705)
+                    radioAudioSession.transport()
+                else transportFactory.create(type,address,baud,stopBits)
+            },
             diagnostics = controlDiagnostics,
             n76AudioFactory = { address -> com.rtbishop.look4sat.core.data.framework.N76AudioSession(
                 com.rtbishop.look4sat.core.data.framework.BluetoothSppRadioTransport(manager, address, controlDiagnostics,
@@ -206,7 +219,14 @@ class MainContainer(private val context: Context) : IMainContainer {
     }
     override val ft4TransmitCoordinator: IFt4TransmitCoordinator by lazy { sharedRadioTrackingService }
     override val ft4AudioTransmitter: IFt4AudioTransmitter by lazy {
-        Ft4AudioTransmitter(context, ft4Service, ft4TransmitCoordinator, disciplinedClock)
+        Ft4AudioTransmitter(context, ft4Service, ft4TransmitCoordinator, disciplinedClock,
+            outputFactory=com.rtbishop.look4sat.core.data.ft4.Ft4AudioOutputFactory { rate,volume ->
+                val settings=settingsRepo.radioControlSettings.value
+                if(settings.catTransport==com.rtbishop.look4sat.core.domain.model.RadioControlSettings.TRANSPORT_VOX &&
+                    settings.radioAudio.backend==com.rtbishop.look4sat.core.domain.audio.RadioAudioBackend.UNCONFIGURED)
+                    com.rtbishop.look4sat.core.data.ft4.AndroidFt4AudioOutputFactory(context).create(rate,volume)
+                else radioAudioSession.createOutput(rate,volume)
+            })
     }
     override val locationRepo: ILocationRepo by lazy {
         val manager = context.getSystemService(Context.LOCATION_SERVICE) as LocationManager

@@ -79,6 +79,7 @@ class Ft4ViewModel(
             radio = radioService.state.value,
             audioHub = container.audioHub.state.value,
             transmitState = transmitter.state.value,
+            usesNetworkAudio = container.settingsRepo.radioControlSettings.value.radioAudio.backend==com.rtbishop.look4sat.core.domain.audio.RadioAudioBackend.ICOM_WLAN,
             radioTransport = container.settingsRepo.radioControlSettings.value.catTransport,
             stationGrid = container.settingsRepo.stationPosition.value.qthLocator
         )
@@ -101,9 +102,10 @@ class Ft4ViewModel(
         when (action) {
             is Ft4Action.MicrophonePermissionChanged -> {
                 screenActive = true
-                mutableState.update { it.copy(hasMicrophonePermission = action.granted) }
+                val audioAllowed=action.granted || mutableState.value.usesNetworkAudio
+                mutableState.update { it.copy(hasMicrophonePermission = audioAllowed) }
                 if (container.settingsRepo.otherSettings.value.stateOfSensors) sensorsRepo.enableSensor()
-                if (action.granted) {
+                if (audioAllowed) {
                     startReceivingIfAvailable()
                 } else {
                     cleanupScope.launch {
@@ -169,6 +171,9 @@ class Ft4ViewModel(
     }
 
     private fun collectState() {
+        runCatching { container.radioAudioSession }.getOrNull()?.let { session ->
+            viewModelScope.launch { session.state.collect { audio -> mutableState.update { it.copy(radioAudio=audio) } } }
+        }
         viewModelScope.launch {
             container.settingsRepo.ft4Settings.collect { settings ->
                 mutableState.update { it.copy(settings = settings) }
@@ -188,7 +193,8 @@ class Ft4ViewModel(
         }
         viewModelScope.launch {
             container.settingsRepo.radioControlSettings.collect { settings ->
-                mutableState.update { it.copy(radioTransport = settings.catTransport) }
+                mutableState.update { it.copy(radioTransport = settings.catTransport,
+                    usesNetworkAudio=settings.radioAudio.backend==com.rtbishop.look4sat.core.domain.audio.RadioAudioBackend.ICOM_WLAN) }
             }
         }
         viewModelScope.launch {
@@ -394,6 +400,7 @@ class Ft4ViewModel(
 
     private fun armAutomation() {
         if (automationJob?.isActive == true || automationStopping) return
+        if(mutableState.value.usesNetworkAudio) return setError(Ft4UiError.RADIO_NOT_READY)
         val state = mutableState.value
         val radio = state.radio
         val usesVox = state.radioTransport == RadioControlSettings.TRANSPORT_VOX

@@ -1277,9 +1277,22 @@ class SettingsRepo(
             putLong(keyRadioCorrectionStep, normalized.l4sCorrectionEditStepHz)
             putBoolean(keyN76BluetoothAudio, normalized.n76BluetoothAudio)
             putString(keyN76Options, normalized.n76Options.toPreferenceJson())
+            putString("radioAudio:"+normalized.radioModel, org.json.JSONObject().apply {
+                put("backend",normalized.radioAudio.backend.name);put("rx",normalized.radioAudio.rxDeviceKey)
+                put("tx",normalized.radioAudio.txDeviceKey);put("host",normalized.radioAudio.host)
+                put("port",normalized.radioAudio.controlPort);put("cat",normalized.radioAudio.networkCat)
+            }.toString())
         }
         _radioControlSettings.value = normalized
     }
+
+    override fun getRadioAudioSettings(model: String): com.rtbishop.look4sat.core.domain.audio.RadioAudioSettings = runCatching {
+        val audio=org.json.JSONObject(preferences.getString("radioAudio:"+model,null) ?: "{}")
+        com.rtbishop.look4sat.core.domain.audio.RadioAudioSettings(
+            backend=com.rtbishop.look4sat.core.domain.audio.RadioAudioBackend.valueOf(audio.optString("backend","UNCONFIGURED")),
+            rxDeviceKey=audio.optString("rx"),txDeviceKey=audio.optString("tx"),host=audio.optString("host"),
+            controlPort=audio.optInt("port",50001),networkCat=audio.optBoolean("cat"))
+    }.getOrDefault(com.rtbishop.look4sat.core.domain.audio.RadioAudioSettings())
 
     private fun getRadioControlSettings(): RadioControlSettings {
         val model = preferences.getString(keyRadioModel, null) ?: RadioControlSettings.MODEL_YAESU_FT817
@@ -1313,7 +1326,8 @@ class SettingsRepo(
             l4sDopplerStepHz = com.rtbishop.look4sat.core.domain.repository.normalizeL4sStep(preferences.getLong(keyRadioL4sStep,250L)),
             l4sCorrectionEditStepHz = preferences.getLong(keyRadioCorrectionStep,10).coerceIn(10,1000)/10*10,
             n76BluetoothAudio = preferences.getBoolean(keyN76BluetoothAudio, false),
-            n76Options = n76OptionsFromJson(preferences.getString(keyN76Options, null))
+            n76Options = n76OptionsFromJson(preferences.getString(keyN76Options, null)),
+            radioAudio = getRadioAudioSettings(model)
         )
     }
     //endregion

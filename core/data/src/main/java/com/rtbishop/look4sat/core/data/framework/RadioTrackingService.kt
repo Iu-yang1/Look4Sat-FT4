@@ -140,6 +140,7 @@ class RadioTrackingService(
     @Volatile private var transmitPreparing = false
     private var pttWatchdogJob: Job? = null
     private var dataModeController: IRadioController? = null
+    private var savedAudioState: com.rtbishop.look4sat.core.domain.repository.RadioTransmitAudioSnapshot? = null
     private var dataModeBaseMode: String? = null
     private var dataModeUsesSplit = false
     private var nextLeaseId = 1L
@@ -623,6 +624,13 @@ class RadioTrackingService(
             val controller = checkNotNull(txController) { "TX radio is not connected" }
             check(controller.isConnected) { "TX radio is not connected" }
             check(refreshCatTransmitState()) { "CAT transmit state is unknown or the radio is transmitting" }
+            val audioSettings=settingsRepo.radioControlSettings.value
+            if(audioSettings.radioModel==RadioControlSettings.MODEL_ICOM_IC705 &&
+                audioSettings.radioAudio.backend!=com.rtbishop.look4sat.core.domain.audio.RadioAudioBackend.UNCONFIGURED) {
+                savedAudioState=checkNotNull(controller.captureAudioState(current.splitMode)) { "Cannot read the original radio audio settings" }
+                dataModeController=controller
+                dataModeBaseMode=txMode
+            }
 
             val split = current.splitMode
             val frequencySet = if (split) {
@@ -660,6 +668,10 @@ class RadioTrackingService(
                 dataModeController = controller
                 dataModeBaseMode = txMode
                 dataModeUsesSplit = split
+                if(savedAudioState!=null) check(controller.setAudioInput(
+                    audioSettings.radioAudio.backend==com.rtbishop.look4sat.core.domain.audio.RadioAudioBackend.ICOM_WLAN)) {
+                    "Radio modulation input was not confirmed"
+                }
                 diagnose("transmit/data", "DATA mode enabled split=$split")
             }
             check(pendingControls.get() == 0 && controller.pttSafetyGeneration() == safetyGeneration &&
@@ -927,6 +939,9 @@ class RadioTrackingService(
         return lease
     }
 
+    override fun isTransmitLeaseValid(lease: TxLease): Boolean = activeTxLease==lease &&
+        (lease.usesVox || txController?.isConnected==true && _state.value.pttState==PttState.ON)
+
     override suspend fun confirmTransmitReady(lease: TxLease) = transmitMutex.withLock {
         if (lease.usesVox) {
             check(activeTxLease == lease) { "Transmit lease is stale" }
@@ -1138,6 +1153,10 @@ class RadioTrackingService(
 
     private suspend fun restoreDataModeLocked(): Boolean {
         val controller = dataModeController ?: return true
+        savedAudioState?.let { snapshot ->
+            savedAudioState=null;dataModeController=null;dataModeBaseMode=null;dataModeUsesSplit=false
+            return controller.isConnected && controller.restoreAudioState(snapshot)
+        }
         val baseMode = dataModeBaseMode ?: return true
         val split = dataModeUsesSplit
         dataModeController = null

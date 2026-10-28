@@ -1,0 +1,18 @@
+<resources>
+    <string name="radio_audio_title">音频连接</string>
+    <string name="radio_audio_none">未配置</string>
+    <string name="radio_audio_usb">外部音频（USB／有线／兼容蓝牙）</string>
+    <string name="radio_audio_wlan">IC-705 WLAN 音频</string>
+    <string name="radio_audio_rx">RX 音频输入</string>
+    <string name="radio_audio_tx">TX 音频输出</string>
+    <string name="radio_audio_no_device">请连接外部音频设备。</string>
+    <string name="radio_audio_host">电台局域网地址</string>
+    <string name="radio_audio_port">控制端口</string>
+    <string name="radio_audio_user">网络用户名（留空保留）</string>
+    <string name="radio_audio_password">网络密码（留空保留）</string>
+    <string name="radio_audio_network_cat">使用 WLAN CAT 替代蓝牙 CAT</string>
+    <string name="radio_audio_discover">查找局域网电台</string>
+    <string name="radio_audio_wireless_manual">WLAN 发射仅开放手动 FT4，实机时延待验证。</string>
+    <string name="radio_audio_ready">音频就绪</string>
+    <string name="radio_audio_waiting">电台音频未就绪</string>
+</resources>

@@ -41,6 +41,34 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class Ft4AudioTransmitterTest {
+    @Test fun connectionLossDuringWaveformCancelsAudioAndReleasesPtt()=runTest {
+        val events=mutableListOf<String>()
+        val base=FakeCoordinator(events)
+        val coordinator=object:IFt4TransmitCoordinator by base {
+            override fun isTransmitLeaseValid(lease:TxLease)=false
+        }
+        val transmitter=Ft4AudioTransmitter(null,FakeFt4Service(events),coordinator,
+            FakeClock({ testScheduler.currentTime },true),Ft4AudioOutputFactory { _,_ -> object:Ft4AudioOutput {
+                override suspend fun play(samples:FloatArray):Ft4AudioPlaybackResult {
+                    events+="play";kotlinx.coroutines.delay(1000);events+="completed";return Ft4AudioPlaybackResult(null,0)
+                }
+                override fun close() { events+="close" }
+            } })
+        assertTrue(runCatching { transmitter.transmit(request(1000,false)) }.isFailure)
+        assertTrue("completed" !in events)
+        assertTrue(events.takeLast(2)==listOf("close","end"))
+    }
+    @Test fun audioConnectionFailureNeverKeysPtt() = runTest {
+        val events=mutableListOf<String>()
+        val transmitter=Ft4AudioTransmitter(null,FakeFt4Service(events),FakeCoordinator(events),
+            FakeClock({ testScheduler.currentTime },true),Ft4AudioOutputFactory { _,_ -> object:Ft4AudioOutput {
+                override suspend fun prepareTransmit(automatic:Boolean) { events+="route";error("Radio audio unavailable") }
+                override suspend fun play(samples:FloatArray):Ft4AudioPlaybackResult { error("Must not play") }
+                override fun close() { events+="close" }
+            } })
+        assertEquals("Radio audio unavailable",runCatching { transmitter.transmit(request(1000,false)) }.exceptionOrNull()?.message)
+        assertEquals(listOf("generate","route","close","emergency"),events)
+    }
     @Test
     fun pttIsConfirmedBeforeWaveformAndReleasedAfterwards() = runTest {
         val events = mutableListOf<String>()

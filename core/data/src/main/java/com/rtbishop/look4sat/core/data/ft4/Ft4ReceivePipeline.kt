@@ -70,7 +70,7 @@ internal class Ft4ResampledTimeline(private val clock: IDisciplinedClock) {
     fun process(chunk: TimestampedAudioChunk): Ft4ResampledOutput {
         val expectedBootTime = expectedChunkBootTimeNanos
         val timestampResidual = expectedBootTime?.let { chunk.elapsedRealtimeNanos - it }
-        val frameGap = expectedFramePosition?.let { it != chunk.framePosition } ?: false
+        val frameGap = chunk.discontinuity || (expectedFramePosition?.let { it != chunk.framePosition } ?: false)
         val timeGap = timestampResidual?.let { abs(it) > TIMESTAMP_DISCONTINUITY_NANOS } ?: false
         val rateChange = initialized && inputRate != chunk.sampleRate
         val discontinuity = !initialized || rateChange || frameGap || timeGap

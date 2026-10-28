@@ -46,6 +46,10 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.isActive
 
 class Ft4AudioTransmitter(
     context: Context?,
@@ -92,6 +96,7 @@ class Ft4AudioTransmitter(
             check(waveform.size == EXPECTED_WAVEFORM_SAMPLES) { "Unexpected FT4 waveform length" }
             check(waveform.all(Float::isFinite)) { "FT4 waveform contains invalid samples" }
             output = outputFactory.create(OUTPUT_SAMPLE_RATE, request.volume)
+            output.prepareTransmit(request.automatic)
             output.prepare(waveform)
 
             waitUntil(request, timing.before(prepareLeadMillis))
@@ -120,7 +125,17 @@ class Ft4AudioTransmitter(
             mutableState.value = Ft4TransmitState.Transmitting(request.message, lease)
             notifyProgress(request, Ft4TransmissionResult.STARTED)
             val playCallErrorMillis = -timing.remainingMillis(clock.snapshot())
-            val playback = output.play(waveform)
+            val activeLease=checkNotNull(lease)
+            val playback = coroutineScope {
+                val guard=launch {
+                    while(isActive) {
+                        checkCurrentIntent(request)
+                        check(coordinator.isTransmitLeaseValid(activeLease)) { "Radio disconnected or transmit context changed" }
+                        delay(10)
+                    }
+                }
+                try { output.play(waveform) } finally { guard.cancel() }
+            }
             mutablePlaybackTiming.value = Ft4PlaybackTiming(
                 requestedSlotUtcMillis = request.slotStartUtcMillis,
                 startErrorMillis = playback.startDelayMillis?.plus(playCallErrorMillis),
@@ -251,35 +266,53 @@ fun interface Ft4AudioOutputFactory {
 }
 
 interface Ft4AudioOutput : AutoCloseable {
+    suspend fun prepareTransmit(automatic: Boolean) = Unit
     suspend fun prepare(samples: FloatArray) = Unit
     suspend fun play(samples: FloatArray): Ft4AudioPlaybackResult
 }
 
 data class Ft4AudioPlaybackResult(val startDelayMillis: Double?, val underrunCount: Int)
 
-private class AndroidFt4AudioOutputFactory(context: Context) : Ft4AudioOutputFactory {
+internal class AndroidFt4AudioOutputFactory(context: Context, private val preferredKey: String? = null) : Ft4AudioOutputFactory {
     private val audioManager = context.applicationContext.getSystemService(AudioManager::class.java)
 
     override fun create(sampleRate: Int, volume: Float): Ft4AudioOutput =
-        AndroidFt4AudioOutput(audioManager, sampleRate, volume)
+        AndroidFt4AudioOutput(audioManager, sampleRate, volume,preferredKey)
 }
 
 private class AndroidFt4AudioOutput(
     private val audioManager: AudioManager,
     private val sampleRate: Int,
-    private val volume: Float
+    private val volume: Float,
+    private val preferredKey: String?
 ) : Ft4AudioOutput {
     private val attributes = AudioAttributes.Builder()
-        .setUsage(AudioAttributes.USAGE_MEDIA)
+        .setUsage(if(preferredKey?.startsWith("${android.media.AudioDeviceInfo.TYPE_BLUETOOTH_SCO}:")==true)
+            AudioAttributes.USAGE_VOICE_COMMUNICATION else AudioAttributes.USAGE_MEDIA)
         .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
         .build()
     private var track: AudioTrack? = null
     private var focusRequest: AudioFocusRequest? = null
-    private var focusHeld = false
+    @Volatile private var focusHeld = false
     private var preparedCount = 0
 
     override suspend fun prepare(samples: FloatArray) = withContext(Dispatchers.IO) {
         check(requestAudioFocus()) { "Audio focus was denied" }
+        if(preferredKey!=null) {
+            // Prove the actual route using silence on the very same AudioTrack, before CAT PTT.
+            val probe=checkNotNull(buildTrack(AudioFormat.ENCODING_PCM_16BIT,samples.size))
+            track=probe
+            check(probe.write(ShortArray(samples.size),0,samples.size,AudioTrack.WRITE_BLOCKING)==samples.size)
+            probe.play()
+            withTimeout(1500) {
+                while(probe.routedDevice==null) delay(10)
+            }
+            verifyRoute(probe)
+            probe.stop();probe.reloadStaticData()
+            preparedCount=writePcm16Chunk(probe,samples,0,samples.size)
+            check(preparedCount==samples.size)
+            return@withContext
+        }
         // The entire 5.04-second waveform is ready before PTT. A static buffer
         // avoids streaming starvation and an underrun at the end of the clip.
         val floatTrack = buildTrack(AudioFormat.ENCODING_PCM_FLOAT, samples.size)
@@ -329,7 +362,26 @@ private class AndroidFt4AudioOutput(
             return null
         }
         candidate.setVolume(volume)
+        if(preferredKey!=null) {
+            val device=audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS).firstOrNull {
+                com.rtbishop.look4sat.core.data.audio.RadioAudioSession.deviceKey(it)==preferredKey
+            }
+            if(device==null || !candidate.setPreferredDevice(device)) {
+                candidate.release();error("Selected radio audio output is unavailable")
+            }
+            candidate.addOnRoutingChangedListener({ route ->
+                if(route.routedDevice?.let { com.rtbishop.look4sat.core.data.audio.RadioAudioSession.deviceKey(it) }!=preferredKey) {
+                    runCatching { candidate.pause();candidate.flush() }
+                }
+            },android.os.Handler(android.os.Looper.getMainLooper()))
+        }
         return candidate
+    }
+
+    private fun verifyRoute(audioTrack: AudioTrack) {
+        if(preferredKey!=null) com.rtbishop.look4sat.core.domain.audio.RadioAudioPolicy.requireRoute(preferredKey,audioTrack.routedDevice?.let {
+            com.rtbishop.look4sat.core.data.audio.RadioAudioSession.deviceKey(it)
+        })
     }
 
     private fun writeFloatChunk(track: AudioTrack, samples: FloatArray, offset: Int, maximum: Int): Int =
@@ -354,6 +406,8 @@ private class AndroidFt4AudioOutput(
         val timestamp = AudioTimestamp()
         while (audioTrack.playbackHeadPosition.toLong() < sampleCount) {
             currentCoroutineContext().ensureActive()
+            check(focusHeld) { "Audio focus was lost" }
+            verifyRoute(audioTrack)
             check(SystemClock.elapsedRealtime() < deadline) { "AudioTrack playback timed out" }
             if (startDelayMillis == null && audioTrack.getTimestamp(timestamp)) {
                 val firstFrameNanos = timestamp.nanoTime - timestamp.framePosition * 1_000_000_000L / sampleRate
@@ -371,14 +425,16 @@ private class AndroidFt4AudioOutput(
         val result = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val request = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_EXCLUSIVE)
                 .setAudioAttributes(attributes)
-                .setOnAudioFocusChangeListener { }
+                .setOnAudioFocusChangeListener { change ->
+                    if(change<0) { focusHeld=false;runCatching { track?.pause() } }
+                }
                 .build()
             focusRequest = request
             audioManager.requestAudioFocus(request)
         } else {
             @Suppress("DEPRECATION")
             audioManager.requestAudioFocus(
-                { },
+                { change -> if(change<0) { focusHeld=false;runCatching { track?.pause() } } },
                 AudioManager.STREAM_MUSIC,
                 AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_EXCLUSIVE
             )

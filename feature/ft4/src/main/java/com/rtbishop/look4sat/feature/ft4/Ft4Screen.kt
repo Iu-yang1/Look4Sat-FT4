@@ -158,14 +158,15 @@ fun Ft4ShellDestination(navigateUp: () -> Unit, navigateToLogbook: () -> Unit) {
     LaunchedEffect(
         lifecycleResumed,
         state.settings.decodeEnabled,
-        state.capability.receiveAvailable
+        state.capability.receiveAvailable,
+        state.usesNetworkAudio
     ) {
         if (!lifecycleResumed) return@LaunchedEffect
         val granted = ContextCompat.checkSelfPermission(
             context,
             Manifest.permission.RECORD_AUDIO
         ) == PackageManager.PERMISSION_GRANTED
-        if (granted) {
+        if (granted || state.usesNetworkAudio) {
             microphonePermanentlyDenied = false
             viewModel.onAction(Ft4Action.MicrophonePermissionChanged(true))
         } else if (state.settings.decodeEnabled && state.capability.receiveAvailable) {
@@ -267,6 +268,10 @@ private fun Ft4Shell(
                     progress = { timing.slotProgress },
                     modifier = Modifier.fillMaxWidth().height(3.dp)
                 )
+                Text(state.radioAudio.error ?: stringResource(
+                    if(state.radioAudio.transmittingReady) R.string.radio_audio_ready else R.string.radio_audio_waiting),
+                    style=MaterialTheme.typography.bodySmall,
+                    color=if(state.radioAudio.error!=null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface)
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     Text(
                         stringResource(R.string.ft4_slot_progress, (timing.slotProgress * 100).roundToInt()),

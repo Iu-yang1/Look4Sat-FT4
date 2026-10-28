@@ -21,6 +21,9 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 
 interface IRadioController {
+    suspend fun captureAudioState(split: Boolean): RadioTransmitAudioSnapshot? = null
+    suspend fun setAudioInput(wlan: Boolean): Boolean = false
+    suspend fun restoreAudioState(snapshot: RadioTransmitAudioSnapshot): Boolean = false
     val commandTimeoutMillis: Long get() = 3_000L
 
     val remoteState: kotlinx.coroutines.flow.StateFlow<RemoteRadioState>? get() = null
@@ -159,3 +162,5 @@ interface IRadioController {
      */
     suspend fun readTxVfoFrequency(): Long? = readWorkingFrequency()
 }
+
+data class RadioTransmitAudioSnapshot(val selected: Boolean, val mode: String, val dataEnabled: Boolean, val modulationInput: Int)

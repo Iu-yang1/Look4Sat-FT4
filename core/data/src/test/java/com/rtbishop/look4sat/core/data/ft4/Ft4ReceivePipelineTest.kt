@@ -28,6 +28,14 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class Ft4ReceivePipelineTest {
+    @Test fun networkDiscontinuityInvalidatesAnOtherwiseContinuousFrameCounter() {
+        val timeline=Ft4ResampledTimeline(FixedClock())
+        timeline.process(chunk(1200,0,0))
+        val broken=timeline.process(chunk(1200,1200,100_000_000).copy(discontinuity=true))
+        assertTrue(broken.reset)
+        assertTrue(broken.droppedBlock)
+        assertEquals("capture_frame_gap",broken.resetReason)
+    }
 
     @Test
     fun `boottime jump drops partial slot and next complete slot recovers`() {

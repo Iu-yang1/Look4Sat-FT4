@@ -1,0 +1,18 @@
+<resources>
+    <string name="radio_audio_title">Audio connection</string>
+    <string name="radio_audio_none">Not configured</string>
+    <string name="radio_audio_usb">External audio (USB / wired / compatible Bluetooth)</string>
+    <string name="radio_audio_wlan">IC-705 WLAN audio</string>
+    <string name="radio_audio_rx">RX audio input</string>
+    <string name="radio_audio_tx">TX audio output</string>
+    <string name="radio_audio_no_device">Connect an external audio device.</string>
+    <string name="radio_audio_host">Radio LAN address</string>
+    <string name="radio_audio_port">Control port</string>
+    <string name="radio_audio_user">Network username (blank to keep)</string>
+    <string name="radio_audio_password">Network password (blank to keep)</string>
+    <string name="radio_audio_network_cat">Use WLAN CAT instead of Bluetooth CAT</string>
+    <string name="radio_audio_discover">Find radios on LAN</string>
+    <string name="radio_audio_wireless_manual">WLAN transmit: manual FT4 only; hardware timing awaits verification.</string>
+    <string name="radio_audio_ready">Audio ready</string>
+    <string name="radio_audio_waiting">Radio audio not ready</string>
+</resources>

@@ -142,7 +142,8 @@ class JttyService(
                             if(index>=0) { if(row.text.length>=merged[index].text.length) merged[index]=row.copy(id=merged[index].id) } else merged+=row
                         }
                         current.copy(messages=merged.takeLast(300),carriers=search.snapshot(now),
-                            spectrum=bins?.let { Ft4SpectrumFrame(sequence++,12000,12000f/4096,it,0f) }?:current.spectrum)
+                            spectrum=bins?.let { Ft4SpectrumFrame(sequence++,12000,12000f/4096,it,
+                                (20*kotlin.math.log10(kotlin.math.sqrt(pcm.sumOf { value -> value.toDouble()*value }/pcm.size).coerceAtLeast(1e-6))).toFloat()) }?:current.spectrum)
                     }
                 }
             } finally { decoders.forEach { it.close() };decoders=emptyList() }

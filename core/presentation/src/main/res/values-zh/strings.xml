@@ -994,4 +994,5 @@
     <string name="jtty_variables">{CALL} · {MYCALL} · {RST} · {GRID}</string>
     <string name="jtty_save">保存</string>
     <string name="jtty_cancel">取消</string>
+    <string name="jtty_spectrum_description">JTTY 频谱与瀑布图；选择接收音频频率</string>
 </resources>

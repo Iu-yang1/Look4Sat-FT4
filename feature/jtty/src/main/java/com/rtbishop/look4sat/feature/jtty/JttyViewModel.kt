@@ -37,6 +37,8 @@ sealed interface JttyAction {
     data object Clear : JttyAction
     data object Send : JttyAction
     data object Stop : JttyAction
+    data object EmergencyStop : JttyAction
+    data object Disconnect : JttyAction
     data object Connect : JttyAction
     data object Track : JttyAction
     data object SaveLog : JttyAction
@@ -151,6 +153,7 @@ class JttyViewModel(private val container: IMainContainer): ViewModel() {
                 if(state.value.receive.receiving) service.stopReceiving() else service.startReceiving()
             }
             JttyAction.Clear -> service.clear()
+            JttyAction.Disconnect -> launch { transmitter.stop();container.radioTrackingService.disconnectRadios() }
             JttyAction.Connect -> launch { container.radioTrackingService.connectRadios() }
             JttyAction.Track -> launch {
                 val current=state.value
@@ -163,6 +166,9 @@ class JttyViewModel(private val container: IMainContainer): ViewModel() {
             }
             JttyAction.Send -> send()
             JttyAction.Stop -> launch { transmitJob?.cancel();transmitter.stop() }
+            JttyAction.EmergencyStop -> launch {
+                transmitJob?.cancel();transmitter.stop();container.digitalTransmitCoordinator.emergencyPttOff()
+            }
             JttyAction.SaveLog -> launch { saveLog() }
             JttyAction.DismissError -> mutable.update { it.copy(error=null,saved=false) }
         }

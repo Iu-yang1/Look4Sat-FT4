@@ -7,7 +7,6 @@ import android.os.Build
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -20,7 +19,6 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
@@ -34,6 +32,15 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.rtbishop.look4sat.core.domain.repository.IContainerProvider
 import com.rtbishop.look4sat.core.domain.model.RadioControlSettings
+import com.rtbishop.look4sat.core.presentation.*
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import java.util.TimeZone
 import com.rtbishop.look4sat.core.presentation.DigitalRadarSizeButton
 import com.rtbishop.look4sat.core.presentation.DigitalSatellitePanel
 import com.rtbishop.look4sat.core.presentation.R
@@ -79,94 +86,116 @@ internal fun JttyScreen(
     state: JttyState, action: (JttyAction)->Unit, back: ()->Unit, logbook: ()->Unit,
     receive: ()->Unit, connect: ()->Unit
 ) {
-    var page by rememberSaveable { mutableIntStateOf(0) }
+    var page by rememberSaveable { mutableIntStateOf(1) }
     var large by rememberSaveable { mutableStateOf(false) }
     var expanded by rememberSaveable { mutableStateOf(true) }
     var editing by rememberSaveable { mutableIntStateOf(-1) }
     var template by rememberSaveable { mutableStateOf("") }
     var frequency by rememberSaveable { mutableStateOf("1500") }
+    val renderState=remember { SpectrumRenderState() }
+    LaunchedEffect(state.receive.spectrum?.sequence) { state.receive.spectrum?.let(renderState::update) }
     Box(Modifier.fillMaxSize()) {
     Scaffold(topBar={
-        Row(Modifier.fillMaxWidth().statusBarsPadding().padding(6.dp),verticalAlignment=Alignment.CenterVertically) {
-            IconButton(onClick=back) { Icon(painterResource(R.drawable.ic_back),stringResource(R.string.jtty_back)) }
-            Text("JTTY",style=MaterialTheme.typography.titleLarge,modifier=Modifier.weight(1f))
-            DigitalRadarSizeButton(large,{large=it})
-            IconButton(onClick=logbook) { Icon(painterResource(R.drawable.ic_logbook),stringResource(R.string.nav_logbook)) }
+        Column(Modifier.statusBarsPadding().padding(horizontal=6.dp,vertical=4.dp),verticalArrangement=Arrangement.spacedBy(4.dp)) {
+            Text(stringResource(if(state.audioReady) R.string.radio_audio_ready else R.string.radio_audio_waiting),style=MaterialTheme.typography.bodySmall)
+            Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(6.dp)) {
+                IconCard(action=back,resId=R.drawable.ic_back)
+                ElevatedCard(Modifier.weight(1f)) {
+                    Text("JTTY",fontWeight=FontWeight.Bold,maxLines=1,modifier=Modifier.padding(horizontal=12.dp,vertical=10.dp))
+                }
+                IconCard(action=logbook,resId=R.drawable.ic_logbook)
+            }
         }
     },bottomBar={
-        NavigationBar(Modifier.navigationBarsPadding()) {
-            listOf(R.string.jtty_page_radio,R.string.ft4_page_spectrum,R.string.nav_logbook).forEachIndexed { index,label ->
+        NavigationBar(Modifier.navigationBarsPadding().height(58.dp),windowInsets=WindowInsets(0,0,0,0)) {
+            listOf(1,0,2).forEach { index ->
+                val label=when(index) {1->R.string.ft4_page_spectrum;0->R.string.jtty_page_radio;else->R.string.nav_logbook}
                 NavigationBarItem(selected=page==index,onClick={page=index},icon={
                     Icon(painterResource(if(index==2) R.drawable.ic_logbook else if(index==1) R.drawable.ic_spectrum_ft8cn else R.drawable.ic_radios),null)
-                },label={Text(stringResource(label),maxLines=1)})
+                },label={Text(stringResource(label),maxLines=1,fontSize=10.sp)})
             }
         }
     }) { insets ->
-        Column(Modifier.fillMaxSize().padding(insets).imePadding().verticalScroll(rememberScrollState()).padding(10.dp),
-            verticalArrangement=Arrangement.spacedBy(8.dp)) {
-            Row(verticalAlignment=Alignment.CenterVertically) {
-                TextButton(onClick={expanded=!expanded},modifier=Modifier.weight(1f)) {
-                    Text(state.pass?.name ?: stringResource(R.string.ft4_no_pass))
-                }
-                Text(stringResource(if(state.radio.txConnected || state.radio.rxConnected) R.string.jtty_control_connected else R.string.jtty_control_disconnected),style=MaterialTheme.typography.labelSmall)
-            }
-            if(expanded) {
-                DigitalSatellitePanel(state.pass?.name.orEmpty(),state.radio.selectedTransponder?.info.orEmpty(),state.position,state.track,large) {
-                    Text("RX "+(state.radio.rxFrequencyHz?.let(::formatFrequency) ?: "—"),color=MaterialTheme.colorScheme.primary,style=MaterialTheme.typography.bodySmall)
-                    Text("TX "+(state.radio.txFrequencyHz?.let(::formatFrequency) ?: "—"),color=MaterialTheme.colorScheme.primary,style=MaterialTheme.typography.bodySmall)
-                }
-                if(state.transponders.isNotEmpty()) {
-                    var choose by remember { mutableStateOf(false) }
-                    TextButton(onClick={choose=true},enabled=!state.busy) { Text(stringResource(R.string.jtty_transponder)) }
-                    DropdownMenu(expanded=choose,onDismissRequest={choose=false}) {
-                        state.transponders.forEach { item -> DropdownMenuItem(text={Text(item.info)},onClick={action(JttyAction.Transponder(item));choose=false}) }
-                    }
-                }
-                Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(onClick=connect,enabled=!state.busy,modifier=Modifier.weight(1f)) { Text(stringResource(R.string.ft4_connect_radios)) }
-                    OutlinedButton(onClick={action(JttyAction.Track)},enabled=!state.busy,modifier=Modifier.weight(1f)) {
-                        Text(stringResource(if(state.radio.isActive) R.string.ft4_stop_tracking else R.string.ft4_start_tracking))
-                    }
-                }
-            }
-            Text(stringResource(if(state.audioReady) R.string.radio_audio_ready else R.string.radio_audio_waiting),style=MaterialTheme.typography.bodySmall)
+        Column(Modifier.fillMaxSize().padding(insets).imePadding().verticalScroll(rememberScrollState()).padding(horizontal=6.dp),
+            verticalArrangement=Arrangement.spacedBy(6.dp)) {
+            DigitalRadioStatus(
+                DigitalRadioPanelState(state.radio,state.pass,state.position,state.track,0f to 0f,false,false),
+                {action(JttyAction.Disconnect)}, {action(JttyAction.Track)}, {action(JttyAction.EmergencyStop)},
+                connect,back,large,{large=it},expanded,{expanded=it},Modifier.fillMaxWidth()
+            )
             (state.error ?: state.receive.error ?: state.radio.lastCommandError)?.let { error ->
                 TextButton(onClick={action(JttyAction.DismissError)}) { Text(error,color=MaterialTheme.colorScheme.error) }
             }
-            if(page!=2) {
-                Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-                    Button(onClick=receive,modifier=Modifier.weight(1f)) { Text(stringResource(if(state.receive.receiving) R.string.jtty_stop_receive else R.string.jtty_start_receive)) }
-                    OutlinedButton(onClick={action(JttyAction.Clear)},modifier=Modifier.weight(1f)) { Text(stringResource(R.string.jtty_clear)) }
-                }
-                if(page==1) Spectrum(state)
-                Text(stringResource(R.string.jtty_rx_carriers),style=MaterialTheme.typography.titleSmall)
-                state.receive.carriers.forEach { carrier ->
-                    TextButton(onClick={action(JttyAction.RxFrequency(carrier.frequencyHz))}) {
-                        Text("${carrier.frequencyHz.toInt()} Hz · ${carrier.strengthDb.toInt()} dB"+(if(carrier.confirmed) " ✓" else ""))
+            if(page==1) {
+                ElevatedCard(Modifier.fillMaxWidth().height(380.dp)) {
+                    Box(Modifier.fillMaxSize(),contentAlignment=Alignment.Center) {
+                        DigitalSpectrumWaterfall(renderState,state.receive.selectedRxHz,
+                            {action(JttyAction.RxFrequency(it))},Modifier.fillMaxSize().padding(8.dp),stringResource(R.string.jtty_spectrum_description))
+                        if(state.receive.spectrum==null) Text(stringResource(R.string.jtty_waiting),modifier=Modifier.padding(24.dp))
                     }
                 }
-                if(state.receive.messages.isEmpty()) Text(stringResource(R.string.jtty_waiting),style=MaterialTheme.typography.bodyMedium)
-                state.receive.messages.takeLast(30).forEach { message ->
-                    ElevatedCard(Modifier.fillMaxWidth()) {
-                        Column(Modifier.padding(8.dp)) {
-                            Text("${message.frequencyHz.toInt()} Hz · ${message.snrDb.toInt()} dB"+
-                                if(message.ended && !message.complete) " · "+stringResource(R.string.jtty_incomplete) else "",style=MaterialTheme.typography.labelSmall)
-                            Text(message.text)
-                            Row { message.calls.take(4).forEach { call -> TextButton(onClick={action(JttyAction.TheirCall(call))}) { Text(call) } } }
+                ElevatedCard(Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(10.dp),verticalArrangement=Arrangement.spacedBy(6.dp)) {
+                        Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween) {
+                            Text(stringResource(R.string.ft4_spectrum_range),fontSize=11.sp)
+                            Text(stringResource(R.string.ft4_input_level,state.receive.spectrum?.inputLevelDb ?: -120f),fontSize=11.sp)
+                            Text(stringResource(R.string.ft4_selected_frequency,state.receive.selectedRxHz),fontSize=11.sp)
+                        }
+                        Button(onClick=receive,modifier=Modifier.fillMaxWidth()) {
+                            Text(stringResource(if(state.receive.receiving) R.string.jtty_stop_receive else R.string.jtty_start_receive))
                         }
                     }
                 }
+                if(state.receive.carriers.isNotEmpty()) ElevatedCard(Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(10.dp)) {
+                        Text(stringResource(R.string.jtty_rx_carriers),fontWeight=FontWeight.Bold)
+                        FlowRow { state.receive.carriers.forEach { carrier ->
+                            TextButton(onClick={action(JttyAction.RxFrequency(carrier.frequencyHz))}) {
+                                Text("${carrier.frequencyHz.toInt()} Hz · ${carrier.strengthDb.toInt()} dB"+(if(carrier.confirmed) " ✓" else ""))
+                            }
+                        } }
+                    }
+                }
             }
-            if(page!=1) {
-                HorizontalDivider()
+            if(state.transponders.isNotEmpty()) ElevatedCard(Modifier.fillMaxWidth()) {
+                var choosing by remember {mutableStateOf(false)}
+                TextButton(onClick={choosing=true},enabled=!state.busy) {Text(stringResource(R.string.jtty_transponder))}
+                DropdownMenu(expanded=choosing,onDismissRequest={choosing=false}) {
+                    state.transponders.forEach { item -> DropdownMenuItem(text={Text(item.info)},onClick={action(JttyAction.Transponder(item));choosing=false}) }
+                }
+            }
+            if(page==0) JttyDecodeTable(state,action)
+            if(page!=1) ElevatedCard(Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(10.dp),verticalArrangement=Arrangement.spacedBy(7.dp)) {
+
+                Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(6.dp)) {
+                    Icon(painterResource(R.drawable.ic_radio_tower),null,tint=MaterialTheme.colorScheme.primary,modifier=Modifier.size(20.dp))
+                    Text(stringResource(R.string.ft4_calling_controls),fontWeight=FontWeight.Bold)
+                }
+                HorizontalDivider(color=MaterialTheme.colorScheme.outlineVariant)
+                Row(horizontalArrangement=Arrangement.spacedBy(6.dp),verticalAlignment=Alignment.CenterVertically) {
+                    OutlinedTextField(state.myCall,{action(JttyAction.MyCall(it))},label={Text(stringResource(R.string.jtty_my_call))},singleLine=true,modifier=Modifier.weight(1f))
+                    Column(Modifier.weight(1f)) {
+                        Text(stringResource(R.string.ft4_grid),fontSize=11.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(state.grid,color=MaterialTheme.colorScheme.primary,fontSize=18.sp,fontWeight=FontWeight.Bold)
+                    }
+                }
                 OutlinedTextField(state.theirCall,{action(JttyAction.TheirCall(it))},label={Text(stringResource(R.string.jtty_their_call))},singleLine=true,modifier=Modifier.fillMaxWidth())
-                OutlinedTextField(state.myCall,{action(JttyAction.MyCall(it))},label={Text(stringResource(R.string.jtty_my_call))},singleLine=true,modifier=Modifier.fillMaxWidth())
-                Text(stringResource(R.string.jtty_grid,state.grid),style=MaterialTheme.typography.bodySmall)
+                if(page==0) {
+                    Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween) {
+                        Text(stringResource(R.string.ft4_tx_audio),fontSize=12.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(stringResource(R.string.ft4_selected_frequency,state.txHz),color=MaterialTheme.colorScheme.primary,fontWeight=FontWeight.Bold)
+                    }
+                    Slider(value=state.txHz.coerceIn(100f,2800f),onValueChange={frequency=it.toInt().toString();action(JttyAction.TxFrequency(it))},
+                        valueRange=100f..2800f,steps=26,enabled=!state.busy)
+                OutlinedTextField(frequency,{frequency=it;it.toFloatOrNull()?.let { hz -> action(JttyAction.TxFrequency(hz)) }},
+                    enabled=!state.busy,label={Text(stringResource(R.string.jtty_tx_frequency))},singleLine=true,
+                    isError=frequency.toFloatOrNull()?.let { it.isFinite() && it in 100f..2800f }!=true,modifier=Modifier.fillMaxWidth())
+                }
                 Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
                     OutlinedTextField(state.sentReport,{action(JttyAction.SentReport(it))},label={Text(stringResource(R.string.jtty_sent))},singleLine=true,modifier=Modifier.weight(1f))
                     OutlinedTextField(state.receivedReport,{action(JttyAction.ReceivedReport(it))},label={Text(stringResource(R.string.jtty_received))},singleLine=true,modifier=Modifier.weight(1f))
                 }
-            }
             if(page==0) {
                 Row(horizontalArrangement=Arrangement.spacedBy(6.dp)) {
                     state.presets.forEachIndexed { index,preset ->
@@ -181,14 +210,11 @@ internal fun JttyScreen(
                 }
                 OutlinedTextField(state.draft,{action(JttyAction.Draft(it))},enabled=!state.busy,label={Text(stringResource(R.string.jtty_message))},maxLines=4,modifier=Modifier.fillMaxWidth())
                 state.draftError?.let { Text(it,color=MaterialTheme.colorScheme.error,style=MaterialTheme.typography.bodySmall) }
-                OutlinedTextField(frequency,{frequency=it;it.toFloatOrNull()?.let { hz -> action(JttyAction.TxFrequency(hz)) }},
-                    enabled=!state.busy,label={Text(stringResource(R.string.jtty_tx_frequency))},singleLine=true,
-                    isError=frequency.toFloatOrNull()?.let { it.isFinite() && it in 100f..2800f }!=true,modifier=Modifier.fillMaxWidth())
                 Text(stringResource(R.string.jtty_duration,state.frames ?: 0,(state.frames ?: 0)*1.888),style=MaterialTheme.typography.bodySmall)
                 Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-                    Button(onClick={action(JttyAction.Send)},enabled=state.transmitReady &&
-                        frequency.toFloatOrNull()?.let { it.isFinite() && it in 100f..2800f }==true,modifier=Modifier.weight(1f)) { Text(stringResource(R.string.jtty_send)) }
-                    OutlinedButton(onClick={action(JttyAction.Stop)},modifier=Modifier.weight(1f)) { Text(stringResource(R.string.jtty_stop_tx)) }
+                    CardButton(onClick={action(JttyAction.Send)},text=stringResource(R.string.jtty_send),
+                        enabled=state.transmitReady && frequency.toFloatOrNull()?.let {it.isFinite() && it in 100f..2800f}==true,modifier=Modifier.weight(1f))
+                    CardButton(onClick={action(JttyAction.Stop)},text=stringResource(R.string.jtty_stop_tx),enabled=state.busy,modifier=Modifier.weight(1f))
                 }
             }
             if(page==2) {
@@ -199,6 +225,8 @@ internal fun JttyScreen(
                     ListItem(headlineContent={Text(record.theirCallsign)},supportingContent={Text(record.satelliteName+" · "+record.sentReport+" / "+record.receivedReport)})
                 }
                 OutlinedButton(onClick=logbook,modifier=Modifier.fillMaxWidth()) { Text(stringResource(R.string.nav_logbook)) }
+            }
+            }
             }
         }
     }
@@ -231,14 +259,35 @@ internal fun JttyScreen(
 }
 
 @Composable
-private fun Spectrum(state: JttyState) {
-    val color=MaterialTheme.colorScheme.primary
-    Canvas(Modifier.fillMaxWidth().height(160.dp)) {
-        val bins=state.receive.spectrum?.magnitudesDb ?: return@Canvas
-        for(i in 1 until bins.size) {
-            val y1=size.height*(1-(bins[i-1]+100).coerceIn(0f,100f)/100)
-            val y2=size.height*(1-(bins[i]+100).coerceIn(0f,100f)/100)
-            drawLine(color,Offset((i-1)*size.width/bins.size,y1),Offset(i*size.width/bins.size,y2))
+private fun JttyDecodeTable(state: JttyState, action: (JttyAction)->Unit) {
+    val utc=remember { SimpleDateFormat("HH:mm:ss",Locale.US).apply {timeZone=TimeZone.getTimeZone("UTC")} }
+    ElevatedCard(Modifier.fillMaxWidth()) {
+        Row(Modifier.fillMaxWidth().padding(horizontal=10.dp),verticalAlignment=Alignment.CenterVertically) {
+            Text(stringResource(R.string.ft4_decode_count,state.receive.messages.size),fontWeight=FontWeight.Bold,modifier=Modifier.weight(1f))
+            TextButton(onClick={action(JttyAction.Clear)}) {Text(stringResource(R.string.ft4_clear_decodes))}
+        }
+        HorizontalDivider()
+        Row(Modifier.fillMaxWidth().padding(8.dp)) {
+            Text(stringResource(R.string.ft4_decode_utc),fontSize=10.sp,modifier=Modifier.width(66.dp))
+            Text(stringResource(R.string.ft4_decode_snr),fontSize=10.sp,modifier=Modifier.width(42.dp))
+            Text(stringResource(R.string.ft4_decode_hz),fontSize=10.sp,modifier=Modifier.width(54.dp))
+            Text(stringResource(R.string.ft4_decode_message),fontSize=10.sp)
+        }
+        if(state.receive.messages.isEmpty()) Box(Modifier.fillMaxWidth().heightIn(min=220.dp),contentAlignment=Alignment.Center) {
+            Text(stringResource(R.string.jtty_waiting),color=MaterialTheme.colorScheme.onSurfaceVariant,modifier=Modifier.padding(16.dp))
+        } else LazyColumn(Modifier.fillMaxWidth().heightIn(min=220.dp,max=420.dp)) {
+            items(state.receive.messages.asReversed(),key={it.id}) { message ->
+                val highlighted=state.theirCall.isNotBlank() && state.theirCall in message.calls
+                Row(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.secondaryContainer.copy(alpha=if(highlighted) 0.85f else if(message.text.startsWith("CQ ")) 0.55f else 0.28f))
+                    .clickable {message.calls.firstOrNull {it!=state.myCall}?.let {action(JttyAction.TheirCall(it))}}
+                    .padding(horizontal=8.dp,vertical=6.dp)) {
+                    Text(utc.format(Date(message.utcMillis)),fontSize=10.sp,modifier=Modifier.width(66.dp))
+                    Text(String.format(Locale.US,"%+d",message.snrDb.toInt()),fontSize=10.sp,modifier=Modifier.width(42.dp))
+                    Text(message.frequencyHz.toInt().toString(),fontSize=10.sp,modifier=Modifier.width(54.dp))
+                    Text(message.text+if(message.ended && !message.complete) " …" else "",fontSize=11.sp,maxLines=2,modifier=Modifier.weight(1f))
+                }
+                HorizontalDivider(color=MaterialTheme.colorScheme.outlineVariant.copy(alpha=0.45f))
+            }
         }
     }
 }

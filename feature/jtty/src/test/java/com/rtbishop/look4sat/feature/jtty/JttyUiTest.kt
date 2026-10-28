@@ -31,6 +31,7 @@ class JttyUiTest {
                 }
             }
         }
+        compose.onNodeWithText("Radio").performClick()
         compose.onNodeWithText("F1").performScrollTo().performTouchInput {longClick()}
         compose.onNodeWithText("Template").assertExists()
         compose.onNodeWithTag("jttyPresetText").performTextReplacement("{CALL} DE {MYCALL}")
@@ -72,4 +73,15 @@ class JttyUiTest {
         restoration.emulateSavedInstanceStateRestore()
         compose.onNodeWithContentDescription("Use small radar").assertExists()
     }
+    @Test fun sharedSpectrumGestureSelectsRxWithoutChangingTx() {
+        val actions=mutableListOf<JttyAction>()
+        compose.setContent {MainTheme {JttyScreen(JttyState(),{actions+=it},{},{},{},{})}}
+        compose.onNodeWithContentDescription("JTTY spectrum and waterfall; select RX frequency")
+            .performScrollTo().performTouchInput {click(center)}
+        compose.runOnIdle {
+            assertTrue(actions.any {it is JttyAction.RxFrequency})
+            assertFalse(actions.any {it is JttyAction.TxFrequency || it==JttyAction.Send})
+        }
+    }
+
 }

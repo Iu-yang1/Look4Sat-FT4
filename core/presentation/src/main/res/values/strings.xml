@@ -1042,4 +1042,5 @@ Upstream: https://github.com/rt-bishop/Look4Sat</string>
     <string name="jtty_variables">{CALL} · {MYCALL} · {RST} · {GRID}</string>
     <string name="jtty_save">Save</string>
     <string name="jtty_cancel">Cancel</string>
+    <string name="jtty_spectrum_description">JTTY spectrum and waterfall; select RX frequency</string>
 </resources>

@@ -60,7 +60,7 @@ internal class RecordingService(
         try {
             val source=checkNotNull(sources().firstOrNull {it.id==request.sourceId}) {"Select an available receive source"}
             check(radio().state.value.pttState==PttState.OFF && !radio().state.value.catTransmitting) {"Stop transmission before changing the receive source"}
-            if(source.kind==RecordingSourceKind.N76) check(radio().state.value.remoteRadio?.bluetoothAudioConnected==true) {"Enable N76 Bluetooth audio and connect the radio first"}
+            if(source.kind==RecordingSourceKind.N76) check(settings.radioControlSettings.value.n76BluetoothAudio && radio().state.value.remoteRadio?.bluetoothAudioConnected==true) {"Enable N76 Bluetooth audio and connect the radio first"}
             mutable.value=RecordingState(phase=RecordingPhase.PREPARING,source=source)
             pending=request
             pendingConfiguration=settings.radioControlSettings.value.let {it.radioModel to it.radioAudio}
@@ -121,7 +121,7 @@ internal class RecordingService(
                         delay(500)
                         val config=settings.radioControlSettings.value
                         check(sourceConfig==(config.radioModel to config.radioAudio)) {"Receive source changed; recording saved"}
-                        if(source.kind==RecordingSourceKind.N76) check(radio().state.value.remoteRadio?.bluetoothAudioConnected==true) {"N76 audio disconnected"}
+                        if(source.kind==RecordingSourceKind.N76) check(config.n76BluetoothAudio && radio().state.value.remoteRadio?.bluetoothAudioConnected==true) {"N76 audio disconnected"}
                         if(source.kind==RecordingSourceKind.WLAN) check(audioState().error==null) {audioState().error ?: "WLAN audio interrupted"}
                     }
                 }
@@ -132,6 +132,7 @@ internal class RecordingService(
                         check(chunk.sampleRate in 8000..192000) {"Unsupported recording sample rate"}
                         val config=settings.radioControlSettings.value
                         check(sourceConfig==(config.radioModel to config.radioAudio)) {"Receive source changed; recording saved"}
+                        if(source.kind==RecordingSourceKind.N76) check(config.n76BluetoothAudio) {"N76 Bluetooth audio disabled; recording saved"}
                         val capture=local.state.value as? AudioHubState.Capturing
                         if(source.kind in listOf(RecordingSourceKind.MICROPHONE,RecordingSourceKind.DEVICE)) {
                             check(capture!=null && !capture.systemSilenced) {"Audio capture was interrupted"}

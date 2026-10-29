@@ -80,4 +80,15 @@ class RecordingServiceTest {
         assertFalse(service.state.value.active);assertEquals("Permission denied",service.state.value.error)
         assertEquals(0,hub.subscribers)
     }
+    @Test fun n76RequiresExplicitAudioOptInEvenIfAnOldConnectionIsStillReported()=runTest {
+        val hub=Hub();val dispatcher=StandardTestDispatcher(testScheduler)
+        val config=MutableStateFlow(RadioControlSettings(true,RadioControlSettings.MODEL_VERO_N76,"","","","",19200))
+        val settings=stub<ISettingsRepo> {if(it=="getRadioControlSettings") config else null}
+        val radioState=MutableStateFlow(RadioTrackingState(remoteRadio=RemoteRadioState(connected=true,bluetoothAudioConnected=true)))
+        val radio=stub<IRadioTrackingService> {if(it=="getState") radioState else null}
+        val service=RecordingService(RuntimeEnvironment.getApplication(),backgroundScope,settings,hub,hub,N76ReceivePcmBus(),{RadioAudioState()},{radio},dispatcher,dispatcher,temp.root)
+        service.start(RecordingRequest("n76"))
+        assertFalse(service.state.value.active);assertTrue(service.state.value.error.orEmpty().contains("Enable N76"))
+        assertEquals(0,hub.subscribers)
+    }
 }

@@ -124,6 +124,8 @@ class SettingsRepo(
     private val keyStateOfNightMode = "stateOfNightMode"
     private val keyStateOfMapGrid = "stateOfMapGrid"
     private val keyStateOfMapFirstCall = "stateOfMapFirstCall"
+    private val keyMapElevationAngles = "mapElevationAngles"
+    private val keyMapElevationContoursEnabled = "mapElevationContoursEnabled"
     private val keyStationAltitude = "stationAltitude"
     private val keyStationLatitude = "stationLatitude"
     private val keyStationLongitude = "stationLongitude"
@@ -330,6 +332,44 @@ class SettingsRepo(
         val array = org.json.JSONArray()
         grids.sorted().forEach { array.put(it) }
         preferences.edit { putString(keyRoamedGrids, array.toString()) }
+    }
+
+    // Shared across every map entry point, including the radar pass / matching map.
+    // Use JSON so values can be decimals and the chosen ring order is preserved.
+    private val _mapElevationAngles = MutableStateFlow(readMapElevationAngles())
+    override val mapElevationAngles: StateFlow<List<Double>> = _mapElevationAngles
+
+    // Kept alongside the contour angles: every map observes the same StateFlow.
+    // Missing preference deliberately means off so upgrading does not surprise users.
+    private val _mapElevationContoursEnabled =
+        MutableStateFlow(preferences.getBoolean(keyMapElevationContoursEnabled, false))
+    override val mapElevationContoursEnabled: StateFlow<Boolean> = _mapElevationContoursEnabled
+
+    override fun setMapElevationContoursEnabled(enabled: Boolean) {
+        preferences.edit { putBoolean(keyMapElevationContoursEnabled, enabled) }
+        _mapElevationContoursEnabled.value = enabled
+    }
+
+    private fun readMapElevationAngles(): List<Double> {
+        val json = preferences.getString(keyMapElevationAngles, null) ?: return listOf(10.0)
+        return try {
+            val array = org.json.JSONArray(json)
+            val values = (0 until array.length()).mapNotNull { index ->
+                array.optDouble(index, Double.NaN).takeIf { it.isFinite() && it in 0.0..90.0 }
+            }.distinct()
+            values.ifEmpty { listOf(10.0) }
+        } catch (_: Exception) {
+            listOf(10.0)
+        }
+    }
+
+    override fun setMapElevationAngles(angles: List<Double>) {
+        val values = angles.filter { it.isFinite() && it in 0.0..90.0 }.distinct()
+            .ifEmpty { listOf(10.0) }
+        val array = org.json.JSONArray()
+        values.forEach { array.put(it) }
+        preferences.edit { putString(keyMapElevationAngles, array.toString()) }
+        _mapElevationAngles.value = values
     }
 
     // VUCC operated-station selection. Store JSON because a station-set key can

@@ -51,6 +51,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
@@ -448,6 +450,32 @@ private fun MapScreen(
         sourceState
     }
     val rotateMod = Modifier.rotate(180f)
+    // The same saved angles are used by the normal satellite map and radar matching maps.
+    val elevationSettingsRepo = remember(mapView.context.applicationContext) {
+        (mapView.context.applicationContext as IContainerProvider).getMainContainer().settingsRepo
+    }
+    val elevationAngles by elevationSettingsRepo.mapElevationAngles.collectAsStateWithLifecycle()
+    // Shared by the satellite map and every radar/matching pass map; survives restarts.
+    val showElevationContours by elevationSettingsRepo.mapElevationContoursEnabled.collectAsStateWithLifecycle()
+    var showElevationSettings by remember { mutableStateOf(false) }
+    var elevationInputs by remember { mutableStateOf(listOf("10")) }
+    fun openElevationSettings() {
+        // Always seed from the shared, persisted state. Closing without Apply discards draft changes.
+        elevationInputs = elevationAngles.map { angle ->
+            if (angle % 1.0 == 0.0) angle.toInt().toString() else angle.toString()
+        }
+        showElevationSettings = true
+    }
+    val contourOverlay = remember(mapView) { ElevationContourOverlay() }
+    val stationElevationOverlay = remember(mapView) { StationElevationOverlay() }
+    DisposableEffect(mapView) {
+        mapView.overlays.add(contourOverlay)
+        mapView.overlays.add(stationElevationOverlay)
+        onDispose {
+            mapView.overlays.remove(contourOverlay)
+            mapView.overlays.remove(stationElevationOverlay)
+        }
+    }
     val timeString = uiState.mapData?.aosTime ?: "00:00:00"
     val isTimeAos = uiState.mapData?.isTimeAos ?: true
     val usesTianditu = tiandituLayers(uiState.mapSource) != null && uiState.tiandituKey.isNotBlank()
@@ -762,6 +790,16 @@ private fun MapScreen(
                             lastFollowedScrubSerial = uiState.scrubSerial
                         }
                     }
+                    contourOverlay.update(uiState.footprint, elevationAngles, showElevationContours && !uiState.isGridMode, view)
+                    stationElevationOverlay.position = if (uiState.isGridMode) null else uiState.stationPosition
+                    stationElevationOverlay.elevation = if (uiState.isGridMode) null else uiState.mapData?.elevation
+                    // In matched passes, compute the other station's elevation at the exact
+                    // same predicted (possibly scrubbed) satellite instant.
+                    stationElevationOverlay.otherPosition =
+                        if (uiState.isGridMode) null else otherStationPosition
+                    stationElevationOverlay.otherElevation =
+                        if (uiState.isGridMode) null
+                        else elevationAtGroundStation(uiState.footprint, otherStationPosition)
                     scrubInProgress = uiState.isScrubbing
                     view.invalidate()
                 }
@@ -799,6 +837,29 @@ private fun MapScreen(
                         modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
                     )
                 }
+                if (!uiState.isGridMode) {
+                    Surface(
+                        color = ComposeColor.Black.copy(alpha = 0.45f),
+                        shape = RoundedCornerShape(percent = 50),
+                        modifier = Modifier.align(Alignment.TopStart).padding(8.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.clickable { openElevationSettings() }
+                                .padding(start = 12.dp, end = 6.dp, top = 2.dp, bottom = 2.dp)
+                        ) {
+                            Text("仰角圆", color = ComposeColor.White, fontSize = 12.sp, modifier = Modifier.padding(end = 2.dp))
+                            Switch(
+                                checked = showElevationContours,
+                                // The switch itself only toggles visibility. Tapping the
+                                // *rest* of the capsule opens the settings dialog via
+                                // the surrounding Row's clickable modifier.
+                                onCheckedChange = elevationSettingsRepo::setMapElevationContoursEnabled,
+                                modifier = Modifier.scale(0.75f)
+                            )
+                        }
+                    }
+                }
                 // Top-left: 台址 selector for VUCC counting (grid mode only).
                 // Shown whenever per-grid QSO data exists; empty selection means All.
                 if (uiState.isGridMode && activeAward == AwardType.VUCC && stationGroups.isNotEmpty()) {
@@ -835,6 +896,17 @@ private fun MapScreen(
                 }
             }
         }
+    }
+    if (showElevationSettings) {
+        ElevationSettingsDialog(
+            values = elevationInputs,
+            onValuesChange = { elevationInputs = it },
+            onDismiss = { showElevationSettings = false },
+            onApply = { values ->
+                elevationSettingsRepo.setMapElevationAngles(values)
+                showElevationSettings = false
+            }
+        )
     }
     // Centered dialog listing the tapped worked grid's confirmed satellite QSOs.
     // Dismissed by tapping outside (no explicit close button). Unworked grids
@@ -874,6 +946,101 @@ private fun MapScreen(
             isUtc = uiState.isUtc,
             onDismiss = { selectedRegion = null }
         )
+    }
+}
+
+/**
+ * Same centered-card dialog appearance as the map's worked-grid QSO details.
+ * This is the default dialog chrome for satellite-map overlays: 88% width,
+ * primary-colour monospace header, divider and a bounded scrolling body.
+ */
+@Composable
+private fun ElevationSettingsDialog(
+    values: List<String>,
+    onValuesChange: (List<String>) -> Unit,
+    onDismiss: () -> Unit,
+    onApply: (List<Double>) -> Unit
+) {
+    val parsed = values.map { it.trim().toDoubleOrNull() }
+    val valid = parsed.isNotEmpty() &&
+        parsed.all { it != null && it.isFinite() && it in 0.0..90.0 } &&
+        parsed.distinct().size == parsed.size
+
+    androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
+        Card(
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+            modifier = Modifier.fillMaxWidth(0.88f)
+        ) {
+            Column {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .defaultMinSize(minHeight = 48.dp)
+                        .padding(start = 16.dp, end = 8.dp, top = 4.dp, bottom = 4.dp)
+                ) {
+                    Text(
+                        "仰角圆设置",
+                        style = MaterialTheme.typography.titleLarge,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                        modifier = Modifier.weight(1f)
+                    )
+                    TextButton(onClick = onDismiss) { Text("取消") }
+                }
+                androidx.compose.material3.HorizontalDivider()
+                Column(
+                    modifier = Modifier
+                        .heightIn(max = 380.dp)
+                        .verticalScroll(rememberScrollState())
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        "在卫星覆盖范围内显示等仰角虚线（0°–90°）。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    values.forEachIndexed { index, input ->
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            OutlinedTextField(
+                                value = input,
+                                onValueChange = { newText ->
+                                    onValuesChange(values.toMutableList().also { it[index] = newText })
+                                },
+                                label = { Text("仰角 ${index + 1} (°)") },
+                                isError = input.trim().toDoubleOrNull()?.let { !it.isFinite() || it !in 0.0..90.0 } ?: true,
+                                singleLine = true,
+                                modifier = Modifier.weight(1f)
+                            )
+                            if (values.size > 1) {
+                                TextButton(onClick = {
+                                    onValuesChange(values.toMutableList().also { it.removeAt(index) })
+                                }) { Text("−") }
+                            }
+                        }
+                    }
+                    TextButton(onClick = { onValuesChange(values + "") }) { Text("＋ 添加仰角圆") }
+                    if (!valid) {
+                        Text(
+                            "请输入不重复的 0°–90° 仰角。",
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                }
+                androidx.compose.material3.HorizontalDivider()
+                Row(
+                    horizontalArrangement = Arrangement.End,
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp)
+                ) {
+                    TextButton(
+                        enabled = valid,
+                        onClick = { onApply(parsed.filterNotNull()) }
+                    ) { Text("保存") }
+                }
+            }
+        }
     }
 }
 
@@ -2153,7 +2320,7 @@ private fun setOtherStationPosition(position: GeoPos?, grid: String?, mapView: M
             it.setInfoWindow(null)
             it.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
             it.icon = ContextCompat.getDrawable(mapView.context, R.drawable.ic_position)?.apply {
-                setTint("#1976D2".toColorInt())
+                setTint(MATCHED_STATION_BLUE)
             }
             it.relatedObject = OTHER_STATION_MARKER_STYLE
             mapView.overlays[OVERLAY_OTHER_STATION] = it
@@ -2162,7 +2329,7 @@ private fun setOtherStationPosition(position: GeoPos?, grid: String?, mapView: M
         marker.title = grid.orEmpty()
         if (marker.relatedObject != OTHER_STATION_MARKER_STYLE) {
             marker.icon = ContextCompat.getDrawable(mapView.context, R.drawable.ic_position)?.apply {
-                setTint("#1976D2".toColorInt())
+                setTint(MATCHED_STATION_BLUE)
             }
             marker.relatedObject = OTHER_STATION_MARKER_STYLE
         }

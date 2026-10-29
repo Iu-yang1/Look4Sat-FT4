@@ -89,9 +89,11 @@ fun DigitalRadioStatus(
                     com.rtbishop.look4sat.core.presentation.DigitalSatellitePanel(
                         pass.name,transponder.info,state.orbitalPosition,state.satelliteTrack,largeRadar,
                         state.orientationValues,state.shouldShowSweep,state.shouldUseCompass
-                    ) { if(!largeRadar) FrequencyStatus(state) }
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                    if(largeRadar) FrequencyStatus(state)
+                    ) { if(!largeRadar) FrequencyStatus(state,showNominal=false) }
+                    if(largeRadar) {
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                        FrequencyStatus(state)
+                    }
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                     RadioControlStatus(radio)
                     radio.lastCommandError?.let {
@@ -145,20 +147,20 @@ fun DigitalRadioStatus(
 }
 
 @Composable
-private fun FrequencyStatus(state: DigitalRadioPanelState) {
+private fun FrequencyStatus(state: DigitalRadioPanelState, showNominal: Boolean = true) {
     val radio = state.radio
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Ft4FrequencyRow(
             label = stringResource(R.string.ft4_tx_label),
             frequencyHz = radio.txFrequencyHz ?: radio.nominalTxFrequencyHz,
-            nominalHz = radio.nominalTxFrequencyHz,
+            nominalHz = radio.nominalTxFrequencyHz.takeIf { showNominal },
             correctionHz = radio.txDopplerCorrectionHz,
             connected = radio.txConnected
         )
         Ft4FrequencyRow(
             label = stringResource(R.string.ft4_rx_label),
             frequencyHz = radio.rxFrequencyHz ?: radio.nominalRxFrequencyHz,
-            nominalHz = radio.nominalRxFrequencyHz,
+            nominalHz = radio.nominalRxFrequencyHz.takeIf { showNominal },
             correctionHz = radio.rxDopplerCorrectionHz,
             connected = radio.rxConnected
         )

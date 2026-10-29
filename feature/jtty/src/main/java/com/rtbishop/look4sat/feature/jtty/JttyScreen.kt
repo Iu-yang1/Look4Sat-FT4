@@ -61,9 +61,14 @@ fun JttyDestination(navigateUp: () -> Unit, navigateToLogbook: () -> Unit) {
     }
     LaunchedEffect(Unit) { model.enter() }
     DisposableEffect(lifecycle) {
-        val observer=LifecycleEventObserver { _,event -> if(event==Lifecycle.Event.ON_STOP) model.leave() }
+        model.setRadarForeground(lifecycle.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED))
+        val observer=LifecycleEventObserver { _,event ->
+            if(event==Lifecycle.Event.ON_RESUME) model.setRadarForeground(true)
+            if(event==Lifecycle.Event.ON_PAUSE) model.setRadarForeground(false)
+            if(event==Lifecycle.Event.ON_STOP) model.leave()
+        }
         lifecycle.lifecycle.addObserver(observer)
-        onDispose { lifecycle.lifecycle.removeObserver(observer);model.leave() }
+        onDispose { model.setRadarForeground(false);lifecycle.lifecycle.removeObserver(observer);model.leave() }
     }
     BackHandler { model.leave();navigateUp() }
     JttyScreen(state,model::onAction,{model.leave();navigateUp()},navigateToLogbook,
@@ -119,7 +124,7 @@ internal fun JttyScreen(
         Column(Modifier.fillMaxSize().padding(insets).imePadding().verticalScroll(rememberScrollState()).padding(horizontal=6.dp),
             verticalArrangement=Arrangement.spacedBy(6.dp)) {
             DigitalRadioStatus(
-                DigitalRadioPanelState(state.radio,state.pass,state.position,state.track,0f to 0f,false,false),
+                DigitalRadioPanelState(state.radio,state.pass,state.position,state.track,state.orientationValues,state.shouldShowSweep,state.shouldUseCompass),
                 {action(JttyAction.Disconnect)}, {action(JttyAction.Track)}, {action(JttyAction.EmergencyStop)},
                 connect,back,large,{large=it},expanded,{expanded=it},Modifier.fillMaxWidth()
             )

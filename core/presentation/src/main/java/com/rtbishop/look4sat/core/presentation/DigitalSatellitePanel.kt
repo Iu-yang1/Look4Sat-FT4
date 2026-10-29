@@ -40,8 +40,10 @@ fun DigitalSatellitePanel(
     @Composable fun Radar(modifier: Modifier) {
         Column(modifier,horizontalAlignment=Alignment.CenterHorizontally) {
             if(position!=null) {
+                if(large) {
                 Text(stringResource(R.string.radar_az_text)+" "+stringResource(R.string.radar_az_value,Math.toDegrees(position.azimuth)),style=MaterialTheme.typography.labelSmall)
                 Text(stringResource(R.string.radar_el_text)+" "+stringResource(R.string.radar_el_value,Math.toDegrees(position.elevation)),style=MaterialTheme.typography.labelSmall)
+                }
                 RadarViewCompose(item=position,items=track,azimElev=orientation,shouldShowSweep=sweep,shouldUseCompass=compass,
                     modifier=Modifier.fillMaxWidth().aspectRatio(1f))
                 if(large) Text(stringResource(R.string.radar_alt_value,position.altitude)+" · "+

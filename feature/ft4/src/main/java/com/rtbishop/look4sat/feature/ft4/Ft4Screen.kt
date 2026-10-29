@@ -122,17 +122,21 @@ fun Ft4ShellDestination(navigateUp: () -> Unit, navigateToLogbook: () -> Unit) {
     ) { granted -> if (granted) viewModel.onAction(Ft4Action.ConnectRadios) }
 
     DisposableEffect(lifecycleOwner) {
+        viewModel.setRadarForeground(lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED))
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
                 lifecycleResumed = true
+                viewModel.setRadarForeground(true)
             }
             if (event == Lifecycle.Event.ON_PAUSE) {
                 lifecycleResumed = false
+                viewModel.setRadarForeground(false)
             }
             if (event == Lifecycle.Event.ON_STOP) viewModel.onAction(Ft4Action.Leave)
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose {
+            viewModel.setRadarForeground(false)
             lifecycleOwner.lifecycle.removeObserver(observer)
             viewModel.onAction(Ft4Action.Leave)
         }

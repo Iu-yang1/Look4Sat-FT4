@@ -26,6 +26,7 @@ data class JttyState(
     val presets: List<String> = emptyList(), val busy: Boolean = false,
     val records: List<QsoRecord> = emptyList(), val error: String? = null, val saved: Boolean = false,
     val audioReady: Boolean = false, val audioRoute: String = "", val networkAudio: Boolean = false,
+    val orientationValues: Pair<Float,Float> = 0f to 0f, val shouldUseCompass: Boolean = false, val shouldShowSweep: Boolean = false,
     val usesVox: Boolean = false, val pttSupported: Boolean = false, val draftError: String? = null
 ) {
     val transmitReady: Boolean get() = !busy && frames!=null &&
@@ -56,6 +57,10 @@ sealed interface JttyAction {
 }
 
 class JttyViewModel(private val container: IMainContainer): ViewModel() {
+    private val radarOrientation=RadarOrientationSession(viewModelScope,container.provideSensorsRepo(),
+        container.settingsRepo.otherSettings.map {it.stateOfSensors},
+        container.settingsRepo.otherSettings.map {it.compassOffsetDegrees},container.settingsRepo.stationPosition)
+    fun setRadarForeground(active: Boolean)=radarOrientation.setForeground(active)
     private val service=container.jttyService
     private val transmitter=container.jttyTransmitter
     private val mutable=MutableStateFlow(JttyState(presets=container.settingsRepo.jttyPresets(),
@@ -68,6 +73,12 @@ class JttyViewModel(private val container: IMainContainer): ViewModel() {
     private var validationJob: Job?=null
     private var entered=false
     init {
+        viewModelScope.launch {radarOrientation.state.collect { orientation ->
+            mutable.update {it.copy(orientationValues=orientation.angles,shouldUseCompass=orientation.enabled)}
+        }}
+        viewModelScope.launch {container.settingsRepo.otherSettings.collect {settings ->
+            mutable.update {it.copy(shouldShowSweep=settings.stateOfSweep)}
+        }}
         viewModelScope.launch { service.state.collect { receive -> mutable.update { it.copy(receive=receive) } } }
         viewModelScope.launch { transmitter.busy.collect { busy -> mutable.update { it.copy(busy=busy) } } }
         viewModelScope.launch { container.radioTrackingService.state.collect { radio -> mutable.update { it.copy(radio=radio) } } }
@@ -114,6 +125,7 @@ class JttyViewModel(private val container: IMainContainer): ViewModel() {
         catch(error: Exception) { mutable.update { it.copy(error=error.message) } }
     }
     fun leave() {
+        setRadarForeground(false)
         entered=false;generation++;transmitJob?.cancel()
         container.appScope.launch {
             try { transmitter.stop() }
@@ -206,7 +218,7 @@ class JttyViewModel(private val container: IMainContainer): ViewModel() {
         try { block() } catch(cancelled: CancellationException) { throw cancelled }
         catch(error: Exception) { mutable.update { it.copy(error=error.message ?: "JTTY failed") } }
     }
-    override fun onCleared() { leave() }
+    override fun onCleared() { radarOrientation.close();leave() }
     companion object {
         fun factory(container: IMainContainer)=viewModelFactory { initializer { JttyViewModel(container) } }
     }

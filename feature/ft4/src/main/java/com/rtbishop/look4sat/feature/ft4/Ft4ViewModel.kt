@@ -57,7 +57,13 @@ class Ft4ViewModel(
     private val transmitter = container.ft4AudioTransmitter
     private val clock = container.disciplinedClock
     private val radioService = container.radioTrackingService
-    private val sensorsRepo = container.provideSensorsRepo()
+    private val radarOrientation = com.rtbishop.look4sat.core.domain.repository.RadarOrientationSession(
+        viewModelScope, container.provideSensorsRepo(),
+        container.settingsRepo.otherSettings.map { it.stateOfSensors },
+        container.settingsRepo.otherSettings.map { it.compassOffsetDegrees },
+        container.settingsRepo.stationPosition
+    )
+    fun setRadarForeground(active: Boolean) = radarOrientation.setForeground(active)
     private val scheduler = DisciplinedFt4SlotScheduler()
     private val automationController = Ft4AutomationController()
     private var automationJob: Job? = null
@@ -106,7 +112,6 @@ class Ft4ViewModel(
                 screenActive = true
                 val audioAllowed=action.granted || mutableState.value.usesNetworkAudio
                 mutableState.update { it.copy(hasMicrophonePermission = audioAllowed) }
-                if (container.settingsRepo.otherSettings.value.stateOfSensors) sensorsRepo.enableSensor()
                 if (audioAllowed) {
                     startReceivingIfAvailable()
                 } else {
@@ -218,11 +223,9 @@ class Ft4ViewModel(
             container.settingsRepo.otherSettings.collect { settings ->
                 mutableState.update {
                     it.copy(
-                        shouldUseCompass = settings.stateOfSensors,
                         shouldShowSweep = settings.stateOfSweep
                     )
                 }
-                if (settings.stateOfSensors) sensorsRepo.enableSensor() else sensorsRepo.disableSensor()
             }
         }
         viewModelScope.launch {
@@ -318,13 +321,8 @@ class Ft4ViewModel(
     }
 
     private fun collectPhoneOrientation() = viewModelScope.launch {
-        sensorsRepo.sensorData.collect { orientation ->
-            val declination = sensorsRepo.getMagDeclination(container.settingsRepo.stationPosition.value)
-            val offset = container.settingsRepo.otherSettings.value.compassOffsetDegrees
-            val azimuth = ((orientation.first + declination + offset) % 360f + 360f) % 360f
-            mutableState.update {
-                it.copy(orientationValues = azimuth to orientation.second)
-            }
+        radarOrientation.state.collect { orientation ->
+            mutableState.update { it.copy(orientationValues=orientation.angles,shouldUseCompass=orientation.enabled) }
         }
     }
 
@@ -807,7 +805,7 @@ class Ft4ViewModel(
         val sessionGeneration = activeQsoGeneration
         automationJob?.cancel()
         manualTransmitJob?.cancel()
-        sensorsRepo.disableSensor()
+        setRadarForeground(false)
         cleanupScope.launch {
             transmitter.emergencyStop()
             finishActiveQso(QsoStatus.ABORTED, sessionGeneration)
@@ -816,6 +814,7 @@ class Ft4ViewModel(
     }
 
     override fun onCleared() {
+        radarOrientation.close()
         closeOperations()
     }
 

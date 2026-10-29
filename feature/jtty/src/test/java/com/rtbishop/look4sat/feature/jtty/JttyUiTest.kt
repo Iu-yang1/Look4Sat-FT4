@@ -84,4 +84,16 @@ class JttyUiTest {
         }
     }
 
+    @Test fun smallRadarHidesAnglesAndLargeRadarKeepsThem() {
+        val large=mutableStateOf(false)
+        compose.setContent {MainTheme {
+            DigitalSatellitePanel("RS-44","",OrbitalPos(azimuth=1.0,elevation=0.5),emptyList(),large.value)
+        }}
+        compose.onAllNodesWithText("Azimuth",substring=true).assertCountEquals(0)
+        compose.onAllNodesWithText("Elevation",substring=true).assertCountEquals(0)
+        compose.runOnIdle {large.value=true}
+        compose.onNodeWithText("Azimuth",substring=true).assertExists()
+        compose.onNodeWithText("Elevation",substring=true).assertExists()
+    }
+
 }

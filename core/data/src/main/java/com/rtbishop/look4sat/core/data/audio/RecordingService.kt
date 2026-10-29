@@ -3,6 +3,7 @@ package com.rtbishop.look4sat.core.data.audio
 
 import android.content.Context
 import android.media.AudioDeviceInfo
+import android.media.AudioAttributes
 import android.media.MediaPlayer
 import android.net.Uri
 import android.os.Environment
@@ -30,7 +31,8 @@ internal class RecordingService(
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
     private val mainDispatcher: CoroutineDispatcher = Dispatchers.Main,
     directory: File? = null,
-    private val diagnostics: IControlDiagnostics = NoOpControlDiagnostics
+    private val diagnostics: IControlDiagnostics = NoOpControlDiagnostics,
+    private val mediaPlayerFactory: () -> MediaPlayer = ::MediaPlayer
 ) : IRecordingService {
     private val mutable=MutableStateFlow(RecordingState())
     override val state=mutable.asStateFlow()
@@ -53,6 +55,7 @@ internal class RecordingService(
             return listOf(RecordingSource("wlan","IC-705 WLAN",RecordingSourceKind.WLAN))
         return local.inputDevices.value.filter {(it.external && it.type!=AudioDeviceInfo.TYPE_BLUETOOTH_SCO) || it.type==AudioDeviceInfo.TYPE_BUILTIN_MIC}
             .filter { config.radioAudio.backend!=RadioAudioBackend.ANDROID_DEVICE || it.key==config.radioAudio.rxDeviceKey }
+            .distinctBy { if(it.type==AudioDeviceInfo.TYPE_BUILTIN_MIC) "phone-microphone" else it.key }
             .map {RecordingSource(it.key,it.name,if(it.external) RecordingSourceKind.DEVICE else RecordingSourceKind.MICROPHONE)}
     }
     @Synchronized override fun start(request: RecordingRequest) {
@@ -194,29 +197,43 @@ internal class RecordingService(
         return file
     }
     override suspend fun play(id: String)=withContext(mainDispatcher) {
-        check(!state.value.active && radio().state.value.pttState==PttState.OFF) {"Stop recording/transmission before playback"}
+        check(!state.value.active && radio().state.value.pttState==PttState.OFF && !radio().state.value.catTransmitting) {"Stop recording/transmission before playback"}
         stopPlayback()
-        val candidate=MediaPlayer();player=candidate
+        mutable.update {it.copy(error=null)}
+        val candidate=mediaPlayerFactory();player=candidate
         try {
             val outputs=context.getSystemService(android.media.AudioManager::class.java)
                 .getDevices(android.media.AudioManager.GET_DEVICES_OUTPUTS)
             val speaker=checkNotNull(outputs.firstOrNull {it.type==AudioDeviceInfo.TYPE_BUILTIN_SPEAKER}) {"Phone playback speaker is unavailable"}
-            if(android.os.Build.VERSION.SDK_INT>=28) check(candidate.setPreferredDevice(speaker)) {"Phone playback route is unavailable"}
-            else check(outputs.all {it.type in listOf(AudioDeviceInfo.TYPE_BUILTIN_SPEAKER,AudioDeviceInfo.TYPE_BUILTIN_EARPIECE)}) {"Disconnect radio audio before playback on this Android version"}
+            if(android.os.Build.VERSION.SDK_INT<28) check(outputs.all {it.type in listOf(AudioDeviceInfo.TYPE_BUILTIN_SPEAKER,AudioDeviceInfo.TYPE_BUILTIN_EARPIECE)}) {"Disconnect radio audio before playback on this Android version"}
+            candidate.setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA)
+                .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build())
             candidate.setDataSource(file(id).absolutePath)
-            candidate.setOnCompletionListener {scope.launch {stopPlayback()}}
-            candidate.setOnErrorListener {_,_,_->scope.launch {stopPlayback()};mutable.update {it.copy(error="Playback failed")};true}
+            candidate.setOnCompletionListener {finished -> if(player===finished) scope.launch {if(player===finished) stopPlayback()}}
+            candidate.setOnErrorListener {failed,what,extra ->
+                if(player===failed) scope.launch {
+                    if(player===failed) {
+                        stopPlayback();mutable.update {it.copy(error="Playback failed")}
+                        diagnostics.record(ControlDiagnosticSource.RADIO,"recording/playback/error","what=$what extra=$extra",ControlDiagnosticSeverity.ERROR)
+                    }
+                }
+                true
+            }
             candidate.setOnPreparedListener {ready -> if(player===ready) scope.launch(mainDispatcher) {
                 try {
+                    // setPreferredDevice needs the native player created by setDataSource.
+                    // Apply it after preparation, before starting even muted playback.
+                    if(android.os.Build.VERSION.SDK_INT>=28) check(ready.setPreferredDevice(speaker)) {"Phone playback route is unavailable"}
                     // Prove routing with muted audio before exposing a recording
                     // to an output that might otherwise feed a radio's VOX.
                     ready.setVolume(0f,0f);ready.start()
                     if(android.os.Build.VERSION.SDK_INT>=28) {
-                        withTimeout(1500) {while(player===ready && ready.routedDevice==null) delay(10)}
+                        withTimeout(1500) {while(player===ready && ready.routedDevice?.id!=speaker.id) delay(10)}
                         if(player!==ready) return@launch
-                        check(ready.routedDevice?.id==speaker.id) {"Playback did not route to the phone speaker"}
                     }
+                    check(!state.value.active && radio().state.value.pttState==PttState.OFF && !radio().state.value.catTransmitting) {"Stop recording/transmission before playback"}
                     ready.seekTo(0);ready.setVolume(1f,1f);mutable.update {it.copy(playing=true)}
+                    diagnostics.record(ControlDiagnosticSource.RADIO,"recording/playback/ready","route=phone-speaker")
                     while(player===ready) {
                         delay(100)
                         if(player!==ready) break
@@ -225,16 +242,25 @@ internal class RecordingService(
                         if(!safe) {ready.setVolume(0f,0f);stopPlayback();mutable.update {it.copy(error="Playback stopped after a radio or output route change")}}
                     }
                 } catch(timeout:TimeoutCancellationException) {
-                    if(player===ready) stopPlayback()
-                    mutable.update {it.copy(error="Phone playback route could not be confirmed")}
+                    if(player===ready) {
+                        stopPlayback();mutable.update {it.copy(error="Phone playback route could not be confirmed")}
+                        diagnostics.record(ControlDiagnosticSource.RADIO,"recording/playback/error","Phone speaker route confirmation timed out",ControlDiagnosticSeverity.ERROR)
+                    }
                 } catch(cancelled:CancellationException) {
                     withContext(NonCancellable) {if(player===ready) stopPlayback()}
                     throw cancelled
                 }
-                catch(error:Exception) {if(player===ready) stopPlayback();mutable.update {it.copy(error=error.message)}}
+                catch(error:Exception) {if(player===ready) {
+                    stopPlayback();mutable.update {it.copy(error=error.message)}
+                    diagnostics.record(ControlDiagnosticSource.RADIO,"recording/playback/error",error.message.orEmpty(),ControlDiagnosticSeverity.ERROR)
+                }}
             }}
             candidate.prepareAsync()
-        } catch(error:Exception) {stopPlayback();throw error}
+        } catch(error:Exception) {
+            stopPlayback()
+            diagnostics.record(ControlDiagnosticSource.RADIO,"recording/playback/error",error.message.orEmpty(),ControlDiagnosticSeverity.ERROR)
+            throw error
+        }
     }
     override suspend fun stopPlayback()=withContext(mainDispatcher) {
         player?.release();player=null;mutable.update {it.copy(playing=false)}

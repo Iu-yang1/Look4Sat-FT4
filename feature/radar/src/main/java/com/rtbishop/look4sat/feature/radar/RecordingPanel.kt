@@ -40,7 +40,7 @@ internal fun RecordingPanel(satellite: String,passAos: Long?,providedRecorder: I
     val files by recorder.files.collectAsStateWithLifecycle()
     val scope=rememberCoroutineScope()
     var selection by rememberSaveable {mutableStateOf("")}
-    var pending by remember {mutableStateOf<RecordingRequest?>(null)}
+    var pendingSource by rememberSaveable {mutableStateOf<String?>(null)}
     var exportFile by rememberSaveable {mutableStateOf<String?>(null)}
     var deleting by rememberSaveable {mutableStateOf<String?>(null)}
     var error by remember {mutableStateOf<String?>(null)}
@@ -54,16 +54,19 @@ internal fun RecordingPanel(satellite: String,passAos: Long?,providedRecorder: I
         if(uri!=null && id!=null) operation {recorder.export(id,uri.toString());exported=true}
         exportFile=null
     }
-    val notifications=rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
-        pending?.let(recorder::start);pending=null
+    fun startPending() {
+        val source=pendingSource ?: return
+        pendingSource=null
+        recorder.start(RecordingRequest(source,satellite,passAos))
     }
+    val notifications=rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {startPending()}
     fun startWithNotification() {
         if(Build.VERSION.SDK_INT>=33 && ContextCompat.checkSelfPermission(context,Manifest.permission.POST_NOTIFICATIONS)!=PackageManager.PERMISSION_GRANTED)
             notifications.launch(Manifest.permission.POST_NOTIFICATIONS)
-        else {pending?.let(recorder::start);pending=null}
+        else startPending()
     }
     val microphone=rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {granted ->
-        if(granted) startWithNotification() else {pending=null;error=context.getString(R.string.ft4_microphone_required)}
+        if(granted) startWithNotification() else {pendingSource=null;error=context.getString(R.string.ft4_microphone_required)}
     }
     LaunchedEffect(Unit) {recorder.refreshFiles()}
     val sources=recorder.sources()
@@ -84,7 +87,7 @@ internal fun RecordingPanel(satellite: String,passAos: Long?,providedRecorder: I
                 Button(onClick={operation {recorder.stop()}},modifier=Modifier.fillMaxWidth()) {Text(stringResource(R.string.recording_stop))}
             } else Button(onClick={
                 val source=sources.firstOrNull {it.id==selection} ?: return@Button
-                pending=RecordingRequest(source.id,satellite,passAos)
+                pendingSource=source.id
                 if(source.kind in listOf(RecordingSourceKind.MICROPHONE,RecordingSourceKind.DEVICE) &&
                     ContextCompat.checkSelfPermission(context,Manifest.permission.RECORD_AUDIO)!=PackageManager.PERMISSION_GRANTED)
                     microphone.launch(Manifest.permission.RECORD_AUDIO)

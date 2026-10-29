@@ -114,6 +114,19 @@ interface ISettingsRepo {
     fun setAmSatCallsign(callsign: String)
     //endregion
 
+    //region # Shared elevation circles on all satellite maps
+    /** Persisted, ordered minimum-elevation contours (degrees, 0..90). Shared by regular and radar pass maps. */
+    // Interface defaults keep unrelated test/fake SettingsRepo implementations compatible.
+    // Production SettingsRepo overrides these with a persisted, hot StateFlow.
+    val mapElevationAngles: StateFlow<List<Double>>
+        get() = kotlinx.coroutines.flow.MutableStateFlow(listOf(10.0))
+    fun setMapElevationAngles(angles: List<Double>) = Unit
+    /** Shared switch state for elevation circles on all map entry points; defaults to off. */
+    val mapElevationContoursEnabled: StateFlow<Boolean>
+        get() = kotlinx.coroutines.flow.MutableStateFlow(false)
+    fun setMapElevationContoursEnabled(enabled: Boolean) = Unit
+    //endregion
+
     //region # Worked-grid data (written by the LoTW / Wavelog syncs)
     fun getWorkedGrids(): Set<String>
     fun setWorkedGrids(grids: Set<String>)

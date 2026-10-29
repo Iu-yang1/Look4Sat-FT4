@@ -14,7 +14,7 @@ name: Build Look4Sat APK
 # Local Gradle builds keep using the catalog unchanged. Most runs are manual; only the specific release commit has a guarded push trigger.
 
 on:
-  # One-shot v18 release automation; only the specific release commit runs on push.
+  # One-shot v18.1 release automation; only the specific release commit runs on push.
   push:
     branches: [main]
   workflow_dispatch:
@@ -38,7 +38,7 @@ permissions:
 
 jobs:
   build:
-    if: "${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && startsWith(github.event.head_commit.message, 'release: v4.4.8-ba7opf.18')) }}"
+    if: "${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && startsWith(github.event.head_commit.message, 'release: v4.4.8-ba7opf.18.1')) }}"
     runs-on: ubuntu-latest
     timeout-minutes: 50
     steps:
@@ -239,21 +239,13 @@ jobs:
           NOTES="$NOTES_IN"
           if [ "$GITHUB_EVENT_NAME" = "push" ]; then
             NOTES="$(cat <<'RELEASE_NOTES'
-          ## v18 — English
-          - Added configurable dashed satellite elevation contours on the map (Morandi palette) with right-side elevation labels.
-          - Added on-map elevation readouts for the local and matched stations, updating with the selected pass time.
-          - Persisted contour angles and the contour visibility switch across satellite and radar/match maps and app restarts.
-          - Tapping the contour switch now toggles visibility without opening settings; tapping elsewhere in its pill opens the settings dialog.
-          - Matched the contour settings dialog to the map's QSO-detail card while leaving existing bottom-sheet dialogs unchanged.
-          - Added geometry and settings persistence regression tests.
+          ## v18.1 — English
+          - Fixed elevation-circle angle labels jumping away from the right side when a satellite passes across polar regions.
+          - Anchored labels to the contour's due-east bearing and added regression tests for both poles and the antimeridian.
 
-          ## v18 — 中文
-          - 新增卫星地图可配置的等仰角虚线圆，采用莫兰迪配色，右侧断口标注角度数值。
-          - 显示本地台站与匹配台站的卫星仰角，并随过境时间变化实时更新。
-          - 仰角圆角度和开关状态在普通卫星地图、雷达/匹配过境地图间共享，重启后仍然保留。
-          - 点击开关仅控制显示，不再弹出设置；点击胶囊中开关外的位置才打开设置窗口。
-          - 仰角圆设置采用地图通联详情式居中卡片，原有底部弹窗保持不变。
-          - 新增仰角几何和设置持久化回归测试。
+          ## v18.1 — 中文
+          - 修复卫星经过极区时，仰角圆右侧的角度数字跳到其他位置的问题。
+          - 将标签锚定在仰角圆的正东方位，并新增覆盖南北极区及国际日期变更线的回归测试。
           RELEASE_NOTES
           )"
           fi

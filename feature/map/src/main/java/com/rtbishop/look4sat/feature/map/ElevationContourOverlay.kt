@@ -48,6 +48,14 @@ internal fun elevationContour(satellite: OrbitalPos, elevationDegrees: Double): 
 }
 
 /**
+ * Contours are sampled at one-degree bearings starting from north.
+ * Bearing 90° is consistently on the east/right side, even if the circle spans
+ * a pole. Choosing the point with maximum longitude can instead jump ~180°.
+ */
+internal fun elevationContourLabelAnchorIndex(circle: List<GeoPoint>): Int? =
+    90.takeIf { circle.size > it }
+
+/**
  * Shared with the matching-station marker in MapScreen: labels and markers must
  * use precisely the same shade of blue.
  */
@@ -98,13 +106,10 @@ internal class ElevationContourOverlay : FolderOverlay() {
             val color = palette[index % palette.size]
             val text = if (angle % 1.0 == 0.0) "${angle.toInt()}°" else "${angle}°"
 
-            // Find the easternmost point in the selected satellite's local longitude
-            // frame, not the clipped ±180° world copy. This avoids putting a label
-            // on the left of the ring when the satellite is near the date line.
-            val satelliteLon = Math.toDegrees(satellite.longitude)
-            val anchorIndex = (0 until 360).maxByOrNull { i ->
-                ((circle[i].longitude - satelliteLon + 540.0) % 360.0) - 180.0
-            } ?: return@forEachIndexed
+            // Use the contour's due-east bearing as a stable right-side anchor.
+            // Maximizing longitude jumps to the far side when a contour encloses
+            // a pole (or the satellite passes near one).
+            val anchorIndex = elevationContourLabelAnchorIndex(circle) ?: return@forEachIndexed
             val anchorGeo = circle[anchorIndex]
             val anchorPx = mapView.projection.toPixels(anchorGeo, Point())
             val labelTextSizePx = 12f * mapView.context.resources.displayMetrics.scaledDensity

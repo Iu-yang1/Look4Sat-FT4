@@ -43,6 +43,8 @@ interface IMainContainer {
     val lotwUploadRepository: ILoTWUploadRepository
     val amSatRepo: IAmSatRepository
     val audioHub: IAudioHub
+    val recordingService: com.rtbishop.look4sat.core.domain.audio.IRecordingService
+        get() = error("Recording is unavailable")
     val radioAudioSession: com.rtbishop.look4sat.core.domain.audio.IRadioAudioSession
         get() = error("Radio audio is unavailable")
     val ft4Service: IFt4Service

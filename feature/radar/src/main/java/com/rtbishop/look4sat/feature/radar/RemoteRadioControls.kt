@@ -35,7 +35,6 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.rtbishop.look4sat.core.domain.repository.PttState
 import com.rtbishop.look4sat.core.domain.repository.RadioTransmitOwner
-import com.rtbishop.look4sat.core.domain.model.RadioRecordingAction
 import com.rtbishop.look4sat.core.presentation.R
 import com.rtbishop.look4sat.core.presentation.formatFrequency
 
@@ -51,9 +50,6 @@ internal fun RemoteRadioControls(control: RadioControlSubState, onAction: (Radar
     val remote = control.remoteRadio ?: return
     val context = LocalContext.current
     val microphonePermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
-    val saveRecording = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("audio/wav")) { uri ->
-        if (uri != null) onAction(RadarAction.SaveRecording(uri.toString()))
-    }
     val caps = remote.capabilities
     val cwBlockReason = when {
         !remote.connected -> stringResource(R.string.rc_l4s_need_connection)
@@ -121,35 +117,11 @@ internal fun RemoteRadioControls(control: RadioControlSubState, onAction: (Radar
             Text(stringResource(R.string.rc_l4s_stop))
         }
         if (remote.isN76) {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = { action(RadarAction.RadioMonitor(!remote.radioMonitor)) },
-                    modifier = Modifier.weight(1f).heightIn(min = 48.dp), enabled = !control.frequencyEditingLocked) {
-                    Text(stringResource(if (remote.radioMonitor) R.string.rc_n76_monitor_off else R.string.rc_n76_monitor))
-                }
-                if (remote.recordingSupported) OutlinedButton(onClick = {
-                    if (!remote.recording && remote.recordingNeedsMicrophone &&
-                        context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED)
-                        microphonePermission.launch(Manifest.permission.RECORD_AUDIO)
-                    else action(RadarAction.Recording(if (remote.recording) RadioRecordingAction.STOP else RadioRecordingAction.START))
-                }, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) {
-                    Text(stringResource(if (remote.recording) R.string.rc_n76_stop_recording else R.string.rc_n76_record))
-                }
+            OutlinedButton(onClick = { action(RadarAction.RadioMonitor(!remote.radioMonitor)) },
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp), enabled = !control.frequencyEditingLocked) {
+                Text(stringResource(if (remote.radioMonitor) R.string.rc_n76_monitor_off else R.string.rc_n76_monitor))
             }
-            if (remote.recordingSupported) OutlinedButton(onClick = {
-                action(RadarAction.Recording(if (remote.playingRecording) RadioRecordingAction.STOP_PLAYBACK else RadioRecordingAction.PLAY_LAST))
-            }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
-                enabled = !remote.recording && remote.lastRecording != null && control.transmitOwner == RadioTransmitOwner.NONE) {
-                Text(stringResource(if (remote.playingRecording) R.string.rc_n76_stop_playback else R.string.rc_n76_play_last))
-            }
-            if (remote.recordingSupported && remote.lastRecording != null) OutlinedButton(onClick = {
-                saveRecording.launch(remote.lastRecording?.substringAfterLast('/')?.takeIf { it.endsWith(".wav", true) } ?: "N76-recording.wav")
-            }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp), enabled = !remote.recording && !remote.recordingExporting) {
-                Text(stringResource(if (remote.recordingExporting) R.string.rc_n76_saving else R.string.rc_n76_save))
-            }
-            val recordingError = remote.recordingError ?: remote.bluetoothAudioError
-            if (recordingError != null) Text(recordingError, color = MaterialTheme.colorScheme.error)
-            else if (remote.recordingExportError != null) Text(stringResource(R.string.rc_n76_export_retry), color = MaterialTheme.colorScheme.error)
-            else if (remote.recordingExported && !remote.recordingExporting) Text(stringResource(R.string.rc_n76_saved), style = MaterialTheme.typography.bodySmall)
+            remote.bluetoothAudioError?.let {Text(it,color=MaterialTheme.colorScheme.error)}
         }
     }
 }

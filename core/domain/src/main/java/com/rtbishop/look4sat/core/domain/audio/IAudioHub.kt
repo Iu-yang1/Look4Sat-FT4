@@ -19,6 +19,7 @@ enum class AudioConsumer {
     FT4_DECODE,
     FT4_SPECTRUM,
     JTTY,
+    RECORDING,
     N76_VOICE
 }
 

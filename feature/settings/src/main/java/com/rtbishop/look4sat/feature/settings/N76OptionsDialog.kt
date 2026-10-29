@@ -1,11 +1,6 @@
 /* Copyright 2026 Look4Sat contributors. SPDX-License-Identifier: GPL-3.0-or-later */
 package com.rtbishop.look4sat.feature.settings
 
-import android.content.Intent
-import android.app.Activity
-import android.provider.DocumentsContract
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -26,12 +21,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
@@ -43,35 +36,12 @@ import com.rtbishop.look4sat.core.domain.model.N76FirmwareMode
 import com.rtbishop.look4sat.core.domain.model.N76Power
 import com.rtbishop.look4sat.core.presentation.R
 import com.rtbishop.look4sat.core.presentation.SharedDialog
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 @Composable
 internal fun N76OptionsDialog(initial: N76ControlOptions, audioEnabled: Boolean,
     inputs: List<AudioInputDevice>, onSave: (N76ControlOptions) -> Unit, onDismiss: () -> Unit) {
     var draft by remember { mutableStateOf(initial.normalized()) }
     var interval by remember { mutableStateOf(initial.pollMillis.toString()) }
-    var folderError by remember { mutableStateOf(false) }
-    val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-    val folder = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-        val uri = result.data?.data
-        if (result.resultCode == Activity.RESULT_OK && uri != null) scope.launch {
-            val granted = withContext(Dispatchers.IO) { runCatching {
-                val flags = (result.data?.flags ?: 0) and (Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
-                check(flags and Intent.FLAG_GRANT_WRITE_URI_PERMISSION != 0)
-                val parent = DocumentsContract.buildDocumentUriUsingTree(uri, DocumentsContract.getTreeDocumentId(uri))
-                val writable = context.contentResolver.query(parent, arrayOf(DocumentsContract.Document.COLUMN_FLAGS), null, null, null)?.use {
-                    it.moveToFirst() && it.getInt(0) and DocumentsContract.Document.FLAG_DIR_SUPPORTS_CREATE != 0
-                } == true
-                check(writable)
-                context.contentResolver.takePersistableUriPermission(uri, flags)
-            }.isSuccess }
-            folderError = !granted
-            if (granted) draft = draft.copy(outputFolderUri = uri.toString())
-        }
-    }
     val poll = n76PollMillis(interval)
     val valid = poll != null
     SharedDialog(title = stringResource(R.string.rc_n76_options), onCancel = onDismiss, onDismissRequest = onDismiss,
@@ -110,23 +80,12 @@ internal fun N76OptionsDialog(initial: N76ControlOptions, audioEnabled: Boolean,
                 draft = draft.copy(forceTxCtcss = it != "follow", txCtcssHz = it.toDoubleOrNull())
             }
             N76Switch(stringResource(R.string.rc_n76_speaker_monitor), draft.speakerMonitor, audioEnabled) { draft = draft.copy(speakerMonitor = it) }
-            N76Switch(stringResource(R.string.rc_n76_record_radio), draft.recordRadio, audioEnabled || draft.recordRadio) { draft = draft.copy(recordRadio = it) }
-            N76Switch(stringResource(R.string.rc_n76_record_on_track), draft.recordOnTrack) { draft = draft.copy(recordOnTrack = it) }
             N76Choice(stringResource(R.string.rc_n76_mic_input), draft.inputDeviceKey,
                 listOf<Pair<String?, String>>(null to stringResource(R.string.rc_n76_auto)) + inputs.map { it.key to it.name }) {
                 draft = draft.copy(inputDeviceKey = it)
             }
             N76Choice(stringResource(R.string.rc_n76_mic_gain), draft.micGainDb, listOf(0, 6, 12, 18, 24).map { it to "+$it dB" }) {
                 draft = draft.copy(micGainDb = it)
-            }
-            OutlinedButton(onClick = { folder.launch(Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).addFlags(
-                Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION or
-                    Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION or Intent.FLAG_GRANT_PREFIX_URI_PERMISSION)) }, modifier = Modifier.fillMaxWidth()) {
-                Text(stringResource(if (draft.outputFolderUri.isBlank()) R.string.rc_n76_choose_folder else R.string.rc_n76_change_folder))
-            }
-            if (folderError) Text(stringResource(R.string.rc_n76_folder_error))
-            if (draft.outputFolderUri.isNotBlank()) OutlinedButton(onClick = { draft = draft.copy(outputFolderUri = "") }, modifier = Modifier.fillMaxWidth()) {
-                Text(stringResource(R.string.rc_n76_default_folder))
             }
         }
     }

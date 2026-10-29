@@ -37,7 +37,10 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-class MainApplication : Application(), IContainerProvider {
+class MainApplication : Application(), IContainerProvider, com.rtbishop.look4sat.core.domain.audio.IRecordingForegroundLauncher {
+    override fun startRecordingForeground(request: com.rtbishop.look4sat.core.domain.audio.RecordingRequest) {
+        androidx.core.content.ContextCompat.startForegroundService(this,RecordingForegroundService.startIntent(this,request))
+    }
 
     private lateinit var container: IMainContainer
 

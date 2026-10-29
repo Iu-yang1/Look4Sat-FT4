@@ -52,7 +52,9 @@ internal class N76AudioSession(
     private val transport: RadioTransport,
     private val io: N76AudioIo,
     private val scope: CoroutineScope,
-    private val diagnostics: IControlDiagnostics = NoOpControlDiagnostics
+    private val diagnostics: IControlDiagnostics = NoOpControlDiagnostics,
+    private val receivePcm: (ShortArray)->Unit = {},
+    private val receiveDiscontinuity: ()->Unit = {}
 ) : N76Audio {
     private val mutableState = MutableStateFlow(N76AudioState())
     override val state: StateFlow<N76AudioState> = mutableState
@@ -70,6 +72,7 @@ internal class N76AudioSession(
         if (mutableState.value.connected) return@withLock true
         try {
             stopLocked()
+            receiveDiscontinuity()
             receiver?.cancelAndJoin(); receiver = null
             player?.cancelAndJoin(); player = null
             playback?.close(); playback = null
@@ -93,12 +96,14 @@ internal class N76AudioSession(
                     while (isActive && transport.isConnected) {
                         for (frame in framing.feed(transport.readAvailable(4096))) {
                             val command = frame.firstOrNull()?.toInt()?.and(255)
-                            if (command == 1) { codec.reset(); continue }
+                            if (command == 1) { codec.reset(); receiveDiscontinuity(); continue }
                             if (command !in listOf(0, 3) || mutableState.value.transmitting) continue
                             var offset = 1
                             while (offset < frame.size) {
                                 val length = codec.frameLength(frame, offset) ?: break
-                                val pcm = codec.decode(frame, offset) ?: break
+                                val pcm = codec.decode(frame, offset)
+                                if(pcm==null) {receiveDiscontinuity();break}
+                                receivePcm(pcm)
                                 radioPcmSink?.invoke(pcm)
                                 queue.trySend(pcm)
                                 offset += length

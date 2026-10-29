@@ -54,6 +54,7 @@ class MainActivity : ComponentActivity() {
     override fun onStart() {
         super.onStart()
         val mainContainer = (applicationContext as IContainerProvider).getMainContainer()
+        mainContainer.recordingService.setApplicationForeground(true)
         mainContainer.appScope.launch { mainContainer.radioTrackingService.setAudioForeground(true) }
     }
 
@@ -64,10 +65,13 @@ class MainActivity : ComponentActivity() {
 
     override fun onStop() {
         val mainContainer = (applicationContext as IContainerProvider).getMainContainer()
+        mainContainer.recordingService.setApplicationForeground(false)
         mainContainer.appScope.launch {
-            mainContainer.ft4AudioTransmitter.emergencyStop()
-            mainContainer.ft4TransmitCoordinator.emergencyPttOff()
-            mainContainer.radioTrackingService.setAudioForeground(false)
+            runCatching {mainContainer.recordingService.stopPlayback()}
+            runCatching {mainContainer.ft4AudioTransmitter.emergencyStop()}
+            runCatching {mainContainer.jttyTransmitter.stop()}
+            runCatching {mainContainer.ft4TransmitCoordinator.emergencyPttOff()}
+            if(!mainContainer.recordingService.state.value.active) mainContainer.radioTrackingService.setAudioForeground(false)
             mainContainer.audioHub.stopAll()
         }
         super.onStop()

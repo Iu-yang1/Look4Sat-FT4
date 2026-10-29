@@ -362,6 +362,10 @@ private fun RadarScreen(
     val context = LocalContext.current
     var showMatchDialog by rememberSaveable { mutableStateOf(false) }
     var showToolsMenu by remember { mutableStateOf(false) }
+    var showRecording by rememberSaveable {mutableStateOf(false)}
+    val recordingContainer=(context.applicationContext as IContainerProvider).getMainContainer()
+    val recordingStatus by recordingContainer.recordingService.state.collectAsStateWithLifecycle()
+    if(showRecording) RecordingPanel(uiState.currentPass?.name.orEmpty(),uiState.currentPass?.aosTime) {showRecording=false}
     val closeToolsMenuThen: (() -> Unit) -> Unit = { action ->
         showToolsMenu = false
         action()
@@ -392,7 +396,9 @@ private fun RadarScreen(
                     matchError = null
                 }
             },
-            onMap = { closeToolsMenuThen(openPassMap) }
+            onMap = { closeToolsMenuThen(openPassMap) },
+            recordingActive = recordingStatus.active,
+            onRecording = {closeToolsMenuThen {showRecording=true}}
         )
     }
     BoxWithConstraints(
@@ -588,7 +594,9 @@ private fun RadarActionsMenu(
     hasPass: Boolean,
     onAddToCalendar: () -> Unit,
     onMatch: () -> Unit,
-    onMap: () -> Unit
+    onMap: () -> Unit,
+    recordingActive: Boolean,
+    onRecording: () -> Unit
 ) {
     val context = LocalContext.current
     Box(modifier = Modifier.size(48.dp)) {
@@ -620,6 +628,11 @@ private fun RadarActionsMenu(
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+            )
+            RadarToolMenuItem(
+                iconRes = R.drawable.ic_radio_tower,
+                label = stringResource(if(recordingActive) R.string.recording_active else R.string.recording_title),
+                onClick = onRecording
             )
             RadarToolMenuItem(
                 iconRes = R.drawable.ic_calendar,

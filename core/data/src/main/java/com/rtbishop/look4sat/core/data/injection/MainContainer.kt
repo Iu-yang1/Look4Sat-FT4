@@ -154,8 +154,16 @@ class MainContainer(private val context: Context) : IMainContainer {
             jttyTransmitter.stop()
         }
     }
-    override val audioHub: IAudioHub by lazy {
+    private val n76ReceivePcm by lazy {com.rtbishop.look4sat.core.data.audio.N76ReceivePcmBus()}
+    private val routedAudioHub: IAudioHub by lazy {
         com.rtbishop.look4sat.core.data.audio.RoutedAudioHub(localAudioHub,radioAudioSession,settingsRepo,appScope)
+    }
+    override val audioHub: IAudioHub by lazy {
+        com.rtbishop.look4sat.core.data.audio.RecordingAudioHub(routedAudioHub) {recordingService.state.value.active}
+    }
+    override val recordingService: com.rtbishop.look4sat.core.domain.audio.IRecordingService by lazy {
+        com.rtbishop.look4sat.core.data.audio.RecordingService(context,appScope,settingsRepo,localAudioHub,
+            routedAudioHub,n76ReceivePcm,{radioAudioSession.state.value},{radioTrackingService},diagnostics=controlDiagnostics)
     }
     override val ft4Service: IFt4Service by lazy { Ft4Service(appScope,audioHub,disciplinedClock) }
     override val jttyService by lazy {
@@ -202,10 +210,10 @@ class MainContainer(private val context: Context) : IMainContainer {
                 com.rtbishop.look4sat.core.data.framework.BluetoothSppRadioTransport(manager, address, controlDiagnostics,
                     java.util.UUID.fromString(com.rtbishop.look4sat.core.data.framework.N76AudioProtocol.SERVICE_UUID)),
                 com.rtbishop.look4sat.core.data.framework.AndroidN76AudioIo(context, audioHub) { settingsRepo.radioControlSettings.value.n76Options },
-                appScope, controlDiagnostics)
+                appScope, controlDiagnostics, receivePcm=n76ReceivePcm::offer,receiveDiscontinuity=n76ReceivePcm::discontinuity)
             },
-            n76RecordingFactory = { com.rtbishop.look4sat.core.data.framework.AndroidN76Recording(context,
-                appScope, controlDiagnostics) { settingsRepo.radioControlSettings.value.n76Options } }
+            // The unified foreground recorder is the only production recording owner.
+            n76RecordingFactory = null
         )
     }
     override val radioTrackingService: IRadioTrackingService by lazy { sharedRadioTrackingService }

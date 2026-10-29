@@ -14,7 +14,7 @@ name: Build Look4Sat APK
 # Local Gradle builds keep using the catalog unchanged. Most runs are manual; only the specific release commit has a guarded push trigger.
 
 on:
-  # One-shot v18.1 release automation; only the specific release commit runs on push.
+  # One-shot v18.2 release automation; only the specific release commit runs on push.
   push:
     branches: [main]
   workflow_dispatch:
@@ -38,7 +38,7 @@ permissions:
 
 jobs:
   build:
-    if: "${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && startsWith(github.event.head_commit.message, 'release: v4.4.8-ba7opf.18.1')) }}"
+    if: "${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && startsWith(github.event.head_commit.message, 'release: v4.4.8-ba7opf.18.2')) }}"
     runs-on: ubuntu-latest
     timeout-minutes: 50
     steps:
@@ -239,13 +239,11 @@ jobs:
           NOTES="$NOTES_IN"
           if [ "$GITHUB_EVENT_NAME" = "push" ]; then
             NOTES="$(cat <<'RELEASE_NOTES'
-          ## v18.1 — English
-          - Fixed elevation-circle angle labels jumping away from the right side when a satellite passes across polar regions.
-          - Anchored labels to the contour's due-east bearing and added regression tests for both poles and the antimeridian.
+          ## v18.2 — English
+          - Refreshed elevation-contour colors with a soft pastel palette for better contrast on the dark map: apricot orange, lavender, sage mint, and glacier blue.
 
-          ## v18.1 — 中文
-          - 修复卫星经过极区时，仰角圆右侧的角度数字跳到其他位置的问题。
-          - 将标签锚定在仰角圆的正东方位，并新增覆盖南北极区及国际日期变更线的回归测试。
+          ## v18.2 — 中文
+          - 更新仰角圆配色，采用更适合深色地图的柔和粉彩色系：杏橙、薰衣草紫、鼠尾草薄荷绿和冰川蓝。
           RELEASE_NOTES
           )"
           fi

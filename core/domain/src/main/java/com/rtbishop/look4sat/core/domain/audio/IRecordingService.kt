@@ -5,7 +5,7 @@ import kotlinx.coroutines.flow.StateFlow
 
 enum class RecordingSourceKind { MICROPHONE, DEVICE, WLAN, N76 }
 data class RecordingSource(val id: String, val name: String, val kind: RecordingSourceKind)
-data class RecordingRequest(val sourceId: String, val satellite: String = "", val passAos: Long? = null)
+data class RecordingRequest(val sourceId: String, val satellite: String = "", val passAos: Long? = null, val maxElevation: Double? = null)
 data class RecordingFile(val id: String, val name: String, val bytes: Long, val modified: Long)
 enum class RecordingPhase { IDLE, PREPARING, RECORDING, FINISHING }
 data class RecordingState(

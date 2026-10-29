@@ -23,8 +23,9 @@ class RecordingPanelTest {
         override val state=MutableStateFlow(RecordingState())
         override val files=MutableStateFlow(emptyList<RecordingFile>())
         var starts=0;var stops=0
+        var lastRequest:RecordingRequest?=null
         override fun sources()=listOf(RecordingSource("wlan","IC-705 WLAN",RecordingSourceKind.WLAN))
-        override fun start(request:RecordingRequest) {starts++;state.value=RecordingState(phase=RecordingPhase.RECORDING,source=sources().single())}
+        override fun start(request:RecordingRequest) {starts++;lastRequest=request;state.value=RecordingState(phase=RecordingPhase.RECORDING,source=sources().single())}
         override fun failStart(reason:String)=Unit
         override suspend fun runRecording(request:RecordingRequest)=Unit
         override suspend fun stop() {stops++;state.value=RecordingState()}
@@ -37,12 +38,12 @@ class RecordingPanelTest {
     }
     private fun exercise(dark:Boolean) {
         val recorder=Recorder();val visible=mutableStateOf(true)
-        compose.setContent {MainTheme(isDarkTheme=dark) {if(visible.value) RecordingPanel("RS-44",10,recorder) {visible.value=false}}}
+        compose.setContent {MainTheme(isDarkTheme=dark) {if(visible.value) RecordingPanel("RS-44",10,recorder,maxElevation=87.8) {visible.value=false}}}
         compose.onNodeWithText("Start recording").assertIsNotEnabled()
         compose.onNodeWithText("IC-705 WLAN").performClick()
         compose.onNodeWithText("Start recording").assertIsEnabled().performClick()
         compose.onNodeWithText("Stop recording").assertExists()
-        compose.runOnIdle {assertEquals(1,recorder.starts);visible.value=false}
+        compose.runOnIdle {assertEquals(1,recorder.starts);assertEquals(RecordingRequest("wlan","RS-44",10,87.8),recorder.lastRequest);visible.value=false}
         compose.runOnIdle {assertEquals(0,recorder.stops);assertTrue(recorder.state.value.active)}
     }
     @Test fun dismissingDarkPanelDoesNotStopBackgroundRecording()=exercise(true)

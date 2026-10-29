@@ -18,9 +18,6 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.*
 import java.io.File
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 import org.json.JSONObject
 
 internal class RecordingService(
@@ -81,6 +78,7 @@ internal class RecordingService(
         var expected: Long?=null
         var segmentSatellite=request.satellite
         var segmentPass=request.passAos
+        var segmentMaxElevation=request.maxElevation
         var segmentStartFrame=0L
         var segmentStart=System.currentTimeMillis()
         val sourceConfig=pendingConfiguration
@@ -94,6 +92,7 @@ internal class RecordingService(
             File(root,final.name+".json").writeText(JSONObject().apply {
                 put("startedUtcMillis",segmentStart);put("source",source.id);put("sourceName",source.name);put("satellite",segmentSatellite)
                 put("passAos",segmentPass);put("startFrame",segmentStartFrame);put("sampleRate",current.rate);put("samples",current.samples)
+                put("maxElevation",segmentMaxElevation)
                 put("endReason",reason);put("endedUtcMillis",System.currentTimeMillis())
             }.toString(),Charsets.UTF_8)
             finalizedMillis+=current.samples*1000/current.rate
@@ -144,19 +143,19 @@ internal class RecordingService(
                             val identity=device?.let { if(android.os.Build.VERSION.SDK_INT>=28) it.address.ifBlank {it.productName.toString()} else it.productName.toString() }
                             check(device!=null && "${device.type}:$identity"==source.id) {"Selected receive input was disconnected or rerouted"}
                         }
-                        val satellite=radio().state.value.currentPass?.name ?: request.satellite
-                        val pass=radio().state.value.currentPass?.aosTime ?: request.passAos
+                        val currentPass=radio().state.value.currentPass
+                        val satellite=currentPass?.name ?: request.satellite
+                        val pass=currentPass?.aosTime ?: request.passAos
                         val split=output?.let {it.rate!=chunk.sampleRate || it.samples>=it.rate*1800L}==true ||
                             chunk.discontinuity || (expected!=null && expected!=chunk.framePosition) || satellite!=segmentSatellite || pass!=segmentPass
                         if(split) finishSegment("segment boundary or receive discontinuity")
                         if(output==null) {
                             check(root.usableSpace>20_000_000) {"Not enough storage for recording"}
                             segmentSatellite=satellite
+                            segmentMaxElevation=currentPass?.maxElevation ?: request.maxElevation
                             segmentPass=pass;segmentStartFrame=chunk.framePosition
                             segmentStart=System.currentTimeMillis()-(SystemClock.elapsedRealtimeNanos()-chunk.elapsedRealtimeNanos).coerceAtLeast(0)/1_000_000
-                            val stamp=SimpleDateFormat("yyyyMMdd-HHmmss",Locale.ROOT).format(Date())
-                            val name=satellite.replace(Regex("[^A-Za-z0-9._-]"),"_").take(40)
-                            output=RecordingWaveFile(File.createTempFile("$stamp-$name-",".wav.partial",root),chunk.sampleRate)
+                            output=RecordingWaveFile(createRecordingFile(root,segmentStart,satellite,segmentMaxElevation),chunk.sampleRate)
                         }
                         output!!.write(chunk.samples);expected=chunk.framePosition+chunk.samples.size
                         mutable.update {it.copy(durationMillis=finalizedMillis+output!!.samples*1000/chunk.sampleRate,

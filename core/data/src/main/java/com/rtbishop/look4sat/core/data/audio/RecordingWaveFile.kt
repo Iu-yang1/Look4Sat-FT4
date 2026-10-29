@@ -5,6 +5,24 @@ import java.io.File
 import java.io.RandomAccessFile
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+
+internal fun createRecordingFile(directory: File, startedMillis: Long, satellite: String, maxElevation: Double?): File {
+    val stamp=SimpleDateFormat("yyyyMMdd-HHmmss",Locale.ROOT).format(Date(startedMillis))
+    val name=satellite.replace(Regex("""[<>:"/\\|?*\p{Cntrl}]"""),"_").trim().take(80).ifBlank {"Satellite"}
+    val angle=maxElevation?.takeIf {it.isFinite() && it in 0.0..90.0}
+        ?.let {String.format(Locale.ROOT,"%.1fdeg",it)} ?: "unknown-deg"
+    val stem="$stamp-$name-$angle"
+    for(index in 0..9999) {
+        val suffix=if(index==0) "" else " (${index+1})"
+        if(File(directory,"$stem$suffix.wav").exists()) continue
+        val partial=File(directory,"$stem$suffix.wav.partial")
+        if(partial.createNewFile()) return partial
+    }
+    error("Could not allocate a recording filename")
+}
 
 internal fun recordingWaveHeader(bytes: Long,rate: Int): ByteArray {
     require(rate in 8000..192000 && bytes in 0..0xffffffffL-36 && bytes%2==0L)

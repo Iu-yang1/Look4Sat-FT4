@@ -10,6 +10,21 @@ import org.junit.rules.TemporaryFolder
 
 class RecordingWaveFileTest {
     @get:Rule val temp=TemporaryFolder()
+    @Test fun readableNamesIncludePassMaximumAndNeverOverwriteExistingSegments() {
+        val date=java.util.Calendar.getInstance().apply {set(2026,9,29,18,16,8);set(java.util.Calendar.MILLISECOND,0)}.timeInMillis
+        val first=createRecordingFile(temp.root,date,"OSCAR-7 (AO-7)",87.8)
+        assertEquals("20261029-181608-OSCAR-7 (AO-7)-87.8deg.wav.partial",first.name)
+        first.writeText("original")
+        assertEquals("20261029-181608-OSCAR-7 (AO-7)-87.8deg (2).wav.partial",createRecordingFile(temp.root,date,"OSCAR-7 (AO-7)",87.8).name)
+        assertEquals("original",first.readText())
+        assertTrue(first.renameTo(File(temp.root,first.name.removeSuffix(".partial"))))
+        assertTrue(createRecordingFile(temp.root,date,"OSCAR-7 (AO-7)",87.8).name.contains(" (3).wav.partial"))
+    }
+    @Test fun namesPreserveUnicodeSanitizePathCharactersAndDoNotInventUnknownAngles() {
+        val file=createRecordingFile(temp.root,0,"希望/测试:卫星",Double.NaN)
+        assertTrue(file.name.endsWith("-希望_测试_卫星-unknown-deg.wav.partial"))
+        assertEquals(temp.root.canonicalFile,file.parentFile.canonicalFile)
+    }
     @Test fun monoHeaderAndSampleCountComeFromPcmRatherThanWallClock() {
         val file=File(temp.root,"test.wav.partial")
         RecordingWaveFile(file,48000).use {writer ->

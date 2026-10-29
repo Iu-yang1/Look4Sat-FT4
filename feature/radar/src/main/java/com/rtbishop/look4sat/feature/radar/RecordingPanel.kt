@@ -33,7 +33,7 @@ import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-internal fun RecordingPanel(satellite: String,passAos: Long?,providedRecorder: IRecordingService? = null,onDismiss: ()->Unit) {
+internal fun RecordingPanel(satellite: String,passAos: Long?,providedRecorder: IRecordingService? = null,maxElevation: Double? = null,onDismiss: ()->Unit) {
     val context=LocalContext.current
     val recorder=providedRecorder ?: (context.applicationContext as IContainerProvider).getMainContainer().recordingService
     val state by recorder.state.collectAsStateWithLifecycle()
@@ -57,7 +57,7 @@ internal fun RecordingPanel(satellite: String,passAos: Long?,providedRecorder: I
     fun startPending() {
         val source=pendingSource ?: return
         pendingSource=null
-        recorder.start(RecordingRequest(source,satellite,passAos))
+        recorder.start(RecordingRequest(source,satellite,passAos,maxElevation))
     }
     val notifications=rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {startPending()}
     fun startWithNotification() {

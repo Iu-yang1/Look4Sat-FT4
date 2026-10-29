@@ -48,7 +48,8 @@ class RecordingForegroundService: Service() {
             recording.failStart(error.message ?: "Could not start background recording")
             scope.launch {recording.stop();stopSelf()};return START_NOT_STICKY
         }
-        val request=RecordingRequest(id,intent.getStringExtra("satellite").orEmpty(),intent.getLongExtra("aos",0).takeIf {it!=0L})
+        val request=RecordingRequest(id,intent.getStringExtra("satellite").orEmpty(),intent.getLongExtra("aos",0).takeIf {it!=0L},
+            if(intent.hasExtra("maxElevation")) intent.getDoubleExtra("maxElevation",0.0) else null)
         notificationJob=scope.launch {
             while(isActive) {delay(1000);runCatching {getSystemService(NotificationManager::class.java).notify(ID,notification())}}
         }
@@ -89,6 +90,7 @@ class RecordingForegroundService: Service() {
         private const val STOP="recording.stop"
         fun startIntent(context: Context,request: RecordingRequest)=Intent(context,RecordingForegroundService::class.java).apply {
             putExtra("source",request.sourceId);putExtra("satellite",request.satellite);putExtra("aos",request.passAos ?: 0)
+            request.maxElevation?.let {putExtra("maxElevation",it)}
         }
     }
 }

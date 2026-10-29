@@ -365,7 +365,7 @@ private fun RadarScreen(
     var showRecording by rememberSaveable {mutableStateOf(false)}
     val recordingContainer=(context.applicationContext as IContainerProvider).getMainContainer()
     val recordingStatus by recordingContainer.recordingService.state.collectAsStateWithLifecycle()
-    if(showRecording) RecordingPanel(uiState.currentPass?.name.orEmpty(),uiState.currentPass?.aosTime) {showRecording=false}
+    if(showRecording) RecordingPanel(uiState.currentPass?.name.orEmpty(),uiState.currentPass?.aosTime,maxElevation=uiState.currentPass?.maxElevation) {showRecording=false}
     val closeToolsMenuThen: (() -> Unit) -> Unit = { action ->
         showToolsMenu = false
         action()
@@ -630,7 +630,7 @@ private fun RadarActionsMenu(
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
             )
             RadarToolMenuItem(
-                iconRes = R.drawable.ic_radio_tower,
+                iconRes = R.drawable.ic_recording,
                 label = stringResource(if(recordingActive) R.string.recording_active else R.string.recording_title),
                 onClick = onRecording
             )

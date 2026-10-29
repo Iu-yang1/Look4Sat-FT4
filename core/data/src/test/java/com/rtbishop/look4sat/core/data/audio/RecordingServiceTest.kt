@@ -49,7 +49,7 @@ class RecordingServiceTest {
         val radio=stub<IRadioTrackingService> {if(it=="getState") radioState else error("Recording must not issue CAT commands: $it")}
         val app=RuntimeEnvironment.getApplication() as RecordingTestApplication
         val service=RecordingService(app,backgroundScope,settings,hub,hub,N76ReceivePcmBus(),{RadioAudioState(receivingReady=true)},{radio},dispatcher,dispatcher,temp.root)
-        val request=RecordingRequest("wlan","RS-44",10)
+        val request=RecordingRequest("wlan","RS-44",10,87.8)
         service.start(request);assertEquals(request,app.request);assertTrue(service.state.value.active)
         val job=launch {service.runRecording(request)};runCurrent();assertEquals(1,hub.subscribers)
         hub.input.emit(TimestampedAudioChunk(FloatArray(480) {0.25f},48000,0,0,AudioSampleFormat.PCM_FLOAT));runCurrent()
@@ -64,6 +64,8 @@ class RecordingServiceTest {
             val bytes=File(f.id).readBytes();val head=ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
             assertEquals(1,head.getShort(22).toInt());assertEquals(48000,head.getInt(24));assertEquals(960,head.getInt(40))
             assertTrue(File(f.id+".json").isFile)
+            assertTrue(f.name.contains("-RS-44-87.8deg"))
+            assertEquals(87.8,org.json.JSONObject(File(f.id+".json").readText()).getDouble("maxElevation"),0.0)
         }
         val original=service.files.value.first()
         assertTrue(runCatching {service.export(original.id,"file:///invalid")}.isFailure)

@@ -18,6 +18,7 @@ import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.math.sqrt
+import kotlin.math.round
 
 /**
  * Equal-elevation contours: the observer's look angle to the satellite is constant at
@@ -54,6 +55,18 @@ internal fun elevationContour(satellite: OrbitalPos, elevationDegrees: Double): 
  */
 internal fun elevationContourLabelAnchorIndex(circle: List<GeoPoint>): Int? =
     90.takeIf { circle.size > it }
+
+/**
+ * OSMDroid does not automatically move overlay points to the same wrapped world copy.
+ * Keep contour points in the world copy nearest the satellite, whose longitude is
+ * produced by mod2PI and therefore normally uses the 0°..360° range.
+ */
+internal fun elevationContourLongitudeInSatelliteWorld(
+    longitudeDegrees: Double,
+    satelliteLongitudeDegrees: Double
+): Double = longitudeDegrees + 360.0 * round(
+    (satelliteLongitudeDegrees - longitudeDegrees) / 360.0
+)
 
 /**
  * Shared with the matching-station marker in MapScreen: labels and markers must
@@ -99,6 +112,7 @@ internal class ElevationContourOverlay : FolderOverlay() {
     fun update(satellite: OrbitalPos?, elevations: List<Double>, enabled: Boolean, mapView: MapView) {
         items.clear()
         if (!enabled || satellite == null) return
+        val satelliteLongitude = Math.toDegrees(satellite.longitude)
 
         elevations.forEachIndexed { index, angle ->
             val circle = elevationContour(satellite, angle)
@@ -110,7 +124,11 @@ internal class ElevationContourOverlay : FolderOverlay() {
             // Maximizing longitude jumps to the far side when a contour encloses
             // a pole (or the satellite passes near one).
             val anchorIndex = elevationContourLabelAnchorIndex(circle) ?: return@forEachIndexed
-            val anchorGeo = circle[anchorIndex]
+            val anchorPoint = circle[anchorIndex]
+            val anchorGeo = GeoPoint(
+                anchorPoint.latitude,
+                elevationContourLongitudeInSatelliteWorld(anchorPoint.longitude, satelliteLongitude)
+            )
             val anchorPx = mapView.projection.toPixels(anchorGeo, Point())
             val labelTextSizePx = 12f * mapView.context.resources.displayMetrics.scaledDensity
             val labelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = labelTextSizePx }
@@ -122,7 +140,11 @@ internal class ElevationContourOverlay : FolderOverlay() {
                 var count = 0
                 for (step in 1..70) {
                     val sample = circle[(anchorIndex + direction * step + 360) % 360]
-                    val p = mapView.projection.toPixels(sample, Point())
+                    val sampleGeo = GeoPoint(
+                        sample.latitude,
+                        elevationContourLongitudeInSatelliteWorld(sample.longitude, satelliteLongitude)
+                    )
+                    val p = mapView.projection.toPixels(sampleGeo, Point())
                     val distance = kotlin.math.hypot(
                         (p.x - anchorPx.x).toDouble(), (p.y - anchorPx.y).toDouble()
                     )
@@ -158,7 +180,7 @@ internal class ElevationContourOverlay : FolderOverlay() {
             }
             repeat(pointCount) { offset ->
                 val point = circle[(startIndex + offset) % 360]
-                val lon = ((point.longitude + 180.0) % 360.0 + 360.0) % 360.0 - 180.0
+                val lon = elevationContourLongitudeInSatelliteWorld(point.longitude, satelliteLongitude)
                 if (segment.isNotEmpty() && kotlin.math.abs(segment.last().longitude - lon) > 180.0) flush()
                 segment.add(GeoPoint(point.latitude, lon))
             }

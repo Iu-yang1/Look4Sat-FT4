@@ -99,14 +99,14 @@ internal fun elevationAtGroundStation(satellite: OrbitalPos?, station: GeoPos?):
 }
 
 internal class ElevationContourOverlay : FolderOverlay() {
-    // Muted Morandi palette (Option A); keep the order stable when users add rings.
+    // Soft pastel palette for the dark map: warm inner rings, cooler outer rings.
+    // Angles are rendered in ascending order, so keep this order stable:
+    // apricot orange → lavender → sage mint → glacier blue.
     private val palette = intArrayOf(
-        0xFFA8C3CC.toInt(), // powder blue
-        0xFFB4C3A5.toInt(), // sage
-        0xFFD1BDCF.toInt(), // dusty lilac
-        0xFFD8C29F.toInt(), // sand
-        0xFFCBAEAC.toInt(), // dusty rose
-        0xFFABB8C5.toInt()  // blue grey
+        0xFFEAA064.toInt(), // apricot orange
+        0xFFB37BCB.toInt(), // lavender purple
+        0xFF73BFA2.toInt(), // sage mint
+        0xFF579FE8.toInt()  // glacier blue
     )
 
     fun update(satellite: OrbitalPos?, elevations: List<Double>, enabled: Boolean, mapView: MapView) {

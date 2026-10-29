@@ -7,6 +7,7 @@ import android.graphics.Paint
 import android.graphics.Point
 import com.rtbishop.look4sat.core.domain.predict.GeoPos
 import com.rtbishop.look4sat.core.domain.predict.OrbitalPos
+import com.rtbishop.look4sat.core.domain.utility.clipLon
 import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.FolderOverlay
@@ -57,16 +58,45 @@ internal fun elevationContourLabelAnchorIndex(circle: List<GeoPoint>): Int? =
     90.takeIf { circle.size > it }
 
 /**
- * OSMDroid does not automatically move overlay points to the same wrapped world copy.
- * Keep contour points in the world copy nearest the satellite, whose longitude is
- * produced by mod2PI and therefore normally uses the 0°..360° range.
+ * OrbitalPos longitude is 0°..360°, but map state and station positions use
+ * clipLon()'s −180°..180° convention. Convert a contour point to that convention,
+ * then choose the equivalent world copy nearest the *visible map centre*.
+ *
+ * Using the satellite's raw 0°..360° longitude here puts western labels a whole
+ * world away from the map centre; OSMDroid then draws them at the 180° map edge.
  */
-internal fun elevationContourLongitudeInSatelliteWorld(
+internal fun elevationContourLongitudeInMapWorld(
     longitudeDegrees: Double,
-    satelliteLongitudeDegrees: Double
-): Double = longitudeDegrees + 360.0 * round(
-    (satelliteLongitudeDegrees - longitudeDegrees) / 360.0
-)
+    mapCenterLongitudeDegrees: Double
+): Double {
+    val canonicalLongitude = clipLon(longitudeDegrees)
+    return canonicalLongitude + 360.0 * round(
+        (mapCenterLongitudeDegrees - canonicalLongitude) / 360.0
+    )
+}
+
+/** Normalize contour points and split a polyline wherever it crosses the antimeridian. */
+internal fun elevationContourSplitAtAntimeridian(points: List<GeoPoint>): List<List<GeoPoint>> {
+    val segments = ArrayList<MutableList<GeoPoint>>()
+    var segment = ArrayList<GeoPoint>()
+    points.forEach { point ->
+        val longitude = clipLon(point.longitude)
+        if (segment.isNotEmpty() &&
+            kotlin.math.abs(segment.last().longitude - longitude) > 180.0
+        ) {
+            if (segment.size >= 2) segments.add(segment)
+            segment = ArrayList()
+        }
+        segment.add(GeoPoint(point.latitude, longitude))
+    }
+    if (segment.size >= 2) segments.add(segment)
+    return segments
+}
+
+/** Duplicate only antimeridian-adjacent arcs into neighbouring OSMDroid world copies. */
+internal fun elevationContourTurnsForPoints(points: List<GeoPoint>): IntArray =
+    if (points.any { kotlin.math.abs(it.longitude) > 176.0 }) intArrayOf(-1, 0, 1)
+    else intArrayOf(0)
 
 /**
  * Shared with the matching-station marker in MapScreen: labels and markers must
@@ -112,7 +142,8 @@ internal class ElevationContourOverlay : FolderOverlay() {
     fun update(satellite: OrbitalPos?, elevations: List<Double>, enabled: Boolean, mapView: MapView) {
         items.clear()
         if (!enabled || satellite == null) return
-        val satelliteLongitude = Math.toDegrees(satellite.longitude)
+        // MapView/GeoPos use −180°..180°, unlike OrbitalPos's 0°..360° longitude.
+        val mapCenterLongitude = mapView.mapCenter.longitude
 
         elevations.forEachIndexed { index, angle ->
             val circle = elevationContour(satellite, angle)
@@ -125,11 +156,14 @@ internal class ElevationContourOverlay : FolderOverlay() {
             // a pole (or the satellite passes near one).
             val anchorIndex = elevationContourLabelAnchorIndex(circle) ?: return@forEachIndexed
             val anchorPoint = circle[anchorIndex]
-            val anchorGeo = GeoPoint(
+            // Store the canonical location; the label overlay selects the nearest
+            // world copy dynamically so it remains correct while panning across ±180°.
+            val anchorGeo = GeoPoint(anchorPoint.latitude, clipLon(anchorPoint.longitude))
+            val anchorProjectionGeo = GeoPoint(
                 anchorPoint.latitude,
-                elevationContourLongitudeInSatelliteWorld(anchorPoint.longitude, satelliteLongitude)
+                elevationContourLongitudeInMapWorld(anchorPoint.longitude, mapCenterLongitude)
             )
-            val anchorPx = mapView.projection.toPixels(anchorGeo, Point())
+            val anchorPx = mapView.projection.toPixels(anchorProjectionGeo, Point())
             val labelTextSizePx = 12f * mapView.context.resources.displayMetrics.scaledDensity
             val labelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = labelTextSizePx }
             val halfGapPx = labelPaint.measureText(text) / 2f + 9f
@@ -142,7 +176,7 @@ internal class ElevationContourOverlay : FolderOverlay() {
                     val sample = circle[(anchorIndex + direction * step + 360) % 360]
                     val sampleGeo = GeoPoint(
                         sample.latitude,
-                        elevationContourLongitudeInSatelliteWorld(sample.longitude, satelliteLongitude)
+                        elevationContourLongitudeInMapWorld(sample.longitude, mapCenterLongitude)
                     )
                     val p = mapView.projection.toPixels(sampleGeo, Point())
                     val distance = kotlin.math.hypot(
@@ -162,29 +196,29 @@ internal class ElevationContourOverlay : FolderOverlay() {
             // Start immediately after the deleted right-hand section, traverse
             // the rest of the ring and stop before the gap. This also keeps the
             // top of the circle continuous instead of splitting at bearing=0.
-            var segment = ArrayList<GeoPoint>(pointCount)
-            fun flush() {
-                if (segment.size < 2) return
-                val stroke = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                    this.color = color
-                    alpha = 217
-                    style = Paint.Style.STROKE
-                    strokeWidth = 2f
-                    pathEffect = DashPathEffect(floatArrayOf(13f, 9f), 0f)
-                }
-                add(Polyline().apply {
-                    outlinePaint.set(stroke)
-                    setPoints(segment)
-                })
-                segment = ArrayList()
-            }
-            repeat(pointCount) { offset ->
+            val contourPoints = (0 until pointCount).map { offset ->
                 val point = circle[(startIndex + offset) % 360]
-                val lon = elevationContourLongitudeInSatelliteWorld(point.longitude, satelliteLongitude)
-                if (segment.isNotEmpty() && kotlin.math.abs(segment.last().longitude - lon) > 180.0) flush()
-                segment.add(GeoPoint(point.latitude, lon))
+                GeoPoint(point.latitude, clipLon(point.longitude))
             }
-            flush()
+            elevationContourSplitAtAntimeridian(contourPoints).forEach { arc ->
+                elevationContourTurnsForPoints(arc).forEach { turn ->
+                    val offset = turn * 360.0
+                    val points = if (offset == 0.0) arc else arc.map {
+                        GeoPoint(it.latitude, it.longitude + offset)
+                    }
+                    val stroke = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                        this.color = color
+                        alpha = 217
+                        style = Paint.Style.STROKE
+                        strokeWidth = 2f
+                        pathEffect = DashPathEffect(floatArrayOf(13f, 9f), 0f)
+                    }
+                    add(Polyline().apply {
+                        outlinePaint.set(stroke)
+                        setPoints(points)
+                    })
+                }
+            }
             // Text is a separate overlay *above* the segmented dashed lines;
             // it takes exactly the space cleared on the ring's rightmost edge.
             add(ElevationCircleLabelOverlay(anchorGeo, text, color, labelTextSizePx))
@@ -214,7 +248,11 @@ private class ElevationCircleLabelOverlay(
     }
     override fun draw(canvas: Canvas, mapView: MapView, shadow: Boolean) {
         if (shadow) return
-        val point = mapView.projection.toPixels(anchor, Point())
+        val visibleWorldAnchor = GeoPoint(
+            anchor.latitude,
+            elevationContourLongitudeInMapWorld(anchor.longitude, mapView.mapCenter.longitude)
+        )
+        val point = mapView.projection.toPixels(visibleWorldAnchor, Point())
         // Paint baseline shifted so the number sits centrally in the missing section.
         val baseline = point.y - (fill.ascent() + fill.descent()) / 2f
         canvas.drawText(text, point.x.toFloat(), baseline, outline)

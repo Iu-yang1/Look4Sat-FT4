@@ -65,6 +65,72 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class RadioTrackingServiceTest {
+    @Test fun l4sUnsavedHandsetUsbSurvivesPollingTrackingRestartAndSameTransponderSelection()=runTest {
+        for(model in listOf(RadioControlSettings.MODEL_QUANSHENG_UVK1,RadioControlSettings.MODEL_QUANSHENG_UVK5V3)) {
+            val remote=remoteFixtureState()
+            remote.value=remote.value.copy(capabilities=remote.value.capabilities!!.copy(nativeSettings=true,satelliteProfiles=true))
+            val tx=FakeRadioController(remote=remote)
+            tx.onSelectProfile={key -> remote.value=remote.value.copy(nativeProfileKey=key,nativeProfileValid=true,
+                nativeSavedMode=1,nativeSettingsModified=false,rxMode="CW",txMode="CW",nativeProfileGeneration=0)}
+            val fixture=Fixture(backgroundScope,tx,FakeRadioController(),radioModel=model,splitMode=true,transport=RadioControlSettings.TRANSPORT_USB)
+            fixture.service.connectRadios();fixture.startTracking();runCurrent()
+            assertEquals("CW",fixture.service.state.value.rxMode)
+            val before=fixture.service.state.value
+            remote.value=remote.value.copy(rxMode="USB",nativeSettingsModified=true,nativeProfileGeneration=1,settingsSequence=10)
+            runCurrent();advanceTimeBy(1200);runCurrent()
+            assertEquals("USB",fixture.service.state.value.rxMode)
+            assertEquals(before.nominalRxFrequencyHz,fixture.service.state.value.nominalRxFrequencyHz)
+            assertEquals(before.txBaseFrequencyHz,fixture.service.state.value.txBaseFrequencyHz)
+            val selections=tx.profileSelections
+            fixture.service.stopTracking();runCurrent();fixture.startTracking();runCurrent()
+            fixture.service.setTransponder(fixture.transponder);runCurrent()
+            assertEquals(selections,tx.profileSelections)
+            assertEquals("USB",fixture.service.state.value.rxMode);assertEquals("CW",fixture.service.state.value.txMode)
+            assertEquals("split-modes:USB:CW",tx.operations.last {it.startsWith("split-modes:")})
+            fixture.transponder=fixture.transponder.copy(uuid="another-pass-profile")
+            fixture.service.setTransponder(fixture.transponder);runCurrent()
+            assertTrue(tx.profileSelections>selections)
+            assertEquals("CW",fixture.service.state.value.rxMode)
+            fixture.service.disconnectRadios();runCurrent()
+            // A new physical session reloads Flash; an unsaved choice must not
+            // be resurrected by the phone's previous tracking state.
+            remote.value=remote.value.copy(nativeSettingsModified=false,rxMode="CW",nativeProfileGeneration=0)
+            fixture.service.connectRadios();runCurrent()
+            fixture.startTracking();runCurrent()
+            assertEquals("CW",fixture.service.state.value.rxMode)
+            fixture.close()
+        }
+    }
+
+    @Test fun l4sReceiveOnlyUsbChoiceDoesNotRequireAPermanentlySavedProfile()=runTest {
+        val remote=remoteFixtureState()
+        remote.value=remote.value.copy(capabilities=remote.value.capabilities!!.copy(nativeSettings=true,satelliteProfiles=true))
+        val tx=FakeRadioController(remote=remote)
+        tx.onSelectProfile={key -> remote.value=remote.value.copy(nativeProfileKey=key,nativeProfileValid=false,
+            nativeSettingsModified=false,rxMode="CW",txMode="CW")}
+        val fixture=Fixture(backgroundScope,tx,FakeRadioController(),radioModel=RadioControlSettings.MODEL_QUANSHENG_UVK1,
+            splitMode=true,transport=RadioControlSettings.TRANSPORT_USB)
+        fixture.transponder=fixture.transponder.copy(uplinkLow=null,uplinkHigh=null,uplinkMode=null,downlinkMode="CW")
+        fixture.service.connectRadios();fixture.startTracking(null);runCurrent()
+        remote.value=remote.value.copy(rxMode="USB",nativeSettingsModified=true,nativeProfileGeneration=1,settingsSequence=1)
+        runCurrent();fixture.service.stopTracking();runCurrent();fixture.startTracking(null);runCurrent()
+        assertEquals("USB",fixture.service.state.value.rxMode)
+        assertNull(fixture.service.state.value.targetTxFrequencyHz)
+        assertFalse(remote.value.txEnabled)
+        fixture.close()
+    }
+
+    @Test fun l4sSavedUsbIsRespectedAfterProfileLoadingInsteadOfUsingThePreviousMode()=runTest {
+        val remote=remoteFixtureState()
+        val tx=FakeRadioController(remote=remote)
+        tx.onSelectProfile={key -> remote.value=remote.value.copy(nativeProfileKey=key,nativeProfileValid=true,
+            nativeSavedMode=2,rxMode="USB",txMode="CW",nativeSettingsModified=false)}
+        val fixture=Fixture(backgroundScope,tx,FakeRadioController(),radioModel=RadioControlSettings.MODEL_QUANSHENG_UVK1,
+            splitMode=true,transport=RadioControlSettings.TRANSPORT_USB)
+        fixture.service.connectRadios();fixture.service.setTransponder(fixture.transponder);runCurrent()
+        assertEquals("split-modes:USB:CW",tx.operations.last {it.startsWith("split-modes:")})
+        fixture.close()
+    }
     @Test fun n76UsesAtomicNativeTrackingAndDoesNotApplyTheL4s250HzQuantizer() = runTest {
         val remote = remoteFixtureState().also { flow ->
             flow.value = flow.value.copy(capabilities = flow.value.capabilities!!.copy(
@@ -1791,6 +1857,18 @@ private class FakeRadioController(
     private val remote: MutableStateFlow<RemoteRadioState>? = null,
     private val pttReadbackSupported:Boolean=false
 ) : IRadioController {
+    var profileSelections=0
+    var onSelectProfile:((String)->Unit)?=null
+    override suspend fun selectSatelliteProfile(name:String,transponderUuid:String):Boolean {
+        profileSelections++
+        onSelectProfile?.invoke(if(remote?.value?.capabilities?.satelliteProfiles==true)
+            com.rtbishop.look4sat.core.domain.repository.radioSatelliteProfileKey(name,transponderUuid)
+            else com.rtbishop.look4sat.core.domain.repository.radioContextKey(transponderUuid))
+        return true
+    }
+    override suspend fun prepareTrackingContext(contextKey:String):Boolean {
+        profileSelections++;onSelectProfile?.invoke(contextKey);return true
+    }
     override val supportsPttReadback get()=pttReadbackSupported
     var physicalPtt:Boolean?=false
     override suspend fun readPttState()=physicalPtt

@@ -113,9 +113,14 @@ jobs:
           # problematic class for this release and test all other modules.
           cat > /tmp/look4sat-release-tests.gradle <<'GRADLE_INIT'
           gradle.projectsEvaluated {
-              def settingTests = gradle.rootProject.project(':feature:settings').tasks.findByName('testDebugUnitTest')
-              if (settingTests != null) {
-                  settingTests.filter.excludeTestsMatching('*.RadioConfigurationSaveTest')
+              // Init scripts also run in the included build-logic composite build,
+              // where the app's :feature:settings project does not exist.
+              def settingProject = gradle.rootProject.findProject(':feature:settings')
+              if (settingProject != null) {
+                  def settingTests = settingProject.tasks.findByName('testDebugUnitTest')
+                  if (settingTests != null) {
+                      settingTests.filter.excludeTestsMatching('*.RadioConfigurationSaveTest')
+                  }
               }
           }
           GRADLE_INIT

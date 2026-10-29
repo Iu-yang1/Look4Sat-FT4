@@ -28,9 +28,9 @@ class LoTWUploadRepositoryTest {
     @Test fun onlyExplicitAcceptanceIsSuccess() {
         assertEquals(LoTWUploadResult.Accepted(2), parseLoTWUploadResponse("<!-- .UPL. accepted -->", 2))
         assertEquals(LoTWUploadResult.Rejected(), parseLoTWUploadResponse("<!-- .UPL. rejected -->", 2))
-        assertEquals(LoTWUploadResult.Rejected("Invalid certificate"), parseLoTWUploadResponse("<!-- .UPL. rejected --><!-- .UPLMESSAGE. Invalid certificate -->", 2))
+        assertEquals(LoTWUploadResult.Rejected("Invalid certificate", responseSummary = "Invalid certificate"), parseLoTWUploadResponse("<!-- .UPL. rejected --><!-- .UPLMESSAGE. Invalid certificate -->", 2))
         listOf("Upload complete", "<html>accepted</html>", "<!-- .UPL. accepted --><!-- .UPL. rejected -->", "").forEach {
-            assertEquals(LoTWUploadResult.Unknown, parseLoTWUploadResponse(it, 2))
+            assertTrue(parseLoTWUploadResponse(it, 2) is LoTWUploadResult.Unknown)
         }
     }
     @Test fun acceptsMultipartAndPersistsReceiptAcrossRepositoryRestart() = runBlocking {
@@ -77,13 +77,17 @@ class LoTWUploadRepositoryTest {
     @Test fun uncertainPostIsNotAutomaticallyRetriedAfterRestart() = runBlocking {
         val storage = MemoryStorage()
         var posts = 0
-        val client = OkHttpClient.Builder().addInterceptor { posts++; throw IOException("offline") }.build()
+        val client = OkHttpClient.Builder().addInterceptor { chain ->
+            posts++
+            Response.Builder().request(chain.request()).protocol(Protocol.HTTP_1_1).code(200)
+                .message("Gateway").body("Unexpected gateway page".toResponseBody()).build()
+        }.build()
         fun repository() = LoTWUploadRepository(storage, ::configFixture, client) { TEST_NOW }
         val repo = repository()
         repo.importCertificate(certificateFixture(), password())
         repo.saveStation(station)
         val preview = repo.prepare(listOf(qsoFixture()), false)
-        assertEquals(LoTWUploadResult.Unknown, repo.upload(preview.id))
+        assertTrue(repo.upload(preview.id) is LoTWUploadResult.Unknown)
         assertEquals(1, posts)
         val fresh = repository()
         val audit = fresh.audit(listOf(qsoFixture()))
@@ -95,6 +99,17 @@ class LoTWUploadRepositoryTest {
         val retry = fresh.prepare(listOf(qsoFixture()), true)
         assertEquals(1, retry.count)
         assertEquals(1, posts)
+    }
+    @Test fun preSendFailureRemainsPendingAcrossRestart() = runBlocking {
+        val storage=MemoryStorage()
+        val client=OkHttpClient.Builder().addInterceptor { throw IOException("offline before headers") }.build()
+        fun repository()=LoTWUploadRepository(storage,::configFixture,client) {TEST_NOW}
+        val repo=repository();repo.importCertificate(certificateFixture(),password());repo.saveStation(station)
+        val preview=repo.prepare(listOf(qsoFixture()),false)
+        assertTrue(repo.upload(preview.id) is LoTWUploadResult.NotSent)
+        val fresh=repository();val audit=fresh.audit(listOf(qsoFixture()))
+        assertEquals(1,audit.pending);assertEquals(0,audit.unknown)
+        assertEquals(1,fresh.prepare(listOf(qsoFixture()),false).count)
     }
     @Test fun downloadedContactsAreNotResubmittedAndDuplicateRecordsAreSignedOnce() = runBlocking {
         val repo = LoTWUploadRepository(MemoryStorage(), ::configFixture, OkHttpClient()) { TEST_NOW }

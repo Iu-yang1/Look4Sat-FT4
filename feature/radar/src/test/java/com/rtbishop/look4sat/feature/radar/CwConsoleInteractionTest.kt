@@ -98,6 +98,15 @@ class CwConsoleInteractionTest {
         assertEquals(send.height, options.height, 0.5f)
     }
 
+    @Test fun logButtonFollowsStopTxOnTheSameActionRow() {
+        openConsole()
+        val stop = compose.onNodeWithText("Stop TX").fetchSemanticsNode().boundsInRoot
+        val log = compose.onNodeWithTag("cwConsoleLogButton").fetchSemanticsNode().boundsInRoot
+        assertTrue("Log should be to the right of Stop TX", log.left >= stop.right)
+        assertEquals("Log should be on the same row as Stop TX", stop.center.y, log.center.y, 2f)
+        compose.onAllNodesWithTag("cwConsoleLogButton").assertCountEquals(1)
+    }
+
     @Test fun syncPlainPresetsFromCwSettingsDispatchesWithoutSendingCw() {
         openConsole()
         compose.onNodeWithText("CW settings").performClick()

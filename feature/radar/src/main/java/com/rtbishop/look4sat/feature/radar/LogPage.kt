@@ -67,7 +67,30 @@ import com.rtbishop.look4sat.core.presentation.sheetDialogContainerColor
 import com.rtbishop.look4sat.core.presentation.sheetDialogShape
 import com.rtbishop.look4sat.core.presentation.gridsLabel
 import com.rtbishop.look4sat.core.presentation.LoTWPositionWarningDialog
+import com.rtbishop.look4sat.core.presentation.LoTWUploadResultDialog
 import com.rtbishop.look4sat.core.presentation.WavelogUploadPreviewDialog
+
+/** Shared radar log and CW quick-Log pass/frequency selection. */
+internal data class LogRecordTarget(
+    val catnum: Int, val satName: String, val txHz: Long?, val rxHz: Long?, val passWindow: LongRange?
+)
+
+internal fun RadarState.logRecordTarget(): LogRecordTarget {
+    val selected = transceivers.transmitters.firstOrNull { it.uuid == transceivers.selectedUuid }
+    val catnum = currentPass?.catNum ?: selected?.catnum ?: 0
+    val repeater = transceivers.transmitters.voiceRepeater()
+    val useRepeater = catnum in Sources.amSatFmCatnums
+    val selectedTxHz = selected?.uplinkHz()
+    val selectedRxHz = selected?.downlinkHz()
+    val repeaterTxHz = repeater?.uplinkHz()
+    val repeaterRxHz = repeater?.downlinkHz()
+    val txHz = if (useRepeater) repeaterTxHz ?: calculatorTxHz ?: selectedTxHz
+        else calculatorTxHz ?: repeaterTxHz ?: selectedTxHz
+    val rxHz = if (useRepeater) repeaterRxHz ?: calculatorRxHz ?: selectedRxHz
+        else calculatorRxHz ?: repeaterRxHz ?: selectedRxHz
+    return LogRecordTarget(catnum, currentPass?.name?.trim().orEmpty(), txHz, rxHz,
+        currentPass?.let { it.aosTime..it.losTime })
+}
 
 @Composable
 fun LogPage(
@@ -76,7 +99,8 @@ fun LogPage(
     onFixGrid: (List<String>) -> Unit = {},
     modifier: Modifier = Modifier,
     overrides: LogRecordOverrides = LogRecordOverrides(),
-    showCallsignInput: Boolean = true
+    showCallsignInput: Boolean = true,
+    showRecordButton: Boolean = true
 ) {
     val logUiState by logViewModel.uiState.collectAsStateWithLifecycle()
     val records by logViewModel.records.collectAsStateWithLifecycle(initialValue = emptyList())
@@ -84,55 +108,20 @@ fun LogPage(
     // Record currently open in the edit dialog (null when closed).
     var editTarget by remember { mutableStateOf<QsoRecord?>(null) }
 
-    val selectedRadio = remember(uiState.transceivers.transmitters, uiState.transceivers.selectedUuid) {
-        uiState.transceivers.transmitters.firstOrNull { it.uuid == uiState.transceivers.selectedUuid }
+    val target = remember(uiState.currentPass, uiState.transceivers.transmitters,
+        uiState.transceivers.selectedUuid, uiState.calculatorTxHz, uiState.calculatorRxHz) {
+        uiState.logRecordTarget()
     }
-    // Linear if the satellite carries ANY named linear transponder — same test
-    // that gates the Calculator tab (RadarScreen), so the mode selector and the
-    // calculator always appear together regardless of which entry is selected.
     val isLinear = uiState.transceivers.transmitters.any(DopplerFrequencyCalculator::isNamedLinearTransponder)
-    val catnum = uiState.currentPass?.catNum ?: selectedRadio?.catnum ?: 0
-    val satName = uiState.currentPass?.name?.trim().orEmpty()
-    // The satellite's FM voice repeater — the single-frequency transceiver the
-    // contact is actually made through. SatNOGS publishes its nominal pair, so a
-    // contact can never be logged without a frequency (which LoTW rejects as a
-    // missing BAND).
-    val voiceRepeater = remember(uiState.transceivers.transmitters) {
-        uiState.transceivers.transmitters.voiceRepeater()
-    }
-    // AMSAT Live FM satellites are always logged on that fixed nominal pair,
-    // even when the calculator happens to be tuned to something else.
-    val useRepeater = catnum in Sources.amSatFmCatnums
-
-    LaunchedEffect(catnum) {
-        if (catnum != 0) logViewModel.selectSatellite(catnum)
-    }
-
-    // Refresh the roaming hint whenever the page re-enters composition (e.g. returning
-    // from the station-location fix jump).
-    LaunchedEffect(Unit) {
-        logViewModel.refreshPositionHint()
-    }
-
-    val selectedTxHz = remember(selectedRadio) { selectedRadio?.uplinkHz() }
-    val selectedRxHz = remember(selectedRadio) { selectedRadio?.downlinkHz() }
-    val repeaterTxHz = voiceRepeater?.uplinkHz()
-    val repeaterRxHz = voiceRepeater?.downlinkHz()
-    val txHz = if (useRepeater) {
-        repeaterTxHz ?: uiState.calculatorTxHz ?: selectedTxHz
-    } else {
-        uiState.calculatorTxHz ?: repeaterTxHz ?: selectedTxHz
-    }
-    val rxHz = if (useRepeater) {
-        repeaterRxHz ?: uiState.calculatorRxHz ?: selectedRxHz
-    } else {
-        uiState.calculatorRxHz ?: repeaterRxHz ?: selectedRxHz
-    }
+    val catnum = target.catnum
+    val satName = target.satName
+    LaunchedEffect(catnum) { if (catnum != 0) logViewModel.selectSatellite(catnum) }
+    LaunchedEffect(Unit) { logViewModel.refreshPositionHint() }
+    val txHz = target.txHz
+    val rxHz = target.rxHz
     val mode = overrides.mode ?: if (isLinear) logUiState.selectedMode.ifBlank { "CW" } else "FM"
     val satIdentity = remember(satName) { satelliteIdentity(satName) }
-    val passWindow = remember(uiState.currentPass) {
-        uiState.currentPass?.let { it.aosTime..it.losTime }
-    }
+    val passWindow = target.passWindow
     val recent = records
         .filter { satelliteIdentity(it.satelliteName) == satIdentity }
         // Only contacts inside the current pass window: the log page is the "this pass" sheet.
@@ -143,7 +132,7 @@ fun LogPage(
     LazyColumn(modifier = modifier.fillMaxSize().padding(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         item {
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                if (showCallsignInput || showRecordButton) Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
                     if (showCallsignInput) OutlinedTextField(
                         value = logUiState.callsignInput,
                         onValueChange = logViewModel::updateCallsign,
@@ -159,7 +148,7 @@ fun LogPage(
                         })
                     )
                     else Text(logUiState.callsignInput, modifier = Modifier.weight(1f))
-                    Button(
+                    if (showRecordButton) Button(
                         onClick = { logViewModel.record(satName, mode, txHz, rxHz, logUiState.stationGrid, passWindow, overrides) },
                         enabled = !logUiState.recordSaving && logUiState.callsignInput.isNotBlank() && satName.isNotBlank()
                     ) { Text("Log") }
@@ -284,6 +273,19 @@ fun LogPage(
             busy = logUiState.busy,
             onConfirm = logViewModel::confirmWavelogUpload,
             onDismiss = logViewModel::dismissWavelogPreview
+        )
+    }
+
+    logUiState.uploadIssueKind?.let { kind ->
+        LoTWUploadResultDialog(
+            kind = kind,
+            summary = logUiState.uploadIssueSummary,
+            technicalDetails = logUiState.uploadIssueTechnicalDetails,
+            onDismiss = logViewModel::clearMessage,
+            onRetry = {
+                logViewModel.clearMessage()
+                logViewModel.prepareUpload()
+            }
         )
     }
 

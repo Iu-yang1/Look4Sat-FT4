@@ -416,7 +416,7 @@ fun LoTWDialog(
         title = stringResource(R.string.prefs_lotw_title),
         titleHorizontalPadding = LocalSpacing.current.medium,
         // Dismissing the sheet (outside tap or system Back) only hides the UI;
-        // the ViewModel-owned sync continues until the user confirms cancellation.
+        // the foreground-service sync continues until the user confirms cancellation.
         onDismissRequest = dismiss,
         onCancel = {
             if (isSyncing) showCancelSyncConfirm = true else dismiss()

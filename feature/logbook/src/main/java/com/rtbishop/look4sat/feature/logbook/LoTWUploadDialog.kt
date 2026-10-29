@@ -395,7 +395,10 @@ internal fun LoTWUploadDialog(state: LogbookState, onAction: (LogbookAction) -> 
                         is LoTWUploadResult.Accepted -> stringResource(R.string.lotw_upload_accepted, result.count)
                         is LoTWUploadResult.Rejected -> stringResource(R.string.lotw_upload_rejected) +
                             result.message.takeIf { it.isNotBlank() }?.let { "\n$it" }.orEmpty()
-                        LoTWUploadResult.Unknown -> stringResource(R.string.lotw_upload_unknown)
+                        is LoTWUploadResult.Unknown -> stringResource(CoreR.string.lotw_upload_result_unknown_guidance) +
+                            result.reason.takeIf {it.isNotBlank()}?.let {"\n$it"}.orEmpty()
+                        is LoTWUploadResult.NotSent -> stringResource(CoreR.string.lotw_upload_result_not_sent_guidance) +
+                            result.reason.takeIf {it.isNotBlank()}?.let {"\n$it"}.orEmpty()
                         LoTWUploadResult.ExpiredPreview -> stringResource(R.string.lotw_preview_expired)
                     })
                 }

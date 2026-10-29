@@ -48,6 +48,16 @@ import java.util.Locale
 import java.util.TimeZone
 import kotlin.math.roundToInt
 
+private const val CHART_LEFT_INSET = 40f
+private const val CHART_RIGHT_INSET = 10f
+
+/** Map a pointer x-position to the chart's actual plotted time range. */
+internal fun chartProgressAtX(touchX: Float, chartWidth: Float): Float {
+    val plotWidth = chartWidth - CHART_LEFT_INSET - CHART_RIGHT_INSET
+    if (plotWidth <= 0f) return 0f
+    return ((touchX - CHART_LEFT_INSET) / plotWidth).coerceIn(0f, 1f)
+}
+
 /**
  * Draggable dual-station elevation curve chart.
  * Controlled component: [progress] (0..1) and [onProgressChange] are owned by the parent,
@@ -90,20 +100,20 @@ fun ElevationCurveChart(
                 .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
                 .pointerInput(Unit) {
                     detectTapGestures { offset ->
-                        onProgressChange((offset.x / size.width.toFloat()).coerceIn(0f, 1f))
+                        onProgressChange(chartProgressAtX(offset.x, size.width.toFloat()))
                     }
                 }
                 .pointerInput(Unit) {
                     detectDragGestures { change, _ ->
-                        onProgressChange((change.position.x / size.width.toFloat()).coerceIn(0f, 1f))
+                        onProgressChange(chartProgressAtX(change.position.x, size.width.toFloat()))
                     }
                 }
         ) {
             val chartWidth = size.width
             val chartHeight = size.height
-            val padding = 40f
-            val plotLeft = padding
-            val plotRight = chartWidth - 10f
+            val padding = CHART_LEFT_INSET
+            val plotLeft = CHART_LEFT_INSET
+            val plotRight = chartWidth - CHART_RIGHT_INSET
             val plotTop = 10f
             val plotBottom = chartHeight - padding
             val plotWidth = plotRight - plotLeft

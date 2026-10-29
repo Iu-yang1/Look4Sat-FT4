@@ -541,7 +541,7 @@ class LogbookViewModel(
             LogbookAction.ConfirmLoTWUpload -> {
                 val preview = mutableState.value.lotwPreview
                 if (preview != null) lotwOperation {
-                    mutableState.update { it.copy(lotwPreview = null, lotwUploadResult = LoTWUploadResult.Unknown) }
+                    mutableState.update { it.copy(lotwPreview = null, lotwUploadResult = LoTWUploadResult.Unknown()) }
                     val result = lotwUploadRepository.upload(preview.id)
                     mutableState.update { it.copy(lotwUploadResult = result) }
                     refreshLoTWAudit()

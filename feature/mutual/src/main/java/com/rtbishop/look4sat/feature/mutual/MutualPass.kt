@@ -75,3 +75,54 @@ internal fun visibleMutualPasses(
 ): List<Pair<Int, MutualPass>> =
     passes.mapIndexed { index, pass -> index to pass }
         .filter { (_, pass) -> focusedCatNum == null || pass.catNum == focusedCatNum }
+
+/**
+ * Refine an AOS (rising edge) or LOS (falling edge) at one-second resolution.
+ * Coarse times can lie on either side of the horizon; in particular an AOS
+ * estimate can fall *after* the LOS of a short pass. Never mistake the nearer
+ * LOS for the requested AOS merely because both are visibility transitions.
+ *
+ * Search backwards first for AOS, towards the expected LOS for a visible
+ * coarse sample, and backwards for an already-below-horizon LOS. Fall back to
+ * the other direction when necessary. The returned timestamp is always an
+ * above-horizon sample, so the chart cannot extend below 0°.
+ *
+ * Returns null if there is no crossing of the requested type within 70 seconds
+ * in either search direction.
+ */
+internal fun refineMutualHorizonEdge(
+    approxTime: Long,
+    stepMs: Long,
+    goingUp: Boolean,
+    isMutuallyVisible: (Long) -> Boolean
+): Long? {
+    if (stepMs <= 0L) return null
+    val steps = (70_000L / stepMs).toInt()
+    if (steps == 0) return null
+
+    fun search(direction: Long): Long? {
+        var time = approxTime
+        var visible = isMutuallyVisible(time)
+        repeat(steps) {
+            val next = time + direction
+            val nextVisible = isMutuallyVisible(next)
+            // Visibility transitions are classified in chronological order,
+            // regardless of whether the search itself is running backwards.
+            val before = if (direction > 0L) visible else nextVisible
+            val after = if (direction > 0L) nextVisible else visible
+            if (before != after && after == goingUp) {
+                return if (visible) time else next
+            }
+            time = next
+            visible = nextVisible
+        }
+        return null
+    }
+
+    val firstDirection = when {
+        goingUp -> -stepMs
+        isMutuallyVisible(approxTime) -> stepMs
+        else -> -stepMs
+    }
+    return search(firstDirection) ?: search(-firstDirection)
+}

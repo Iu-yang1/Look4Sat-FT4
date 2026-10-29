@@ -34,6 +34,7 @@ import com.rtbishop.look4sat.core.domain.time.ClockSnapshot
 import com.rtbishop.look4sat.core.domain.time.TimeSynchronizationState
 import com.rtbishop.look4sat.core.domain.rotator.RotatorSettings
 import com.rtbishop.look4sat.core.domain.rotator.RotatorTrackingState
+import com.rtbishop.look4sat.core.domain.repository.LoTWUploadIssueKind
 import java.io.File
 
 data class PositionSettings(
@@ -95,10 +96,6 @@ data class SettingsState(
     /** Wavelog-mode logbook upload: prepared batch awaiting confirmation. */
     val logbookWavelogPreview: com.rtbishop.look4sat.core.domain.repository.WavelogUploadPreview? = null,
     val lotwSettings: com.rtbishop.look4sat.core.domain.model.LoTWSettings = com.rtbishop.look4sat.core.domain.model.LoTWSettings(),
-    val lotwSyncing: Boolean = false,
-    val lotwSyncMode: LoTWSyncMode? = null,
-    val lotwProgress: com.rtbishop.look4sat.core.domain.repository.LoTWProgress? = null,
-    val lotwError: LoTWError? = null,
     /** Epoch ms of the last successful LoTW sync (0 = never) — shown like the ephemeris update time. */
     val lotwLastSyncEpochMs: Long = 0L,
 
@@ -125,6 +122,10 @@ data class SettingsState(
     val logbookUploadBusy: Boolean = false,
     /** User-facing upload message shown inside the logbook dialog ("" = none). */
     val logbookUploadMessage: String = "",
+    /** Structured LoTW failure shown in the shared actionable result dialog. */
+    val logbookUploadErrorKind: LoTWUploadIssueKind? = null,
+    val logbookUploadErrorSummary: String = "",
+    val logbookUploadErrorTechnicalDetails: String = "",
     /** Logbook multi-select mode (entered by long-pressing a row); checked records can be
      *  re-uploaded so a corrected station location updates them on LoTW (resubmit). */
     val logbookSelectionMode: Boolean = false,
@@ -137,16 +138,7 @@ data class SettingsState(
     val updateChecker: UpdateCheckerState = UpdateCheckerState()
 )
 
-/** LoTW sync failure, kept as a translatable code until the UI renders it. */
-enum class LoTWUploadError { PASSWORD, EXPIRED, FORMAT, INVALID_FILE, UNKNOWN }
-
-sealed interface LoTWError {
-    data object NotConfigured : LoTWError
-    data object BadCredentials : LoTWError
-    data object RateLimited : LoTWError
-    data object Timeout : LoTWError
-    data class Network(val detail: String) : LoTWError
-}
+enum class LoTWUploadError { PASSWORD, INVALID_FILE, EXPIRED, FORMAT, UNKNOWN }
 
 sealed interface SettingsAction {
     // Position
@@ -219,12 +211,6 @@ sealed interface SettingsAction {
 
     // LoTW confirmed grids
     data class UpdateLoTW(val settings: com.rtbishop.look4sat.core.domain.model.LoTWSettings) : SettingsAction
-    data class SyncLoTWGrids(
-        val settings: com.rtbishop.look4sat.core.domain.model.LoTWSettings,
-        val mode: LoTWSyncMode
-    ) : SettingsAction
-    /** Abort an in-flight LoTW sync (wrong button / changed mind). */
-    data object CancelLoTWSync : SettingsAction
 
 
     // Logbook (QSO records + LoTW confirmations)

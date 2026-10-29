@@ -39,6 +39,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import okhttp3.Call
 import okhttp3.Callback
+import okhttp3.EventListener
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
@@ -54,6 +55,7 @@ import java.nio.CharBuffer
 import java.util.Locale
 import java.util.UUID
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.coroutines.coroutineContext
 import kotlin.coroutines.resume
 
@@ -352,8 +354,10 @@ class LoTWUploadRepository internal constructor(
                 val result = post(payload.data, payload.preview.count)
                 when (result) {
                     is LoTWUploadResult.Accepted -> payload.hashes.forEach { ledger[it] = "accepted" }
-                    is LoTWUploadResult.Rejected -> payload.hashes.forEach { ledger.remove(it) }
-                    else -> Unit
+                    is LoTWUploadResult.Rejected,
+                    is LoTWUploadResult.NotSent -> payload.hashes.forEach { ledger.remove(it) }
+                    is LoTWUploadResult.Unknown,
+                    LoTWUploadResult.ExpiredPreview -> Unit
                 }
                 saveLedger(ledger)
                 result
@@ -402,18 +406,48 @@ class LoTWUploadRepository internal constructor(
     private suspend fun post(data: ByteArray, count: Int): LoTWUploadResult = suspendCancellableCoroutine { continuation ->
         val body = MultipartBody.Builder().setType(MultipartBody.FORM)
             .addFormDataPart("upfile", "look4sat-${UUID.randomUUID()}.tq8", data.toRequestBody("application/octet-stream".toMediaType())).build()
-        val call = client.newCall(Request.Builder().url("https://lotw.arrl.org/lotw/upload").post(body).build())
+        // Only a failure before request headers begin proves that no upload request was sent.
+        // Once headers start, conservatively treat any transport failure as an unknown outcome.
+        val requestHeadersStarted = AtomicBoolean(false)
+        val callClient = client.newBuilder().eventListener(object : EventListener() {
+            override fun requestHeadersStart(call: Call) {
+                requestHeadersStarted.set(true)
+            }
+        }).build()
+        val call = callClient.newCall(Request.Builder().url("https://lotw.arrl.org/lotw/upload").post(body).build())
         continuation.invokeOnCancellation { call.cancel() }
         call.enqueue(object : Callback {
             override fun onFailure(call: Call, e: IOException) {
-                if (continuation.isActive) continuation.resume(LoTWUploadResult.Unknown)
+                if (continuation.isActive) {
+                    continuation.resume(classifyLoTWUploadFailure(requestHeadersStarted.get(), e))
+                }
             }
             override fun onResponse(call: Call, response: Response) {
+                val status = response.code
                 val result = try {
                     response.use {
-                        if (!it.isSuccessful) LoTWUploadResult.Unknown else parseLoTWUploadResponse(readBoundedBody(it, 256 * 1024), count)
+                        val bodyText = readBoundedBody(it, 256 * 1024)
+                        when (val parsed = parseLoTWUploadResponse(bodyText, count)) {
+                            is LoTWUploadResult.Accepted -> parsed
+                            is LoTWUploadResult.Rejected -> parsed.copy(
+                                httpStatus = status,
+                                responseSummary = parsed.responseSummary.ifBlank { safeResponseSummary(bodyText) }
+                            )
+                            is LoTWUploadResult.Unknown -> parsed.copy(
+                                reason = if (it.isSuccessful) parsed.reason else "HTTP $status; ${parsed.reason}",
+                                httpStatus = status,
+                                responseSummary = parsed.responseSummary.ifBlank { safeResponseSummary(bodyText) }
+                            )
+                            is LoTWUploadResult.NotSent -> parsed
+                            LoTWUploadResult.ExpiredPreview -> parsed
+                        }
                     }
-                } catch (_: Exception) { LoTWUploadResult.Unknown }
+                } catch (e: Exception) {
+                    LoTWUploadResult.Unknown(
+                        reason = "Unable to read LoTW response: ${safeDiagnosticText("${e.javaClass.simpleName}: ${e.message.orEmpty()}")}",
+                        httpStatus = status
+                    )
+                }
                 if (continuation.isActive) continuation.resume(result)
             }
         })
@@ -447,11 +481,38 @@ internal fun parseLoTWUploadResponse(body: String, count: Int): LoTWUploadResult
             val message = Regex("<!--\\s*\\.UPLMESSAGE\\.\\s*(.*?)-->", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
                 .find(body)?.groupValues?.get(1).orEmpty().replace(Regex("<[^>]*>"), " ")
                 .replace(Regex("[\\p{Cc}\\s]+"), " ").trim().take(500)
-            LoTWUploadResult.Rejected(message)
+            LoTWUploadResult.Rejected(
+                message = message,
+                responseSummary = message.ifBlank { safeResponseSummary(body) }
+            )
         }
-        else -> LoTWUploadResult.Unknown
+        else -> LoTWUploadResult.Unknown(
+            reason = "LoTW response did not contain a recognized accepted/rejected marker",
+            responseSummary = safeResponseSummary(body)
+        )
     }
 }
+
+/** A transport failure is safely retryable only when OkHttp confirms headers never started. */
+internal fun classifyLoTWUploadFailure(requestHeadersStarted: Boolean, error: IOException): LoTWUploadResult {
+    val detail = safeDiagnosticText("${error.javaClass.simpleName}: ${error.message.orEmpty()}")
+    return if (requestHeadersStarted) {
+        LoTWUploadResult.Unknown(reason = detail)
+    } else {
+        LoTWUploadResult.NotSent(reason = detail)
+    }
+}
+
+private fun safeDiagnosticText(value: String): String =
+    value.replace(Regex("[\\p{Cc}]+"), " ").replace(Regex("\\s+"), " ").trim().take(500)
+
+/** Strip markup and control characters before showing a bounded server response in diagnostics. */
+internal fun safeResponseSummary(body: String): String =
+    body.replace(Regex("(?is)<script[^>]*>.*?</script>|<style[^>]*>.*?</style>"), " ")
+        .replace(Regex("<[^>]*>"), " ")
+        .replace(Regex("[\\p{Cc}\\s]+"), " ")
+        .trim()
+        .take(1000)
 
 private data class StoredCertificate(val info: LoTWCertificate, val p12: ByteArray, val password: ByteArray?)
 

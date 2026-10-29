@@ -144,10 +144,31 @@ data class LoTWUploadAudit(
 
 sealed interface LoTWUploadResult {
     data class Accepted(val count: Int) : LoTWUploadResult
-    data class Rejected(val message: String = "") : LoTWUploadResult
-    /** May have reached LoTW. Do not retry automatically. */
-    data object Unknown : LoTWUploadResult
+    data class Rejected(
+        val message: String = "",
+        val httpStatus: Int? = null,
+        val responseSummary: String = ""
+    ) : LoTWUploadResult
+
+    /** The request failed before request headers started, so the QSO payload was not sent. */
+    data class NotSent(val reason: String = "") : LoTWUploadResult
+
+    /** The request may have reached LoTW. Keep the receipt unknown and never retry automatically. */
+    data class Unknown(
+        val reason: String = "",
+        val httpStatus: Int? = null,
+        val responseSummary: String = ""
+    ) : LoTWUploadResult
+
     data object ExpiredPreview : LoTWUploadResult
+}
+
+/** UI treatment for the different LoTW upload failure outcomes. */
+enum class LoTWUploadIssueKind {
+    NOT_SENT,
+    REJECTED,
+    UNKNOWN,
+    PREVIOUS_UNKNOWN
 }
 
 class LoTWOperationException(val reason: LoTWProblem, val detail: String = "") : Exception(reason.name)

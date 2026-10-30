@@ -71,13 +71,13 @@ class LiveTransponderFrequenciesTest {
             state.copy(calculatorReference = null), position))
     }
 
-    @Test fun editingDifferentOrNoSelectedTransponderDoesNotRebaseAnotherRow() {
+    @Test fun collapsingTheRowKeepsItsReferenceButSelectingAnotherDoesNotRebaseIt() {
         val pos = OrbitalPos()
         val original = listOf(raw(fm, pos))
         val service = RadioTrackingState(selectedTransponder = fm,
             txBaseFrequencyHz = 145_905_000L, nominalRxFrequencyHz = 435_103_000L)
         assertEquals(original, liveTransponderFrequencyRows(original, "other", service, pos))
-        assertEquals(original, liveTransponderFrequencyRows(original, null, service, pos))
+        assertEquals(pos.getDownlinkFreq(435_103_000L),\n            liveTransponderFrequencyRows(original, null, service, pos).single().downlinkLow)
         assertEquals(original, liveTransponderFrequencyRows(original, "fm", service, null))
     }
 }

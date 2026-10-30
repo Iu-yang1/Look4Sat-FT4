@@ -80,6 +80,7 @@ class LiveTransponderFrequenciesTest {
         assertEquals(
             pos.getDownlinkFreq(435_103_000L),
             liveTransponderFrequencyRows(original, null, service, pos).single().downlinkLow
+        )
         assertEquals(original, liveTransponderFrequencyRows(original, "fm", service, null))
     }
 }

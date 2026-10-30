@@ -14,7 +14,7 @@ name: Build Look4Sat APK
 # Local Gradle builds keep using the catalog unchanged. Most runs are manual; only the specific release commit has a guarded push trigger.
 
 on:
-  # One-shot v18.3 release automation; only the specific release commit runs on push.
+  # One-shot v18.4 release automation; only the specific release commit runs on push.
   push:
     branches: [main]
   workflow_dispatch:
@@ -38,7 +38,7 @@ permissions:
 
 jobs:
   build:
-    if: "${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && startsWith(github.event.head_commit.message, 'release: v4.4.8-ba7opf.18.3')) }}"
+    if: "${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && startsWith(github.event.head_commit.message, 'release: v4.4.8-ba7opf.18.4')) }}"
     runs-on: ubuntu-latest
     timeout-minutes: 50
     steps:
@@ -239,15 +239,15 @@ jobs:
           NOTES="$NOTES_IN"
           if [ "$GITHUB_EVENT_NAME" = "push" ]; then
             NOTES="$(cat <<'RELEASE_NOTES'
-          ## v18.3 — English
-          - Fixed elevation-circle 10°/20° angle labels piling up at the 180° meridian when the satellite is just west of 180°E.
-          - Keep elevation contours and labels aligned across the antimeridian, including when panning the map; added regression tests.
-          - Verification: GitHub Actions unit tests passed (excluding the existing unrelated RadioConfigurationSaveTest timeout class); signed APK build, signing certificate and ABI checks passed.
+          ## v18.4 — English
+          - Fixed live transponder TX/RX Doppler frequency rows not following the newly edited reference frequencies.
+          - Recomputed the selected repeater's live frequencies immediately and on every pass refresh, including linear passband edges; preserved inversion and bandwidth, and left unrelated transponders unchanged.
+          - Synchronized Bluetooth/network frequency reporting with the corrected live downlink; added FM, linear and linked-calculator regression tests.
 
-          ## v18.3 — 中文
-          - 修复卫星位于东经 180°以西不远处时，10°/20° 仰角圆数字挤在 180° 经线上的问题。
-          - 修正仰角圆及标签跨越国际日期变更线、拖动地图时的对齐，并新增回归测试。
-          - 验证：GitHub Actions 单元测试通过（排除已有的无关 RadioConfigurationSaveTest 超时测试类）；签名 APK 构建、签名证书和 ABI 检查通过。
+          ## v18.4 — 中文
+          - 修复修改转发器 TX/RX 基准频率后，实时多普勒频率仍按旧频率显示的问题。
+          - 基准频率变化后立即刷新，后续每秒按新基准频率计算，线性转发器保持通带宽度和倒置关系，其他转发器不受影响。
+          - 同步修正蓝牙/网络频率上报，并新增 FM、线性转发器和计算器联动的回归测试。
           RELEASE_NOTES
           )"
           fi

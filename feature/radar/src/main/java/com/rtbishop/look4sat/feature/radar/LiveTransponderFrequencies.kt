@@ -29,7 +29,9 @@ internal fun liveTransponderFrequencyRows(
     orbitalPos: OrbitalPos?
 ): List<SatRadio> {
     val original = tracking.selectedTransponder ?: return dopplerRadios
-    // Collapsing the row clears selectedUuid, but must not undo its saved reference.\n    if ((selectedUuid != null && selectedUuid != original.uuid) || orbitalPos == null) return dopplerRadios
+    // Collapsing the row clears selectedUuid, but must not undo its saved reference.
+    val position = orbitalPos ?: return dopplerRadios
+    if (selectedUuid != null && selectedUuid != original.uuid) return dopplerRadios
 
     val baseTx = if (tracking.calculatorLinked) tracking.calculatorReference?.txHz
         else tracking.txBaseFrequencyHz
@@ -51,11 +53,11 @@ internal fun liveTransponderFrequencyRows(
         if (live.uuid != original.uuid) live else {
             val tx = correctedReferencePair(
                 original.uplinkLow, original.uplinkHigh, live.uplinkLow, live.uplinkHigh, txShift,
-                orbitalPos::getUplinkFreq
+                position::getUplinkFreq
             )
             val rx = correctedReferencePair(
                 original.downlinkLow, original.downlinkHigh, live.downlinkLow, live.downlinkHigh, rxShift,
-                orbitalPos::getDownlinkFreq
+                position::getDownlinkFreq
             )
             live.copy(uplinkLow = tx.first, uplinkHigh = tx.second,
                 downlinkLow = rx.first, downlinkHigh = rx.second)

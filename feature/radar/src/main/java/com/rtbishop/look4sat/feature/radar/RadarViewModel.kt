@@ -77,6 +77,8 @@ class RadarViewModel(
     private val stationPos = settingsRepo.stationPosition.value
     private val magDeclination = sensorsRepo.getMagDeclination(stationPos)
     private var transponders: List<SatRadio> = emptyList()
+    /** Raw per-second Doppler rows, before applying the selected radio's saved references. */
+    private var latestUnadjustedRadios: List<SatRadio> = emptyList()
     private var calculatorCatnum: Int? = null
     private var sstvDecoder: SstvDecoder? = null
     private var sstvSampleRate: Int? = null
@@ -199,7 +201,10 @@ class RadarViewModel(
     private suspend fun loadPassData(pass: OrbitalPass): List<SatRadio> {
         val previous = _uiState.value.currentPass
         val changed = previous?.catNum != pass.catNum || previous?.aosTime != pass.aosTime
-        if (changed) stopCwListening()
+        if (changed) {
+            stopCwListening()
+            latestUnadjustedRadios = emptyList()
+        }
         _uiState.update { it.copy(currentPass = pass,
             cwConsole = if (changed) CwConsoleState() else it.cwConsole,
             cw = if (changed) it.cw.copy(decodedText = "", resetGeneration = it.cw.resetGeneration + 1) else it.cw) }
@@ -256,7 +261,14 @@ class RadarViewModel(
         viewModelScope.launch {
             trackingService.state.collect { svc ->
                 _uiState.update { state ->
+                    val rows = liveTransponderFrequencyRows(
+                        latestUnadjustedRadios, state.transceivers.selectedUuid, svc, state.orbitalPos
+                    )
                     state.copy(
+                        transceivers = state.transceivers.copy(
+                            transmitters = rows,
+                            selectedFrequency = selectedLiveDownlinkFrequency(rows, state.transceivers.selectedUuid)
+                        ),
                         radioControl = state.radioControl.copy(
                             txPanel = RadioPanelState(
                                 label = "TX (Uplink)",
@@ -536,22 +548,14 @@ class RadarViewModel(
 
     private suspend fun processRadios(radios: List<SatRadio>, orbitalObject: OrbitalObject, time: Long) {
         val favorites = _uiState.value.favoriteTransponderUuids
-        val transmitters = satelliteRepo.getRadios(orbitalObject, stationPos, radios, time)
+        val unadjustedRadios = satelliteRepo.getRadios(orbitalObject, stationPos, radios, time)
             .sortedWith(compareByDescending<SatRadio> { it.uuid in favorites })
+        latestUnadjustedRadios = unadjustedRadios
         _uiState.update { state ->
-            val freq = if (state.transceivers.selectedUuid != null) {
-                val selectedRadio = transmitters.firstOrNull { it.uuid == state.transceivers.selectedUuid }
-                selectedRadio?.let { radio ->
-                    val low = radio.downlinkLow
-                    val high = radio.downlinkHigh
-                    when {
-                        low != null && high != null -> (low + high) / 2
-                        low != null -> low
-                        else -> null
-                    }
-                }
-            } else null
-
+            val transmitters = liveTransponderFrequencyRows(
+                unadjustedRadios, state.transceivers.selectedUuid, trackingService.state.value, state.orbitalPos
+            )
+            val freq = selectedLiveDownlinkFrequency(transmitters, state.transceivers.selectedUuid)
             val current = state.transceivers
             if (current.transmitters == transmitters && current.selectedFrequency == freq) {
                 return@update state

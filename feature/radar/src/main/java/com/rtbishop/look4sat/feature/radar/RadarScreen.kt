@@ -107,7 +107,6 @@ import com.rtbishop.look4sat.core.presentation.layoutPadding
 import com.rtbishop.look4sat.core.presentation.sheetDialogContainerColor
 import com.rtbishop.look4sat.core.presentation.sheetDialogShape
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.delay
 import kotlin.math.PI
 
 /** Result from the full-screen grid map, including cancellation (grid = null). */
@@ -234,20 +233,6 @@ fun RadarDestination(
             container.setMutualPassData(MutualPassData())
         }
         navigateToMap()
-    }
-    LaunchedEffect(mutualData.endTime) {
-        if (mutualData.endTime <= 0L) return@LaunchedEffect
-        // Auto-return only while the mutual pass is actually in progress. An
-        // already-finished pass must NOT bounce the radar page back instantly
-        // (that made the pass-card radar shortcut look broken: tapping it while
-        // the computed pass had ended returned to Mutual immediately).
-        var remainingMs = mutualData.endTime - System.currentTimeMillis()
-        if (remainingMs <= 0L) return@LaunchedEffect
-        while (remainingMs > 0L) {
-            delay(remainingMs.coerceAtMost(1000L))
-            remainingMs = mutualData.endTime - System.currentTimeMillis()
-        }
-        navigateUpAndClearMutual()
     }
     // Sync actual permission state on every recomposition so it survives screen re-entry
     val hasPermission = ContextCompat.checkSelfPermission(

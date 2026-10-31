@@ -79,6 +79,7 @@ class MainApplication : Application(), IContainerProvider, com.rtbishop.look4sat
      * Android must enumerate the device and grant permission before reconnecting.
      * Only the configured L4S VID/PID is eligible; never open an unrelated USB
      * serial device or start tracking/transmitting automatically. */
+    @Suppress("DEPRECATION")
     private fun observeL4sUsbAttachments() {
         val manager = getSystemService(UsbManager::class.java) ?: return
         val filter = IntentFilter().apply {
@@ -87,9 +88,9 @@ class MainApplication : Application(), IContainerProvider, com.rtbishop.look4sat
         }
         val receiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context, intent: Intent) {
-                val device = if (android.os.Build.VERSION.SDK_INT >= 33)
+                val device: UsbDevice? = if (android.os.Build.VERSION.SDK_INT >= 33)
                     intent.getParcelableExtra(UsbManager.EXTRA_DEVICE, UsbDevice::class.java)
-                else @Suppress("DEPRECATION") intent.getParcelableExtra<UsbDevice>(UsbManager.EXTRA_DEVICE)
+                else intent.getParcelableExtra(UsbManager.EXTRA_DEVICE)
                 val event = if (intent.action == UsbManager.ACTION_USB_DEVICE_ATTACHED) "attach" else "detach"
                 container.controlDiagnostics.record(ControlDiagnosticSource.RADIO, "usb/hotplug",
                     "event=$event VID=${device?.vendorId} PID=${device?.productId} " +

@@ -27,7 +27,7 @@ import android.hardware.usb.UsbDevice
 import android.hardware.usb.UsbManager
 import androidx.core.content.ContextCompat
 import com.rtbishop.look4sat.core.domain.control.ControlDiagnosticSource
-import com.rtbishop.look4sat.core.domain.model.RadioControlSettings
+import com.rtbishop.look4sat.core.data.framework.matchesConfiguredL4sUsbDevice
 import com.rtbishop.look4sat.core.domain.repository.PttState
 import android.app.Application.ActivityLifecycleCallbacks
 import android.os.Bundle
@@ -100,12 +100,7 @@ class MainApplication : Application(), IContainerProvider, com.rtbishop.look4sat
                 usbReconnectJob = container.appScope.launch {
                     delay(450) // Android permission and descriptor discovery settle after attach.
                     val config = container.settingsRepo.radioControlSettings.value
-                    if (!config.enabled || config.catTransport != RadioControlSettings.TRANSPORT_USB ||
-                        config.radioModel !in setOf(RadioControlSettings.MODEL_QUANSHENG_UVK1,
-                            RadioControlSettings.MODEL_QUANSHENG_UVK5V3)) return@launch
-                    val id = config.txRadioAddress.split(':')
-                    if (id.size != 5 || id[3].toIntOrNull() != device.vendorId ||
-                        id[4].toIntOrNull() != device.productId) return@launch
+                    if (!matchesConfiguredL4sUsbDevice(config, device.vendorId, device.productId)) return@launch
                     val matches = manager.deviceList.values.filter {
                         it.vendorId == device.vendorId && it.productId == device.productId
                     }

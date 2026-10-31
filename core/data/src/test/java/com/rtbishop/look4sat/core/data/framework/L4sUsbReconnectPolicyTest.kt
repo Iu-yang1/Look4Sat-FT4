@@ -6,11 +6,15 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class L4sUsbReconnectPolicyTest {
-    private val configured = RadioControlSettings().copy(
+    private val configured = RadioControlSettings(
         enabled = true,
         radioModel = RadioControlSettings.MODEL_QUANSHENG_UVK1,
         catTransport = RadioControlSettings.TRANSPORT_USB,
-        txRadioAddress = "17:0:1:14007:65535"
+        txRadioAddress = "17:0:1:14007:65535",
+        rxRadioAddress = "",
+        txRadioName = "UV-K1",
+        rxRadioName = "",
+        baudRate = 38_400
     )
 
     @Test fun matchesDeviceAfterAddressChanges() {

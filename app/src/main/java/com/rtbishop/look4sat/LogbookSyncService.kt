@@ -129,6 +129,13 @@ class LogbookSyncService : Service() {
                 )
             }
             mainHandler.post { finish(request, finalStatus) }
+        }.also { job ->
+            // A job cancelled before dispatch never reaches the body above.
+            job.invokeOnCompletion { cause ->
+                if (cause != null) mainHandler.post {
+                    finish(request, failedStatus(request, getString(LogbookR.string.logbook_sync_interrupted)))
+                }
+            }
         }
         return START_NOT_STICKY
     }
@@ -370,7 +377,9 @@ class LogbookSyncService : Service() {
             else -> getString(LogbookR.string.logbook_sync_notification_failed)
         }
         val progress = status.progress
-        val indeterminate = status.isRunning && (
+        val saving = status.provider == LogbookSyncProvider.LOTW &&
+            status.stageMessage == getString(LogbookR.string.logbook_sync_notification_saving)
+        val indeterminate = status.isRunning && !saving && (
             status.provider != LogbookSyncProvider.LOTW || progress == null ||
                 progress.phase == LoTWPhase.Connecting || progress.expectedBytes <= 0
             )
@@ -388,6 +397,7 @@ class LogbookSyncService : Service() {
             .setOngoing(status.isRunning)
             .setAutoCancel(!status.isRunning)
         when {
+            status.isRunning && saving -> builder.setProgress(0, 0, false)
             status.isRunning -> builder.setProgress(100, progressValue, indeterminate)
             status.succeeded == true -> builder.setProgress(100, 100, false)
             else -> builder.setProgress(0, 0, false)

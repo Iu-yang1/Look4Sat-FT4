@@ -32,6 +32,7 @@ import com.rtbishop.look4sat.core.domain.predict.OrbitalPass
 import com.rtbishop.look4sat.core.domain.predict.OrbitalPos
 import com.rtbishop.look4sat.core.domain.rotator.RotatorConnectionState
 import com.rtbishop.look4sat.core.domain.repository.IMainContainer
+import com.rtbishop.look4sat.core.domain.repository.MutualPassData
 import com.rtbishop.look4sat.core.domain.repository.IRadioTrackingService
 import com.rtbishop.look4sat.core.domain.repository.IReporter
 import com.rtbishop.look4sat.core.domain.repository.IRotatorTrackingService
@@ -45,6 +46,7 @@ import com.rtbishop.look4sat.core.domain.cw.CwDecoder
 import com.rtbishop.look4sat.core.domain.usecase.IAddToCalendar
 import com.rtbishop.look4sat.core.domain.usecase.ISaveImage
 import com.rtbishop.look4sat.core.domain.usecase.IShowToast
+import com.rtbishop.look4sat.core.domain.utility.round
 import com.rtbishop.look4sat.core.domain.utility.toTimerString
 import com.rtbishop.look4sat.core.presentation.formatFrequency
 import kotlinx.coroutines.Dispatchers
@@ -53,6 +55,9 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.onCompletion
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
@@ -71,7 +76,8 @@ class RadarViewModel(
     private val rotatorTrackingService: IRotatorTrackingService,
     private val audioHub: IAudioHub,
     private val saveImage: ISaveImage,
-    private val showToast: IShowToast
+    private val showToast: IShowToast,
+    private val mutualSession: MutualPassData = MutualPassData()
 ) : ViewModel() {
 
     private val stationPos = settingsRepo.stationPosition.value
@@ -179,7 +185,14 @@ class RadarViewModel(
 
     private fun collectPassAndStartTickLoop() {
         viewModelScope.launch {
-            val pass = findCurrentPass() ?: return@launch
+            // Selection/pass loading may lag navigation after a TLE refresh. Wait
+            // for the *requested* pass rather than permanently opening a blank radar.
+            val pass = combine(
+                satelliteRepo.selectedPass,
+                satelliteRepo.passes,
+                satelliteRepo.satellites,
+                trackingService.state
+            ) { _, _, _, _ -> findCurrentPass() }.filterNotNull().first()
             val allRadios = loadPassData(pass)
             while (isActive) {
                 tickPass(pass, allRadios)
@@ -191,10 +204,38 @@ class RadarViewModel(
     private fun findCurrentPass(): OrbitalPass? {
         val passes = satelliteRepo.passes.value
         val (catNum, aosTime) = satelliteRepo.selectedPass.value
+
+        // Mutual passes are calculated independently of the main pass filters.
+        // Their AOS is the common-visibility start, not necessarily the local AOS.
+        // Keep that exact session instead of falling back to an unrelated pass.
+        if (mutualSession.startTime == aosTime && mutualSession.endTime > aosTime) {
+            val satellite = satelliteRepo.satellites.value.firstOrNull { it.data.catnum == catNum }
+                ?: passes.firstOrNull { it.catNum == catNum }?.orbitalObject
+                ?: return null
+            val first = mutualSession.trackSamples.firstOrNull()
+            val last = mutualSession.trackSamples.lastOrNull()
+            val midTime = aosTime + (mutualSession.endTime - aosTime) / 2L
+            return OrbitalPass(
+                aosTime = aosTime,
+                aosAzimuth = first?.azimuthA ?: 0.0,
+                losTime = mutualSession.endTime,
+                losAzimuth = last?.azimuthA ?: 0.0,
+                altitude = satellite.getFullPosition(settingsRepo.stationPosition.value, midTime).altitude.toInt(),
+                maxElevation = (mutualSession.samples.maxOfOrNull { it.second.first } ?: 0.0).round(1),
+                orbitalObject = satellite
+            )
+        }
+
+        // Active radio tracking remains valid even if the latest TLE, time
+        // window or radio-mode filter no longer includes that pass.
+        // Never fall back to a different satellite or an unrelated future pass.
+        val tracked = trackingService.state.value
+        val trackedPass = tracked.currentPass
+        if (tracked.isActive && trackedPass != null && trackedPass.catNum == catNum &&
+            (trackedPass.aosTime == aosTime || aosTime in trackedPass.aosTime..trackedPass.losTime)
+        ) return trackedPass
         return passes.find { it.catNum == catNum && it.aosTime == aosTime }
             ?: passes.find { it.catNum == catNum && aosTime in it.aosTime..it.losTime }
-            ?: passes.find { it.catNum == catNum }
-            ?: passes.firstOrNull()
     }
 
     // Loads transmitters and satellite track for pass, sets initial state, returns full radio list
@@ -725,7 +766,8 @@ class RadarViewModel(
                     rotatorTrackingService = container.rotatorTrackingService,
                     audioHub = container.audioHub,
                     saveImage = container.provideSaveImage(),
-                    showToast = container.provideShowToast()
+                    showToast = container.provideShowToast(),
+                    mutualSession = container.mutualPassData.value
                 )
             }
         }

@@ -52,12 +52,20 @@ import java.util.TimeZone
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.coroutines.coroutineContext
 
+/** Only the most recently requested prediction may publish into the shared pass list. */
+internal class PassCalculationGeneration {
+    private val next = AtomicLong()
+    fun begin(): Long = next.incrementAndGet()
+    fun isLatest(generation: Long): Boolean = next.get() == generation
+}
+
 class SatelliteRepo(
     private val dispatcher: CoroutineDispatcher,
     private val localStorage: ILocalSource,
     private val settingsRepo: ISettingsRepo
 ) : ISatelliteRepo {
 
+    private val calculationGeneration = PassCalculationGeneration()
     private val _passes = MutableStateFlow<List<OrbitalPass>>(emptyList())
     override val passes: StateFlow<List<OrbitalPass>> = _passes
 
@@ -69,7 +77,6 @@ class SatelliteRepo(
 
     private val _selectedPass = MutableStateFlow(0 to 0L)
     override val selectedPass: StateFlow<Pair<Int, Long>> = _selectedPass
-    private val calculationGeneration = AtomicLong(0L)
     private val calculationLock = Any()
     private var calculationJob: Job? = null
 
@@ -162,7 +169,7 @@ class SatelliteRepo(
     ) = coroutineScope {
         val (requestGeneration, job) = synchronized(calculationLock) {
             coroutineContext.ensureActive()
-            val generation = calculationGeneration.incrementAndGet()
+            val generation = calculationGeneration.begin()
             val newJob = launch(start = CoroutineStart.LAZY) {
                 _isCalculating.value = true
                 try {
@@ -170,11 +177,12 @@ class SatelliteRepo(
                     val normalizedTime = time / 60_000L * 60_000L
                     val currentSatellites = _satellites.value
                     val newPasses = withContext(dispatcher) {
-                        val idsWithModes = if (modes.isEmpty()) emptyList() else localStorage.getIdsWithModes(modes)
+                        val activeModes = modes.map { it.trim() }.filter { it.isNotEmpty() }
+                        val idsWithModes = if (activeModes.isEmpty()) emptyList() else localStorage.getIdsWithModes(activeModes)
                         val stationPos = settingsRepo.stationPosition.value
                         val filteredSatellites = filterSatellitesByModes(
                             currentSatellites,
-                            modes,
+                            activeModes,
                             idsWithModes
                         )
                         val passLists = coroutineScope {
@@ -208,11 +216,11 @@ class SatelliteRepo(
                         filteredPasses.sortBy { it.aosTime }
                         filteredPasses
                     }
-                    if (calculationGeneration.get() == generation) {
+                    if (calculationGeneration.isLatest(generation)) {
                         _passes.value = newPasses
                     }
                 } finally {
-                    if (calculationGeneration.get() == generation) {
+                    if (calculationGeneration.isLatest(generation)) {
                         _isCalculating.value = false
                     }
                 }
@@ -228,7 +236,7 @@ class SatelliteRepo(
             synchronized(calculationLock) {
                 if (calculationJob === job) calculationJob = null
             }
-            if (calculationGeneration.get() == requestGeneration) {
+            if (calculationGeneration.isLatest(requestGeneration)) {
                 _isCalculating.value = false
             }
         }

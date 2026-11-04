@@ -25,10 +25,23 @@ import com.rtbishop.look4sat.core.domain.source.Sources
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.withContext
+
+internal fun mergeReloadedSatellites(
+    existing: List<SatItem>,
+    refreshed: List<SatItem>,
+    savedIds: Set<Int>
+): List<SatItem> {
+    val selectionById = existing.associate { it.catnum to it.isSelected }
+    return refreshed.map { item ->
+        item.copy(isSelected = selectionById[item.catnum] ?: (item.catnum in savedIds))
+    }
+}
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class SelectionRepo(
@@ -46,20 +59,14 @@ class SelectionRepo(
     // The three virtual types ("AMSAT Live FM", "AMSAT Live Linear", "Live SSTV")
     // are resolved from hardcoded FM/Linear catnum sets (Sources) or live
     // SSTV transponder data instead of SharedPreferences.
-    private val itemsWithTypes = currentTypes.flatMapLatest { types: List<String> ->
-        val catnumSet: Set<Int>? = if (types.isEmpty()) {
+    private val itemsWithTypes = combine(currentTypes, settingsRepo.databaseState) { types, _ -> types }
+        .flatMapLatest { types: List<String> ->
+        // "All" includes every satellite stored locally, not just the
+        // CelesTrak active source's last downloaded catnum list.
+        val catnumSet: Set<Int>? = if (types.isEmpty() || Sources.allSourceType in types) {
             null // null = no filtering
         } else {
-            val ids = resolveTypeIds(types)
-            when {
-                ids.isNotEmpty() -> ids.toHashSet()
-                // "All" is the CelesTrak active group, i.e. the whole catalogue: an empty
-                // persisted list must mean "no filtering" (show every satellite), not an
-                // empty list. Its list can be empty simply because CelesTrak answered 403
-                // to a repeated download inside the 2-hour update window.
-                Sources.allSourceType in types -> null
-                else -> emptySet()
-            }
+            resolveTypeIds(types).toHashSet()
         }
         currentItems.map { items ->
             if (catnumSet == null) items else items.filter { it.catnum in catnumSet }
@@ -117,7 +124,7 @@ class SelectionRepo(
     override fun getTypesList() = buildList {
         // 三个转发器/活动虚拟类型排在最前.
         addAll(Sources.virtualTypeNames)
-        // 所有真实 TLE 源类型均可选（含 "All" = CelesTrak active）；只排除
+        // 所有真实 TLE 源类型均可选（"All" 不筛选本地数据库）；只排除
         // "Other"（空 URL 占位，无数据）。不要用 removeAt(0) —— 字母序第一个
         // 是 "All"/"ARISS" 这类真实源，删掉会让用户勾不到它们。
         addAll(Sources.satelliteDataUrls.keys.sorted().filterNot { it == "Other" })
@@ -125,9 +132,10 @@ class SelectionRepo(
 
     override suspend fun getEntriesFlow() = withContext(dispatcher) {
         val selectedIds = settingsRepo.selectedIds.value.toHashSet()
-        currentItems.value = localSource.getEntriesList().map { item ->
-            item.copy(isSelected = item.catnum in selectedIds)
-        }
+        val refreshed = localSource.getEntriesList()
+        // Atomic merge: a database refresh must not discard ticks the user has
+        // not saved yet. Newly imported satellites inherit persisted selection.
+        currentItems.update { existing -> mergeReloadedSatellites(existing, refreshed, selectedIds) }
         return@withContext itemsWithQuery
     }
 

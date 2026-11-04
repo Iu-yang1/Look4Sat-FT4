@@ -114,19 +114,25 @@ class DatabaseRepo(
             entries
         }
         importedTypeIds.forEach { (type, ids) -> settingsRepo.setSatelliteTypeIds(type, ids.distinct()) }
-        val importedRadios = radioResults.flatMap { (rawUrl, result) ->
+        // A partial or invalid transceiver download is NOT a complete snapshot.
+        // Upsert healthy feeds without deleting radios from the failed sources.
+        // A full refresh may prune retired entries only when every configured
+        // source returned valid, non-empty data. Custom records are never pruned.
+        val radioSnapshots = radioResults.map { (rawUrl, result) ->
             val normUrl = normalizeUrl(rawUrl)
-            if (result.code in 200..299) {
+            val rows = if (result.code in 200..299) {
                 result.stream?.let { dataParser.parseJSONStream(unwrapIfZipped(normUrl, it)) }.orEmpty()
+                    .filter { it.uuid.isNotBlank() }
             } else {
                 result.stream?.close()
                 emptyList()
             }
-        }.filter { it.uuid.isNotBlank() }.distinctBy { it.uuid }
-        // Transceivers are a full snapshot. Keep manually imported entries while replacing
-        // managed entries that disappeared from the enabled feeds.
+            (result.code in 200..299 && rows.isNotEmpty()) to rows
+        }
+        val importedRadios = radioSnapshots.flatMap { it.second }.distinctBy { it.uuid }
+        val completeRadioSnapshot = radioSnapshots.isNotEmpty() && radioSnapshots.all { it.first }
         if (importedRadios.isNotEmpty()) {
-            localSource.deleteManagedRadios()
+            if (completeRadioSnapshot) localSource.deleteManagedRadios()
             localSource.insertRadios(importedRadios)
         }
         // Elements always come from the freshest source for every satellite; only

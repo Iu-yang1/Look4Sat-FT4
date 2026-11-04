@@ -153,6 +153,7 @@ fun LogPage(
                         enabled = !logUiState.recordSaving && logUiState.callsignInput.isNotBlank() && satName.isNotBlank()
                     ) { Text("Log") }
                 }
+                if(showRecordButton) com.rtbishop.look4sat.core.presentation.LogIdentityHint(overrides.myCallsign ?: logUiState.ownCallsign,logUiState.stationGrid)
                 logUiState.stationMismatch?.let { mismatch ->
                     Text(
                         text = "⚠ " + stringResource(

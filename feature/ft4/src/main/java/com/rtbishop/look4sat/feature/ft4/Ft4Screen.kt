@@ -293,6 +293,7 @@ private fun Ft4Shell(
                     }
                     IconCard(action = navigateToLogbook, resId = R.drawable.ic_logbook)
                 }
+                com.rtbishop.look4sat.core.presentation.LogIdentityHint(state.settings.operatorCallsign,state.stationGrid)
                 state.error?.let { error ->
                     ElevatedCard(
                         colors = CardDefaults.elevatedCardColors(

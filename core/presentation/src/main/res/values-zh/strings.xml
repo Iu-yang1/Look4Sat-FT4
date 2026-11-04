@@ -1036,4 +1036,7 @@
     <string name="recording_export">导出</string>
     <string name="recording_delete">删除</string>
     <string name="recording_delete_confirm">永久删除这条录音？</string>
+    <string name="log_identity_mismatch">与 %1$s 上传台站不一致：%2$s</string>
+    <string name="log_identity_callsign">呼号 %1$s／台站 %2$s</string>
+    <string name="log_identity_grid">网格 %1$s／台站 %2$s</string>
 </resources>

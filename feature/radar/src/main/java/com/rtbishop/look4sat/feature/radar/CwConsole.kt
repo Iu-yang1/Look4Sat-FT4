@@ -217,6 +217,7 @@ internal fun CwConsole(
                                 Text(stringResource(R.string.rc_cw_options))
                             }
                         }
+                        com.rtbishop.look4sat.core.presentation.LogIdentityHint(myCallsign,log.stationGrid)
                         val message = error ?: remote?.error ?: control.errorMessage
                         message?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                         if (message == null && available && !control.canSendL4sCw()) {

@@ -150,6 +150,7 @@ fun QsoEditDialog(
                 modifier = Modifier.fillMaxWidth().heightIn(max = 460.dp).verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
+                LogIdentityHint(record.myCallsign,(listOf(record.myGrid)+record.vuccGrids).filter {it.isNotBlank()}.joinToString(","))
                 if (record.lotwUploaded || record.lotwConfirmed) {
                     Text(
                         text = stringResource(R.string.qso_edit_uploaded_notice),

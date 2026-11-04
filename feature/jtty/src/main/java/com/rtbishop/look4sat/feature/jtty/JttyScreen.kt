@@ -223,6 +223,7 @@ internal fun JttyScreen(
                 }
             }
             if(page==2) {
+                com.rtbishop.look4sat.core.presentation.LogIdentityHint(state.myCall,state.grid)
                 Button(onClick={action(JttyAction.SaveLog)},enabled=!state.busy,modifier=Modifier.fillMaxWidth()) { Text(stringResource(R.string.jtty_save_log)) }
                 if(state.saved) Text(stringResource(R.string.jtty_saved),color=MaterialTheme.colorScheme.primary)
                 Text(stringResource(R.string.jtty_local_log),style=MaterialTheme.typography.bodySmall)

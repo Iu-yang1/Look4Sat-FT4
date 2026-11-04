@@ -46,6 +46,7 @@ class CwConsoleInteractionTest {
         val upload = stub<IWavelogUploadRepository> { null }
         val settings = stub<ISettingsRepo> {
             when (it) {
+                "getFt4Settings" -> MutableStateFlow(com.rtbishop.look4sat.core.domain.model.Ft4Settings())
                 "getWavelogUploadSettings" -> MutableStateFlow(WavelogUploadSettings())
                 "getStationPosition" -> MutableStateFlow(GeoPos(0.0, 0.0))
                 "getCurrentGrid" -> "OL87"

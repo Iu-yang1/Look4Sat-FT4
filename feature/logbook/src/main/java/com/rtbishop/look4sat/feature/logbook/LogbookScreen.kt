@@ -449,6 +449,7 @@ private fun LogbookEditorDialog(
                 modifier = Modifier.heightIn(max = 520.dp).verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
+                com.rtbishop.look4sat.core.presentation.LogIdentityHint(editor.myCallsign,editor.myGrid)
                 error?.let { Text(logbookErrorText(it), color = MaterialTheme.colorScheme.error) }
                 EditorField(editor.utcText, R.string.logbook_utc_time) { value -> update { it.copy(utcText = value) } }
                 EditorField(editor.theirCallsign, R.string.logbook_callsign) { value -> update { it.copy(theirCallsign = value) } }

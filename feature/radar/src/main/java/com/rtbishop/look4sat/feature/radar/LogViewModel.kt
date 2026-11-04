@@ -20,7 +20,6 @@ import com.rtbishop.look4sat.core.domain.logbook.displayMode
 import com.rtbishop.look4sat.core.domain.logbook.frequencyBand
 import com.rtbishop.look4sat.core.domain.logbook.needsPreviewForConflicts
 import com.rtbishop.look4sat.core.domain.logbook.officialSatelliteName
-import com.rtbishop.look4sat.core.domain.logbook.operatorCallsign
 import com.rtbishop.look4sat.core.domain.logbook.operatorGrids
 import com.rtbishop.look4sat.core.domain.logbook.satelliteIdentity
 import com.rtbishop.look4sat.core.domain.logbook.unavailableUploadSummary
@@ -85,8 +84,7 @@ data class LogUiState(
     val selectedMode: String = "",
     /** Station callsign from the imported LoTW certificate ("" when none). */
     val certificateCallsign: String = "",
-    /** Callsign of the selected Wavelog station profile ("" when none). The own-callsign
-     *  fallback for a Wavelog-only setup, which has no certificate to take it from. */
+    /** Callsign of the selected upload station, independent of the local operator. */
     val wavelogCallsign: String = "",
     /** Grids a record is logged under: the LoTW station location's, else the selected
      *  Wavelog station profile's (several gridsquares arrive comma-separated). */
@@ -113,11 +111,10 @@ data class LogUiState(
     /** Wavelog mode: the prepared batch awaiting the operator's confirmation. */
     val wavelogPreview: WavelogUploadPreview? = null,
     /** Out-of-window contact waiting for the operator's confirmation (null when closed). */
-    val outOfWindowLog: OutOfWindowLog? = null
+    val outOfWindowLog: OutOfWindowLog? = null,
+    val configuredCallsign: String = ""
 ) {
-    /** Own callsign written into a new record: the certificate's, else the Wavelog
-     *  station profile's (a Wavelog-only setup installs no certificate). */
-    val ownCallsign: String get() = operatorCallsign(certificateCallsign, wavelogCallsign)
+    val ownCallsign: String get() = configuredCallsign.trim().uppercase(Locale.US)
 }
 
 class LogViewModel(
@@ -153,6 +150,11 @@ class LogViewModel(
 
     init {
         viewModelScope.launch {
+            settingsRepo.ft4Settings.collect { settings ->
+                _uiState.update { it.copy(configuredCallsign = settings.operatorCallsign) }
+            }
+        }
+        viewModelScope.launch {
             val cert = lotwUploadRepository.certificate()
             val catalog = runCatching { lotwUploadRepository.satelliteCatalog() }.getOrDefault(emptyList())
             _uiState.update {
@@ -170,8 +172,7 @@ class LogViewModel(
                 _uiState.update {
                     it.copy(wavelogMode = settings.isReady, wavelogCallsign = settings.stationCallsign)
                 }
-                // A station profile picked (or cleared) while the page is open changes the own
-                // callsign and the grids a record would be logged under.
+                // Upload station changes affect station grids, never the local operator callsign.
                 refreshPositionHintNow()
             }
         }

@@ -24,7 +24,7 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class CwConsoleLogTest {
-    private class Fixture(val viewModel: LogViewModel, val saved: MutableList<QsoRecord>, var failSave: Boolean = false)
+    private class Fixture(val viewModel: LogViewModel, val saved: MutableList<QsoRecord>, val operatorSettings: MutableStateFlow<com.rtbishop.look4sat.core.domain.model.Ft4Settings>, var failSave: Boolean = false)
 
     private inline fun <reified T> stub(crossinline call: (String, Array<out Any?>) -> Any?): T =
         Proxy.newProxyInstance(T::class.java.classLoader, arrayOf(T::class.java)) { _, method, args ->
@@ -48,10 +48,12 @@ class CwConsoleLogTest {
             }
         }
         val wavelog = MutableStateFlow(WavelogUploadSettings(stationCallsign = "BA7OPF"))
+        val operatorSettings = MutableStateFlow(com.rtbishop.look4sat.core.domain.model.Ft4Settings(operatorCallsign="BA7OPF"))
         val position = MutableStateFlow(GeoPos(0.0, 0.0))
         val settings = stub<ISettingsRepo> { name, _ ->
             when (name) {
                 "getWavelogUploadSettings" -> wavelog
+                "getFt4Settings" -> operatorSettings
                 "getStationPosition" -> position
                 "getCurrentGrid" -> "PM01"
                 "getSatelliteMode" -> "CW"
@@ -67,7 +69,7 @@ class CwConsoleLogTest {
         }
         val upload = stub<IWavelogUploadRepository> { name, _ -> error("Unexpected upload $name") }
         val vm = LogViewModel(qso, lotw, upload, settings)
-        fixture = Fixture(vm, saved)
+        fixture = Fixture(vm, saved, operatorSettings)
         try {
             runCurrent()
             test(fixture)
@@ -80,6 +82,16 @@ class CwConsoleLogTest {
 
     private fun LogViewModel.recordCw(overrides: LogRecordOverrides = LogRecordOverrides(mode = "CW")) =
         record("FO-29", "SSB", 145950000, 435850000, "PM01AB", null, overrides)
+
+    @Test fun settingsCallsignIsFollowedInsteadOfTheUploadStationAndBlankDoesNotFallBack() = withFixture { f ->
+        f.operatorSettings.value=f.operatorSettings.value.copy(operatorCallsign="bg5jsu")
+        runCurrent()
+        assertEquals("BG5JSU",f.viewModel.uiState.value.ownCallsign)
+        f.viewModel.updateCallsign("JA1ABC");f.viewModel.recordCw();runCurrent()
+        assertEquals("BG5JSU",f.saved.single().myCallsign)
+        f.operatorSettings.value=f.operatorSettings.value.copy(operatorCallsign="")
+        runCurrent();assertEquals("",f.viewModel.uiState.value.ownCallsign)
+    }
 
     @Test fun consoleOverridesOnlyAffectTheNewCwRecord() = withFixture { f ->
         val vm = f.viewModel

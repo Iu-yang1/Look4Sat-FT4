@@ -1084,4 +1084,7 @@ Upstream: https://github.com/rt-bishop/Look4Sat</string>
     <string name="recording_export">Export</string>
     <string name="recording_delete">Delete</string>
     <string name="recording_delete_confirm">Delete this recording permanently?</string>
+    <string name="log_identity_mismatch">%1$s upload identity differs: %2$s</string>
+    <string name="log_identity_callsign">Callsign %1$s / station %2$s</string>
+    <string name="log_identity_grid">Grid %1$s / station %2$s</string>
 </resources>

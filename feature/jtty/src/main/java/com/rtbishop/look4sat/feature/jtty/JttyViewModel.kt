@@ -64,15 +64,16 @@ class JttyViewModel(private val container: IMainContainer): ViewModel() {
     private val service=container.jttyService
     private val transmitter=container.jttyTransmitter
     private val mutable=MutableStateFlow(JttyState(presets=container.settingsRepo.jttyPresets(),
-        myCall=container.settingsRepo.ft4Settings.value.operatorCallsign.ifBlank {
-            container.settingsRepo.wavelogUploadSettings.value.stationCallsign.ifBlank { container.settingsRepo.lotwSettings.value.callsign }
-        },grid=container.settingsRepo.stationPosition.value.qthLocator))
+        myCall=container.settingsRepo.ft4Settings.value.operatorCallsign.trim().uppercase(Locale.US),grid=container.settingsRepo.stationPosition.value.qthLocator))
     val state=mutable.asStateFlow()
     private var generation=0L
     private var transmitJob: Job?=null
     private var validationJob: Job?=null
     private var entered=false
     init {
+        viewModelScope.launch { container.settingsRepo.ft4Settings.map {it.operatorCallsign}.distinctUntilChanged().collect {call ->
+            mutable.update {it.copy(myCall=call.trim().uppercase(Locale.US))}
+        }}
         viewModelScope.launch {radarOrientation.state.collect { orientation ->
             mutable.update {it.copy(orientationValues=orientation.angles,shouldUseCompass=orientation.enabled)}
         }}
@@ -107,12 +108,6 @@ class JttyViewModel(private val container: IMainContainer): ViewModel() {
                         mutable.update { it.copy(position=position) };delay(1000)
                     }
                 }
-            }
-        }
-        launch {
-            if(state.value.myCall.isBlank()) {
-                val callsign=container.lotwUploadRepository.certificate()?.callsign.orEmpty()
-                if(state.value.myCall.isBlank()) mutable.update { it.copy(myCall=callsign) }
             }
         }
     }

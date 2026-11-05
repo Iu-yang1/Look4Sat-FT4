@@ -6,6 +6,14 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class LogbookStateTest {
+    @Test fun ownStationSelectionFiltersThePageWithoutChangingStoredRows() {
+        val first=record(1,"FO-29","SAT").copy(myGrid="OL87")
+        val second=first.copy(id=2,myGrid="PM01")
+        val state=LogbookState(records=listOf(first,second),ownStationFilter=com.rtbishop.look4sat.core.domain.logbook.OwnStationFilter("BA7OPF","OL87"))
+        assertEquals(listOf(first),state.filteredRecords)
+        assertEquals(listOf(first,second),state.copy(ownStationFilter=null).filteredRecords)
+        assertEquals(2,state.records.size)
+    }
     @Test
     fun satelliteModeIsSelectedByDefault() {
         val satelliteFromLoTW = record(

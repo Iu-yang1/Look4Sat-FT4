@@ -13,6 +13,14 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.foundation.layout.Box
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import com.rtbishop.look4sat.core.domain.logbook.OwnStationFilter
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardCapitalization
@@ -21,6 +29,19 @@ import com.rtbishop.look4sat.core.domain.logbook.displayMode
 
 @Composable
 internal fun LogbookFilters(state: LogbookState, onAction: (LogbookAction) -> Unit) {
+    val stations=state.records.map {OwnStationFilter(it.myCallsign.trim().uppercase(java.util.Locale.ROOT),it.myGrid.trim().uppercase(java.util.Locale.ROOT))}
+        .filter {it.callsign.isNotBlank() || it.grid.isNotBlank()}.distinct().sortedWith(compareBy({it.callsign},{it.grid}))
+    var expanded by remember {mutableStateOf(false)}
+    Box {
+        TextButton(onClick={expanded=true}) {Text(state.ownStationFilter?.let {"${it.callsign} · ${it.grid}"}
+            ?: stringResource(com.rtbishop.look4sat.core.presentation.R.string.prefs_logbook_query_all_callsigns))}
+        DropdownMenu(expanded=expanded,onDismissRequest={expanded=false}) {
+            DropdownMenuItem(text={Text(stringResource(com.rtbishop.look4sat.core.presentation.R.string.prefs_logbook_query_all_callsigns))},
+                onClick={expanded=false;onAction(LogbookAction.OwnStation(null))})
+            stations.forEach {station -> DropdownMenuItem(text={Text("${station.callsign} · ${station.grid}")},
+                onClick={expanded=false;onAction(LogbookAction.OwnStation(station))})}
+        }
+    }
     OutlinedTextField(
         value = state.query,
         onValueChange = { onAction(LogbookAction.Search(it)) },

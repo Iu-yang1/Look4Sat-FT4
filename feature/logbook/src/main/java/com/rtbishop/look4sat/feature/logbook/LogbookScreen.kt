@@ -297,7 +297,7 @@ private fun LogbookScreen(
                     }
                 ) { Text(it, modifier = Modifier.padding(10.dp)) }
             }
-            val filtered = remember(state.records, state.query, state.modeFilter, state.confirmationFilter) { state.filteredRecords }
+            val filtered = remember(state.records, state.query, state.modeFilter, state.confirmationFilter,state.ownStationFilter) { state.filteredRecords }
             if (filtered.isEmpty()) {
                 ElevatedCard(modifier = Modifier.fillMaxWidth()) {
                     Text(stringResource(if (state.records.isEmpty()) R.string.logbook_empty else R.string.logbook_no_matches), modifier = Modifier.padding(16.dp))
@@ -398,6 +398,7 @@ private fun QsoCard(record: QsoRecord, onEdit: () -> Unit, onDelete: () -> Unit)
                     fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+                if(record.myIota.isNotBlank()) Text("IOTA · ${record.myIota}",style=MaterialTheme.typography.bodySmall)
                 if (record.comment.isNotBlank()) Text(
                     record.comment, maxLines = 1, overflow = TextOverflow.Ellipsis,
                     style = MaterialTheme.typography.bodySmall

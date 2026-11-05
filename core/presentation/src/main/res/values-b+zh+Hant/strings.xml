@@ -3,6 +3,7 @@
     <!-- Commmon -->
     <string name="btn_accept">确定</string>
     <string name="btn_cancel">取消</string>
+    <string name="btn_save">保存</string>
     <string name="btn_confirm">确认</string>
     <string name="empty_list_message">没有数据可显示</string>
 
@@ -140,6 +141,12 @@
     <string name="map_time_reset">重置</string>
     <string name="map_azimuth">方位角：%.1f°</string>
     <string name="map_elevation">仰角：%.1f°</string>
+    <string name="map_elevation_circles">仰角圆</string>
+    <string name="map_elevation_circles_title">仰角圆设置</string>
+    <string name="map_elevation_circles_description">在卫星覆盖范围内显示等仰角虚线（0°–90°）。</string>
+    <string name="map_elevation_circles_angle">仰角 %1$d (°)</string>
+    <string name="map_elevation_circles_add">＋ 添加仰角圆</string>
+    <string name="map_elevation_circles_invalid">请输入不重复的 0°–90° 仰角。</string>
     <string name="map_altitude">高度：%.0f km</string>
     <string name="map_distance">距离：%.0f km</string>
     <string name="map_latitude">纬度：%.1f°</string>
@@ -257,7 +264,9 @@
     <string name="prefs_logbook_station_all">全部</string>
     <string name="prefs_logbook_query">查询</string>
     <string name="prefs_logbook_query_title">查询日志</string>
-    <string name="prefs_logbook_query_hint">搜索呼号、卫星或网格</string>
+    <string name="prefs_logbook_query_hint">搜索对方呼号、卫星、网格或备注</string>
+    <string name="prefs_logbook_query_callsign">呼号</string>
+    <string name="prefs_logbook_query_all_callsigns">全部</string>
     <string name="prefs_logbook_query_hits">命中 %1$d 条</string>
     <string name="prefs_logbook_query_clear">清除</string>
     <string name="prefs_logbook_query_back">返回</string>
@@ -800,6 +809,8 @@
     <string name="qso_edit_sent">发送报告</string>
     <string name="qso_edit_received">接收报告</string>
     <string name="qso_edit_grid">对方网格</string>
+    <string name="qso_edit_their_iota">对方 IOTA</string>
+    <string name="qso_edit_my_iota">本台 IOTA</string>
     <string name="qso_edit_comment">备注</string>
     <string name="qso_edit_save">保存</string>
     <string name="qso_edit_cancel">取消</string>

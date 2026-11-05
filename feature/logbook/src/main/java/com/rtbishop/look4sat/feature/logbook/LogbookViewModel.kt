@@ -155,8 +155,8 @@ internal fun newLogbookEditor(
     wavelogSettings: WavelogUploadSettings
 ): LogbookEditor = LogbookEditor(
     startUtcMillis = startUtcMillis,
-    myCallsign = operatorCallsign(certificateCallsign, wavelogSettings.stationCallsign).ifBlank { defaultCallsign },
-    myGrid = operatorGrids(lotwStationGrid, wavelogSettings.stationGrid).firstOrNull().orEmpty().ifBlank { defaultGrid }
+    myCallsign = operatorCallsign(certificateCallsign, wavelogSettings.stationCallsign, wavelogSettings.isReady).ifBlank { defaultCallsign },
+    myGrid = operatorGrids(lotwStationGrid, wavelogSettings.stationGrid, wavelogSettings.isReady).firstOrNull().orEmpty().ifBlank { defaultGrid }
 )
 
 enum class LogbookError {
@@ -201,6 +201,7 @@ data class LogbookState(
     val modeFilter: String = SATELLITE_MODE_FILTER,
     val confirmationFilter: LogbookFilter = LogbookFilter.ALL,
     val groupByCallsign: Boolean = false,
+    val ownStationFilter: com.rtbishop.look4sat.core.domain.logbook.OwnStationFilter? = null,
     val isBusy: Boolean = false,
     val showLoTW: Boolean = false,
     val lotwSyncing: Boolean = false,
@@ -237,7 +238,8 @@ data class LogbookState(
         records = if (modeFilter == SATELLITE_MODE_FILTER) records.filter { it.isSatellite } else records,
         query = query,
         modeFilter = modeFilter.takeUnless { it == SATELLITE_MODE_FILTER }.orEmpty(),
-        confirmation = confirmationFilter
+        confirmation = confirmationFilter,
+        ownStationFilter = ownStationFilter
     )
 }
 
@@ -258,6 +260,7 @@ sealed interface LogbookAction {
     data class Search(val value: String) : LogbookAction
     data class ModeFilter(val value: String) : LogbookAction
     data class ConfirmationFilter(val value: LogbookFilter) : LogbookAction
+    data class OwnStation(val value: com.rtbishop.look4sat.core.domain.logbook.OwnStationFilter?) : LogbookAction
     data object ToggleGrouping : LogbookAction
     data object ShowLoTW : LogbookAction
     data object DismissLoTW : LogbookAction
@@ -429,6 +432,7 @@ class LogbookViewModel(
             is LogbookAction.Search -> mutableState.update { it.copy(query = action.value) }
             is LogbookAction.ModeFilter -> mutableState.update { it.copy(modeFilter = action.value) }
             is LogbookAction.ConfirmationFilter -> mutableState.update { it.copy(confirmationFilter = action.value) }
+            is LogbookAction.OwnStation -> mutableState.update {it.copy(ownStationFilter=action.value)}
             LogbookAction.ToggleGrouping -> mutableState.update { it.copy(groupByCallsign = !it.groupByCallsign) }
             LogbookAction.ShowLoTW -> {
                 mutableState.update {
@@ -921,6 +925,7 @@ class LogbookViewModel(
                     query = "",
                     modeFilter = SATELLITE_MODE_FILTER,
                     confirmationFilter = LogbookFilter.ALL,
+                    ownStationFilter = null,
                     groupByCallsign = false
                 )
             }

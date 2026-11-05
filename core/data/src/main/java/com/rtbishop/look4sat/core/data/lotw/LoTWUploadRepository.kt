@@ -158,15 +158,15 @@ class LoTWUploadRepository internal constructor(
         mutex.withLock {
             val stored = storage.read("certificate") ?: fail(LoTWProblem.CERTIFICATE_MISSING)
             val bundle = try { readBundle(stored) } finally { stored.fill(0) }
-            val normalized = station.normalized()
+            var normalized = station.normalized()
             try {
-                config().stationFields(normalized, bundle.info.dxcc)
+                normalized=normalized.copy(grid=config().stationFields(normalized, bundle.info.dxcc).getValue("GRIDSQUARE"))
             } catch (e: LoTWOperationException) {
                 // A region saved under a different certificate no longer applies to
                 // this DXCC entity — drop it instead of failing the whole save.
                 if (e.reason != LoTWProblem.STATION_REGION) throw e
-                val cleaned = normalized.copy(region = "", county = "")
-                config().stationFields(cleaned, bundle.info.dxcc)
+                var cleaned = normalized.copy(region = "", county = "")
+                cleaned=cleaned.copy(grid=config().stationFields(cleaned, bundle.info.dxcc).getValue("GRIDSQUARE"))
                 writeStation(cleaned)
                 discardPreview()
                 return@withLock cleaned

@@ -23,7 +23,7 @@ class LogbookEditorTest {
             WavelogUploadSettings(stationCallsign = "BH2VSQ", stationGrid = "OL62")
         )
         assertEquals("BA7OPF", editor.myCallsign)
-        assertEquals("OL87EX", editor.myGrid)
+        assertEquals("OL87,OL88", editor.myGrid)
     }
 
     @Test

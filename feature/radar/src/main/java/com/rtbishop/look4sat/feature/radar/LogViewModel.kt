@@ -254,6 +254,9 @@ class LogViewModel(
         // kHz granularity (3 decimals in MHz) — enough for operating and for the ADIF export.
         val tx = txHz?.let { (it + 500L) / 1000L * 1000L }
         val rx = rxHz?.let { (it + 500L) / 1000L * 1000L }
+        val ownGrids = myGrid.split(',', ';', ' ').map {it.trim().uppercase(Locale.US)}
+            .map {if(_uiState.value.wavelogMode) it else it.take(4)}
+            .filter {it.isNotBlank()}.distinct()
         val record = QsoRecord(
             startUtcMillis = timeMillis,
             endUtcMillis = timeMillis,
@@ -261,7 +264,9 @@ class LogViewModel(
             myCallsign = (overrides.myCallsign ?: _uiState.value.ownCallsign).trim().uppercase(Locale.US),
             sentReport = overrides.sentReport.trim(),
             receivedReport = overrides.receivedReport.trim(),
-            myGrid = myGrid.take(6).uppercase(Locale.US),
+            myGrid = if(_uiState.value.wavelogMode) ownGrids.firstOrNull().orEmpty() else ownGrids.joinToString(","),
+            myFullGrids = ownGrids.takeIf {it.size > 1}.orEmpty(),
+            vuccGrids = ownGrids.takeIf {it.size > 1}.orEmpty(),
             txFrequencyHz = tx,
             rxFrequencyHz = rx,
             band = frequencyBand(tx),

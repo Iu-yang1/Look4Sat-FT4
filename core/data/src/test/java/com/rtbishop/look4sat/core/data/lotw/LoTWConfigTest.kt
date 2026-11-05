@@ -21,6 +21,11 @@ import org.junit.Test
 
 /** Parses the real bundled ARRL config.tq6 to verify region-field and zonemap extraction. */
 class LoTWConfigTest {
+    @Test fun subgridsAreReducedToTheCompleteMainGridSetBeforeSigning() {
+        val config=LoTWConfig(File("src/main/assets/lotw/config.tq6").inputStream())
+        assertEquals("OL62,OL63",config.stationFields(LoTWStation(grid="ol62ti, ol63ab"),318)["GRIDSQUARE"])
+        assertEquals("OL62",config.stationFields(LoTWStation(grid="OL62AB,OL62CD"),318)["GRIDSQUARE"])
+    }
 
     private val config = LoTWConfig(File("src/main/assets/lotw/config.tq6").inputStream())
 

@@ -156,7 +156,9 @@ internal fun newLogbookEditor(
 ): LogbookEditor = LogbookEditor(
     startUtcMillis = startUtcMillis,
     myCallsign = operatorCallsign(certificateCallsign, wavelogSettings.stationCallsign, wavelogSettings.isReady).ifBlank { defaultCallsign },
-    myGrid = operatorGrids(lotwStationGrid, wavelogSettings.stationGrid, wavelogSettings.isReady).firstOrNull().orEmpty().ifBlank { defaultGrid }
+    myGrid = if(!wavelogSettings.isReady && lotwStationGrid.isNotBlank())
+        operatorGrids(lotwStationGrid, "").map {it.take(4)}.distinct().joinToString(",")
+        else operatorGrids(lotwStationGrid, wavelogSettings.stationGrid, wavelogSettings.isReady).firstOrNull().orEmpty().ifBlank { defaultGrid }
 )
 
 enum class LogbookError {
@@ -859,7 +861,10 @@ class LogbookViewModel(
         val editor = mutableState.value.editor ?: return@launch
         mutableState.update { it.copy(isBusy = true) }
         try {
-            repository.save(editor.toRecord())
+            val record=editor.toRecord()
+            val grids=record.myGrid.split(',', ';', ' ').map {it.trim().uppercase(Locale.US).take(4)}.filter {it.isNotBlank()}.distinct()
+            repository.save(if(settingsRepo.wavelogUploadSettings.value.isReady) record else
+                record.copy(myGrid=grids.joinToString(","),myFullGrids=grids.takeIf {it.size>1}.orEmpty(),vuccGrids=grids.takeIf {it.size>1}.orEmpty()))
             mutableState.update { it.copy(editor = null, error = null) }
         } catch (cancelled: CancellationException) {
             throw cancelled

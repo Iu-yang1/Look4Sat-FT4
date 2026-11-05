@@ -94,7 +94,8 @@ class QsoRepository(
             .filter { it.length >= 4 }.distinct().sorted()
         if (normalized.isNotEmpty()) {
             val stamped = ids.mapNotNull { id ->
-                dao.find(id)?.toDomain()?.takeIf { it.vuccGrids != normalized }?.copy(vuccGrids = normalized)
+                dao.find(id)?.toDomain()?.takeIf { it.vuccGrids != normalized || it.myFullGrids != normalized || it.myGrid != normalized.joinToString(",") }
+                    ?.copy(myGrid=normalized.joinToString(","),vuccGrids=normalized,myFullGrids=normalized)
             }
             if (stamped.isNotEmpty()) dao.saveBatch(stamped.map { it.toEntity() })
         }

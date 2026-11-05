@@ -45,7 +45,7 @@ class LoTWSignerTest {
     }
     @Test fun tq8HasVerifiableV2SignatureAndConsistentLengths() {
         val contact = signer.contact(qsoFixture(), key, station, TEST_NOW)
-        val expected = "GD24OL62AB44" + "2M70CMK1ABC145.9435.8FT4SAT" +
+        val expected = "GD24OL6244" + "2M70CMK1ABC145.9435.8FT4SAT" +
             utc(qsoFixture().startUtcMillis, "yyyy-MM-dd") + utc(qsoFixture().startUtcMillis, "HH:mm:ss'Z'") + "AO-123"
         assertEquals(expected, contact.signData)
         val compressed = signer.sign(listOf(contact), key, station)

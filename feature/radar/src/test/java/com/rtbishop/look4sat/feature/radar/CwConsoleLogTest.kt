@@ -24,7 +24,7 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class CwConsoleLogTest {
-    private class Fixture(val viewModel: LogViewModel, val saved: MutableList<QsoRecord>, val operatorSettings: MutableStateFlow<com.rtbishop.look4sat.core.domain.model.Ft4Settings>, var failSave: Boolean = false)
+    private class Fixture(val viewModel: LogViewModel, val saved: MutableList<QsoRecord>, val operatorSettings: MutableStateFlow<com.rtbishop.look4sat.core.domain.model.Ft4Settings>, val wavelogSettings: MutableStateFlow<WavelogUploadSettings>, var failSave: Boolean = false)
 
     private inline fun <reified T> stub(crossinline call: (String, Array<out Any?>) -> Any?): T =
         Proxy.newProxyInstance(T::class.java.classLoader, arrayOf(T::class.java)) { _, method, args ->
@@ -72,7 +72,7 @@ class CwConsoleLogTest {
         }
         val upload = stub<IWavelogUploadRepository> { name, _ -> error("Unexpected upload $name") }
         val vm = LogViewModel(qso, lotw, upload, settings)
-        fixture = Fixture(vm, saved, operatorSettings)
+        fixture = Fixture(vm, saved, operatorSettings,wavelog)
         try {
             runCurrent()
             test(fixture)
@@ -85,6 +85,31 @@ class CwConsoleLogTest {
 
     private fun LogViewModel.recordCw(overrides: LogRecordOverrides = LogRecordOverrides(mode = "CW")) =
         record("FO-29", "SSB", 145950000, 435850000, "PM01AB", null, overrides)
+
+    @Test fun lotwLoggingStoresTheCompleteFourCharacterMainGridSet() = withFixture { f ->
+        f.wavelogSettings.value=WavelogUploadSettings();runCurrent()
+        f.viewModel.updateCallsign("JA1ABC")
+        f.viewModel.record("FO-29","CW",145950000,435850000," ol62ti,ol63ab ",null)
+        runCurrent()
+        val record=f.saved.single()
+        assertEquals("OL62,OL63",record.myGrid)
+        assertEquals(listOf("OL62","OL63"),record.myFullGrids)
+        assertEquals(listOf("OL62","OL63"),record.vuccGrids)
+        val adif=com.rtbishop.look4sat.core.domain.logbook.AdifCodec.encode(listOf(record))
+        assertTrue(adif.contains("<MY_GRIDSQUARE:9>OL62,OL63"))
+        assertTrue(adif.contains("<MY_VUCC_GRIDS:9>OL62,OL63"))
+    }
+
+    @Test fun aSingleEightCharacterLocatorKeepsItsPrecisionWithoutAMultigridField() = withFixture { f ->
+        f.viewModel.updateCallsign("JA1ABC")
+        f.viewModel.record("FO-29","CW",145950000,435850000," ol62ab12 ",null)
+        runCurrent()
+        val record=f.saved.single()
+        assertEquals("OL62AB12",record.myGrid)
+        val adif=com.rtbishop.look4sat.core.domain.logbook.AdifCodec.encode(listOf(record))
+        assertTrue(adif.contains("<MY_GRIDSQUARE:8>OL62AB12"))
+        assertFalse(adif.contains("<MY_VUCC_GRIDS:"))
+    }
 
     @Test fun settingsCallsignIsFollowedInsteadOfTheUploadStationAndBlankDoesNotFallBack() = withFixture { f ->
         f.operatorSettings.value=f.operatorSettings.value.copy(operatorCallsign="bg5jsu")

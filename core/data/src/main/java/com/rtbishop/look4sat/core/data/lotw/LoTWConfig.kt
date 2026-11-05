@@ -146,10 +146,11 @@ internal class LoTWConfig(input: InputStream) {
 
     fun stationFields(station: LoTWStation, dxcc: Int): Map<String, String> {
         fun normalized(value: String) = value.trim().uppercase(Locale.US)
-        val grids = station.grid.split(',').map(::normalized).filter(String::isNotBlank).distinct()
-        if (grids.size !in 1..4 || grids.any { !it.matches(Regex("[A-R]{2}[0-9]{2}([A-X]{2}([0-9]{2})?)?")) }) {
+        val locators = station.grid.split(',').map(::normalized).filter(String::isNotBlank).distinct()
+        if (locators.isEmpty() || locators.any { !it.matches(Regex("[A-R]{2}[0-9]{2}([A-X]{2}([0-9]{2})?)?")) }) {
             fail(LoTWProblem.STATION_GRID)
         }
+        val grids = locators.map {it.take(4)}.distinct()
         // LoTW station locations allow one grid, a boundary pair, or a four-way intersection —
         // never three, and never a set that only has the right count. The format check above cannot
         // tell a mistyped field letter (OM00AX for PM00AX) from a real location, so reject invalid

@@ -356,6 +356,7 @@ fun InfoDialog(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f)
             )
+            Spacer(modifier = Modifier.width(12.dp))
             extraAction?.let {
                 it()
                 Spacer(modifier = Modifier.width(8.dp))
@@ -404,7 +405,7 @@ fun SharedDialog(
     onExtra: (() -> Unit)? = null,
     titleFontSize: Int = 16,
     titleTextAlign: TextAlign = if (onCancel != null && onAccept != null) TextAlign.Center else TextAlign.Start,
-    titleHorizontalPadding: Dp = 0.dp,
+    titleHorizontalPadding: Dp = 12.dp,
     /** Whether tapping the scrim dismisses this dialog. */
     dismissOnClickOutside: Boolean = true,
     /** Whether system back dismisses this dialog. */

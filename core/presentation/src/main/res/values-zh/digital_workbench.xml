@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="digital_contact">通联</string>
+    <string name="digital_receiving">正在接收</string>
+    <string name="digital_receive_stopped">接收已停止</string>
+    <string name="digital_radio_controls">电台控制</string>
+    <string name="digital_parameters">参数</string>
+    <string name="digital_display">显示</string>
+    <string name="digital_audio">音频</string>
+    <string name="digital_current_satellite">当前卫星</string>
+    <string name="digital_all_satellites">全部卫星</string>
+    <string name="digital_full_logbook">完整日志本</string>
+    <string name="digital_log_filter">日志筛选</string>
+    <string name="digital_no_logs">暂无符合条件的通联记录</string>
+    <string name="digital_confirmed">已确认</string>
+    <string name="digital_manual">手动</string>
+    <string name="digital_expand_spectrum">展开频谱</string>
+    <string name="digital_compact_spectrum">收起频谱</string>
+    <string name="digital_rx_frequency">RX %1$d Hz</string>
+    <string name="digital_tx_frequency">TX %1$d Hz</string>
+    <string name="digital_connection_state">%1$s · %2$s</string>
+    <string name="digital_control_connected">控制已连接</string>
+    <string name="digital_control_disconnected">控制未连接</string>
+    <string name="digital_jtty_title">JTTY 卫星通联</string>
+    <string name="digital_search_status">载波搜索 · %1$d 个候选</string>
+</resources>

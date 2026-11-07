@@ -1,4 +1,4 @@
-package com.rtbishop.look4sat.feature.settings
+package com.rtbishop.look4sat.core.presentation
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -6,17 +6,16 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.rtbishop.look4sat.core.domain.audio.*
 import com.rtbishop.look4sat.core.domain.model.RadioControlSettings
-import com.rtbishop.look4sat.core.presentation.R
-import com.rtbishop.look4sat.core.presentation.SharedDialog
 import kotlinx.coroutines.launch
 
 @Composable
-internal fun RadioAudioDialog(
+fun RadioAudioDialog(
     initial: RadioAudioSettings,model: String,session: IRadioAudioSession,
     onDismiss: ()->Unit,onSave: (RadioAudioSettings)->Unit
 ) {
@@ -50,7 +49,7 @@ internal fun RadioAudioDialog(
             onSave(value);onDismiss()
         } catch(e: Exception) { error=e.message }
     }) {
-        Column(Modifier.fillMaxWidth().heightIn(max=600.dp).verticalScroll(rememberScrollState()).padding(16.dp),
+        Column(Modifier.fillMaxWidth().heightIn(max=LocalConfiguration.current.screenHeightDp.dp * .55f).verticalScroll(rememberScrollState()).padding(16.dp),
             verticalArrangement=Arrangement.spacedBy(8.dp)) {
             listOf(RadioAudioBackend.UNCONFIGURED,RadioAudioBackend.ANDROID_DEVICE).plus(
                 if(model==RadioControlSettings.MODEL_ICOM_IC705) listOf(RadioAudioBackend.ICOM_WLAN) else emptyList()).forEach { option ->

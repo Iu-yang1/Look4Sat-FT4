@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="digital_contact">Contact</string>
+    <string name="digital_receiving">Receiving</string>
+    <string name="digital_receive_stopped">Reception stopped</string>
+    <string name="digital_radio_controls">Radio control</string>
+    <string name="digital_parameters">Parameters</string>
+    <string name="digital_display">Display</string>
+    <string name="digital_audio">Audio</string>
+    <string name="digital_current_satellite">Current satellite</string>
+    <string name="digital_all_satellites">All satellites</string>
+    <string name="digital_full_logbook">Full logbook</string>
+    <string name="digital_log_filter">Log filter</string>
+    <string name="digital_no_logs">No contacts for this selection</string>
+    <string name="digital_confirmed">Confirmed</string>
+    <string name="digital_manual">Manual</string>
+    <string name="digital_expand_spectrum">Expand spectrum</string>
+    <string name="digital_compact_spectrum">Compact spectrum</string>
+    <string name="digital_rx_frequency">RX %1$d Hz</string>
+    <string name="digital_tx_frequency">TX %1$d Hz</string>
+    <string name="digital_connection_state">%1$s · %2$s</string>
+    <string name="digital_control_connected">Control connected</string>
+    <string name="digital_control_disconnected">Control disconnected</string>
+    <string name="digital_jtty_title">JTTY satellite contact</string>
+    <string name="digital_search_status">Carrier search · %1$d candidates</string>
+</resources>

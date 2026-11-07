@@ -63,7 +63,8 @@ data class Ft4State(
     val satelliteTrack: List<OrbitalPos> = emptyList(),
     val orientationValues: Pair<Float, Float> = 0f to 0f,
     val shouldUseCompass: Boolean = false,
-    val shouldShowSweep: Boolean = false
+    val shouldShowSweep: Boolean = false,
+    val records: List<com.rtbishop.look4sat.core.domain.logbook.QsoRecord> = emptyList()
 ) {
     val grid4: String
         get() = stationGrid.take(4).uppercase()
@@ -82,6 +83,9 @@ data class Ft4TimingState(
 )
 
 sealed interface Ft4Action {
+    data class SetBases(val value: com.rtbishop.look4sat.core.domain.repository.RadioBaseFrequencies) : Ft4Action
+    data class AudioSettings(val value: com.rtbishop.look4sat.core.domain.audio.RadioAudioSettings) : Ft4Action
+    data class DecodeDepth(val value: Int) : Ft4Action
     data class MicrophonePermissionChanged(val granted: Boolean) : Ft4Action
     data object ToggleReceiving : Ft4Action
     data object ClearDecodes : Ft4Action

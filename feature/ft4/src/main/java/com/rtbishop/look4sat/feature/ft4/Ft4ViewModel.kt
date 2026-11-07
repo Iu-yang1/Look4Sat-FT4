@@ -21,6 +21,7 @@ import com.rtbishop.look4sat.core.domain.ft4.Ft4DecoderOptions
 import com.rtbishop.look4sat.core.domain.ft4.Ft4TransmissionRequest
 import com.rtbishop.look4sat.core.domain.ft4.Ft4TransmissionProgress
 import com.rtbishop.look4sat.core.domain.ft4.Ft4TransmissionResult
+import com.rtbishop.look4sat.core.domain.ft4.Ft4TransmitState
 import com.rtbishop.look4sat.core.domain.ft4.Ft4DecodeResult
 import com.rtbishop.look4sat.core.domain.logbook.QsoEventDirection
 import com.rtbishop.look4sat.core.domain.logbook.QsoEventResult
@@ -108,6 +109,30 @@ class Ft4ViewModel(
 
     fun onAction(action: Ft4Action) {
         when (action) {
+            is Ft4Action.SetBases -> if (!mutableState.value.radio.frequencyEditingLocked &&
+                (mutableState.value.transmitState is Ft4TransmitState.Idle || mutableState.value.transmitState is Ft4TransmitState.Failed)) {
+                radioService.setBaseFrequencies(action.value)
+            }
+            is Ft4Action.DecodeDepth -> container.settingsRepo.updateFt4Settings { it.copy(decodeDepth = action.value.coerceIn(1, 3)) }
+            is Ft4Action.AudioSettings -> viewModelScope.launch {
+                try {
+                    stopAutomationNow(Ft4AutomationAbortReason.CONTEXT_UNAVAILABLE)
+                    manualTransmitJob?.cancel()
+                    transmitter.emergencyStop()
+                    ft4Service.stopReceiving()
+                    val settings = container.settingsRepo.radioControlSettings.value
+                    val audio = action.value
+                    val updated = settings.copy(radioAudio = audio,
+                        catTransport = if (audio.networkCat) RadioControlSettings.TRANSPORT_TCP else settings.catTransport,
+                        txRadioAddress = if (audio.networkCat) "${audio.host}:${audio.controlPort}" else settings.txRadioAddress,
+                        splitMode = if (audio.networkCat) true else settings.splitMode,
+                        tcpProtocol = if (audio.networkCat) RadioControlSettings.TCP_PROTOCOL_RAW_CAT else settings.tcpProtocol)
+                    if (!radioService.applyRadioControlSettings(updated)) {
+                        mutableState.update { it.copy(error = Ft4UiError.OPERATION_FAILED) }
+                    }
+                } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+                catch (_: Exception) { mutableState.update { it.copy(error = Ft4UiError.OPERATION_FAILED) } }
+            }
             is Ft4Action.MicrophonePermissionChanged -> {
                 screenActive = true
                 val audioAllowed=action.granted || mutableState.value.usesNetworkAudio
@@ -178,6 +203,13 @@ class Ft4ViewModel(
     }
 
     private fun collectState() {
+        viewModelScope.launch {
+            container.qsoRepository.records.collect { records ->
+                mutableState.update { it.copy(records = records.filter { record ->
+                    record.submode.equals("FT4", true) || record.mode.equals("FT4", true)
+                }) }
+            }
+        }
         viewModelScope.launch {
             uiState.map { Triple(it.settings.operatorCallsign,it.targetCall,
                 "${it.trackingPass?.catNum}:${it.trackingPass?.aosTime}:${it.radio.selectedTransponder?.uuid}:$activeQsoSessionId") }

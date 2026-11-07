@@ -32,7 +32,7 @@ fun DigitalSatellitePanel(
 ) {
     @Composable fun Information() {
         Column(verticalArrangement=Arrangement.spacedBy(4.dp)) {
-            Text(name,color=MaterialTheme.colorScheme.primary,style=MaterialTheme.typography.titleMedium,maxLines=2,overflow=TextOverflow.Ellipsis)
+            if(name.isNotBlank()) Text(name,color=MaterialTheme.colorScheme.primary,style=MaterialTheme.typography.titleMedium,maxLines=2,overflow=TextOverflow.Ellipsis)
             if(subtitle.isNotBlank()) Text(subtitle,style=MaterialTheme.typography.bodySmall,maxLines=2,overflow=TextOverflow.Ellipsis)
             information()
         }

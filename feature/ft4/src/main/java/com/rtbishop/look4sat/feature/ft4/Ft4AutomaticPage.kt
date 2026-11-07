@@ -14,6 +14,10 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.HorizontalDivider
@@ -124,25 +128,20 @@ internal fun Ft4AutomationSection(
                 )
             }
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Row(modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 CardButton(
                     onClick = { onAction(Ft4Action.ArmAutomation) },
                     text = stringResource(R.string.ft4_arm),
                     enabled = gateAllowed && automation.phase !in RUNNING_PHASES,
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier.weight(1f).fillMaxHeight().heightIn(min = 48.dp)
                 )
                 CardButton(
                     onClick = { onAction(Ft4Action.StopAutomation) },
                     text = stringResource(R.string.ft4_stop_automation),
                     enabled = automation.phase in RUNNING_PHASES,
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier.weight(1f).fillMaxHeight().heightIn(min = 48.dp)
                 )
             }
-            CardButton(
-                onClick = { onAction(Ft4Action.EmergencyStop) },
-                text = stringResource(R.string.ft4_emergency_stop),
-                modifier = Modifier.fillMaxWidth()
-            )
         }
     }
 }

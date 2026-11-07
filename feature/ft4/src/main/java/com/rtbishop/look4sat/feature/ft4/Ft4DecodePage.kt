@@ -18,9 +18,10 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -28,10 +29,8 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -39,12 +38,10 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.rtbishop.look4sat.core.domain.ft4.Ft4DecodeResult
@@ -57,19 +54,7 @@ import java.util.Locale
 import java.util.TimeZone
 
 @Composable
-internal fun Ft4DecodePage(
-    state: Ft4State,
-    onAction: (Ft4Action) -> Unit,
-    modifier: Modifier = Modifier
-) {
-    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        DecodeTable(state, onAction)
-        CallingCard(state, onAction)
-    }
-}
-
-@Composable
-private fun DecodeTable(state: Ft4State, onAction: (Ft4Action) -> Unit) {
+internal fun Ft4DecodeList(state: Ft4State, onAction: (Ft4Action) -> Unit, compact: Boolean = false) {
     val durationMillis = (state.engineState as? com.rtbishop.look4sat.core.domain.ft4.Ft4EngineState.Receiving)
         ?.lastDecodeDurationMillis
     val listState = rememberLazyListState()
@@ -102,11 +87,10 @@ private fun DecodeTable(state: Ft4State, onAction: (Ft4Action) -> Unit) {
                 }
             }
             HorizontalDivider()
-            DecodeTableHeader()
             if (state.decodeResults.isEmpty()) {
                 Box(
                     contentAlignment = Alignment.Center,
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 220.dp)
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
                 ) {
                     Text(
                         stringResource(R.string.ft4_decode_empty),
@@ -117,7 +101,7 @@ private fun DecodeTable(state: Ft4State, onAction: (Ft4Action) -> Unit) {
             } else {
                 LazyColumn(
                     state = listState,
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 220.dp, max = 420.dp)
+                    modifier = Modifier.fillMaxWidth().heightIn(max = if (compact) 160.dp else 320.dp)
                 ) {
                     items(state.decodeResults, key = Ft4DecodeResult::stableId) { result ->
                         DecodeRow(
@@ -136,19 +120,6 @@ private fun DecodeTable(state: Ft4State, onAction: (Ft4Action) -> Unit) {
 }
 
 @Composable
-private fun DecodeTableHeader() {
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 5.dp)
-    ) {
-        TableCell(stringResource(R.string.ft4_decode_utc), 66.dp)
-        TableCell(stringResource(R.string.ft4_decode_snr), 42.dp)
-        TableCell(stringResource(R.string.ft4_decode_dt), 46.dp)
-        TableCell(stringResource(R.string.ft4_decode_hz), 54.dp)
-        Text(stringResource(R.string.ft4_decode_message), fontSize = 10.sp, modifier = Modifier.weight(1f))
-    }
-}
-
-@Composable
 private fun DecodeRow(result: Ft4DecodeResult, highlighted: Boolean, onClick: () -> Unit) {
     val evenSlot = Math.floorMod(Math.floorDiv(result.slotUtcMillis, FT4_SLOT_MILLIS), 2L) == 0L
     val slotColor = if (evenSlot) {
@@ -163,7 +134,7 @@ private fun DecodeRow(result: Ft4DecodeResult, highlighted: Boolean, onClick: ()
             else -> 0.28f
         }
     )
-    Row(
+    Column(
         modifier = Modifier
             .fillMaxWidth()
             .background(background)
@@ -183,30 +154,18 @@ private fun DecodeRow(result: Ft4DecodeResult, highlighted: Boolean, onClick: ()
                 )
             }
             .clickable(onClick = onClick)
+            .heightIn(min = 48.dp)
             .padding(horizontal = 8.dp, vertical = 6.dp)
     ) {
-        TableCell(formatDecodeUtc(result.slotUtcMillis), 66.dp)
-        TableCell(String.format(Locale.US, "%+d", result.snr), 42.dp)
-        TableCell(String.format(Locale.US, "%.1f", result.dtSeconds), 46.dp)
-        TableCell(String.format(Locale.US, "%.0f", result.frequencyHz), 54.dp)
-        Text(result.text, fontSize = 11.sp, maxLines = 2, modifier = Modifier.weight(1f))
+        com.rtbishop.look4sat.core.presentation.DigitalMessageContent(result.text,
+            String.format(Locale.US, "%s UTC · %+d dB · DT %.1f s · %.0f Hz",
+                formatDecodeUtc(result.slotUtcMillis), result.snr, result.dtSeconds, result.frequencyHz))
     }
     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f))
 }
 
 @Composable
-private fun TableCell(value: String, width: androidx.compose.ui.unit.Dp) {
-    Text(
-        value,
-        fontSize = 10.sp,
-        maxLines = 1,
-        overflow = TextOverflow.Ellipsis,
-        modifier = Modifier.width(width)
-    )
-}
-
-@Composable
-private fun CallingCard(state: Ft4State, onAction: (Ft4Action) -> Unit) {
+internal fun Ft4CallingControls(state: Ft4State, onAction: (Ft4Action) -> Unit) {
     val myCall = state.settings.operatorCallsign
     val notSet = stringResource(R.string.ft4_not_set)
     val preview = if (state.targetCall.isBlank()) {
@@ -216,52 +175,37 @@ private fun CallingCard(state: Ft4State, onAction: (Ft4Action) -> Unit) {
     }
     val transmitting = state.transmitState !is Ft4TransmitState.Idle &&
         state.transmitState !is Ft4TransmitState.Failed
+    val editingEnabled = !transmitting && !state.radio.frequencyEditingLocked
     ElevatedCard(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
-            SectionHeader(R.drawable.ic_radio_tower, stringResource(R.string.ft4_calling_controls))
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                LabeledValue(stringResource(R.string.ft4_operator_call), myCall.ifBlank { notSet }, Modifier.weight(1f))
-                LabeledValue(stringResource(R.string.ft4_grid), state.grid4.ifBlank { notSet }, Modifier.weight(1f))
-            }
+            Text("${myCall.ifBlank { notSet }} · ${state.grid4.ifBlank { notSet }}",
+                style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
             OutlinedTextField(
                 value = state.targetCall,
                 onValueChange = { onAction(Ft4Action.SetTargetCall(it)) },
                 label = { Text(stringResource(R.string.ft4_target_call)) },
                 singleLine = true,
+                enabled = editingEnabled,
                 keyboardOptions = KeyboardOptions(
                     capitalization = KeyboardCapitalization.Characters,
                     keyboardType = KeyboardType.Ascii
                 ),
                 modifier = Modifier.fillMaxWidth()
             )
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text(
-                    stringResource(R.string.ft4_tx_audio),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 12.sp
-                )
-                Text(
-                    stringResource(R.string.ft4_selected_frequency, state.selectedAudioFrequencyHz),
-                    color = MaterialTheme.colorScheme.primary,
-                    fontWeight = FontWeight.Bold
-                )
-            }
-            Slider(
-                value = state.selectedAudioFrequencyHz,
-                onValueChange = { onAction(Ft4Action.SelectAudioFrequency(it)) },
-                valueRange = 200f..2_800f,
-                steps = 25
-            )
+            com.rtbishop.look4sat.core.presentation.DigitalAudioFrequencyControl(
+                state.selectedAudioFrequencyHz, 200f, 2800f, editingEnabled
+            ) { onAction(Ft4Action.SelectAudioFrequency(it)) }
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 FilterChip(
                     selected = state.txSlotParity == 0,
+                    enabled = editingEnabled,
                     onClick = { onAction(Ft4Action.SetTxSlotParity(0)) },
                     label = { Text(stringResource(R.string.ft4_even_slot)) },
                     modifier = Modifier.weight(1f)
                 )
                 FilterChip(
                     selected = state.txSlotParity == 1,
+                    enabled = editingEnabled,
                     onClick = { onAction(Ft4Action.SetTxSlotParity(1)) },
                     label = { Text(stringResource(R.string.ft4_odd_slot)) },
                     modifier = Modifier.weight(1f)
@@ -269,8 +213,6 @@ private fun CallingCard(state: Ft4State, onAction: (Ft4Action) -> Unit) {
             }
             Text(
                 stringResource(R.string.ft4_message_preview, preview),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
                 fontWeight = FontWeight.Medium,
                 modifier = Modifier
                     .fillMaxWidth()
@@ -284,49 +226,21 @@ private fun CallingCard(state: Ft4State, onAction: (Ft4Action) -> Unit) {
                     fontSize = 12.sp
                 )
             }
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Row(modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 CardButton(
                     onClick = { onAction(Ft4Action.ManualTransmit) },
                     text = stringResource(R.string.ft4_transmit_next_slot),
                     enabled = !transmitting && state.settings.decodeEnabled && state.capability.transmitAvailable,
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier.weight(1f).fillMaxHeight().heightIn(min = 48.dp)
                 )
                 CardButton(
                     onClick = { onAction(Ft4Action.StopTransmit) },
                     text = stringResource(R.string.ft4_stop_transmit),
                     enabled = transmitting,
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier.weight(1f).fillMaxHeight().heightIn(min = 48.dp)
                 )
             }
         }
-    }
-}
-
-@Composable
-private fun LabeledValue(label: String, value: String, modifier: Modifier = Modifier) {
-    Column(modifier = modifier) {
-        Text(label, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text(
-            value,
-            color = MaterialTheme.colorScheme.primary,
-            fontSize = 18.sp,
-            fontWeight = FontWeight.Bold,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
-        )
-    }
-}
-
-@Composable
-private fun SectionHeader(iconRes: Int, title: String) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Icon(
-            painter = painterResource(iconRes),
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.size(20.dp)
-        )
-        Text(title, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 6.dp))
     }
 }
 

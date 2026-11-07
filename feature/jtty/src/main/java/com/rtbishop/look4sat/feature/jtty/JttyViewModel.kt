@@ -34,6 +34,8 @@ data class JttyState(
             radio.pttState==PttState.OFF && radio.txMode in listOf("USB","LSB") && radio.rxMode in listOf("USB","LSB"))
 }
 sealed interface JttyAction {
+    data class SetBases(val value: RadioBaseFrequencies): JttyAction
+    data class AudioSettings(val value: com.rtbishop.look4sat.core.domain.audio.RadioAudioSettings): JttyAction
     data object Receive : JttyAction
     data object Clear : JttyAction
     data object Send : JttyAction
@@ -90,7 +92,7 @@ class JttyViewModel(private val container: IMainContainer): ViewModel() {
                 usesVox=config.catTransport==RadioControlSettings.TRANSPORT_VOX,
                 pttSupported=radioModelDescriptor(config.radioModel).capabilities.ptt) }
         } }
-        viewModelScope.launch { container.qsoRepository.records.collect { records -> mutable.update { it.copy(records=records.filter { r -> r.mode=="JTTY" }.take(100)) } } }
+        viewModelScope.launch { container.qsoRepository.records.collect { records -> mutable.update { it.copy(records=records.filter { r -> r.mode=="JTTY" || r.submode=="JTTY" }) } } }
         launch {
             combine(container.satelliteRepo.passes,container.satelliteRepo.selectedPass) { passes,selection ->
                 passes.firstOrNull { it.catNum==selection.first && it.aosTime==selection.second }
@@ -130,6 +132,20 @@ class JttyViewModel(private val container: IMainContainer): ViewModel() {
     }
     fun onAction(action: JttyAction) {
         when(action) {
+            is JttyAction.SetBases -> if (!state.value.busy && !state.value.radio.frequencyEditingLocked) {
+                container.radioTrackingService.setBaseFrequencies(action.value)
+            }
+            is JttyAction.AudioSettings -> launch {
+                transmitJob?.cancel(); transmitter.stop(); service.stopReceiving()
+                val settings = container.settingsRepo.radioControlSettings.value
+                val audio = action.value
+                val updated = settings.copy(radioAudio = audio,
+                    catTransport = if (audio.networkCat) RadioControlSettings.TRANSPORT_TCP else settings.catTransport,
+                    txRadioAddress = if (audio.networkCat) "${audio.host}:${audio.controlPort}" else settings.txRadioAddress,
+                    splitMode = if (audio.networkCat) true else settings.splitMode,
+                    tcpProtocol = if (audio.networkCat) RadioControlSettings.TCP_PROTOCOL_RAW_CAT else settings.tcpProtocol)
+                check(container.radioTrackingService.applyRadioControlSettings(updated)) { "Stop transmitting before changing radio audio" }
+            }
             is JttyAction.TheirCall -> mutable.update { it.copy(theirCall=action.value.uppercase(Locale.US),saved=false) }
             is JttyAction.MyCall -> mutable.update { it.copy(myCall=action.value.uppercase(Locale.US)) }
             is JttyAction.SentReport -> mutable.update { it.copy(sentReport=action.value) }

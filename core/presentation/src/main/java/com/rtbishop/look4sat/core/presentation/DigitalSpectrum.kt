@@ -38,7 +38,8 @@ fun DigitalSpectrumWaterfall(
     selectedFrequencyHz: Float,
     onFrequencySelected: (Float) -> Unit,
     modifier: Modifier = Modifier,
-    descriptionOverride: String? = null
+    descriptionOverride: String? = null,
+    transmitFrequencyHz: Float? = null
 ) {
     val description = stringResource(R.string.ft4_receive_content_description)
     val frequencyDescription = stringResource(R.string.ft4_frequency_content_description)
@@ -125,6 +126,10 @@ fun DigitalSpectrumWaterfall(
             )
         }
         drawLine(cyan, Offset(selectedX, rulerHeight), Offset(selectedX, size.height), strokeWidth = 2f)
+        transmitFrequencyHz?.let { frequency ->
+            val txX = frequency.coerceIn(0f, MAX_FREQUENCY_HZ) / MAX_FREQUENCY_HZ * size.width
+            drawLine(red, Offset(txX, 0f), Offset(txX, size.height), strokeWidth = 2.dp.toPx())
+        }
         rulerPaint.color = cyan.toArgb()
         rulerPaint.textSize = 11.sp.toPx()
         drawIntoCanvas { canvas ->

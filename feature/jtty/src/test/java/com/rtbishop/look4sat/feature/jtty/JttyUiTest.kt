@@ -31,7 +31,7 @@ class JttyUiTest {
                 }
             }
         }
-        compose.onNodeWithText("Radio").performClick()
+        compose.onNodeWithTag("digitalTab_CONTACT").performClick()
         compose.onNodeWithText("F1").performScrollTo().performTouchInput {longClick()}
         compose.onNodeWithText("Template").assertExists()
         compose.onNodeWithTag("jttyPresetText").performTextReplacement("{CALL} DE {MYCALL}")
@@ -96,4 +96,66 @@ class JttyUiTest {
         compose.onNodeWithText("Elevation",substring=true).assertExists()
     }
 
+    @Test fun repeatedTabChangesDoNotConnectReceiveSendOrSave() {
+        val actions = mutableListOf<JttyAction>()
+        var receiveCalls = 0
+        var connectCalls = 0
+        compose.setContent { MainTheme {
+            JttyScreen(JttyState(draft = "CQ BG5JSU", presets = listOf("CQ", "DE", "K", "73")),
+                { actions += it }, {}, {}, { receiveCalls++ }, { connectCalls++ })
+        } }
+        repeat(3) {
+            compose.onNodeWithTag("digitalTab_CONTACT").performClick().performClick()
+            compose.onNodeWithTag("digitalTab_LOG").performClick()
+            compose.onNodeWithTag("digitalTab_SPECTRUM").performClick()
+        }
+        compose.onNodeWithTag("digitalTab_CONTACT").performClick()
+        compose.onNodeWithText("CQ BG5JSU").assertExists()
+        compose.runOnIdle {
+            assertTrue(actions.isEmpty())
+            assertEquals(0, receiveCalls)
+            assertEquals(0, connectCalls)
+        }
+    }
+
+    @Test fun stopTransmitRemainsAccessibleOnEveryTab() {
+        val actions = mutableListOf<JttyAction>()
+        compose.setContent { MainTheme {
+            JttyScreen(JttyState(busy = true), { actions += it }, {}, {}, {}, {})
+        } }
+        listOf("SPECTRUM", "CONTACT", "LOG").forEach { tab ->
+            compose.onNodeWithTag("digitalTab_$tab").performClick()
+            compose.onNodeWithTag("digitalStopTransmit").assertIsDisplayed().performClick()
+        }
+        compose.runOnIdle { assertEquals(List(3) { JttyAction.EmergencyStop }, actions) }
+    }
+
+    @Test fun selectedTabAndDraftSurviveRestoration() {
+        val restoration = StateRestorationTester(compose)
+        restoration.setContent { MainTheme {
+            JttyScreen(JttyState(draft = "BG5JSU DE BA7OPF", presets = emptyList()), {}, {}, {}, {}, {})
+        } }
+        compose.onNodeWithTag("digitalTab_CONTACT").performClick()
+        restoration.emulateSavedInstanceStateRestore()
+        compose.onNodeWithTag("digitalTab_CONTACT").assertIsSelected()
+        compose.onNodeWithText("BG5JSU DE BA7OPF").assertExists()
+    }
+
+    @Test fun allSatelliteLogFilterSurvivesLeavingTabWithoutSavingAnotherQso() {
+        val actions = mutableListOf<JttyAction>()
+        val record = com.rtbishop.look4sat.core.domain.logbook.QsoRecord(
+            id = 1, startUtcMillis = 0, theirCallsign = "BG5JSU",
+            myCallsign = "BA7OPF", mode = "JTTY", satelliteName = "RS-44")
+        compose.setContent { MainTheme {
+            JttyScreen(JttyState(records = listOf(record)), { actions += it }, {}, {}, {}, {})
+        } }
+        compose.onNodeWithTag("digitalTab_LOG").performClick()
+        compose.onNodeWithText("Current satellite").performScrollTo().performClick()
+        compose.onNodeWithText("All satellites").performClick()
+        compose.onNodeWithText("BG5JSU").assertExists()
+        compose.onNodeWithTag("digitalTab_CONTACT").performClick()
+        compose.onNodeWithTag("digitalTab_LOG").performClick()
+        compose.onNodeWithText("BG5JSU").assertExists()
+        compose.runOnIdle { assertFalse(actions.contains(JttyAction.SaveLog)) }
+    }
 }

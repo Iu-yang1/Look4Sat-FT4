@@ -10,25 +10,11 @@
 package com.rtbishop.look4sat.feature.ft4
 
 import com.rtbishop.look4sat.core.presentation.SpectrumRenderState
-import com.rtbishop.look4sat.core.presentation.DigitalSpectrumWaterfall
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.Button
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -37,84 +23,46 @@ import com.rtbishop.look4sat.core.domain.audio.AudioHubState
 import com.rtbishop.look4sat.core.domain.audio.AudioSampleFormat
 import com.rtbishop.look4sat.core.domain.ft4.Ft4EngineState
 import com.rtbishop.look4sat.core.presentation.R
-import kotlinx.coroutines.flow.collectLatest
 
 @Composable
 internal fun Ft4SpectrumPage(
     state: Ft4State,
-    viewModel: Ft4ViewModel,
+    renderState: SpectrumRenderState,
     onAction: (Ft4Action) -> Unit,
     requestMicrophone: () -> Unit,
+    onAudio: () -> Unit,
+    expanded: Boolean,
+    onExpanded: (Boolean) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val renderState = remember { SpectrumRenderState() }
-    val shouldCollectSpectrum = state.settings.decodeEnabled &&
-        state.hasMicrophonePermission &&
-        state.capability.receiveAvailable &&
-        state.isReceiving
-    LaunchedEffect(viewModel, shouldCollectSpectrum) {
-        if (shouldCollectSpectrum) {
-            viewModel.spectrumFrames.collectLatest(renderState::update)
-        }
-    }
     val frame = renderState.frame()
     val inputLevel = frame?.inputLevelDb ?: -120f
     Column(
         modifier = modifier,
         verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
-        ElevatedCard(modifier = Modifier.fillMaxWidth().height(380.dp)) {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                DigitalSpectrumWaterfall(
-                    renderState = renderState,
-                    selectedFrequencyHz = state.selectedAudioFrequencyHz,
-                    onFrequencySelected = { onAction(Ft4Action.SelectAudioFrequency(it)) },
-                    modifier = Modifier.fillMaxSize().padding(8.dp)
-                )
-                spectrumBlockingMessage(state, frame == null)?.let { message ->
-                    Text(
-                        text = message,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier.padding(24.dp)
-                    )
-                }
-            }
+        com.rtbishop.look4sat.core.presentation.DigitalSpectrumPane(
+            renderState, state.selectedAudioFrequencyHz,
+            { if (!state.radio.frequencyEditingLocked &&
+                (state.transmitState is com.rtbishop.look4sat.core.domain.ft4.Ft4TransmitState.Idle ||
+                    state.transmitState is com.rtbishop.look4sat.core.domain.ft4.Ft4TransmitState.Failed))
+                onAction(Ft4Action.SelectAudioFrequency(it)) },
+            stringResource(R.string.digital_tx_frequency, state.selectedAudioFrequencyHz.toInt()),
+            state.isReceiving, onAudio, expanded, onExpanded
+        ) {
+            Text(stringResource(R.string.ft4_spectrum_range))
+            Text(stringResource(R.string.ft4_input_level, inputLevel))
+            Text(audioOwnerText(state.audioHub),
+                color = if (state.audioHub.isUnavailable()) MaterialTheme.colorScheme.error
+                else MaterialTheme.colorScheme.onSurfaceVariant)
+            ReceiveDiagnostics(state.engineState)
         }
-        ElevatedCard(modifier = Modifier.fillMaxWidth()) {
-            Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text(stringResource(R.string.ft4_spectrum_range), fontSize = 11.sp)
-                    Text(stringResource(R.string.ft4_input_level, inputLevel), fontSize = 11.sp)
-                    Text(stringResource(R.string.ft4_selected_frequency, state.selectedAudioFrequencyHz), fontSize = 11.sp)
-                }
-                Text(
-                    audioOwnerText(state.audioHub),
-                    fontSize = 11.sp,
-                    color = if (state.audioHub.isUnavailable()) MaterialTheme.colorScheme.error
-                    else MaterialTheme.colorScheme.onSurface
-                )
-                ReceiveDiagnostics(state.engineState)
-                if (!state.hasMicrophonePermission) {
-                    Text(stringResource(R.string.ft4_microphone_required), color = MaterialTheme.colorScheme.error)
-                }
-                Button(
-                    onClick = {
-                        if (state.hasMicrophonePermission) onAction(Ft4Action.ToggleReceiving)
-                        else requestMicrophone()
-                    },
-                    enabled = state.settings.decodeEnabled && state.capability.receiveAvailable,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(
-                        stringResource(
-                            when {
-                                !state.hasMicrophonePermission -> R.string.ft4_grant_microphone
-                                state.isReceiving -> R.string.ft4_stop_receive
-                                else -> R.string.ft4_start_receive
-                            }
-                        )
-                    )
-                }
+        spectrumBlockingMessage(state, frame == null)?.let { message ->
+            Text(message, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        if (!state.hasMicrophonePermission) {
+            androidx.compose.material3.TextButton(onClick = requestMicrophone) {
+                Text(stringResource(R.string.ft4_grant_microphone))
             }
         }
     }

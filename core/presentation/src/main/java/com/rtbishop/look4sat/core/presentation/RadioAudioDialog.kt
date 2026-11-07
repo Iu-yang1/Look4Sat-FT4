@@ -19,6 +19,27 @@ fun RadioAudioDialog(
     initial: RadioAudioSettings,model: String,session: IRadioAudioSession,
     onDismiss: ()->Unit,onSave: (RadioAudioSettings)->Unit
 ) {
+    SharedDialog(
+        title = stringResource(R.string.radio_audio_title),
+        onDismissRequest = onDismiss,
+        onCancel = onDismiss
+    ) { padding ->
+        RadioAudioSettingsContent(initial, model, session, { onSave(it); onDismiss() },
+            Modifier.fillMaxWidth()
+                .heightIn(max = LocalConfiguration.current.screenHeightDp.dp * .55f)
+                .verticalScroll(rememberScrollState()).padding(padding), showTitle = false)
+    }
+}
+
+@Composable
+fun RadioAudioSettingsContent(
+    initial: RadioAudioSettings,
+    model: String,
+    session: IRadioAudioSession,
+    onSave: (RadioAudioSettings) -> Unit,
+    modifier: Modifier = Modifier,
+    showTitle: Boolean = true
+) {
     var backend by remember { mutableStateOf(initial.backend) }
     var input by remember { mutableStateOf(initial.rxDeviceKey) }
     var output by remember { mutableStateOf(initial.txDeviceKey) }
@@ -33,7 +54,7 @@ fun RadioAudioDialog(
     var discovered by remember { mutableStateOf(emptyList<String>()) }
     val scope=rememberCoroutineScope()
     val devices=remember { session.devices() }
-    SharedDialog(title=stringResource(R.string.radio_audio_title),onCancel=onDismiss,onAccept={
+    val save = {
         try {
             val correction=txLatency.toLongOrNull()
             require(correction!=null && correction in -500..1000) { "Audio timing correction must be between -500 and 1000 ms" }
@@ -46,11 +67,15 @@ fun RadioAudioDialog(
                 }
                 else -> Unit
             }
-            onSave(value);onDismiss()
+            onSave(value)
+            error=null
         } catch(e: Exception) { error=e.message }
-    }) {
-        Column(Modifier.fillMaxWidth().heightIn(max=LocalConfiguration.current.screenHeightDp.dp * .55f).verticalScroll(rememberScrollState()).padding(16.dp),
+    }
+        Column(modifier,
             verticalArrangement=Arrangement.spacedBy(8.dp)) {
+            if (showTitle) Text(stringResource(R.string.radio_audio_title), style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.primary)
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             listOf(RadioAudioBackend.UNCONFIGURED,RadioAudioBackend.ANDROID_DEVICE).plus(
                 if(model==RadioControlSettings.MODEL_ICOM_IC705) listOf(RadioAudioBackend.ICOM_WLAN) else emptyList()).forEach { option ->
                 FilterChip(selected=backend==option,onClick={ backend=option },label={ Text(stringResource(when(option) {
@@ -58,6 +83,7 @@ fun RadioAudioDialog(
                     RadioAudioBackend.ANDROID_DEVICE -> R.string.radio_audio_usb
                     RadioAudioBackend.ICOM_WLAN -> R.string.radio_audio_wlan
                 })) })
+            }
             }
             if(backend==RadioAudioBackend.ANDROID_DEVICE) {
                 Text(stringResource(R.string.radio_audio_rx))
@@ -71,11 +97,11 @@ fun RadioAudioDialog(
                 if(devices.isEmpty()) Text(stringResource(R.string.radio_audio_no_device))
             }
             if(backend==RadioAudioBackend.ICOM_WLAN) {
-                OutlinedTextField(host,{ host=it },label={ Text(stringResource(R.string.radio_audio_host)) },singleLine=true)
-                OutlinedTextField(port,{ port=it },label={ Text(stringResource(R.string.radio_audio_port)) },singleLine=true)
-                OutlinedTextField(username,{ username=it },label={ Text(stringResource(R.string.radio_audio_user)) },singleLine=true)
+                OutlinedTextField(host,{ host=it },modifier=Modifier.fillMaxWidth(),label={ Text(stringResource(R.string.radio_audio_host)) },singleLine=true)
+                OutlinedTextField(port,{ port=it },modifier=Modifier.fillMaxWidth(),label={ Text(stringResource(R.string.radio_audio_port)) },singleLine=true)
+                OutlinedTextField(username,{ username=it },modifier=Modifier.fillMaxWidth(),label={ Text(stringResource(R.string.radio_audio_user)) },singleLine=true)
                 OutlinedTextField(password,{ password=it },label={ Text(stringResource(R.string.radio_audio_password)) },
-                    visualTransformation=PasswordVisualTransformation(),singleLine=true)
+                    modifier=Modifier.fillMaxWidth(),visualTransformation=PasswordVisualTransformation(),singleLine=true)
                 Row { Checkbox(networkCat,{ networkCat=it });Text(stringResource(R.string.radio_audio_network_cat)) }
                 Text(stringResource(R.string.radio_audio_wireless_manual),style=MaterialTheme.typography.bodySmall)
                 OutlinedButton(enabled=!discovering,onClick={ scope.launch {
@@ -84,10 +110,11 @@ fun RadioAudioDialog(
                 } }) { Text(stringResource(R.string.radio_audio_discover)) }
                 discovered.forEach { address -> TextButton(onClick={ host=address }) { Text(address) } }
             }
-            if(backend!=RadioAudioBackend.UNCONFIGURED) OutlinedTextField(txLatency,{ txLatency=it },
+            if(backend!=RadioAudioBackend.UNCONFIGURED) OutlinedTextField(txLatency,{ txLatency=it },modifier=Modifier.fillMaxWidth(),
                 label={ Text(stringResource(R.string.radio_audio_tx_latency)) },singleLine=true,
                 supportingText={ Text(stringResource(R.string.radio_audio_tx_latency_hint)) })
             error?.let { Text(it,color=MaterialTheme.colorScheme.error) }
+            CardButton(onClick = save, text = stringResource(R.string.btn_save),
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp))
         }
-    }
 }

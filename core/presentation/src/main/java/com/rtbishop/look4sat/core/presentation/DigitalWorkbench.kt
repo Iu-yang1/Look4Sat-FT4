@@ -217,9 +217,6 @@ fun DigitalWorkbench(
                 .verticalScroll(rememberScrollState()).padding(padding),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            TextButton(onClick = { parameters = false; onAudio() }) {
-                Text(stringResource(R.string.radio_audio_title))
-            }
             parameterContent()
         }
     }

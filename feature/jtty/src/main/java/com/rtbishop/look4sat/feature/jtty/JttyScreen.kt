@@ -74,7 +74,10 @@ fun JttyDestination(navigateUp: () -> Unit, navigateToLogbook: () -> Unit) {
             }
             if (required == null || ContextCompat.checkSelfPermission(context, required) == PackageManager.PERMISSION_GRANTED)
                 model.onAction(JttyAction.Connect) else permission.launch(required)
-        }, onAudio = { audioDialog = true })
+        }, onAudio = { audioDialog = true }, audioContent = {
+            RadioAudioSettingsContent(config.radioAudio, config.radioModel, container.radioAudioSession,
+                { model.onAction(JttyAction.AudioSettings(it)) })
+        })
     if (audioDialog) RadioAudioDialog(config.radioAudio, config.radioModel, container.radioAudioSession,
         onDismiss = { audioDialog = false }, onSave = { model.onAction(JttyAction.AudioSettings(it)) })
 }
@@ -83,7 +86,8 @@ fun JttyDestination(navigateUp: () -> Unit, navigateToLogbook: () -> Unit) {
 @Composable
 internal fun JttyScreen(
     state: JttyState, action: (JttyAction) -> Unit, back: () -> Unit, logbook: () -> Unit,
-    receive: () -> Unit, connect: () -> Unit, onAudio: () -> Unit = {}
+    receive: () -> Unit, connect: () -> Unit, onAudio: () -> Unit = {},
+    audioContent: @Composable () -> Unit = {}
 ) {
     var pageIndex by rememberSaveable { mutableIntStateOf(0) }
     var spectrumExpanded by rememberSaveable { mutableStateOf(false) }
@@ -108,6 +112,8 @@ internal fun JttyScreen(
             onTrack = { action(JttyAction.Track) }, onStopTransmit = { action(JttyAction.EmergencyStop) },
             onSetBases = { action(JttyAction.SetBases(it)) }, onAudio = onAudio,
             parameterContent = {
+                audioContent()
+                HorizontalDivider(Modifier.padding(vertical = 4.dp))
                 Text("${state.myCall} · ${state.grid}", color = MaterialTheme.colorScheme.primary)
                 if (state.transponders.isNotEmpty()) TextButton(onClick = { choosing = !choosing }, enabled = !state.busy) {
                     Text(stringResource(R.string.jtty_transponder))

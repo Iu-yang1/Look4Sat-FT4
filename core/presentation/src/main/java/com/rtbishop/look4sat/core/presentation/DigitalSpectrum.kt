@@ -12,6 +12,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -52,25 +53,25 @@ fun DigitalSpectrumWaterfall(
             textAlign = android.graphics.Paint.Align.CENTER
         }
     }
-    val version = renderState.version
+    val selectFrequency by rememberUpdatedState(onFrequencySelected)
     Canvas(
         modifier = modifier
             .semantics {
                 contentDescription = combinedDescription
             }
-            .pointerInput(onFrequencySelected) {
+            .pointerInput(Unit) {
                 detectTapGestures { offset ->
-                    onFrequencySelected(offset.x / size.width * MAX_FREQUENCY_HZ)
+                    if (size.width > 0) selectFrequency((offset.x / size.width * MAX_FREQUENCY_HZ).coerceIn(0f, MAX_FREQUENCY_HZ))
                 }
             }
-            .pointerInput(onFrequencySelected) {
+            .pointerInput(Unit) {
                 detectDragGestures { change, _ ->
                     change.consume()
-                    onFrequencySelected(change.position.x / size.width * MAX_FREQUENCY_HZ)
+                    if (size.width > 0) selectFrequency((change.position.x / size.width * MAX_FREQUENCY_HZ).coerceIn(0f, MAX_FREQUENCY_HZ))
                 }
             }
     ) {
-        @Suppress("UNUSED_VARIABLE") val redraw = version
+        @Suppress("UNUSED_VARIABLE") val redraw = renderState.version
         val cyan = Color(0xFF00E5FF)
         val red = Color(0xFFFF3B30)
         val grid = cyan.copy(alpha = 0.22f)

@@ -1,11 +1,13 @@
 package com.rtbishop.look4sat.feature.jtty
 
+import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.*
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.dp
 import com.rtbishop.look4sat.core.domain.jtty.*
 import com.rtbishop.look4sat.core.domain.predict.OrbitalPos
 import com.rtbishop.look4sat.core.presentation.*
@@ -81,6 +83,28 @@ class JttyUiTest {
         compose.runOnIdle {
             assertTrue(actions.any {it is JttyAction.RxFrequency})
             assertFalse(actions.any {it is JttyAction.TxFrequency || it==JttyAction.Send})
+        }
+    }
+
+    @Test fun spectrumTapSurvivesCallbackUpdateBetweenPressAndRelease() {
+        val revision = mutableIntStateOf(0)
+        val selected = mutableListOf<Pair<Int, Float>>()
+        compose.setContent { MainTheme {
+            val current = revision.intValue
+            DigitalSpectrumWaterfall(
+                remember { SpectrumRenderState() }, 1500f,
+                { selected += current to it },
+                androidx.compose.ui.Modifier.size(240.dp, 180.dp),
+                descriptionOverride = "Spectrum tap regression"
+            )
+        } }
+        val spectrum = compose.onNodeWithContentDescription("Spectrum tap regression")
+        spectrum.performTouchInput { down(center) }
+        compose.runOnIdle { revision.intValue = 1 }
+        spectrum.performTouchInput { up() }
+        compose.runOnIdle {
+            assertEquals(1, selected.size)
+            assertEquals(1, selected.single().first)
         }
     }
 

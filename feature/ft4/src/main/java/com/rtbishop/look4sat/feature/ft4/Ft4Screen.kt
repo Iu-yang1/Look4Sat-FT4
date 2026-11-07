@@ -24,6 +24,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.keepScreenOn
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.flow.collect
 import androidx.core.content.ContextCompat
@@ -110,7 +112,11 @@ fun Ft4ShellDestination(navigateUp: () -> Unit, navigateToLogbook: () -> Unit) {
                 model.onAction(Ft4Action.ConnectRadios)
             } else radioPermission.launch(permission)
         },
-        onAudio = { audioDialog = true }
+        onAudio = { audioDialog = true },
+        audioContent = {
+            RadioAudioSettingsContent(radioSettings.radioAudio, radioSettings.radioModel, container.radioAudioSession,
+                { model.onAction(Ft4Action.AudioSettings(it)) })
+        }
     )
     if (audioDialog) RadioAudioDialog(
         radioSettings.radioAudio, radioSettings.radioModel, container.radioAudioSession,
@@ -122,7 +128,8 @@ fun Ft4ShellDestination(navigateUp: () -> Unit, navigateToLogbook: () -> Unit) {
 internal fun Ft4Workbench(
     state: Ft4State, timing: Ft4TimingState, renderState: SpectrumRenderState,
     onAction: (Ft4Action) -> Unit, navigateUp: () -> Unit, navigateToLogbook: () -> Unit,
-    requestMicrophone: () -> Unit, connectRadios: () -> Unit, onAudio: () -> Unit
+    requestMicrophone: () -> Unit, connectRadios: () -> Unit, onAudio: () -> Unit,
+    audioContent: @Composable () -> Unit = {}
 ) {
     var pageIndex by rememberSaveable { mutableIntStateOf(0) }
     var automatic by rememberSaveable { mutableStateOf(false) }
@@ -152,6 +159,8 @@ internal fun Ft4Workbench(
                     Text(stringResource(R.string.radio_audio_timing_unverified), style = MaterialTheme.typography.bodySmall)
             },
             parameterContent = {
+                audioContent()
+                HorizontalDivider(Modifier.padding(vertical = 4.dp))
                 Text(stringResource(R.string.prefs_ft4_decode_depth), style = MaterialTheme.typography.labelLarge)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     listOf(1 to R.string.prefs_ft4_decode_fast, 2 to R.string.prefs_ft4_decode_balanced,
@@ -166,13 +175,17 @@ internal fun Ft4Workbench(
                 Switch(checked = spectrumExpanded, onCheckedChange = { spectrumExpanded = it })
             },
             timingContent = {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Row(Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(stringResource(R.string.ft4_slot_progress, (timing.slotProgress * 100).toInt()),
-                        style = MaterialTheme.typography.labelSmall)
+                        style = MaterialTheme.typography.labelSmall, modifier = Modifier.weight(1f),
+                        maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Text(stringResource(R.string.ft4_time_source, clockSourceLabel(timing.clock.source),
-                        timing.clock.uncertaintyMillis), style = MaterialTheme.typography.labelSmall)
+                        timing.clock.uncertaintyMillis), style = MaterialTheme.typography.labelSmall,
+                        modifier = Modifier.weight(2f), textAlign = TextAlign.End,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
-                LinearProgressIndicator(progress = { timing.slotProgress }, modifier = Modifier.fillMaxWidth().height(2.dp))
+                LinearProgressIndicator(progress = { timing.slotProgress },
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp).height(2.dp))
             }
         ) {
             state.error?.let {

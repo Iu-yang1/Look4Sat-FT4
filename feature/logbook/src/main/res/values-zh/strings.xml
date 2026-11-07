@@ -11,6 +11,15 @@
     <string name="logbook_export_all">包含草稿</string>
     <string name="logbook_edit">编辑通联</string>
     <string name="logbook_delete">删除通联</string>
+    <string name="logbook_delete_selected">删除所选</string>
+    <string name="logbook_confirm_delete_selected">从本机删除选中的 %1$d 条通联记录？此操作无法撤销。</string>
+    <string name="logbook_selected_count">已选 %1$d 条</string>
+    <string name="logbook_select_all">全选</string>
+    <string name="logbook_cancel_selection">取消多选</string>
+    <string name="logbook_select_contact">选择通联</string>
+    <string name="logbook_lotw_uploaded">已上传 LoTW</string>
+    <string name="logbook_wavelog_uploaded">已上传 Wavelog</string>
+    <string name="logbook_own_station_summary">本机 · %1$s</string>
     <string name="logbook_callsign">对方呼号</string>
     <string name="logbook_my_callsign">本机呼号</string>
     <string name="logbook_grid">对方网格</string>

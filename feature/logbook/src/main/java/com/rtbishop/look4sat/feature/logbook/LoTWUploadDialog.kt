@@ -10,7 +10,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
@@ -19,7 +18,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ElevatedCard
@@ -42,6 +40,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -241,7 +240,7 @@ internal fun LoTWUploadDialog(state: LogbookState, onAction: (LogbookAction) -> 
                 verticalArrangement = Arrangement.spacedBy(8.dp),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .fillMaxHeight(0.72f)
+                    .heightIn(max = LocalConfiguration.current.screenHeightDp.dp * 0.55f)
                     .verticalScroll(rememberScrollState())
                     .padding(horizontal = padding, vertical = 8.dp)
             ) {
@@ -426,68 +425,74 @@ internal fun LoTWUploadDialog(state: LogbookState, onAction: (LogbookAction) -> 
             }
     }
     state.providerSwitchConflict?.let { requestedProvider ->
-        AlertDialog(
-            onDismissRequest = { onAction(LogbookAction.DismissProviderSwitchConflict) },
-            title = { Text(stringResource(R.string.logbook_sync_source_conflict_title)) },
-            text = {
-                Text(stringResource(
-                    if (requestedProvider == LogbookSyncProvider.WAVELOG) {
-                        R.string.logbook_sync_source_conflict_wavelog
-                    } else {
-                        R.string.logbook_sync_source_conflict_lotw
-                    }
-                ))
-            },
-            confirmButton = {
-                TextButton(onClick = { onAction(LogbookAction.DismissProviderSwitchConflict) }) {
-                    Text(stringResource(CoreR.string.btn_accept))
+        LogbookConfirmationSheet(
+            onDismiss = { onAction(LogbookAction.DismissProviderSwitchConflict) },
+            title = stringResource(R.string.logbook_sync_source_conflict_title),
+            message = stringResource(
+                if (requestedProvider == LogbookSyncProvider.WAVELOG) {
+                    R.string.logbook_sync_source_conflict_wavelog
+                } else {
+                    R.string.logbook_sync_source_conflict_lotw
                 }
-            }
+            ),
+            confirmText = stringResource(CoreR.string.btn_accept),
+            onConfirm = { onAction(LogbookAction.DismissProviderSwitchConflict) }
         )
     }
-    if (showWavelogClearConfirm) AlertDialog(
-        onDismissRequest = { showWavelogClearConfirm = false },
-        title = { Text(stringResource(CoreR.string.prefs_wavelog_clear_title)) },
-        text = { Text(stringResource(CoreR.string.prefs_wavelog_clear_message)) },
-        confirmButton = {
-            TextButton(onClick = {
-                showWavelogClearConfirm = false
-                onAction(LogbookAction.ClearWavelogConfig)
-                wavelogUrl = ""
-                wavelogApiKey = ""
-            }) { Text(stringResource(CoreR.string.btn_accept)) }
-        },
-        dismissButton = { TextButton(onClick = { showWavelogClearConfirm = false }) { Text(stringResource(R.string.logbook_cancel)) } }
+    if (showWavelogClearConfirm) LogbookConfirmationSheet(
+        onDismiss = { showWavelogClearConfirm = false },
+        title = stringResource(CoreR.string.prefs_wavelog_clear_title),
+        message = stringResource(CoreR.string.prefs_wavelog_clear_message),
+        confirmText = stringResource(CoreR.string.btn_accept),
+        busy = busy,
+        onConfirm = {
+            showWavelogClearConfirm = false
+            onAction(LogbookAction.ClearWavelogConfig)
+            wavelogUrl = ""
+            wavelogApiKey = ""
+        }
     )
     if (state.syncProvider == LogbookSyncProvider.LOTW) state.lotwPreview?.let { preview ->
-        AlertDialog(
+        SharedDialog(
             onDismissRequest = { onAction(LogbookAction.DismissLoTWPreview) },
-            title = { Text(stringResource(R.string.lotw_preview_title)) },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(stringResource(R.string.lotw_preview_summary, preview.callsign, preview.dxcc, preview.grid, preview.count, preview.skipped))
-                    if (preview.unknownSkipped > 0) Text(stringResource(R.string.lotw_unknown_skipped, preview.unknownSkipped))
-                    if (preview.count == 0) Text(stringResource(R.string.lotw_nothing_to_upload)) else {
-                        Text(stringResource(R.string.lotw_preview_utc, preview.firstUtc, preview.lastUtc))
-                        Text(stringResource(R.string.lotw_preview_warning), style = MaterialTheme.typography.bodySmall)
-                        LazyColumn(Modifier.heightIn(max = 200.dp)) { items(preview.contacts) { Text(it, style = MaterialTheme.typography.bodySmall) } }
+            title = stringResource(R.string.lotw_preview_title),
+            onCancel = { onAction(LogbookAction.DismissLoTWPreview) },
+            onAccept = { onAction(LogbookAction.ConfirmLoTWUpload) },
+            acceptText = stringResource(R.string.lotw_submit, preview.count),
+            acceptEnabled = preview.count > 0 && !busy
+        ) { padding ->
+            LazyColumn(
+                modifier = Modifier.fillMaxWidth()
+                    .heightIn(max = LocalConfiguration.current.screenHeightDp.dp * 0.55f)
+                    .padding(horizontal = padding, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                item {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(stringResource(R.string.lotw_preview_summary, preview.callsign, preview.dxcc, preview.grid, preview.count, preview.skipped))
+                        if (preview.unknownSkipped > 0) Text(stringResource(R.string.lotw_unknown_skipped, preview.unknownSkipped))
+                        if (preview.count == 0) {
+                            Text(stringResource(R.string.lotw_nothing_to_upload))
+                        } else {
+                            Text(stringResource(R.string.lotw_preview_utc, preview.firstUtc, preview.lastUtc))
+                            Text(stringResource(R.string.lotw_preview_warning), style = MaterialTheme.typography.bodySmall)
+                        }
                     }
                 }
-            },
-            confirmButton = {
-                TextButton(onClick = { onAction(LogbookAction.ConfirmLoTWUpload) }, enabled = preview.count > 0 && !busy) {
-                    Text(stringResource(R.string.lotw_submit, preview.count))
-                }
-            },
-            dismissButton = { TextButton(onClick = { onAction(LogbookAction.DismissLoTWPreview) }) { Text(stringResource(R.string.logbook_cancel)) } }
-        )
+                items(preview.contacts) { Text(it, style = MaterialTheme.typography.bodySmall) }
+            }
+        }
     }
-    if (removeConfirmation) AlertDialog(
-        onDismissRequest = { removeConfirmation = false },
-        title = { Text(stringResource(R.string.lotw_remove_certificate)) },
-        text = { Text(stringResource(R.string.lotw_remove_certificate_hint)) },
-        confirmButton = { TextButton(onClick = { onAction(LogbookAction.RemoveLoTWCertificate); removeConfirmation = false }) { Text(stringResource(R.string.logbook_delete)) } },
-        dismissButton = { TextButton(onClick = { removeConfirmation = false }) { Text(stringResource(R.string.logbook_cancel)) } }
+    if (removeConfirmation) LogbookConfirmationSheet(
+        onDismiss = { removeConfirmation = false },
+        title = stringResource(R.string.lotw_remove_certificate),
+        message = stringResource(R.string.lotw_remove_certificate_hint),
+        confirmText = stringResource(R.string.logbook_delete),
+        busy = busy,
+        onConfirm = {
+            onAction(LogbookAction.RemoveLoTWCertificate)
+            removeConfirmation = false
+        }
     )
 }
 

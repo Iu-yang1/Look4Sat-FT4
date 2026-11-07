@@ -6,6 +6,46 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class LogbookStateTest {
+    @Test
+    fun longPressSelectionTogglesOnlyExistingRecords() {
+        val state = LogbookState(records = listOf(record(1), record(2)))
+        val selected = state.toggleSelection(1).toggleSelection(2)
+
+        assertEquals(setOf(1L, 2L), selected.selectedIds)
+        assertEquals(setOf(2L), selected.toggleSelection(1).selectedIds)
+        assertEquals(selected, selected.toggleSelection(99))
+        assertEquals(state.records, selected.records)
+    }
+
+    @Test
+    fun selectAllUsesCurrentQueryAndSatelliteFilter() {
+        val visible = record(1, "FO-29")
+        val hidden = record(2, "SO-50")
+        val terrestrial = record(3)
+        val state = LogbookState(records = listOf(visible, hidden, terrestrial), query = "FO-29")
+
+        assertEquals(setOf(1L), state.selectAllVisible().selectedIds)
+    }
+
+    @Test
+    fun selectionCannotChangeDuringDeletion() {
+        val state = LogbookState(records = listOf(record(1)), selectedIds = setOf(1L), isBusy = true)
+
+        assertEquals(state, state.toggleSelection(1))
+        assertEquals(state, state.selectAllVisible())
+    }
+
+    @Test
+    fun deleteConfirmationRetainsItsOriginalSelection() {
+        val state = LogbookState(
+            records = listOf(record(1), record(2)),
+            selectedIds = setOf(1L),
+            deleteSelectionIds = setOf(1L)
+        )
+
+        assertEquals(setOf(1L), state.toggleSelection(2).deleteSelectionIds)
+    }
+
     @Test fun ownStationSelectionFiltersThePageWithoutChangingStoredRows() {
         val first=record(1,"FO-29","SAT").copy(myGrid="OL87")
         val second=first.copy(id=2,myGrid="PM01")

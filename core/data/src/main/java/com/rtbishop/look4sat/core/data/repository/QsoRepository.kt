@@ -83,6 +83,11 @@ class QsoRepository(
 
     override suspend fun delete(id: Long) = withContext(dispatcher) { importMutex.withLock { dao.delete(id) } }
 
+    override suspend fun deleteMany(ids: Set<Long>) = withContext(dispatcher) {
+        if (ids.isEmpty()) return@withContext
+        importMutex.withLock { dao.applySyncBatch(ids.toList(), emptyList()) }
+    }
+
     override suspend fun deleteAll() = withContext(dispatcher) { importMutex.withLock { dao.deleteAll() } }
 
     override suspend fun markUploaded(ids: List<Long>, grids: List<String>, certificateCallsign: String) = withContext(dispatcher) {

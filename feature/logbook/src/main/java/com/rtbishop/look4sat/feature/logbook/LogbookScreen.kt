@@ -10,13 +10,16 @@
 package com.rtbishop.look4sat.feature.logbook
 
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.compose.BackHandler
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
@@ -25,7 +28,8 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
@@ -46,10 +50,16 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -65,6 +75,7 @@ import com.rtbishop.look4sat.core.presentation.IconCard
 import com.rtbishop.look4sat.core.presentation.R as CoreR
 import com.rtbishop.look4sat.core.presentation.ScreenColumn
 import com.rtbishop.look4sat.core.presentation.SharedDialog
+import com.rtbishop.look4sat.core.presentation.gridsLabel
 import com.rtbishop.look4sat.core.presentation.TopBar
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -191,59 +202,64 @@ private fun LogbookScreen(
     dismissExportComplete: () -> Unit,
     nominalFrequencies: suspend (String) -> NominalFrequencies? = { null }
 ) {
+    val selectionMode = state.selectedIds.isNotEmpty()
+    BackHandler(enabled = selectionMode) {
+        onAction(LogbookAction.ClearSelection)
+    }
     state.editor?.let { LogbookEditorDialog(it, onAction, state.isBusy, state.error, nominalFrequencies) }
     if (state.showLoTW) LoTWDialog(state, onAction)
     if (state.showStation) LogbookStationDialog(state, onAction)
     if (state.showClearAllConfirmation) {
-        AlertDialog(
-            onDismissRequest = { if (!state.isBusy) onAction(LogbookAction.DismissClearAll) },
-            title = { Text(stringResource(R.string.logbook_clear_all_title)) },
-            text = { Text(stringResource(R.string.logbook_confirm_clear_all, state.records.size)) },
-            confirmButton = {
-                TextButton(
-                    onClick = { onAction(LogbookAction.ConfirmClearAll) },
-                    enabled = !state.isBusy
-                ) { Text(stringResource(R.string.logbook_clear_all_confirm)) }
-            },
-            dismissButton = {
-                TextButton(
-                    onClick = { onAction(LogbookAction.DismissClearAll) },
-                    enabled = !state.isBusy
-                ) { Text(stringResource(R.string.logbook_cancel)) }
-            }
+        LogbookConfirmationSheet(
+            title = stringResource(R.string.logbook_clear_all_title),
+            message = stringResource(R.string.logbook_confirm_clear_all, state.records.size),
+            confirmText = stringResource(R.string.logbook_clear_all_confirm),
+            busy = state.isBusy,
+            onDismiss = { onAction(LogbookAction.DismissClearAll) },
+            onConfirm = { onAction(LogbookAction.ConfirmClearAll) }
         )
     }
     state.deleteCandidate?.let { record ->
-        AlertDialog(
-            onDismissRequest = { onAction(LogbookAction.DismissDelete) },
-            title = { Text(stringResource(R.string.logbook_delete)) },
-            text = { Text(stringResource(R.string.logbook_confirm_delete, record.theirCallsign)) },
-            confirmButton = {
-                TextButton(onClick = { onAction(LogbookAction.ConfirmDelete) }) {
-                    Text(stringResource(R.string.logbook_delete))
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { onAction(LogbookAction.DismissDelete) }) {
-                    Text(stringResource(R.string.logbook_cancel))
-                }
-            }
+        LogbookConfirmationSheet(
+            title = stringResource(R.string.logbook_delete),
+            message = stringResource(R.string.logbook_confirm_delete, record.theirCallsign),
+            confirmText = stringResource(R.string.logbook_delete),
+            busy = state.isBusy,
+            error = state.error,
+            onDismiss = { onAction(LogbookAction.DismissDelete) },
+            onConfirm = { onAction(LogbookAction.ConfirmDelete) }
+        )
+    }
+    state.deleteSelectionIds?.let { ids ->
+        LogbookConfirmationSheet(
+            title = stringResource(R.string.logbook_delete_selected),
+            message = stringResource(R.string.logbook_confirm_delete_selected, ids.size),
+            confirmText = stringResource(R.string.logbook_delete_selected),
+            busy = state.isBusy,
+            error = state.error,
+            onDismiss = { onAction(LogbookAction.DismissDeleteSelection) },
+            onConfirm = { onAction(LogbookAction.ConfirmDeleteSelection) }
         )
     }
     ScreenColumn(removeLightThemePanelBackground = true) {
         Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             TopBar {
-                IconCard(action = navigateUp, resId = CoreR.drawable.ic_back)
+                IconCard(
+                    action = { if (selectionMode) onAction(LogbookAction.ClearSelection) else navigateUp() },
+                    resId = CoreR.drawable.ic_back
+                )
                 ElevatedCard(modifier = Modifier.weight(1f).heightIn(min = 48.dp)) {
                     Column(
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 2.dp),
-                        verticalArrangement = Arrangement.Center
+                        modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp, vertical = 2.dp),
+                        verticalArrangement = Arrangement.Center,
+                        horizontalAlignment = Alignment.CenterHorizontally
                     ) {
                         Text(
                             text = stringResource(R.string.logbook_title),
                             fontWeight = FontWeight.Bold,
                             fontSize = 16.sp,
                             lineHeight = 20.sp,
+                            textAlign = TextAlign.Center,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
@@ -252,25 +268,27 @@ private fun LogbookScreen(
                             style = MaterialTheme.typography.labelSmall,
                             fontSize = 11.sp,
                             lineHeight = 15.sp,
+                            textAlign = TextAlign.Center,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
                     }
                 }
-                IconCard(action = { onAction(LogbookAction.ShowStation) }, resId = CoreR.drawable.ic_settings)
-                IconCard(action = { onAction(LogbookAction.Add) }, resId = CoreR.drawable.ic_add)
+                IconCard(action = { onAction(LogbookAction.ShowStation) }, resId = CoreR.drawable.ic_settings, enabled = !state.isBusy)
+                IconCard(action = { onAction(LogbookAction.Add) }, resId = CoreR.drawable.ic_add, enabled = !state.isBusy)
             }
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
-                CardButton(onClick = onImport, text = stringResource(R.string.logbook_import), modifier = Modifier.weight(1f))
+                CardButton(onClick = onImport, text = stringResource(R.string.logbook_import), modifier = Modifier.weight(1f), enabled = !state.isBusy)
                 CardButton(
                     onClick = onExport,
                     text = stringResource(R.string.logbook_export),
-                    enabled = state.records.isNotEmpty(),
+                    enabled = state.records.isNotEmpty() && !state.isBusy,
                     modifier = Modifier.weight(1f)
                 )
                 CardButton(
                     onClick = { onAction(LogbookAction.ShowLoTW) },
                     text = stringResource(R.string.logbook_lotw_button),
+                    enabled = !state.isBusy,
                     modifier = Modifier.weight(1f)
                 )
                 IconButton(onClick = onMap) {
@@ -278,6 +296,34 @@ private fun LogbookScreen(
                 }
             }
             LogbookFilters(state, onAction)
+            if (selectionMode) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        stringResource(R.string.logbook_selected_count, state.selectedIds.size),
+                        style = MaterialTheme.typography.labelLarge,
+                        modifier = Modifier.weight(1f).padding(start = 8.dp)
+                    )
+                    TextButton(
+                        enabled = !state.isBusy,
+                        onClick = { onAction(LogbookAction.SelectAllVisible) }
+                    ) { Text(stringResource(R.string.logbook_select_all)) }
+                    IconButton(
+                        enabled = !state.isBusy,
+                        onClick = { onAction(LogbookAction.RequestDeleteSelection) }
+                    ) {
+                        Icon(painterResource(CoreR.drawable.ic_delete), stringResource(R.string.logbook_delete_selected))
+                    }
+                    IconButton(
+                        enabled = !state.isBusy,
+                        onClick = { onAction(LogbookAction.ClearSelection) }
+                    ) {
+                        Icon(painterResource(CoreR.drawable.ic_close), stringResource(R.string.logbook_cancel_selection))
+                    }
+                }
+            }
             val notice = when {
                 state.error != null -> logbookErrorText(state.error)
                 state.importResult != null -> stringResource(
@@ -319,16 +365,32 @@ private fun LogbookScreen(
                                 )
                             }
                             items(contacts, key = { it.id }) { record ->
-                                QsoCard(record, onEdit = { onAction(LogbookAction.Edit(record)) }, onDelete = {
-                                    onAction(LogbookAction.RequestDelete(record))
-                                })
+                                QsoCard(
+                                    record = record,
+                                    selectionMode = selectionMode,
+                                    selected = record.id in state.selectedIds,
+                                    enabled = !state.isBusy,
+                                    onClick = {
+                                        onAction(if (selectionMode) LogbookAction.ToggleSelection(record.id) else LogbookAction.Edit(record))
+                                    },
+                                    onLongClick = { onAction(LogbookAction.ToggleSelection(record.id)) },
+                                    onDelete = { onAction(LogbookAction.RequestDelete(record)) }
+                                )
                             }
                         }
                     } else {
                         items(filtered, key = { it.id }) { record ->
-                            QsoCard(record, onEdit = { onAction(LogbookAction.Edit(record)) }, onDelete = {
-                                onAction(LogbookAction.RequestDelete(record))
-                            })
+                            QsoCard(
+                                record = record,
+                                selectionMode = selectionMode,
+                                selected = record.id in state.selectedIds,
+                                enabled = !state.isBusy,
+                                onClick = {
+                                    onAction(if (selectionMode) LogbookAction.ToggleSelection(record.id) else LogbookAction.Edit(record))
+                                },
+                                onLongClick = { onAction(LogbookAction.ToggleSelection(record.id)) },
+                                onDelete = { onAction(LogbookAction.RequestDelete(record)) }
+                            )
                         }
                     }
                 }
@@ -338,18 +400,34 @@ private fun LogbookScreen(
 }
 
 @Composable
-private fun QsoCard(record: QsoRecord, onEdit: () -> Unit, onDelete: () -> Unit) {
+internal fun QsoCard(
+    record: QsoRecord,
+    selectionMode: Boolean,
+    selected: Boolean,
+    enabled: Boolean,
+    onClick: () -> Unit,
+    onLongClick: () -> Unit,
+    onDelete: () -> Unit
+) {
     val notSet = stringResource(R.string.logbook_not_set)
-    val unavailable = stringResource(R.string.logbook_value_unavailable)
-    val txFrequencyHz = record.txFrequencyHz
-    val rxFrequencyHz = record.rxFrequencyHz
-    val txFrequency = if (txFrequencyHz == null) notSet else {
-        stringResource(R.string.logbook_mhz_value, txFrequencyHz / 1_000_000.0)
-    }
-    val rxFrequency = if (rxFrequencyHz == null) notSet else {
-        stringResource(R.string.logbook_mhz_value, rxFrequencyHz / 1_000_000.0)
-    }
-    ElevatedCard(modifier = Modifier.fillMaxWidth().clickable(onClick = onEdit)) {
+    val haptics = LocalHapticFeedback.current
+    ElevatedCard(
+        modifier = Modifier.fillMaxWidth()
+            .semantics { this.selected = selected }
+            .combinedClickable(
+                enabled = enabled,
+                onClick = onClick,
+                onLongClickLabel = stringResource(R.string.logbook_select_contact),
+                onLongClick = {
+                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                    onLongClick()
+                }
+            ),
+        colors = CardDefaults.elevatedCardColors(
+            containerColor = if (selected) MaterialTheme.colorScheme.secondaryContainer
+                else MaterialTheme.colorScheme.surfaceContainerLow
+        )
+    ) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(10.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -358,16 +436,22 @@ private fun QsoCard(record: QsoRecord, onEdit: () -> Unit, onDelete: () -> Unit)
             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(record.theirCallsign, fontWeight = FontWeight.Bold, fontSize = 18.sp,
+                        color = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Text(
-                        if (record.lotwConfirmed) {
-                            stringResource(R.string.logbook_lotw_confirmed_short)
-                        } else {
-                            statusLabel(record.status)
+                        when {
+                            record.lotwConfirmed -> stringResource(R.string.logbook_lotw_confirmed_short)
+                            record.status != QsoStatus.COMPLETE -> statusLabel(record.status)
+                            record.lotwUploaded -> stringResource(R.string.logbook_lotw_uploaded)
+                            record.wavelogUploaded -> stringResource(R.string.logbook_wavelog_uploaded)
+                            else -> stringResource(R.string.logbook_unconfirmed)
                         },
-                        color = MaterialTheme.colorScheme.primary, fontSize = 12.sp
+                        color = MaterialTheme.colorScheme.primary,
+                        fontSize = 12.sp,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.widthIn(max = 132.dp)
                     )
-                    Text(record.displayMode, style = MaterialTheme.typography.labelMedium)
                 }
                 Text(
                     stringResource(
@@ -375,37 +459,37 @@ private fun QsoCard(record: QsoRecord, onEdit: () -> Unit, onDelete: () -> Unit)
                         stringResource(R.string.logbook_utc_value, formatUtc(record.startUtcMillis)),
                         record.satelliteName.ifBlank { notSet }
                     ),
-                    maxLines = 1,
+                    maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
-                Text(
-                    stringResource(
-                        R.string.logbook_reports_grid,
-                        record.sentReport.ifBlank { unavailable },
-                        record.receivedReport.ifBlank { unavailable },
-                        record.displayTheirGrid.ifBlank { unavailable }
-                    ),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Text(
-                    stringResource(
-                        R.string.logbook_frequency_summary,
-                        txFrequency,
-                        rxFrequency,
-                        record.submode.ifBlank { record.mode }.ifBlank { notSet }
-                    ),
-                    fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                if(record.myIota.isNotBlank()) Text("IOTA · ${record.myIota}",style=MaterialTheme.typography.bodySmall)
+                val counterpart = listOf(record.displayMode, record.displayTheirGrid, record.country, record.iota)
+                    .filter(String::isNotBlank).joinToString(" · ")
+                if (counterpart.isNotBlank()) {
+                    Text(counterpart, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                }
+                val ownGrids = gridsLabel(record.myGrid.split(',') + record.vuccGrids)
+                val ownStation = listOf(record.myCallsign, ownGrids, record.myIota)
+                    .filter(String::isNotBlank).joinToString(" · ")
+                if (ownStation.isNotBlank()) {
+                    Text(
+                        stringResource(R.string.logbook_own_station_summary, ownStation),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
                 if (record.comment.isNotBlank()) Text(
                     record.comment, maxLines = 1, overflow = TextOverflow.Ellipsis,
                     style = MaterialTheme.typography.bodySmall
                 )
             }
-            IconButton(onClick = onDelete) {
-                Icon(painterResource(CoreR.drawable.ic_delete), stringResource(R.string.logbook_delete))
+            if (selectionMode) {
+                Checkbox(checked = selected, enabled = enabled, onCheckedChange = { onClick() })
+            } else {
+                IconButton(onClick = onDelete, enabled = enabled) {
+                    Icon(painterResource(CoreR.drawable.ic_delete), stringResource(R.string.logbook_delete))
+                }
             }
         }
     }
@@ -442,12 +526,22 @@ private fun LogbookEditorDialog(
         )))
     }
     fun update(transform: (LogbookEditor) -> LogbookEditor) = onAction(LogbookAction.Update(transform(editor)))
-    AlertDialog(
-        onDismissRequest = { onAction(LogbookAction.DismissEditor) },
-        title = { Text(stringResource(R.string.logbook_edit)) },
-        text = {
+    SharedDialog(
+        onDismissRequest = { if (!busy) onAction(LogbookAction.DismissEditor) },
+        onCancel = { if (!busy) onAction(LogbookAction.DismissEditor) },
+        onAccept = { onAction(LogbookAction.Save) },
+        title = stringResource(if (editor.id == 0L) R.string.logbook_add else R.string.logbook_edit),
+        acceptText = stringResource(R.string.logbook_save),
+        acceptEnabled = !busy,
+        dismissOnClickOutside = !busy,
+        dismissOnBackPress = !busy,
+        dismissOnSwipe = !busy
+    ) { padding ->
             Column(
-                modifier = Modifier.heightIn(max = 520.dp).verticalScroll(rememberScrollState()),
+                modifier = Modifier.fillMaxWidth()
+                    .heightIn(max = LocalConfiguration.current.screenHeightDp.dp * 0.55f)
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = padding, vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 com.rtbishop.look4sat.core.presentation.LogIdentityHint(editor.myCallsign,editor.myGrid)
@@ -510,14 +604,7 @@ private fun LogbookEditorDialog(
                     Switch(checked = editor.automatic, onCheckedChange = { value -> update { it.copy(automatic = value) } })
                 }
             }
-        },
-        confirmButton = {
-            TextButton(enabled = !busy, onClick = { onAction(LogbookAction.Save) }) { Text(stringResource(R.string.logbook_save)) }
-        },
-        dismissButton = {
-            TextButton(enabled = !busy, onClick = { onAction(LogbookAction.DismissEditor) }) { Text(stringResource(R.string.logbook_cancel)) }
-        }
-    )
+    }
 }
 
 @Composable

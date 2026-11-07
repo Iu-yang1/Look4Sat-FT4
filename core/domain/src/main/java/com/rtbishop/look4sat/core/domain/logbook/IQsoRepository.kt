@@ -18,6 +18,9 @@ interface IQsoRepository {
     suspend fun find(id: Long): QsoRecord?
     suspend fun save(record: QsoRecord): Long
     suspend fun delete(id: Long)
+    suspend fun deleteMany(ids: Set<Long>) {
+        ids.forEach { delete(it) }
+    }
     /** Delete all locally recorded QSOs without modifying station or award settings. */
     suspend fun deleteAll() {
         records.first().forEach { delete(it.id) }

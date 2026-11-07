@@ -197,6 +197,8 @@ data class LogbookState(
     val records: List<QsoRecord> = emptyList(),
     val editor: LogbookEditor? = null,
     val deleteCandidate: QsoRecord? = null,
+    val selectedIds: Set<Long> = emptySet(),
+    val deleteSelectionIds: Set<Long>? = null,
     val importResult: AdifImportResult? = null,
     val error: LogbookError? = null,
     val query: String = "",
@@ -236,6 +238,17 @@ data class LogbookState(
     val stationCallsign: String = "",
     val showClearAllConfirmation: Boolean = false
 ) {
+    fun toggleSelection(id: Long): LogbookState {
+        if (isBusy || records.none { it.id == id }) return this
+        val selection = if (id in selectedIds) selectedIds - id else selectedIds + id
+        return copy(selectedIds = selection)
+    }
+
+    fun selectAllVisible(): LogbookState {
+        if (isBusy) return this
+        return copy(selectedIds = filteredRecords.mapTo(mutableSetOf()) { it.id })
+    }
+
     val filteredRecords: List<QsoRecord> get() = com.rtbishop.look4sat.core.domain.logbook.filterRecords(
         records = if (modeFilter == SATELLITE_MODE_FILTER) records.filter { it.isSatellite } else records,
         query = query,
@@ -254,6 +267,12 @@ sealed interface LogbookAction {
     data class RequestDelete(val record: QsoRecord) : LogbookAction
     data object ConfirmDelete : LogbookAction
     data object DismissDelete : LogbookAction
+    data class ToggleSelection(val id: Long) : LogbookAction
+    data object SelectAllVisible : LogbookAction
+    data object ClearSelection : LogbookAction
+    data object RequestDeleteSelection : LogbookAction
+    data object ConfirmDeleteSelection : LogbookAction
+    data object DismissDeleteSelection : LogbookAction
     data object RequestClearAll : LogbookAction
     data object ConfirmClearAll : LogbookAction
     data object DismissClearAll : LogbookAction
@@ -355,7 +374,10 @@ class LogbookViewModel(
         }
         viewModelScope.launch {
             repository.records.collect { records ->
-                mutableState.update { it.copy(records = records) }
+                val existingIds = records.mapTo(mutableSetOf()) { it.id }
+                mutableState.update {
+                    it.copy(records = records, selectedIds = it.selectedIds.intersect(existingIds))
+                }
                 if (mutableState.value.showLoTW && settingsRepo.logbookSyncProvider.value == LogbookSyncProvider.LOTW) {
                     refreshLoTWAudit()
                 }
@@ -419,9 +441,27 @@ class LogbookViewModel(
             LogbookAction.DismissEditor -> if (!mutableState.value.isBusy) {
                 mutableState.update { it.copy(editor = null, error = null) }
             }
-            is LogbookAction.RequestDelete -> mutableState.update { it.copy(deleteCandidate = action.record) }
+            is LogbookAction.RequestDelete -> if (!mutableState.value.isBusy) {
+                mutableState.update { it.copy(deleteCandidate = action.record, error = null) }
+            }
             LogbookAction.ConfirmDelete -> deleteCandidate()
-            LogbookAction.DismissDelete -> mutableState.update { it.copy(deleteCandidate = null) }
+            LogbookAction.DismissDelete -> if (!mutableState.value.isBusy) {
+                mutableState.update { it.copy(deleteCandidate = null, error = null) }
+            }
+            is LogbookAction.ToggleSelection -> mutableState.update { it.toggleSelection(action.id) }
+            LogbookAction.SelectAllVisible -> mutableState.update { it.selectAllVisible() }
+            LogbookAction.ClearSelection -> if (!mutableState.value.isBusy) {
+                mutableState.update { it.copy(selectedIds = emptySet(), deleteSelectionIds = null) }
+            }
+            LogbookAction.RequestDeleteSelection -> if (!mutableState.value.isBusy) {
+                mutableState.update {
+                    it.copy(deleteSelectionIds = it.selectedIds.takeIf { ids -> ids.isNotEmpty() }, error = null)
+                }
+            }
+            LogbookAction.ConfirmDeleteSelection -> deleteSelection()
+            LogbookAction.DismissDeleteSelection -> if (!mutableState.value.isBusy) {
+                mutableState.update { it.copy(deleteSelectionIds = null, error = null) }
+            }
             LogbookAction.RequestClearAll -> if (mutableState.value.records.isNotEmpty() && !mutableState.value.isBusy) {
                 mutableState.update { it.copy(showClearAllConfirmation = true) }
             }
@@ -431,10 +471,10 @@ class LogbookViewModel(
             LogbookAction.ClearNotice -> mutableState.update {
                 it.copy(importResult = null, error = null)
             }
-            is LogbookAction.Search -> mutableState.update { it.copy(query = action.value) }
-            is LogbookAction.ModeFilter -> mutableState.update { it.copy(modeFilter = action.value) }
-            is LogbookAction.ConfirmationFilter -> mutableState.update { it.copy(confirmationFilter = action.value) }
-            is LogbookAction.OwnStation -> mutableState.update {it.copy(ownStationFilter=action.value)}
+            is LogbookAction.Search -> mutableState.update { it.copy(query = action.value, selectedIds = emptySet()) }
+            is LogbookAction.ModeFilter -> mutableState.update { it.copy(modeFilter = action.value, selectedIds = emptySet()) }
+            is LogbookAction.ConfirmationFilter -> mutableState.update { it.copy(confirmationFilter = action.value, selectedIds = emptySet()) }
+            is LogbookAction.OwnStation -> mutableState.update { it.copy(ownStationFilter = action.value, selectedIds = emptySet()) }
             LogbookAction.ToggleGrouping -> mutableState.update { it.copy(groupByCallsign = !it.groupByCallsign) }
             LogbookAction.ShowLoTW -> {
                 mutableState.update {
@@ -893,6 +933,24 @@ class LogbookViewModel(
         }
     }
 
+    private fun deleteSelection() = viewModelScope.launch {
+        if (mutableState.value.isBusy) return@launch
+        val ids = mutableState.value.deleteSelectionIds?.takeIf { it.isNotEmpty() } ?: return@launch
+        mutableState.update { it.copy(isBusy = true) }
+        try {
+            repository.deleteMany(ids)
+            mutableState.update {
+                it.copy(selectedIds = it.selectedIds - ids, deleteSelectionIds = null, error = null)
+            }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            mutableState.update { it.copy(error = LogbookError.DELETE) }
+        } finally {
+            mutableState.update { it.copy(isBusy = false) }
+        }
+    }
+
     private fun clearAllRecords() = viewModelScope.launch {
         if (mutableState.value.isBusy) return@launch
         mutableState.update { it.copy(isBusy = true) }
@@ -931,6 +989,8 @@ class LogbookViewModel(
                     modeFilter = SATELLITE_MODE_FILTER,
                     confirmationFilter = LogbookFilter.ALL,
                     ownStationFilter = null,
+                    selectedIds = emptySet(),
+                    deleteSelectionIds = null,
                     groupByCallsign = false
                 )
             }

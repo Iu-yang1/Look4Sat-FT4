@@ -11,6 +11,15 @@
     <string name="logbook_export_all">Include drafts</string>
     <string name="logbook_edit">Edit contact</string>
     <string name="logbook_delete">Delete contact</string>
+    <string name="logbook_delete_selected">Delete selected</string>
+    <string name="logbook_confirm_delete_selected">Delete these %1$d selected contacts from this device? This cannot be undone.</string>
+    <string name="logbook_selected_count">%1$d selected</string>
+    <string name="logbook_select_all">Select all</string>
+    <string name="logbook_cancel_selection">Cancel selection</string>
+    <string name="logbook_select_contact">Select contact</string>
+    <string name="logbook_lotw_uploaded">Uploaded to LoTW</string>
+    <string name="logbook_wavelog_uploaded">Uploaded to Wavelog</string>
+    <string name="logbook_own_station_summary">My station · %1$s</string>
     <string name="logbook_callsign">Callsign</string>
     <string name="logbook_my_callsign">My callsign</string>
     <string name="logbook_grid">Grid</string>

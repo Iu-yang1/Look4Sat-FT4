@@ -31,6 +31,45 @@ class QsoFullSyncTransactionTest {
     private fun record(call:String)=QsoRecord(startUtcMillis=1_780_000_000_000,
         theirCallsign=call,myCallsign="BA7OPF",satelliteName="FO-29",mode="CW",band="2m",status=QsoStatus.COMPLETE)
 
+    @Test
+    fun batchDeleteRemovesOnlySelectedRecords() = runBlocking {
+        val first = repository.save(record("FIRST"))
+        repository.save(record("KEEP"))
+        val last = repository.save(record("LAST"))
+
+        repository.deleteMany(setOf(first, last))
+
+        assertEquals(listOf("KEEP"), repository.records.first().map { it.theirCallsign })
+    }
+
+    @Test
+    fun failedBatchDeletionRollsBackEverySelectedRecord() = runBlocking {
+        val first = repository.save(record("FIRST"))
+        val second = repository.save(record("FAIL"))
+        db.openHelper.writableDatabase.execSQL(
+            "CREATE TRIGGER fail_delete BEFORE DELETE ON qso_records " +
+                "WHEN OLD.theirCallsign = 'FAIL' BEGIN SELECT RAISE(ABORT, 'simulated deletion failure'); END"
+        )
+        var failed = false
+        try {
+            repository.deleteMany(linkedSetOf(first, second))
+        } catch (_: Exception) {
+            failed = true
+        }
+
+        assertTrue(failed)
+        assertEquals(setOf("FIRST", "FAIL"), repository.records.first().map { it.theirCallsign }.toSet())
+    }
+
+    @Test
+    fun emptyBatchDoesNotDeleteAnything() = runBlocking {
+        repository.save(record("KEEP"))
+
+        repository.deleteMany(emptySet())
+
+        assertEquals(listOf("KEEP"), repository.records.first().map { it.theirCallsign })
+    }
+
     @Test fun fullLotwReplacesOnlyOwnedRowsAndProtectsOtherAccountsAndManualRecords()=runBlocking {
         repository.save(record("MANUAL"))
         repository.mergeLoTW(listOf(record("OLD")),"BA7OPF",false)

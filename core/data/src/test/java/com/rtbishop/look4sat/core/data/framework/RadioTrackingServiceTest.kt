@@ -913,7 +913,7 @@ class RadioTrackingServiceTest {
             it.txFrequencyHz = 145_900_000L
             it.coupledFrequencyWrites = true
         }
-        val result = tunePresetHalfDuplex(radio, true, 435_101_000L, 145_901_000L)
+        val result = tunePresetHalfDuplex(radio, true, 435_100_000L, 145_901_000L)
         assertFalse(result.success)
         assertEquals("vfo:rx", radio.operations.last())
         assertTrue(radio.operations.any { it.startsWith("tx-frequency:") })

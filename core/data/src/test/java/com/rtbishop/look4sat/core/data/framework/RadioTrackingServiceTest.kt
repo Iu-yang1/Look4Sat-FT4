@@ -847,7 +847,7 @@ class RadioTrackingServiceTest {
         fixture.close()
     }
 
-    @Test fun ic820SinglePresetUsesOneConnectionAndBandAccessWithoutChangingRadioMode() = runTest {
+    @Test fun ic820SinglePresetUsesOneConnectionAndProgramsIndependentMainSubModes() = runTest {
         val tx = FakeRadioController()
         val rx = FakeRadioController()
         val fixture = Fixture(backgroundScope, tx, rx, radioModel = RadioControlSettings.MODEL_ICOM_IC820, splitMode = true)
@@ -857,9 +857,11 @@ class RadioTrackingServiceTest {
         assertEquals(1, fixture.service.state.value.physicalConnectionCount)
         assertTrue(fixture.service.state.value.isActive)
         assertFalse(rx.isConnected)
-        assertTrue(tx.operations.any { it.startsWith("band:145") })
-        assertTrue(tx.operations.any { it.startsWith("band:435") })
-        assertTrue(tx.operations.none { it.startsWith("split:") || it.startsWith("vfo:") || it.startsWith("mode:") })
+        assertTrue(tx.operations.any { it.startsWith("split-modes:") })
+        assertTrue(tx.operations.any { it.startsWith("tx-frequency:145") })
+        assertTrue(tx.operations.any { it.startsWith("rx-frequency:435") })
+        assertTrue(tx.operations.none { it.startsWith("band:") || it.startsWith("split:") ||
+            it.startsWith("ptt:") })
         fixture.close()
     }
 
@@ -890,19 +892,42 @@ class RadioTrackingServiceTest {
         assertEquals(true, presetHalfDuplexLeg(435_101_000, 435_100_000, null))
     }
 
+    @Test fun ic820PresetPrefersAtomicPairWhenControllerSupportsIt() = runTest {
+        val tx = FakeRadioController(remote = MutableStateFlow(RemoteRadioState()))
+        val result = tunePresetHalfDuplex(tx, true, 435_100_000L, 145_900_000L)
+        assertTrue(result.success)
+        assertEquals(435_100_000L, result.rxHz)
+        assertEquals(145_900_000L, result.txHz)
+        assertEquals(listOf("pair:435100000:145900000"), tx.operations)
+        assertTrue(tx.operations.none { it.startsWith("vfo:") || it.startsWith("frequency:") })
+    }
+
     @Test fun failedIc820PresetWriteRestoresRxBandAccessWithoutSwitchingTransmitRoles() = runTest {
         val tx = FakeRadioController().also { it.frequencySucceeds = false }
         val result = tunePresetHalfDuplex(tx, true, 435_100_000, 145_900_000)
         assertFalse(result.success)
-        assertEquals("band:435100000", tx.operations.last())
-        assertTrue(tx.operations.none { it.startsWith("ptt:") || it.startsWith("vfo:") || it.startsWith("split:") })
+        assertEquals("vfo:rx", tx.operations.last())
+        assertTrue(tx.operations.none { it.startsWith("ptt:") || it.startsWith("band:") || it.startsWith("split:") })
     }
 
     @Test fun canceledIc820PresetWriteStillRestoresRxBandAccess() = runTest {
         val tx = FakeRadioController().also { it.beforeSetFrequency = { throw kotlinx.coroutines.CancellationException("canceled") } }
         val result = runCatching { tunePresetHalfDuplex(tx, true, 435_100_000, 145_900_000) }
         assertTrue(result.exceptionOrNull() is kotlinx.coroutines.CancellationException)
-        assertEquals("band:435100000", tx.operations.last())
+        assertEquals("vfo:rx", tx.operations.last())
+    }
+
+    @Test fun ic820PresetRejectsCoupledSatelliteFrequenciesAfterBothWrites() = runTest {
+        val radio = FakeRadioController().also {
+            it.frequencyHz = 435_100_000L
+            it.txFrequencyHz = 145_900_000L
+            it.coupledFrequencyWrites = true
+        }
+        val result = tunePresetHalfDuplex(radio, true, 435_100_000L, 145_901_000L)
+        assertFalse(result.success)
+        assertEquals("vfo:rx", radio.operations.last())
+        assertTrue(radio.operations.any { it.startsWith("tx-frequency:") })
+        assertTrue(radio.operations.any { it.startsWith("rx-frequency:") })
     }
 
     @Test
@@ -1899,6 +1924,7 @@ private class FakeRadioController(
     var mode = "USB"
     var modeReadbackOverride: String? = null
     var frequencySucceeds = true
+    var coupledFrequencyWrites = false
     var frequencyReadbackOffset = 0L
     var beforeReadTx: (suspend () -> Unit)? = null
     var beforeSetFrequency: (suspend () -> Unit)? = null
@@ -1982,13 +2008,19 @@ private class FakeRadioController(
     }
 
     override suspend fun setWorkingFrequency(frequencyHz: Long): Boolean {
+        beforeSetFrequency?.invoke()
         operations += "rx-frequency:$frequencyHz"
+        if (!frequencySucceeds) return false
+        if (coupledFrequencyWrites) txFrequencyHz += frequencyHz - this.frequencyHz
         this.frequencyHz = frequencyHz
         return true
     }
 
     override suspend fun setTxVfoFrequency(frequencyHz: Long): Boolean {
+        beforeSetFrequency?.invoke()
         operations += "tx-frequency:$frequencyHz"
+        if (!frequencySucceeds) return false
+        if (coupledFrequencyWrites) this.frequencyHz += frequencyHz - txFrequencyHz
         txFrequencyHz = frequencyHz
         return true
     }

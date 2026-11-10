@@ -11,6 +11,7 @@ package com.rtbishop.look4sat.core.data.framework
 
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.runBlocking
+import com.rtbishop.look4sat.core.domain.repository.FrequencyPairResult
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -175,19 +176,98 @@ class Ic705ControllerTest {
 
     @Test
     fun ic820OrdinarySplitAndManualVfoCommandsNeverUseModernSatelliteCommands() = runTest {
-        val transport = ScriptedCivTransport(civAddress = 0x42, trackFrequencyWrites = true)
+        val transport = ScriptedCivTransport(civAddress = 0x42, trackFrequencyWrites = true, ic820BandAccess = true)
         val radio = Ic705Controller(null, "USB", 0x42, transport, IcomCivVariant.IC820)
         assertTrue(radio.connect())
         transport.payloads.clear()
         assertTrue(radio.setSplitMode(true))
         assertEquals("0F:00", transport.payloads.single())
         assertTrue(radio.setSplitModes("USB", "LSB"))
-        assertTrue(radio.setWorkingFrequency(145_900_000L))
+        assertTrue(radio.setWorkingFrequency(435_100_000L))
         assertTrue(radio.setTxVfoFrequency(145_950_000L))
-        assertEquals("07:00", transport.payloads.last())
+        assertEquals("07:D0", transport.payloads.last())
         assertFalse(transport.commandBytes.any { it in setOf(0x25, 0x26, 0x1A, 0x16, 0x1C) })
         radio.disconnect()
         assertEquals("0F:01", transport.payloads.last())
+    }
+
+    @Test
+    fun ic820ConnectionPreservesSatellitePresetAndAddressesBothLegsByRole() = runTest {
+        val transport = ScriptedCivTransport(civAddress = 0x42, trackFrequencyWrites = true, ic820BandAccess = true)
+        val radio = Ic705Controller(null, "USB", 0x42, transport, IcomCivVariant.IC820)
+        assertTrue(radio.connect())
+        assertEquals(listOf("03", "04"), transport.payloads)
+        transport.payloads.clear()
+
+        assertTrue(radio.setSplitModes("USB", "LSB"))
+        assertTrue(radio.setTxVfoFrequency(145_900_000L))
+        assertTrue(radio.setWorkingFrequency(435_100_000L))
+        assertEquals(145_900_000L, radio.readTxVfoFrequency())
+        assertEquals(435_100_000L, radio.readWorkingFrequency())
+        assertTrue(transport.payloads.contains("07:D1"))
+        assertTrue(transport.payloads.contains("07:D0"))
+        assertFalse(transport.payloads.any { it == "07" || it.startsWith("07:00") ||
+            it.startsWith("07:01") || it.startsWith("1A:") || it.startsWith("25:") })
+        assertEquals("07:D0", transport.payloads[transport.payloads.lastIndex - 1])
+        radio.disconnect()
+    }
+
+    @Test
+    fun ic820AtomicFrequencyPairSelectsTxMainAndRxSubAndRestoresReceiveAccess() = runTest {
+        val transport = ScriptedCivTransport(
+            civAddress = 0x42, trackFrequencyWrites = true, ic820BandAccess = true
+        )
+        val radio = Ic705Controller(null, "USB", 0x42, transport, IcomCivVariant.IC820)
+        assertTrue(radio.connect())
+        transport.payloads.clear()
+        assertTrue(radio.supportsAtomicPair)
+
+        assertEquals(
+            FrequencyPairResult.APPLIED,
+            radio.setTrackingFrequencies(435_100_000L, 145_900_000L)
+        )
+        assertEquals(
+            listOf("07:D1", "05:00:00:90:45:01", "07:D0",
+                "05:00:00:10:35:04", "03", "07:D1", "03", "07:D0"),
+            transport.payloads
+        )
+        radio.disconnect()
+    }
+
+    @Test
+    fun ic820AtomicFrequencyPairRejectsSatelliteCouplingAndRestoresReceiveAccess() = runTest {
+        val transport = ScriptedCivTransport(
+            civAddress = 0x42, trackFrequencyWrites = true, ic820BandAccess = true,
+            coupleBandFrequencyWrites = true
+        )
+        val radio = Ic705Controller(null, "USB", 0x42, transport, IcomCivVariant.IC820)
+        assertTrue(radio.connect())
+        transport.payloads.clear()
+
+        assertEquals(
+            FrequencyPairResult.FAILED,
+            radio.setTrackingFrequencies(435_100_000L, 145_900_000L)
+        )
+        assertEquals("07:D0", transport.payloads.last())
+        radio.disconnect()
+    }
+
+    @Test
+    fun ic820AtomicFrequencyPairRestoresRxWhenMainAccessIsRejected() = runTest {
+        val transport = ScriptedCivTransport(
+            civAddress = 0x42, trackFrequencyWrites = true, ic820BandAccess = true,
+            acknowledgeTxSelection = false
+        )
+        val radio = Ic705Controller(null, "USB", 0x42, transport, IcomCivVariant.IC820)
+        assertTrue(radio.connect())
+        transport.payloads.clear()
+
+        assertEquals(
+            FrequencyPairResult.FAILED,
+            radio.setTrackingFrequencies(435_100_000L, 145_900_000L)
+        )
+        assertEquals(listOf("07:D1", "07:D0"), transport.payloads)
+        radio.disconnect()
     }
 
     @Test
@@ -567,6 +647,7 @@ private class ScriptedCivTransport(
     private val modeReadbackOverride: Int? = null,
     private val trackFrequencyWrites: Boolean = false,
     private val ic820BandAccess: Boolean = false,
+    private val coupleBandFrequencyWrites: Boolean = false,
     private val frequencyPayloadOverride: ByteArray? = null,
     private val rejectIc910Fm04: Boolean = false,
     private val pttReadbackOverride: Boolean? = null
@@ -628,7 +709,12 @@ private class ScriptedCivTransport(
             0x05 -> if (acknowledgeSetFrequency) {
                 if (trackFrequencyWrites) {
                     val frequency = IcomCivProtocol.decodeFrequencyBcd(payload.copyOfRange(1, 6))
-                    if (mainSelected) mainFrequency = frequency else subFrequency = frequency
+                    if (coupleBandFrequencyWrites) {
+                        val previous = if (mainSelected) mainFrequency else subFrequency
+                        val delta = frequency - previous
+                        mainFrequency += delta
+                        subFrequency += delta
+                    } else if (mainSelected) mainFrequency = frequency else subFrequency = frequency
                 }
                 replies += ack()
             }

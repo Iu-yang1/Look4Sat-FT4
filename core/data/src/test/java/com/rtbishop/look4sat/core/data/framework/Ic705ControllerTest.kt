@@ -182,7 +182,7 @@ class Ic705ControllerTest {
         assertTrue(radio.setSplitMode(true))
         assertEquals("0F:00", transport.payloads.single())
         assertTrue(radio.setSplitModes("USB", "LSB"))
-        assertTrue(radio.setWorkingFrequency(145_900_000L))
+        assertTrue(radio.setWorkingFrequency(435_100_000L))
         assertTrue(radio.setTxVfoFrequency(145_950_000L))
         assertEquals("07:D0", transport.payloads.last())
         assertFalse(transport.commandBytes.any { it in setOf(0x25, 0x26, 0x1A, 0x16, 0x1C) })

@@ -190,6 +190,7 @@ class RadioTrackingService(
             reconnectRequired=old.radioModel!=settings.radioModel || old.catTransport!=settings.catTransport ||
                 old.txRadioAddress!=settings.txRadioAddress || old.rxRadioAddress!=settings.rxRadioAddress ||
                 old.baudRate!=settings.baudRate || old.civAddress!=settings.civAddress ||
+                old.catRts!=settings.catRts || old.catDtr!=settings.catDtr ||
                 old.splitMode!=settings.splitMode || old.duplexMode!=settings.duplexMode || old.tcpProtocol!=settings.tcpProtocol ||
                 settings.radioModel==RadioControlSettings.MODEL_VERO_N76 && old.n76BluetoothAudio!=settings.n76BluetoothAudio
             if(reconnectRequired) {
@@ -477,6 +478,11 @@ class RadioTrackingService(
                 profile.serialStopBits
             )
         } else null
+        // CAT serial control lines are configured on the USB adapter before opening it.
+        // L4S uses its own firmware-specific DTR handshake.
+        if (settings.catTransport == RadioControlSettings.TRANSPORT_USB && !profile.isL4s) {
+            transport?.setCatSerialControlLines(settings.catRts, settings.catDtr)
+        }
         val controller = injected ?: if (profile.isN76) {
             N76Controller(transport ?: BluetoothSppRadioTransport(bluetoothManager, address, diagnostics), appScope, diagnostics,
                 audio = if (settings.n76BluetoothAudio) n76AudioFactory?.invoke(address) else null,

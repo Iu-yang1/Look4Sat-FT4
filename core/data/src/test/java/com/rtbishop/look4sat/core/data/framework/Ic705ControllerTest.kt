@@ -253,6 +253,24 @@ class Ic705ControllerTest {
     }
 
     @Test
+    fun ic820AtomicFrequencyPairRestoresRxWhenMainAccessIsRejected() = runTest {
+        val transport = ScriptedCivTransport(
+            civAddress = 0x42, trackFrequencyWrites = true, ic820BandAccess = true,
+            acknowledgeTxSelection = false
+        )
+        val radio = Ic705Controller(null, "USB", 0x42, transport, IcomCivVariant.IC820)
+        assertTrue(radio.connect())
+        transport.payloads.clear()
+
+        assertEquals(
+            FrequencyPairResult.FAILED,
+            radio.setTrackingFrequencies(435_100_000L, 145_900_000L)
+        )
+        assertEquals(listOf("07:D1", "07:D0"), transport.payloads)
+        radio.disconnect()
+    }
+
+    @Test
     fun ic820MalformedLegacyFrequencyReplyCannotEstablishConnection() = runTest {
         val transport = ScriptedCivTransport(civAddress = 0x42, frequencyPayloadOverride = byteArrayOf(0, 0, 0x59, 0x45))
         val radio = Ic705Controller(null, "USB", 0x42, transport, IcomCivVariant.IC820)

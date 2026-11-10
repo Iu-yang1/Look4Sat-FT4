@@ -86,18 +86,18 @@ class CwConsoleLogTest {
     private fun LogViewModel.recordCw(overrides: LogRecordOverrides = LogRecordOverrides(mode = "CW")) =
         record("FO-29", "SSB", 145950000, 435850000, "PM01AB", null, overrides)
 
-    @Test fun lotwLoggingStoresTheCompleteFourCharacterMainGridSet() = withFixture { f ->
+    @Test fun lotwLoggingStoresPrecisePrimaryAndCompleteMainGridSet() = withFixture { f ->
         f.wavelogSettings.value=WavelogUploadSettings();runCurrent()
         f.viewModel.updateCallsign("JA1ABC")
         f.viewModel.record("FO-29","CW",145950000,435850000," ol62ti,ol63ab ",null)
         runCurrent()
         val record=f.saved.single()
-        assertEquals("OL62,OL63",record.myGrid)
-        assertEquals(listOf("OL62","OL63"),record.myFullGrids)
+        assertEquals("OL62TI",record.myGrid)
+        assertEquals(listOf("OL62TI","OL63AB"),record.myFullGrids)
         assertEquals(listOf("OL62","OL63"),record.vuccGrids)
         val adif=com.rtbishop.look4sat.core.domain.logbook.AdifCodec.encode(listOf(record))
-        assertTrue(adif.contains("<MY_GRIDSQUARE:9>OL62,OL63"))
-        assertTrue(adif.contains("<MY_VUCC_GRIDS:9>OL62,OL63"))
+        assertTrue(adif.contains("<MY_GRIDSQUARE:6>OL62TI"))
+        assertTrue(adif.contains("<MY_VUCC_GRIDS:13>OL62TI,OL63AB"))
     }
 
     @Test fun aSingleEightCharacterLocatorKeepsItsPrecisionWithoutAMultigridField() = withFixture { f ->

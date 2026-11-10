@@ -892,6 +892,16 @@ class RadioTrackingServiceTest {
         assertEquals(true, presetHalfDuplexLeg(435_101_000, 435_100_000, null))
     }
 
+    @Test fun ic820PresetPrefersAtomicPairWhenControllerSupportsIt() = runTest {
+        val tx = FakeRadioController(remote = MutableStateFlow(RemoteRadioState()))
+        val result = tunePresetHalfDuplex(tx, true, 435_100_000L, 145_900_000L)
+        assertTrue(result.success)
+        assertEquals(435_100_000L, result.rxHz)
+        assertEquals(145_900_000L, result.txHz)
+        assertEquals(listOf("pair:435100000:145900000"), tx.operations)
+        assertTrue(tx.operations.none { it.startsWith("vfo:") || it.startsWith("frequency:") })
+    }
+
     @Test fun failedIc820PresetWriteRestoresRxBandAccessWithoutSwitchingTransmitRoles() = runTest {
         val tx = FakeRadioController().also { it.frequencySucceeds = false }
         val result = tunePresetHalfDuplex(tx, true, 435_100_000, 145_900_000)

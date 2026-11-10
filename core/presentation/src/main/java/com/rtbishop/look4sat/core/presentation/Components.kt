@@ -134,12 +134,12 @@ fun TopBar(content: @Composable RowScope.() -> Unit) {
 }
 
 @Composable
-fun RowScope.TimerRow(timeString: String, isTimeAos: Boolean) {
+fun RowScope.TimerRow(timeString: String, isTimeAos: Boolean, isEnded: Boolean = false) {
     val colorScheme = MaterialTheme.colorScheme
-    val (aosColor, losColor) = if (isTimeAos) {
-        colorScheme.primary to colorScheme.onSurface
-    } else {
-        colorScheme.onSurface to colorScheme.primary
+    val (aosColor, losColor) = when {
+        isEnded -> colorScheme.onSurfaceVariant to colorScheme.onSurfaceVariant
+        isTimeAos -> colorScheme.primary to colorScheme.onSurface
+        else -> colorScheme.onSurface to colorScheme.primary
     }
     ElevatedCard(modifier = Modifier.weight(1f)) {
         Row(

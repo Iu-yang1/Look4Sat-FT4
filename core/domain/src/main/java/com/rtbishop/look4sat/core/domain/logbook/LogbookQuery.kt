@@ -25,6 +25,58 @@ enum class LogbookFilter { ALL, CONFIRMED, UNCONFIRMED, DRAFTS }
 data class OwnStationFilter(val callsign: String, val grid: String)
 
 /**
+ * Build the identity used by the logbook's own-station selector.
+ *
+ * A LoTW boundary/corner upload stamps all transmitting grids into [vuccGrids],
+ * while the original [myGrid] can still contain only the first locator. Downloaded
+ * LoTW contacts carry the same set through MY_VUCC_GRIDS. Group multi-grid
+ * stations by their complete, sorted 4-character VUCC set; keep the exact
+ * locator for single-grid stations (including its 6/8-character precision).
+ */
+fun QsoRecord.ownStationIdentity(): OwnStationFilter? {
+    val call = myCallsign.trim().uppercase(java.util.Locale.US)
+    if (call.isBlank()) return null
+
+    val gridPattern = Regex("[A-R]{2}[0-9]{2}([A-X]{2}([0-9]{2})?)?")
+    fun grids(items: List<String>): List<String> = items.flatMap { it.split(',') }
+        .map { it.trim().uppercase(java.util.Locale.US) }
+        .filter { it.matches(gridPattern) }
+        .distinct()
+
+    val stamped = grids(vuccGrids)
+    val full = grids(myFullGrids)
+    val primary = grids(listOf(myGrid))
+    // An accepted upload stamps the actual transmitting squares. Older releases
+    // updated this stamp but left MY_GRIDSQUARE/MY_FULL_GRIDS at the old station,
+    // so prefer the stamp if it disagrees with the local locators.
+    val stampedSquares = stamped.map { it.take(4) }.distinct().sorted()
+    val grid = if (stampedSquares.isNotEmpty()) {
+        if (stampedSquares.size > 1) {
+            stampedSquares.joinToString(",")
+        } else {
+            val square = stampedSquares.single()
+            // Keep precise 6/8-character locators when they agree with the signed
+            // square; do not silently keep an old locator from another square.
+            primary.firstOrNull { it.take(4) == square }
+                ?: full.firstOrNull { it.take(4) == square }
+                ?: stamped.first()
+        }
+    } else {
+        // Legacy imports can have multiple grids without an upload stamp.
+        val multi = listOf(full, primary).firstOrNull { candidates ->
+            candidates.map { it.take(4) }.distinct().size > 1
+        }
+        multi?.map { it.take(4) }?.distinct()?.sorted()?.joinToString(",")
+            ?: primary.firstOrNull() ?: full.firstOrNull() ?: ""
+    }
+    return OwnStationFilter(call, grid)
+}
+
+fun ownStationOptions(records: List<QsoRecord>): List<OwnStationFilter> =
+    records.mapNotNull(QsoRecord::ownStationIdentity).distinct()
+        .sortedWith(compareBy<OwnStationFilter> { it.callsign }.thenBy { it.grid })
+
+/**
  * The logbook query shared by every logbook surface (the enhanced logbook page and the
  * settings logbook dialog's query sheet). Both used to / would otherwise carry their own
  * copy of this predicate, which is exactly how the two lists drift apart — so it lives
@@ -54,8 +106,7 @@ fun filterRecords(
         record.comment
     ) + record.theirVuccGrids).any { it.contains(trimmed, ignoreCase = true) }) &&
         (ownStationFilter == null ||
-            (record.myCallsign.trim().equals(ownStationFilter.callsign.trim(), ignoreCase = true) &&
-                record.myGrid.trim().equals(ownStationFilter.grid.trim(), ignoreCase = true))) &&
+            record.ownStationIdentity() == ownStationFilter) &&
         when (modeFilter) {
             "" -> true
             else -> record.displayMode == modeFilter

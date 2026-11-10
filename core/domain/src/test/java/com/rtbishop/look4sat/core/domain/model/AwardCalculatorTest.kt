@@ -53,6 +53,28 @@ class AwardCalculatorTest {
         assertTrue(progress.workedKeys.containsAll(setOf("OL62", "PM95")))
     }
 
+
+    @Test
+    fun `gridless confirmed QSOs count for entity awards but not VUCC`() {
+        val china = qso("BA7ABC", dxcc = 318, state = "GD", cqz = 24)
+        val japan = qso("JA1ABC", dxcc = 339, state = "13", cqz = 25)
+        val indonesia = qso("YB0ABC", dxcc = 327, state = "JK", cqz = 28)
+        val usa = qso("K1ABC", dxcc = 291, state = "CA", cqz = 3)
+        val store = mapOf(GRIDLESS_QSO_BUCKET to listOf(china, japan, indonesia, usa))
+
+        val progress = AwardCalculator.calculate(store).associateBy { it.type }
+        assertEquals(emptySet<String>(), progress.getValue(AwardType.VUCC).workedKeys)
+        assertEquals(0, progress.getValue(AwardType.VUCC).count)
+        assertEquals(setOf("318", "339", "327", "291"), progress.getValue(AwardType.DXCC).workedKeys)
+        assertEquals(setOf("GD"), progress.getValue(AwardType.WAPC).workedKeys)
+        assertEquals(setOf("13"), progress.getValue(AwardType.WAJA).workedKeys)
+        assertEquals(setOf("JK"), progress.getValue(AwardType.WAIPA).workedKeys)
+        assertEquals(setOf("24", "25", "28", "3"), progress.getValue(AwardType.WAZ).workedKeys)
+        assertEquals(setOf("CA"), progress.getValue(AwardType.WAS).workedKeys)
+        assertEquals(listOf(china), AwardCalculator.regionQsos(store, AwardType.WAPC, "GD"))
+        assertEquals(listOf(indonesia), AwardCalculator.regionQsos(store, AwardType.WAIPA, "JK"))
+    }
+
     @Test
     fun `dxcc counts distinct entities from dxcc field`() {
         val all = listOf(
@@ -218,7 +240,9 @@ class AwardCalculatorTest {
         ))
         assertEquals("JK", AwardCalculator.awardKey(AwardType.WAIPA, coarse))
         assertEquals(null, WaipaCallsignLookup.province("YB7UAA")) // KI/KU overlap
+        assertEquals(setOf("KI", "KU"), WaipaCallsignLookup.candidates("YB7UAA"))
         assertEquals(null, WaipaCallsignLookup.province("YB9UAA")) // four Papua regions
+        assertEquals(setOf("PA", "PP", "PS", "PT"), WaipaCallsignLookup.candidates("YB9UAA"))
         assertEquals(null, WaipaCallsignLookup.province("YB0ABC/P"))
         assertEquals(null, WaipaCallsignLookup.province("7A7ABC"))
     }
@@ -345,4 +369,105 @@ class AwardCalculatorTest {
         assertEquals(listOf(older, newer), result)
         assertEquals(emptyList<GridQso>(), AwardCalculator.regionQsos(store, AwardType.DXCC, "292"))
     }
+    @Test
+    fun `waipa exposes boundary QSOs for manual assignment and persists the chosen province`() {
+        val boundary = qso(
+            "YB7UCC", dxcc = 327, fineGrids = listOf("OJ82MA")
+        )
+        val store = mapOf("OJ82" to listOf(boundary))
+        val provinceForGrid: (String) -> String? = { null }
+        val candidatesForGrid: (String) -> Set<String> = {
+            if (it == "OJ82MA" || it == "OJ82") setOf("KI", "KU") else emptySet()
+        }
+
+        val pending = AwardCalculator.waipaAmbiguousQsos(
+            store, provinceForGrid, candidatesForGrid
+        )
+        assertEquals(1, pending.size)
+        assertEquals(setOf("KI", "KU"), pending.single().candidateProvinceCodes)
+        assertEquals(
+            null,
+            AwardCalculator.awardKey(
+                AwardType.WAIPA,
+                boundary,
+                provinceForGrid,
+                workedGrid = "OJ82",
+                waipaCandidatesForGrid = candidatesForGrid
+            )
+        )
+        assertEquals(
+            setOf("KU"),
+            AwardCalculator.waipaPendingProvinceCodes(pending, setOf("KI"))
+        )
+        assertEquals(
+            setOf("KI", "KU"),
+            AwardCalculator.waipaPendingProvinceCodes(pending, emptySet())
+        )
+        assertEquals(
+            emptySet<String>(),
+            AwardCalculator.waipaPendingProvinceCodes(pending, setOf("KI", "KU"))
+        )
+        assertEquals(
+            AwardCalculator.waipaQsoKey(boundary),
+            AwardCalculator.waipaQsoKey(
+                boundary.copy(dxcc = null, myCallsign = "YB0AAA", stationKey = "new-station")
+            )
+        )
+        assertEquals(
+            emptySet<String>(),
+            AwardCalculator.calculate(store, provinceForGrid, candidatesForGrid)
+                .first { it.type == AwardType.WAIPA }.workedKeys
+        )
+
+        val overrides = mapOf(AwardCalculator.waipaQsoKey(boundary) to "KU")
+        val progress = AwardCalculator.calculate(
+            store, provinceForGrid, candidatesForGrid, overrides
+        ).first { it.type == AwardType.WAIPA }
+        assertEquals(setOf("KU"), progress.workedKeys)
+        assertTrue(
+            AwardCalculator.waipaAmbiguousQsos(
+                store, provinceForGrid, candidatesForGrid, overrides
+            ).isEmpty()
+        )
+        assertEquals(
+            listOf(boundary),
+            AwardCalculator.regionQsos(
+                store, AwardType.WAIPA, "KU", provinceForGrid, candidatesForGrid, overrides
+            )
+        )
+        assertTrue(
+            AwardCalculator.regionQsos(
+                store, AwardType.WAIPA, "KI", provinceForGrid, candidatesForGrid, overrides
+            ).isEmpty()
+        )
+    }
+
+    @Test
+    fun `waipa unassigned list includes QSOs with no candidate provinces`() {
+        val ambiguous = qso("YB7UCC", dxcc = 327, fineGrids = listOf("OJ82MA"))
+        val insufficient = qso("YB0ABC/P", dxcc = 327)
+        val assigned = qso("YB0ABC", dxcc = 327, state = "JK")
+        val assignedByCallsign = qso("YB0ABC", dxcc = 327)
+        val foreign = qso("JH0ABC", dxcc = 339)
+        val store = mapOf(
+            GRIDLESS_QSO_BUCKET to listOf(ambiguous, insufficient, assigned, assignedByCallsign, foreign)
+        )
+        val candidatesForGrid: (String) -> Set<String> = {
+            if (it == "OJ82MA") setOf("KI", "KU") else emptySet()
+        }
+
+        val unassigned = AwardCalculator.waipaUnassignedQsos(
+            store, { null }, candidatesForGrid
+        )
+        assertEquals(listOf(ambiguous, insufficient), unassigned.map { it.qso })
+        assertEquals(setOf("KI", "KU"), unassigned[0].candidateProvinceCodes)
+        assertEquals(emptySet<String>(), unassigned[1].candidateProvinceCodes)
+
+        val overrides = mapOf(AwardCalculator.waipaQsoKey(insufficient) to "BA")
+        val afterManualAssignment = AwardCalculator.waipaUnassignedQsos(
+            store, { null }, candidatesForGrid, overrides
+        )
+        assertEquals(listOf(ambiguous), afterManualAssignment.map { it.qso })
+    }
+
 }

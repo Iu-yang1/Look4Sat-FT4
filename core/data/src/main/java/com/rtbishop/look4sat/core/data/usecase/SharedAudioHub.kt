@@ -359,13 +359,19 @@ class SharedAudioHub(
     }
 
     private fun updateSystemSilenced(recorder: AudioRecord) {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return
-        val silenced = runCatching {
-            recorder.activeRecordingConfiguration?.isClientSilenced == true
-        }.getOrDefault(false)
+        val silenced = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            runCatching { recorder.activeRecordingConfiguration?.isClientSilenced == true }.getOrDefault(false)
+        } else false
+        val routed = recorder.routedDevice
         val current = _state.value
-        if (current is AudioHubState.Capturing && current.systemSilenced != silenced) {
-            _state.value = current.copy(systemSilenced = silenced)
+        if (current is AudioHubState.Capturing) {
+            val updated = current.copy(
+                systemSilenced = silenced,
+                deviceId = routed?.id,
+                deviceType = routed?.type,
+                deviceName = routed?.productName?.toString().orEmpty()
+            )
+            if (updated != current) _state.value = updated
         }
     }
 

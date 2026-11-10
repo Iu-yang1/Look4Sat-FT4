@@ -21,6 +21,7 @@ import com.rtbishop.look4sat.core.domain.logbook.frequencyBand
 import com.rtbishop.look4sat.core.domain.logbook.needsPreviewForConflicts
 import com.rtbishop.look4sat.core.domain.logbook.officialSatelliteName
 import com.rtbishop.look4sat.core.domain.logbook.operatorGrids
+import com.rtbishop.look4sat.core.domain.logbook.withOperatorGridSet
 import com.rtbishop.look4sat.core.domain.logbook.satelliteIdentity
 import com.rtbishop.look4sat.core.domain.logbook.unavailableUploadSummary
 import com.rtbishop.look4sat.core.domain.logbook.wavelogConfirmedSegment
@@ -40,6 +41,7 @@ import com.rtbishop.look4sat.core.domain.repository.LoTWUploadResult
 import com.rtbishop.look4sat.core.domain.repository.WavelogUploadOutcome
 import com.rtbishop.look4sat.core.domain.repository.WavelogUploadPreview
 import com.rtbishop.look4sat.core.domain.repository.positionWarning
+import com.rtbishop.look4sat.core.domain.repository.refreshWavelogStationForUpload
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -209,17 +211,16 @@ class LogViewModel(
         // Whole minutes (seconds zeroed): matches the edit dialog's HH:mm granularity and the
         // minute-resolution of LoTW reports, so re-saving an unchanged record never looks edited.
         val now = System.currentTimeMillis() / 60_000L * 60_000L
-        // Logging while the clock sits outside the current pass window (after LOS, before AOS,
-        // or against a pass card that is not the one being worked): the log page only shows
-        // records inside [aos, los], so a "now" timestamp could never appear there. Ask the
-        // operator first; the confirmed contact is stored at the pass midpoint (always inside
-        // the window) and can be re-dated later from the edit dialog.
-        if (passWindow != null && now !in passWindow) {
+        // Validate against this radar station's own AOS–LOS window.
+        // The opposite station's horizon does not affect log entry.
+        if (passWindow != null && isOutsideLogPassWindow(now, passWindow)) {
             val midpoint = ((passWindow.start + passWindow.endInclusive) / 2L)
                 .let { it / 60_000L * 60_000L }
                 .coerceIn(passWindow.start, passWindow.endInclusive)
             _uiState.update {
-                it.copy(outOfWindowLog = OutOfWindowLog(call, satName, mode, txHz, rxHz, myGrid, midpoint, overrides))
+                it.copy(outOfWindowLog = OutOfWindowLog(
+                    call, satName, mode, txHz, rxHz, myGrid, midpoint, overrides
+                ))
             }
             return
         }
@@ -279,7 +280,7 @@ class LogViewModel(
             satelliteMode = normalizedMode,
             status = QsoStatus.COMPLETE,
             propagationMode = "SAT"
-        )
+        ).withOperatorGridSet(myGrid)
         _uiState.update { it.copy(recordSaving = true, recordSaveFailed = false) }
         viewModelScope.launch {
             try {
@@ -407,8 +408,15 @@ class LogViewModel(
 
     /** Wavelog-mode branch of [prepareUpload]: prepare the batch and ask for confirmation. */
     private suspend fun prepareWavelogUpload(all: List<QsoRecord>, settings: WavelogUploadSettings) {
+        val current = refreshWavelogStationForUpload(wavelogUploadRepository, settingsRepo, settings)
+        if (current == null) {
+            _uiState.update {
+                it.copy(busy = false, message = "Cannot verify the selected Wavelog station — check the server and fetch station profiles again")
+            }
+            return
+        }
         val preview = runCatching {
-            wavelogUploadRepository.prepare(wavelogUploadCandidates(all), settings)
+            wavelogUploadRepository.prepare(wavelogUploadCandidates(all), current)
         }.getOrNull()
         if (preview == null) {
             _uiState.update { it.copy(busy = false, message = "Wavelog upload failed to prepare — check the configuration") }

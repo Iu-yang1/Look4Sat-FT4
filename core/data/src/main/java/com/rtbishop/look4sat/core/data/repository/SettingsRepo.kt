@@ -342,6 +342,38 @@ class SettingsRepo(
         preferences.edit { putString(keyWorkedGridQsos, root.toString()) }
     }
 
+    // User-confirmed WAIPA province choices. Stored separately from synced QSO
+    // data so a LoTW/Wavelog refresh cannot overwrite a manual correction.
+    private val keyWaipaManualOverrides = "waipaManualProvinceOverrides"
+
+    override fun getWaipaManualOverrides(): Map<String, String> {
+        val json = preferences.getString(keyWaipaManualOverrides, null).orEmpty()
+        if (json.isBlank()) return emptyMap()
+        return try {
+            val root = org.json.JSONObject(json)
+            val result = mutableMapOf<String, String>()
+            val keys = root.keys()
+            while (keys.hasNext()) {
+                val key = keys.next()
+                val province = root.optString(key).trim().uppercase()
+                if (key.isNotBlank() && province.isNotBlank()) result[key] = province
+            }
+            result
+        } catch (_: Exception) {
+            emptyMap()
+        }
+    }
+
+    override fun setWaipaManualOverrides(overrides: Map<String, String>) {
+        val root = org.json.JSONObject()
+        overrides.toSortedMap().forEach { (key, province) ->
+            if (key.isNotBlank() && province.isNotBlank()) {
+                root.put(key, province.trim().uppercase())
+            }
+        }
+        preferences.edit { putString(keyWaipaManualOverrides, root.toString()) }
+    }
+
     // Distinct 4-char gridsquares the account operated from (LoTW <MY_GRIDSQUARE>,
     // satellite QSOs only). Stored as a JSONArray like workedGrids.
     private val keyRoamedGrids = "roamedGrids"
@@ -427,10 +459,11 @@ class SettingsRepo(
         preferences.edit { putString(keyVuccSelectedStationIds, array.toString()) }
     }
 
-    // Marked stations in unworked gridsquares, persisted as a single JSON
-    // object: {"OL62":[{"c":call,"t":epochMs}, ...]}. Each grid holds an
-    // ordered list (first = pinned/top). v14.1 stored a single object per
-    // grid; reads transparently migrate that old shape to a one-element list.
+    // Marked stations in gridsquares, persisted as a single JSON object:
+    // {"FN31":[{"c":call,"t":epochMs,"ss":[stationGridSetKeys]}, ...]}.
+    // Each grid holds an ordered list (first = pinned/top). Empty "ss" means
+    // an unscoped legacy/All mark. v14.1 stored a single object per grid;
+    // reads transparently migrate that old shape to a one-element list.
     private val keyMarkedGridStations = "markedGridStations"
 
     override fun getMarkedGridStations(): Map<String, List<com.rtbishop.look4sat.core.domain.model.MarkedStation>> {
@@ -446,7 +479,16 @@ class SettingsRepo(
                     is org.json.JSONArray -> (0 until value.length()).mapNotNull { i ->
                         val o = value.optJSONObject(i) ?: return@mapNotNull null
                         val call = o.optString("c").ifBlank { return@mapNotNull null }
-                        com.rtbishop.look4sat.core.domain.model.MarkedStation(call = call, epochMs = o.optLong("t"))
+                        val stationIds = o.optJSONArray("ss")?.let { arr ->
+                            (0 until arr.length()).mapNotNull { i ->
+                                arr.optString(i).trim().takeIf { it.isNotEmpty() }
+                            }.toSet()
+                        }.orEmpty()
+                        com.rtbishop.look4sat.core.domain.model.MarkedStation(
+                            call = call,
+                            epochMs = o.optLong("t"),
+                            stationIds = stationIds
+                        )
                     }
                     // v14.1 legacy shape: a single station object per grid.
                     is org.json.JSONObject -> {
@@ -474,6 +516,7 @@ class SettingsRepo(
                     org.json.JSONObject()
                         .put("c", station.call)
                         .put("t", station.epochMs)
+                        .put("ss", org.json.JSONArray(station.stationIds.sorted()))
                 )
             }
             root.put(grid, array)

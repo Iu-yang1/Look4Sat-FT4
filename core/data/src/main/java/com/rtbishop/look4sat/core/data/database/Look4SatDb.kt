@@ -87,3 +87,12 @@ val MIGRATION_3_4 = object : Migration(3, 4) {
         db.execSQL("ALTER TABLE radios ADD COLUMN service TEXT")
     }
 }
+
+/** Repairs names saved by older SatNOGS TLE imports. Parsing now strips the optional
+ *  "0 " line-zero marker, but existing rows survive app upgrades without a refresh.
+ *  Update only the name column so ephemerides, selections and transceivers are preserved. */
+val MIGRATION_3_4 = object : Migration(3, 4) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("UPDATE entries SET name = substr(name, 3) WHERE name LIKE '0 %'")
+    }
+}

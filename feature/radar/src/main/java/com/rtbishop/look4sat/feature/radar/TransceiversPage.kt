@@ -48,6 +48,8 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -66,6 +68,9 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.geometry.Offset
@@ -90,8 +95,10 @@ import com.rtbishop.look4sat.core.domain.utility.CalculatorReference
 import com.rtbishop.look4sat.core.domain.utility.withCalculatorReference
 import com.rtbishop.look4sat.core.presentation.R
 import com.rtbishop.look4sat.core.presentation.infiniteMarquee
+import java.math.BigDecimal
 import java.util.Locale
 import kotlin.time.Duration.Companion.milliseconds
+import kotlin.math.roundToLong
 
 @Composable
 fun TransceiversPage(
@@ -479,7 +486,19 @@ private fun ExpandedRadioControl(
 private enum class EditedField { TX, PASSBAND, RX }
 
 private const val MAX_CALCULATOR_OFFSET_KHZ = 10_000.0
-private const val CALCULATOR_FREQUENCY_STEP_HZ = 1_000L // 0.001 MHz
+private const val CALCULATOR_FREQUENCY_STEP_HZ = 1_000L // Default: 1 kHz
+internal val CW_CALCULATOR_FREQUENCY_STEPS = listOf(
+    100L to "0.1k",
+    250L to "0.25k",
+    500L to "0.5k",
+    1_000L to "1k",
+    5_000L to "5k"
+)
+
+internal fun snapCalculatorFrequency(hz: Long, stepHz: Long): Long {
+    require(stepHz > 0L)
+    return Math.floorDiv(hz + stepHz / 2L, stepHz) * stepHz
+}
 private val CALCULATOR_OFFSET_PATTERN = Regex("[+-]?(?:[0-9]+(?:\\.[0-9]*)?|\\.[0-9]+)")
 
 private fun isValidCalculatorOffset(value: String): Boolean {
@@ -488,6 +507,14 @@ private fun isValidCalculatorOffset(value: String): Boolean {
     if (!CALCULATOR_OFFSET_PATTERN.matches(value)) return false
     val parsed = value.toDoubleOrNull() ?: return false
     return parsed.isFinite() && kotlin.math.abs(parsed) <= MAX_CALCULATOR_OFFSET_KHZ
+}
+
+internal fun adjustCalculatorOffset(offsetKHz: String, increase: Boolean): String {
+    val current = offsetKHz.toBigDecimalOrNull() ?: BigDecimal.ZERO
+    val delta = if (increase) BigDecimal("0.1") else BigDecimal("-0.1")
+    val limit = BigDecimal("10000")
+    return current.add(delta).coerceIn(limit.negate(), limit)
+        .stripTrailingZeros().toPlainString()
 }
 
 @Composable
@@ -502,11 +529,14 @@ internal fun DopplerFrequencyCalculator(
     editingEnabled:Boolean=true,
     displayNominalFrequencies: Boolean = false,
     reference: CalculatorReference? = null,
+    frequencyStepHz: Long = CALCULATOR_FREQUENCY_STEP_HZ,
+    onFrequencyStepChange: ((Long) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val calibrated = remember(transponder, reference) { transponder.withCalculatorReference(reference) } ?: return
     CalculatorContent(calibrated, orbitalPos, offsetKHz, onOffsetChange, onFrequencyChange,
-        onTuningChange, initialTxBaseHz, editingEnabled, displayNominalFrequencies, reference, modifier)
+        onTuningChange, initialTxBaseHz, editingEnabled, displayNominalFrequencies, reference,
+        frequencyStepHz, onFrequencyStepChange, modifier)
 }
 
 @Composable
@@ -521,6 +551,8 @@ private fun CalculatorContent(
     editingEnabled: Boolean,
     displayNominalFrequencies: Boolean,
     reference: CalculatorReference?,
+    frequencyStepHz: Long,
+    onFrequencyStepChange: ((Long) -> Unit)?,
     modifier: Modifier
 ) {
     if (orbitalPos == null || !DopplerFrequencyCalculator.isLinearTransponder(transponder)) return
@@ -657,7 +689,7 @@ private fun CalculatorContent(
     } else {
         txPosition(txFrequencyHz)
     }
-    val nominalTxDisplayHz = nominalTxLow + (passbandPosition.coerceIn(0f, 1f) * nominalTxRange).toLong()
+    val nominalTxDisplayHz = nominalTxLow + (passbandPosition.coerceIn(0f, 1f).toDouble() * nominalTxRange).roundToLong()
     val nominalRxDisplayHz = TransponderMapper.mapUplinkToDownlink(nominalTxDisplayHz, transponder)
         ?.let { (it + offsetHz).coerceIn(nominalRxLow, nominalRxHigh) }
         ?: (nominalRxLow + ((passbandPosition.coerceIn(0f, 1f)) * (nominalRxHigh - nominalRxLow)).toLong())
@@ -669,7 +701,21 @@ private fun CalculatorContent(
         ((rxFrequencyHz - rxLow).toFloat() / rxRange).coerceIn(0f, 1f)
     }
     val edgeFrequencyFormat = if (displayNominalFrequencies) "%.3f" else "%.4f"
-    val readoutFrequencyFormat = if (displayNominalFrequencies) "%.3f" else "%.6f"
+    val showStepSelector = displayNominalFrequencies && onFrequencyStepChange != null
+    val stepHz = if (showStepSelector) frequencyStepHz else CALCULATOR_FREQUENCY_STEP_HZ
+    val stepPrecision = when (stepHz) {
+        250L -> 5
+        100L, 500L -> 4
+        else -> 3
+    }
+    val offsetPrecision = when {
+        offsetHz % 1_000L == 0L -> 3
+        offsetHz % 100L == 0L -> 4
+        offsetHz % 10L == 0L -> 5
+        else -> 6
+    }
+    val readoutFrequencyFormat = if (!displayNominalFrequencies) "%.6f" else
+        "%.${maxOf(stepPrecision, offsetPrecision)}f"
 
     fun publishTuning() {
         if(!editingEnabled)return
@@ -778,7 +824,7 @@ private fun CalculatorContent(
             ) {
                 // 左半边: TX + RX 按钮
                 Row(
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier.weight(if (showStepSelector) 1.25f else 1f),
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -831,39 +877,135 @@ private fun CalculatorContent(
                         modifier = Modifier.weight(1f).fillMaxHeight()
                     )
                 }
-                // 右半边: Offset 输入框（带细线边框）
+                // Offset input, followed by the CW-only step selector.
                 Box(
                     modifier = Modifier
-                        .weight(1f)
+                        .weight(if (showStepSelector) 1.05f else 1f)
                         .height(48.dp)
                         .border(1.dp, MaterialTheme.colorScheme.outline, MaterialTheme.shapes.small),
                     contentAlignment = Alignment.Center
                 ) {
-                    BasicTextField(
-                        value = offsetKHz,
-                        enabled=editingEnabled,
-                        onValueChange = { value ->
-                            if (isValidCalculatorOffset(value)) onOffsetChange(value)
-                        },
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii),
-                        textStyle = TextStyle(
-                            fontSize = 16.sp,
-                            textAlign = TextAlign.Center,
-                            color = MaterialTheme.colorScheme.onSurface
-                        ),
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 6.dp),
-                        decorationBox = { innerTextField ->
-                            if (offsetKHz.isEmpty()) {
-                                Text(
-                                    text = "Offset (kHz)",
-                                    fontSize = 16.sp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    Row(
+                        modifier = Modifier.fillMaxSize().padding(horizontal = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        BasicTextField(
+                            value = offsetKHz,
+                            enabled = editingEnabled,
+                            onValueChange = { value ->
+                                if (isValidCalculatorOffset(value)) onOffsetChange(value)
+                            },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii),
+                            textStyle = TextStyle(
+                                fontSize = 16.sp,
+                                textAlign = TextAlign.Center,
+                                color = MaterialTheme.colorScheme.onSurface
+                            ),
+                            modifier = Modifier.weight(1f).padding(horizontal = 2.dp)
+                                .testTag("cwCalculatorOffsetInput"),
+                            decorationBox = { innerTextField ->
+                                if (offsetKHz.isEmpty()) {
+                                    Text(
+                                        text = "Offset (kHz)",
+                                        modifier = Modifier.fillMaxWidth(),
+                                        fontSize = 14.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        textAlign = TextAlign.Center
+                                    )
+                                }
+                                innerTextField()
+                            }
+                        )
+                        if (showStepSelector) {
+                            val increaseDescription = stringResource(R.string.cw_console_increase_offset)
+                            val decreaseDescription = stringResource(R.string.cw_console_decrease_offset)
+                            Column(
+                                modifier = Modifier.width(20.dp).fillMaxHeight(),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Box(
+                                    modifier = Modifier.weight(1f).fillMaxWidth()
+                                        .clickable(enabled = editingEnabled, role = Role.Button) {
+                                            val next = adjustCalculatorOffset(offsetKHz, increase = true)
+                                            if (next != offsetKHz) onOffsetChange(next)
+                                        }
+                                        .semantics { contentDescription = increaseDescription }
+                                        .testTag("cwCalculatorOffsetIncrease"),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        "▲",
+                                        fontSize = 12.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(
+                                            alpha = if (editingEnabled) 1f else 0.38f
+                                        )
+                                    )
+                                }
+                                Box(
+                                    modifier = Modifier.weight(1f).fillMaxWidth()
+                                        .clickable(enabled = editingEnabled, role = Role.Button) {
+                                            val next = adjustCalculatorOffset(offsetKHz, increase = false)
+                                            if (next != offsetKHz) onOffsetChange(next)
+                                        }
+                                        .semantics { contentDescription = decreaseDescription }
+                                        .testTag("cwCalculatorOffsetDecrease"),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        "▼",
+                                        fontSize = 12.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(
+                                            alpha = if (editingEnabled) 1f else 0.38f
+                                        )
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+                if (showStepSelector) {
+                    var stepMenuExpanded by remember { mutableStateOf(false) }
+                    val stepLabel = CW_CALCULATOR_FREQUENCY_STEPS
+                        .firstOrNull { it.first == stepHz }?.second ?: "1k"
+                    val stepDescription = stringResource(R.string.cw_console_frequency_step)
+                    Box(
+                        modifier = Modifier
+                            .weight(0.85f)
+                            .height(48.dp)
+                            .border(1.dp, MaterialTheme.colorScheme.outline, MaterialTheme.shapes.small)
+                            .clickable(enabled = editingEnabled, role = Role.Button) { stepMenuExpanded = true }
+                            .semantics { contentDescription = "$stepDescription: $stepLabel" }
+                            .testTag("cwCalculatorStepSelector"),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center) {
+                            Text(stepLabel, fontSize = 14.sp, maxLines = 1)
+                            Text(" ▾", fontSize = 12.sp)
+                        }
+                        DropdownMenu(expanded = stepMenuExpanded, onDismissRequest = { stepMenuExpanded = false }) {
+                            CW_CALCULATOR_FREQUENCY_STEPS.forEach { (newStepHz, label) ->
+                                DropdownMenuItem(
+                                    text = { Text(label) },
+                                    onClick = {
+                                        stepMenuExpanded = false
+                                        if (newStepHz != stepHz) {
+                                            onFrequencyStepChange?.invoke(newStepHz)
+                                            // Snap the active nominal anchor; the opposite
+                                            // frequency is recalculated through the transponder.
+                                            if (lastEditedField == EditedField.RX) {
+                                                updateNominalRx(snapCalculatorFrequency(displayRxHz, newStepHz))
+                                            } else {
+                                                updateNominalTx(snapCalculatorFrequency(displayTxHz, newStepHz))
+                                            }
+                                        }
+                                    },
+                                    modifier = Modifier.testTag("cwCalculatorStepOption$newStepHz")
                                 )
                             }
-                            innerTextField()
                         }
-                    )
+                    }
                 }
             }
 
@@ -872,8 +1014,8 @@ private fun CalculatorContent(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     OutlinedButton(
                         onClick = {
-                            if (displayNominalFrequencies) updateNominalTx(displayTxHz - CALCULATOR_FREQUENCY_STEP_HZ)
-                            else updateTx(txFrequencyHz - CALCULATOR_FREQUENCY_STEP_HZ)
+                            if (displayNominalFrequencies) updateNominalTx(displayTxHz - stepHz)
+                            else updateTx(txFrequencyHz - stepHz)
                         },
                         enabled=editingEnabled,
                         modifier = Modifier.width(32.dp).height(28.dp),
@@ -885,9 +1027,13 @@ private fun CalculatorContent(
                         value = txSliderValue,
                         enabled=editingEnabled,
                         onValueChange = { norm ->
-                            val rawFreq = txLow + (txRange * norm).toLong()
-                            val snapped = ((rawFreq + 500) / 1000L) * 1000L
-                            updateTx(snapped.coerceIn(txLow, txHigh))
+                            if (displayNominalFrequencies) {
+                                val rawHz = nominalTxLow + (nominalTxRange * norm.toDouble()).roundToLong()
+                                updateNominalTx(snapCalculatorFrequency(rawHz, stepHz))
+                            } else {
+                                val rawHz = txLow + (txRange * norm).toLong()
+                                updateTx(snapCalculatorFrequency(rawHz, stepHz).coerceIn(txLow, txHigh))
+                            }
                         },
                         valueRange = 0f..1f,
                         modifier = Modifier.weight(1f).height(20.dp).padding(horizontal = 4.dp)
@@ -895,8 +1041,8 @@ private fun CalculatorContent(
 
                     OutlinedButton(
                         onClick = {
-                            if (displayNominalFrequencies) updateNominalTx(displayTxHz + CALCULATOR_FREQUENCY_STEP_HZ)
-                            else updateTx(txFrequencyHz + CALCULATOR_FREQUENCY_STEP_HZ)
+                            if (displayNominalFrequencies) updateNominalTx(displayTxHz + stepHz)
+                            else updateTx(txFrequencyHz + stepHz)
                         },
                         enabled=editingEnabled,
                         modifier = Modifier.width(32.dp).height(28.dp),
@@ -952,8 +1098,8 @@ private fun CalculatorContent(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     OutlinedButton(
                         onClick = {
-                            if (displayNominalFrequencies) updateNominalRx(displayRxHz - CALCULATOR_FREQUENCY_STEP_HZ)
-                            else updateRx(rxFrequencyHz - CALCULATOR_FREQUENCY_STEP_HZ)
+                            if (displayNominalFrequencies) updateNominalRx(displayRxHz - stepHz)
+                            else updateRx(rxFrequencyHz - stepHz)
                         },
                         enabled=editingEnabled,
                         modifier = Modifier.width(32.dp).height(28.dp),
@@ -965,9 +1111,13 @@ private fun CalculatorContent(
                         value = rxSliderValue,
                         enabled=editingEnabled,
                         onValueChange = { norm ->
-                            val rawFreq = rxLow + (rxRange * norm).toLong()
-                            val snapped = ((rawFreq + 500) / 1000L) * 1000L
-                            updateRx(snapped.coerceIn(rxLow, rxHigh))
+                            if (displayNominalFrequencies) {
+                                val rawHz = nominalRxLow + ((nominalRxHigh - nominalRxLow) * norm.toDouble()).roundToLong()
+                                updateNominalRx(snapCalculatorFrequency(rawHz, stepHz))
+                            } else {
+                                val rawHz = rxLow + (rxRange * norm).toLong()
+                                updateRx(snapCalculatorFrequency(rawHz, stepHz).coerceIn(rxLow, rxHigh))
+                            }
                         },
                         valueRange = 0f..1f,
                         modifier = Modifier.weight(1f).height(20.dp).padding(horizontal = 4.dp)
@@ -975,8 +1125,8 @@ private fun CalculatorContent(
 
                     OutlinedButton(
                         onClick = {
-                            if (displayNominalFrequencies) updateNominalRx(displayRxHz + CALCULATOR_FREQUENCY_STEP_HZ)
-                            else updateRx(rxFrequencyHz + CALCULATOR_FREQUENCY_STEP_HZ)
+                            if (displayNominalFrequencies) updateNominalRx(displayRxHz + stepHz)
+                            else updateRx(rxFrequencyHz + stepHz)
                         },
                         enabled=editingEnabled,
                         modifier = Modifier.width(32.dp).height(28.dp),

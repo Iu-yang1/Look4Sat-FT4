@@ -28,6 +28,7 @@ import com.rtbishop.look4sat.core.domain.audio.AudioConsumer
 import com.rtbishop.look4sat.core.domain.audio.IAudioHub
 import com.rtbishop.look4sat.core.domain.predict.CelestialComputer
 import com.rtbishop.look4sat.core.domain.predict.OrbitalObject
+import com.rtbishop.look4sat.core.domain.predict.GeoPos
 import com.rtbishop.look4sat.core.domain.predict.OrbitalPass
 import com.rtbishop.look4sat.core.domain.predict.OrbitalPos
 import com.rtbishop.look4sat.core.domain.rotator.RotatorConnectionState
@@ -47,7 +48,6 @@ import com.rtbishop.look4sat.core.domain.usecase.IAddToCalendar
 import com.rtbishop.look4sat.core.domain.usecase.ISaveImage
 import com.rtbishop.look4sat.core.domain.usecase.IShowToast
 import com.rtbishop.look4sat.core.domain.utility.round
-import com.rtbishop.look4sat.core.domain.utility.toTimerString
 import com.rtbishop.look4sat.core.presentation.formatFrequency
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -80,11 +80,13 @@ class RadarViewModel(
     private val mutualSession: MutualPassData = MutualPassData()
 ) : ViewModel() {
 
-    private val stationPos = settingsRepo.stationPosition.value
+    private val stationPos = matchedRadarObserverPosition(mutualSession, settingsRepo.stationPosition.value)
     private val magDeclination = sensorsRepo.getMagDeclination(stationPos)
     private var transponders: List<SatRadio> = emptyList()
     /** Raw per-second Doppler rows, before applying the selected radio's saved references. */
     private var latestUnadjustedRadios: List<SatRadio> = emptyList()
+    private var oppositeStation: GeoPos? = null
+    private var oppositeStationWindow: Pair<Long, Long>? = null
     private var calculatorCatnum: Int? = null
     private var sstvDecoder: SstvDecoder? = null
     private var sstvSampleRate: Int? = null
@@ -212,16 +214,30 @@ class RadarViewModel(
             val satellite = satelliteRepo.satellites.value.firstOrNull { it.data.catnum == catNum }
                 ?: passes.firstOrNull { it.catNum == catNum }?.orbitalObject
                 ?: return null
-            val first = mutualSession.trackSamples.firstOrNull()
-            val last = mutualSession.trackSamples.lastOrNull()
-            val midTime = aosTime + (mutualSession.endTime - aosTime) / 2L
+            // The selected time identifies the *mutual* visibility interval, not
+            // station A's real AOS. The radar's moving dot, full track, AOS/LOS
+            // header, countdown and pass phase must all use the same local
+            // above-horizon window. Keep mutualSession's bounds separately for
+            // the overlap and station B.
+            val (localAos, localLos) = expandMatchedRadarLocalVisibilityWindow(
+                mutualSession.startTime, mutualSession.endTime
+            ) { time -> satellite.getElevation(stationPos, time) > 0.0 }
+            val first = satellite.getFullPosition(stationPos, localAos)
+            val last = satellite.getFullPosition(stationPos, localLos)
+            val midTime = localAos + (localLos - localAos) / 2L
+            var maxElev = mutualSession.samples.maxOfOrNull { it.second.first } ?: 0.0
+            var sampleTime = localAos
+            while (sampleTime < localLos) {
+                maxElev = maxOf(maxElev, satellite.getElevation(stationPos, sampleTime) * 180.0 / Math.PI)
+                sampleTime += 10_000L
+            }
             return OrbitalPass(
-                aosTime = aosTime,
-                aosAzimuth = first?.azimuthA ?: 0.0,
-                losTime = mutualSession.endTime,
-                losAzimuth = last?.azimuthA ?: 0.0,
-                altitude = satellite.getFullPosition(settingsRepo.stationPosition.value, midTime).altitude.toInt(),
-                maxElevation = (mutualSession.samples.maxOfOrNull { it.second.first } ?: 0.0).round(1),
+                aosTime = localAos,
+                aosAzimuth = first.azimuth * 180.0 / Math.PI,
+                losTime = localLos,
+                losAzimuth = last.azimuth * 180.0 / Math.PI,
+                altitude = satellite.getFullPosition(stationPos, midTime).altitude.toInt(),
+                maxElevation = maxElev.round(1),
                 orbitalObject = satellite
             )
         }
@@ -267,7 +283,30 @@ class RadarViewModel(
             }
             trackingService.setTransponder(initialTransponder)
         }
+        val matchedPass = !pass.isDeepSpace &&
+            mutualSession.trackSamples.isNotEmpty() &&
+            mutualSession.startTime == satelliteRepo.selectedPass.value.second &&
+            mutualSession.endTime > mutualSession.startTime
+        val latB = mutualSession.stationBLatitude
+        val lonB = mutualSession.stationBLongitude
+        oppositeStation = if (matchedPass && latB != null && lonB != null &&
+            latB in -90.0..90.0 && lonB in -180.0..180.0
+        ) GeoPos(latB, lonB) else null
+
+        // A matched pass is only the two-station overlap. Locate both stations'
+        // actual horizon windows so neither moving dot freezes at the last
+        // mutual sample. The opposite dot stays visible until *its own* LOS.
+        oppositeStationWindow = oppositeStation?.let { remote ->
+            withContext(Dispatchers.Default) {
+                expandMatchedRadarLocalVisibilityWindow(
+                    mutualSession.startTime, mutualSession.endTime
+                ) { time -> pass.orbitalObject.getElevation(remote, time) > 0.0 }
+            }
+        }
+
         if (!pass.isDeepSpace) {
+            // For a matched session the pass has already been expanded to
+            // station A's full horizon window by findCurrentPass().
             val track = satelliteRepo.getTrack(pass.orbitalObject, stationPos, pass.aosTime, pass.losTime)
             _uiState.update { it.copy(satTrack = track) }
         }
@@ -279,6 +318,12 @@ class RadarViewModel(
     private suspend fun tickPass(pass: OrbitalPass, allRadios: List<SatRadio>) {
         val timeNow = System.currentTimeMillis()
         val pos = satelliteRepo.getPosition(pass.orbitalObject, stationPos, timeNow)
+        val oppositePos = oppositeStation?.takeIf {
+            isWithinMatchedRadarWindow(timeNow, oppositeStationWindow)
+        }?.let { remote ->
+            satelliteRepo.getPosition(pass.orbitalObject, remote, timeNow)
+                .takeIf { it.elevation > 0.0 }
+        }
 
         // Recompute celestial positions at most once per minute (they move very slowly)
         if (timeNow - lastCelestialUpdateMs >= 60_000L) {
@@ -287,11 +332,13 @@ class RadarViewModel(
             lastCelestialUpdateMs = timeNow
         }
 
-        val (time, isAos) = computeTimer(pass.isDeepSpace, pass.aosTime, pass.losTime, timeNow)
+        val countdown = radarCountdown(pass.isDeepSpace, pass.aosTime, pass.losTime, timeNow)
         _uiState.update {
             it.copy(
-                currentTime = time, isTimeAos = isAos,
-                orbitalPos = pos, sunPosition = cachedSunPos, moonPosition = cachedMoonPos
+                currentTime = countdown.time, isTimeAos = countdown.isAos,
+                isPassEnded = countdown.isEnded,
+                orbitalPos = pos, oppositeStationPos = oppositePos,
+                sunPosition = cachedSunPos, moonPosition = cachedMoonPos
             )
         }
         processRadios(allRadios, pass.orbitalObject, timeNow)
@@ -558,14 +605,6 @@ class RadarViewModel(
                     trackingService.tuneFromCalculator(it, action.tuning)
                 }
             }
-        }
-    }
-
-    private fun computeTimer(isDeepSpace: Boolean, aosTime: Long, losTime: Long, timeNow: Long): Pair<String, Boolean> {
-        return when {
-            isDeepSpace -> 0L.toTimerString() to false
-            aosTime > timeNow -> (aosTime - timeNow).toTimerString() to true
-            else -> (losTime - timeNow).toTimerString() to false
         }
     }
 

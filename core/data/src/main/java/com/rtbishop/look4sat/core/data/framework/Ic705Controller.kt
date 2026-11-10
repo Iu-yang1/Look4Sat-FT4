@@ -109,12 +109,14 @@ class Ic705Controller(
                     civSession = Ic705CivSession(transport, civAddress, diagnostics, disconnected = { isConnected = false })
                 }
                 diagnose("connect/probe", "model=$tag mode=${transport.connectionDescription} address=0x${"%02X".format(civAddress.toInt() and 0xFF)}")
-                val ready = if (variant == IcomCivVariant.IC705) {
-                    probeReadOnlyConnection()
-                } else {
-                    // Preserve legacy setup; IC-705 probing never changes radio state.
-                    ioMutex.withLock { sendAndWaitAck(IcomCivProtocol.buildEnterVfoModeCommand()) } &&
-                        readFrequencyAndMode() != null
+                val ready = when (variant) {
+                    IcomCivVariant.IC705 -> probeReadOnlyConnection()
+                    // Do not send 07 without a selector: it can leave the operator's
+                    // satellite preset. The IC-820H has no CI-V SAT-mode command.
+                    IcomCivVariant.IC820 -> readFrequencyAndMode() != null
+                    else -> ioMutex.withLock {
+                        sendAndWaitAck(IcomCivProtocol.buildEnterVfoModeCommand())
+                    } && readFrequencyAndMode() != null
                 }
                 if (ready && isConnected && transport.isConnected) {
                     diagnose("connect/ready", "model=$tag mode=${transport.connectionDescription} CI-V verified")
@@ -703,14 +705,17 @@ class Ic705Controller(
                 mode.uppercase(Locale.US) in IC910_MODES)
     }
 
-    private fun selectVfoCommand(vfoA: Boolean): ByteArray = if (!usesDedicatedSatelliteMode) {
-        if (vfoA) {
+    private fun selectVfoCommand(vfoA: Boolean): ByteArray = when {
+        // IC-820H: MAIN is the uplink/transmitter, SUB is the downlink/receiver.
+        // Its D0/D1 CI-V access selectors are inverted relative to newer Icoms.
+        variant == IcomCivVariant.IC820 ->
+            IcomCivProtocol.buildIc820BandAccessCommand(main = !vfoA)
+        !usesDedicatedSatelliteMode -> if (vfoA) {
             IcomCivProtocol.buildSelectVfoACommand()
         } else {
             IcomCivProtocol.buildSelectVfoBCommand()
         }
-    } else {
-        if (vfoA) {
+        else -> if (vfoA) {
             IcomCivProtocol.buildSelectMainCommand()
         } else {
             IcomCivProtocol.buildSelectSubCommand()

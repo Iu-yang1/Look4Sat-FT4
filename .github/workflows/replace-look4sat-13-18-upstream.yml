@@ -46,6 +46,21 @@ jobs:
           fi
           echo "Rebuilding same version at source=$GITHUB_SHA, prior tag=$OLD_SHA"
 
+      - name: Check foreground recording service has one declaration
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import xml.etree.ElementTree as ET
+          ns = {'android': 'http://schemas.android.com/apk/res/android'}
+          root = ET.parse('app/src/main/AndroidManifest.xml').getroot()
+          app = root.find('application')
+          key = '{http://schemas.android.com/apk/res/android}name'
+          matches = [s for s in app.findall('service') if s.get(key) == '.RecordingForegroundService']
+          assert len(matches) == 1, f'Expected exactly one RecordingForegroundService, found {len(matches)}'
+          assert matches[0].get('{http://schemas.android.com/apk/res/android}stopWithTask') == 'false'
+          print('RecordingForegroundService declaration and background lifecycle verified')
+          PY
+
       - name: Configure Java and Gradle
         uses: actions/setup-java@v4
         with:

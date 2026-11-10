@@ -435,15 +435,11 @@ class Ic705Controller(
         val band = ic820Band(frequencyHz) ?: return false
         return withContext(Dispatchers.IO) {
             ioMutex.withLock {
-                // Access, not exchange: changing the controllable band must not swap TX/RX roles.
                 if (!sendAndWaitAck(IcomCivProtocol.buildIc820BandAccessCommand(main = true))) return@withLock false
                 val mainFrequency = readFrequencyLocked() ?: return@withLock false
                 if (ic820Band(mainFrequency) == band) return@withLock true
-                if (!sendAndWaitAck(IcomCivProtocol.buildIc820BandAccessCommand(main = false))) return@withLock false
-                val subFrequency = readFrequencyLocked()
-                if (subFrequency != null && ic820Band(subFrequency) == band) return@withLock true
-                sendAndWaitAck(IcomCivProtocol.buildIc820BandAccessCommand(main = true))
-                false
+                val (restored, subFrequency) = ic820WithSubAsMainLocked { readFrequencyLocked() }
+                restored && subFrequency != null && ic820Band(subFrequency) == band
             }
         }
     }
@@ -484,6 +480,8 @@ class Ic705Controller(
             Log.w(tag, "setSplitModes: mode is not supported by $variant: rx=$rxMode tx=$txMode")
             return@withContext false
         }
+        if (variant == IcomCivVariant.IC820)
+            return@withContext setIc820SplitModes(rxMode, txMode)
         if (usesManualVfoSelection) {
             return@withContext setManualVfoModes(rxMode, txMode)
         }
@@ -542,7 +540,10 @@ class Ic705Controller(
      * change which VFO is selected, so this remains the RX target while keyed.
      */
     override suspend fun setWorkingFrequency(frequencyHz: Long): Boolean = withContext(Dispatchers.IO) {
-        if (variant == IcomCivVariant.IC820 && ic820Band(frequencyHz) == null) return@withContext false
+        if (variant == IcomCivVariant.IC820) {
+            if (ic820Band(frequencyHz) == null) return@withContext false
+            return@withContext setTrackingFrequencies(frequencyHz, null) == FrequencyPairResult.APPLIED
+        }
         if (usesManualVfoSelection) {
             return@withContext ioMutex.withLock {
                 sendAndWaitAck(selectVfoCommand(vfoA = true)) &&
@@ -561,7 +562,14 @@ class Ic705Controller(
      * Sent every tracking cycle in split mode alongside [setWorkingFrequency].
      */
     override suspend fun setTxVfoFrequency(frequencyHz: Long): Boolean = withContext(Dispatchers.IO) {
-        if (variant == IcomCivVariant.IC820 && ic820Band(frequencyHz) == null) return@withContext false
+        if (variant == IcomCivVariant.IC820) {
+            if (ic820Band(frequencyHz) == null) return@withContext false
+            return@withContext ioMutex.withLock {
+                sendAndWaitAck(IcomCivProtocol.buildIc820BandAccessCommand(main = true)) &&
+                    sendAndWaitAck(IcomCivProtocol.buildSetFreqCommand(frequencyHz)) &&
+                    readFrequencyLocked() == frequencyHz
+            }
+        }
         if (usesManualVfoSelection) {
             return@withContext ioMutex.withLock {
                 var rxRestored = false
@@ -588,6 +596,10 @@ class Ic705Controller(
      * Used for tuning detection in split mode.
      */
     override suspend fun readWorkingFrequency(): Long? = withContext(Dispatchers.IO) {
+        if (variant == IcomCivVariant.IC820) return@withContext ioMutex.withLock {
+            val (restored, frequency) = ic820WithSubAsMainLocked { readFrequencyLocked() }
+            frequency.takeIf { restored }
+        }
         if (usesManualVfoSelection) {
             return@withContext ioMutex.withLock {
                 if (!sendAndWaitAck(selectVfoCommand(vfoA = true))) return@withLock null
@@ -614,6 +626,10 @@ class Ic705Controller(
      * Used for tuning detection in split mode.
      */
     override suspend fun readTxVfoFrequency(): Long? = withContext(Dispatchers.IO) {
+        if (variant == IcomCivVariant.IC820) return@withContext ioMutex.withLock {
+            if (!sendAndWaitAck(IcomCivProtocol.buildIc820BandAccessCommand(main = true)))
+                null else readFrequencyLocked()
+        }
         if (usesManualVfoSelection) {
             return@withContext ioMutex.withLock {
                 var rxRestored = false
@@ -835,6 +851,52 @@ class Ic705Controller(
             IcomCivProtocol.buildSelectMainCommand()
         } else {
             IcomCivProtocol.buildSelectSubCommand()
+        }
+    }
+
+    /**
+     * Temporarily exchange the IC-820 MAIN/SUB bands. The operation always
+     * targets whichever band is currently MAIN; both roles are then restored.
+     * This uses only documented IC-820 commands 07 B0, 07 D1, 03/04/05/06.
+     * Caller owns ioMutex.
+     */
+    private suspend fun <T> ic820WithSubAsMainLocked(operation: suspend () -> T): Pair<Boolean, T?> {
+        val main = IcomCivProtocol.buildIc820BandAccessCommand(main = true)
+        val swap = IcomCivProtocol.buildIc820MainSubExchangeCommand()
+        if (!sendAndWaitAck(main) || !sendAndWaitAck(swap)) return false to null
+        var value: T? = null
+        var performed = false
+        var restored = false
+        try {
+            if (sendAndWaitAck(main)) {
+                value = operation()
+                performed = true
+            }
+        } finally {
+            restored = withContext(NonCancellable) {
+                val swappedBack = sendAndWaitAck(swap)
+                val mainSelected = sendAndWaitAck(main)
+                swappedBack && mainSelected
+            }
+        }
+        return (performed && restored) to value
+    }
+
+    private suspend fun setIc820SplitModes(rxMode: String?, txMode: String?): Boolean {
+        val subModeCommand = rxMode?.let(::buildModelModeCommand)
+        val mainModeCommand = txMode?.let(::buildModelModeCommand)
+        return ioMutex.withLock {
+            if (rxMode != null) {
+                val (restored, applied) = ic820WithSubAsMainLocked {
+                    sendAndWaitAck(checkNotNull(subModeCommand)) &&
+                        readModeLocked() == normalizedMode(rxMode)
+                }
+                if (!restored || applied != true) return@withLock false
+            }
+            if (txMode == null) return@withLock true
+            sendAndWaitAck(IcomCivProtocol.buildIc820BandAccessCommand(main = true)) &&
+                sendAndWaitAck(checkNotNull(mainModeCommand)) &&
+                readModeLocked() == normalizedMode(txMode)
         }
     }
 

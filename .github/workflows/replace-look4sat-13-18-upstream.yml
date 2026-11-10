@@ -1,8 +1,8 @@
-name: Replace signed Look4Sat 13.18 with verified upstream CW 100 Hz build
+name: Replace signed Look4Sat 13.18 — IC-820 CAT native MAIN/SUB rebuild
 
 on:
   push:
-    branches: [main]
+    branches: [release/13.18-ic820-20261110]
     paths:
       - .github/workflows/replace-look4sat-13-18-upstream.yml
 
@@ -40,7 +40,7 @@ jobs:
           gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null
           # Existing 13.18 signed source is the accepted replacement baseline.
           OLD_SHA=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" --jq '.object.sha')
-          if [[ "$OLD_SHA" != "cf3ac073e02ff1c3df850f3bc8d25ca766de4a7e" && "$OLD_SHA" != "$GITHUB_SHA" ]]; then
+          if [[ "$OLD_SHA" != "53f0064c48d2783034c15979bdd0ab4eabad7f6c" && "$OLD_SHA" != "$GITHUB_SHA" ]]; then
             echo "::error::Refusing to overwrite unexpected release source $OLD_SHA"
             exit 1
           fi
@@ -182,35 +182,41 @@ jobs:
           cat > dist/RELEASE_NOTES.md <<'NOTES'
           ## 4.4.8-ba7opf.13.18 — verified upstream replacement
 
-          - Preserve independent IC-820 MAIN TX / SUB RX frequency and mode control (PR #19).
+          - Preserve original IC-820 CAT support (PR #19); restore its connection after settings changes and connect on Track (PR #22).
+          - Repair IC-820 CI-V echo-associated short-preamble FB/FA handling while preserving true radio NAK failures and stage-by-stage frequency diagnostics (PR #23).
+          - Implement IC-820 native 07 B0 MAIN/SUB exchange, set RX SUB through the temporarily exchanged MAIN, exchange back, then write MAIN TX last and verify both bands (PR #24); 07 D1 MAIN access and the documented CI-V sequence are model-specific.
+          - Keep RTS and DTR independently optional (default off); retain 1200 baud 8N1 PL2303 operation, manual satellite mode and external PTT requirements (PRs #22–#24).
           - Preserve configurable USB CAT RTS/DTR handling and L4S USB CDC independence (PR #19).
           - Preserve UV-K1 / UV-K5 V3 USB receive / CW transmit, without an automatic 600 Hz BFO offset (PR #20).
           - Merge all 69 upstream atsunatsu/Look4Sat commits from 1793a726 through d4b80126, retaining upstream ancestry.
           - Add CW calculator 100/250/500/1000/5000 Hz selectable steps, persistent selection, and ±100 Hz offset controls.
-          - Change default L4S Doppler/control step from 250 to 100 Hz, preserving manual 250 Hz configurations and independent atomic RX/TX CAT frequency updates (matching firmware PR #5).
+          - Change default L4S Doppler/control step from 250 to 100 Hz, preserving manual 250 Hz configurations and firmware PR #5 compatibility; IC-820 frequency pairs use the dedicated MAIN/SUB transaction above.
           - Improve multi-grid LoTW/Wavelog uploads, own-station corrections, RST defaults and gridless awards, with WAIPA manual review and station-scoped VUCC.
           - Fix matched radar station A local AOS/LOS, pass countdown, satellite markers and QSO logging window.
           - Add receive-source selection persistence and USB fallback when N76 audio is disconnected; retain FT4/JTTY shared audio routing.
           - Repair SatNOGS TLE name parsing and existing cached names with a separate Room database migration 4→5 that preserves the fork's 3→4 schema migration.
-          - Keep Android package cn.ba7opf.look4sat and version name/code 4.4.8-ba7opf.13.18 / 621. This same-version APK requires manual replacement when the updater only compares version numbers.
+          - Keep Android package cn.ba7opf.look4sat and version name/code 4.4.8-ba7opf.13.18 / 621. Build from the full merged source through PR #24. This same-version APK requires manual replacement when the updater only compares version numbers.
 
-          Verification: Android core:domain, core:data and radar unit tests; application Kotlin compilation; signed APK/AAB build; matching release signing certificate; APK alignment, 64-bit/32-bit native ABIs and SHA-256 checks. Firmware PR #5 host simulation and firmware/module build passed separately. Physical handset, CAT/CI-V PTT and RF tests were not performed.
+          Verification: Android core:domain, core:data and radar unit tests including IC-820 swapped MAIN/SUB, CI-V ACK/NAK and CAT reconnect cases; application Kotlin compilation; signed APK/AAB build; matching release signing certificate; APK alignment, 64-bit/32-bit native ABIs and SHA-256 checks. Firmware PR #5 host simulation and firmware/module build passed separately. Physical IC-820 CAT writes, handset and RF tests were not performed.
 
           ## 4.4.8-ba7opf.13.18 — 上游更新验证替换版
 
-          - 保留 IC-820 MAIN 发射／SUB 接收的独立频率和模式控制（PR #19）。
+          - 保留原有 IC-820 CAT 支持（PR #19）；修复保存设置后的连接恢复，并在启动跟踪时自动连接（PR #22）。
+          - 修复 IC-820 CI-V 完整命令回显后短帧头 FB／FA 的事务关联识别；保留真实拒绝应答判断并细化频率操作诊断（PR #23）。
+          - 实现 IC-820 原生 07 B0 MAIN／SUB 交换：把原 SUB 暂时交换到 MAIN 写入接收频率，交换回去后最后写入 MAIN 发射频率，并回读核验双方（PR #24）；07 D1 MAIN 访问及 CI-V 指令序列采用本机型专用处理。
+          - 保持 RTS／DTR 独立可选（默认关闭）、1200 波特 8N1 PL2303 连接、手动选择卫星模式及外部 PTT 的要求（PR #22–#24）。
           - 保留可配置 USB CAT RTS/DTR 及独立的 L4S USB CDC 初始化（PR #19）。
           - 保留 UV-K1／UV-K5 V3 的 USB 接收／CW 发射模式，不自动施加 600 Hz BFO 偏移（PR #20）。
           - 完整合并 atsunatsu/Look4Sat 自 1793a726 至 d4b80126 的 69 个上游提交，保留上游提交祖先关系。
           - 新增 CW 计算器 100／250／500／1000／5000 Hz 可选步进、选项持久化及 ±100 Hz Offset 控件。
-          - 将 L4S 多普勒／控制默认步进由 250 Hz 改为 100 Hz，同时保留手动 250 Hz 配置和独立原子 RX/TX CAT 双频更新（对应固件 PR #5）。
+          - 将 L4S 多普勒／控制默认步进由 250 Hz 改为 100 Hz，保留手动 250 Hz 配置并与固件 PR #5 兼容；IC-820 的双频控制采用上述专用 MAIN／SUB 事务。
           - 改善多网格 LoTW／Wavelog 上传、本站台站信息修正、默认 RST 和无网格奖状计算，并加入 WAIPA 手动审核及按台站区分的 VUCC。
           - 修复匹配雷达本站 AOS／LOS、过境倒计时、卫星标记和 QSO 日志时间窗口。
           - 新增录音源记忆与 N76 音频断开后的 USB 备选输入，同时保留 FT4／JTTY 共享音频路由。
           - 修复 SatNOGS TLE 卫星名称解析及历史缓存，通过独立 Room 数据库 4→5 迁移修复，保留原有 3→4 结构迁移。
-          - 保持 Android 包名 cn.ba7opf.look4sat 及版本名／版本码 4.4.8-ba7opf.13.18 / 621。若更新器仅比较版本号，本次同版本 APK 需手动覆盖安装。
+          - 保持 Android 包名 cn.ba7opf.look4sat 及版本名／版本码 4.4.8-ba7opf.13.18 / 621。以包含 PR #24 在内的完整合并源码构建。若更新器仅比较版本号，本次同版本 APK 需手动覆盖安装。
 
-          验证：Android core:domain、core:data、radar 单元测试，应用 Kotlin 编译，签名 APK／AAB 构建，发布证书一致性、APK 对齐、64／32 位原生 ABI 及 SHA-256 校验。固件 PR #5 的主机仿真及固件／模块构建分别通过。尚未执行实机手台、CAT／CI-V PTT 或射频测试。
+          验证：Android core:domain、core:data、radar 单元测试（包含 IC-820 MAIN／SUB 交换、CI-V ACK／NAK 和 CAT 连接恢复用例）、应用 Kotlin 编译、签名 APK／AAB 构建、发布证书一致性、APK 对齐、64／32 位原生 ABI 及 SHA-256 校验。固件 PR #5 的主机仿真及固件／模块构建分别通过。尚未执行 IC-820 CAT 写频率、手台及射频实机测试。
           NOTES
 
       - name: Archive verified signed release assets
@@ -232,7 +238,7 @@ jobs:
           set -euo pipefail
           gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null
           OLD_SHA=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" --jq '.object.sha')
-          if [[ "$OLD_SHA" != "cf3ac073e02ff1c3df850f3bc8d25ca766de4a7e" && "$OLD_SHA" != "$GITHUB_SHA" ]]; then
+          if [[ "$OLD_SHA" != "53f0064c48d2783034c15979bdd0ab4eabad7f6c" && "$OLD_SHA" != "$GITHUB_SHA" ]]; then
             echo "::error::Release tag source changed to unexpected commit $OLD_SHA"
             exit 1
           fi
@@ -257,7 +263,7 @@ jobs:
             esac
           done < <(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name')
           gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --latest \
-            --title "Look4Sat v$TAG — upstream CW 100 Hz compatibility rebuild" \
+            --title "Look4Sat v$TAG — verified IC-820 CAT and CW 100 Hz replacement" \
             --notes-file dist/RELEASE_NOTES.md
           gh release view "$TAG" --repo "$GITHUB_REPOSITORY" \
             --json url,tagName,isDraft,isPrerelease,assets
@@ -271,7 +277,7 @@ jobs:
           assert len(names)==4 and len([n for n in names if n.endswith('.apk')])==1
           assert len([n for n in names if n.endswith('.aab')])==1
           assert 'SHA256SUMS.txt' in names and 'verification.json' in names
-          assert all('cf3ac073' not in n for n in names)
+          assert all('cf3ac073' not in n and '53f0064c' not in n for n in names)
           print('Replaced same-version release with verified signed assets:',names)
           PY
 

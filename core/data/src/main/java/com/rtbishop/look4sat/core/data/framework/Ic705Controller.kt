@@ -84,6 +84,16 @@ class Ic705Controller(
     /** Small pause after writing a command before reading the response. */
     private val WRITE_SETTLE_MS = 50L
 
+    // IC-820: maintain a confirmed MAIN/SUB orientation and last ACKed pair.
+    // Only the initial transaction and occasional audit require full readback.
+    private var ic820PairReady = false
+    private var ic820LastRxHz: Long? = null
+    private var ic820LastTxHz: Long? = null
+    private var ic820FastSubAccess = false
+    private var ic820FastCycles = 0
+    private val IC820_TUNE_THRESHOLD_HZ = 60L
+    private val IC820_VERIFY_EVERY_CYCLES = 16
+
     @Volatile override var isConnected: Boolean = false
         private set
     override val commandTimeoutMillis get() = if (variant == IcomCivVariant.IC705) 15_000L else 3_000L
@@ -92,6 +102,11 @@ class Ic705Controller(
 
     override suspend fun connect(): Boolean = withContext(Dispatchers.IO) {
         if (isConnected) return@withContext true
+        ic820PairReady = false
+        ic820LastRxHz = null
+        ic820LastTxHz = null
+        ic820FastSubAccess = false
+        ic820FastCycles = 0
         if (deviceAddress.isBlank()) {
             diagnose("connect/invalid", "No radio endpoint configured", ControlDiagnosticSeverity.ERROR)
             return@withContext false
@@ -187,6 +202,11 @@ class Ic705Controller(
             civSession = null
             runCatching { transport.disconnect() }
         } finally {
+            ic820PairReady = false
+            ic820LastRxHz = null
+            ic820LastTxHz = null
+            ic820FastSubAccess = false
+            ic820FastCycles = 0
             duplexModeEnabled = false
             isConnected = false
             Log.i(tag, "Disconnected from $deviceAddress")

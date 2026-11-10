@@ -451,6 +451,7 @@ class Ic705Controller(
      */
     private suspend fun tuneIc820FastLocked(rxHz: Long, txHz: Long?): FrequencyPairResult? {
         if (!ic820PairReady || txHz == null) return null
+        val startedNanos = System.nanoTime()
         if (ic820FastCycles >= IC820_VERIFY_EVERY_CYCLES) {
             if (!ic820FastSubAccess) return null // Legacy swap fallback audits with the full pair.
             val sub = IcomCivProtocol.buildIc820BandAccessCommand(main = false)
@@ -528,7 +529,8 @@ class Ic705Controller(
         ic820FastCycles++
         diagnose("pair/ready",
             "mode=${if (ic820FastSubAccess) "fast-sub-access" else "fast-exchange"} " +
-                "rxUpdated=$updateRx txUpdated=$updateTx targetMainTx=$txHz targetSubRx=$rxHz")
+                "rxUpdated=$updateRx txUpdated=$updateTx targetMainTx=$txHz targetSubRx=$rxHz " +
+                "durationMs=${(System.nanoTime() - startedNanos) / 1_000_000L}")
         return FrequencyPairResult.APPLIED
     }
 
@@ -551,6 +553,7 @@ class Ic705Controller(
                 return@withContext FrequencyPairResult.FAILED
             ioMutex.withLock {
                 tuneIc820FastLocked(rxHz, txHz)?.let { return@withLock it }
+                val startedNanos = System.nanoTime()
                 val mainAccess = IcomCivProtocol.buildIc820BandAccessCommand(main = true)
                 val exchange = IcomCivProtocol.buildIc820MainSubExchangeCommand()
                 var swapped = false
@@ -663,7 +666,8 @@ class Ic705Controller(
                     ic820PairReady = false
                     diagnose("pair/failed", "stage=$failedStage targetMainTx=$txHz targetSubRx=$rxHz " +
                         "oldMain=$oldMain observedMainTx=$finalMain subAfterWrite=$subAfterWrite " +
-                        "finalSubRx=$finalSub exchangeOutstanding=$swapped",
+                        "finalSubRx=$finalSub exchangeOutstanding=$swapped " +
+                        "durationMs=${(System.nanoTime() - startedNanos) / 1_000_000L}",
                         ControlDiagnosticSeverity.ERROR)
                     FrequencyPairResult.FAILED
                 } else {
@@ -671,7 +675,8 @@ class Ic705Controller(
                     ic820LastTxHz = txHz ?: oldMain
                     ic820FastCycles = 0
                     ic820PairReady = true
-                    diagnose("pair/ready", "mode=swapped-main-write-verified targetMainTx=$txHz targetSubRx=$rxHz")
+                    diagnose("pair/ready", "mode=swapped-main-write-verified targetMainTx=$txHz targetSubRx=$rxHz " +
+                        "durationMs=${(System.nanoTime() - startedNanos) / 1_000_000L}")
                     FrequencyPairResult.APPLIED
                 }
             }

@@ -1648,7 +1648,10 @@ class RadioTrackingService(
                                 controlSettings.radioModel == RadioControlSettings.MODEL_ICOM_IC820, desiredRx, desiredTx)
                             result.rxHz?.let { lastSetRx = it; observedRx = it }
                             result.txHz?.let { lastSetTx = it; observedTx = it }
-                            if (!result.success) failTrackingCommand("Preset RX/TX VFO could not be identified or tuned; check the radio preset")
+                            if (!result.success) failTrackingCommand(if (
+                                controlSettings.radioModel == RadioControlSettings.MODEL_ICOM_IC820
+                            ) "IC-820 MAIN TX / SUB RX frequency pair failed readback; check SATL tracking coupling"
+                            else "Preset RX/TX VFO could not be identified or tuned; check the radio preset")
                         } else if (split && tx?.supportsAtomicPair == true && desiredRx != null) {
                             when (tx.setTrackingFrequencies(desiredRx, desiredTx)) {
                                 FrequencyPairResult.APPLIED -> {

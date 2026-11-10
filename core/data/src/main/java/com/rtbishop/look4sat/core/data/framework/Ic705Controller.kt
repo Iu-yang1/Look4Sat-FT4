@@ -436,15 +436,41 @@ class Ic705Controller(
      * Low-latency IC-820 Doppler updates at 1200 baud.
      *
      * The initial pair is fully read back. Thereafter only changed legs are
-     * written, each with a strict FB/FA ACK; every 16 active updates a full
-     * two-band readback audits orientation and SATL coupling. Documented 07 D0
+     * written, each with a strict FB/FA ACK; every 16 active updates a
+     * two-band direct readback audits orientation and SATL coupling. 07 D0
      * SUB access is used only when a read-only probe has verified its band.
      * Otherwise the 07 B0 exchange path remains available.
      *
      * Caller holds ioMutex. null requests the full verified transaction.
      */
     private suspend fun tuneIc820FastLocked(rxHz: Long, txHz: Long?): FrequencyPairResult? {
-        if (!ic820PairReady || txHz == null || ic820FastCycles >= IC820_VERIFY_EVERY_CYCLES) return null
+        if (!ic820PairReady || txHz == null) return null
+        if (ic820FastCycles >= IC820_VERIFY_EVERY_CYCLES) {
+            if (!ic820FastSubAccess) return null // Legacy swap fallback audits with the full pair.
+            val sub = IcomCivProtocol.buildIc820BandAccessCommand(main = false)
+            val main = IcomCivProtocol.buildIc820BandAccessCommand(main = true)
+            var actualRx: Long? = null
+            var actualTx: Long? = null
+            var mainRestored = false
+            val subSelected = sendAndWaitAck(sub)
+            try {
+                if (subSelected) actualRx = readFrequencyLocked()
+            } finally {
+                mainRestored = withContext(NonCancellable) { sendAndWaitAck(main) }
+            }
+            if (mainRestored) actualTx = readFrequencyLocked()
+            if (!subSelected || !mainRestored || actualRx != ic820LastRxHz ||
+                actualTx != ic820LastTxHz) {
+                ic820PairReady = false
+                diagnose("pair/failed", "stage=fast-periodic-readback " +
+                    "expectedSub=$ic820LastRxHz actualSub=$actualRx " +
+                    "expectedMain=$ic820LastTxHz actualMain=$actualTx restoredMain=$mainRestored",
+                    ControlDiagnosticSeverity.ERROR)
+                return FrequencyPairResult.FAILED
+            }
+            ic820FastCycles = 0
+            diagnose("pair/audited", "mode=direct-main-sub-readback rx=$actualRx tx=$actualTx")
+        }
         val updateRx = ic820LastRxHz?.let { kotlin.math.abs(it - rxHz) >= IC820_TUNE_THRESHOLD_HZ } ?: true
         val updateTx = ic820LastTxHz?.let { kotlin.math.abs(it - txHz) >= IC820_TUNE_THRESHOLD_HZ } ?: true
         if (!updateRx && !updateTx) return FrequencyPairResult.APPLIED

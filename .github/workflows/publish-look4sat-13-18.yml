@@ -55,7 +55,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          # sdkmanager consumes a finite number of license answers; yes receives
+          # SIGPIPE on successful completion, which is not an install failure.
+          set +o pipefail
           yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'ndk;26.1.10909125' 'cmake;3.22.1'
+          set -o pipefail
+          test -d "$ANDROID_HOME/ndk/26.1.10909125"
+          test -d "$ANDROID_HOME/cmake/3.22.1"
 
       - name: Set up pinned Rust for FT4 and JTTY
         uses: dtolnay/rust-toolchain@1.98.1

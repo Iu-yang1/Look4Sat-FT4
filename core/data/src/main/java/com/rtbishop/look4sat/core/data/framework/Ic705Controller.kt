@@ -412,6 +412,40 @@ class Ic705Controller(
                         if (oldMain == null) failedStage = "read-original-main"
                     }
 
+                    // MAIN may have been exchanged on the front panel while
+                    // tracking. Align once if it currently holds the RX band:
+                    // without this step, exchanging to update SUB would place
+                    // the VHF TX band on MAIN and a 435 MHz write returns FA.
+                    if (failedStage == null && oldMain != null) {
+                        val rxBand = ic820Band(rxHz)
+                        val txBand = txHz?.let(::ic820Band)
+                        if (ic820Band(oldMain!!) == rxBand && txBand != rxBand) {
+                            val originalMain = oldMain
+                            if (!sendAndWaitAck(exchange)) {
+                                failedStage = "align-main-tx-exchange"
+                            } else {
+                                val selected = sendAndWaitAck(mainAccess)
+                                val alignedMain = if (selected) readFrequencyLocked() else null
+                                if (alignedMain != null && (txBand == null ||
+                                        ic820Band(alignedMain) == txBand)) {
+                                    oldMain = alignedMain
+                                    diagnose("band-align/corrected",
+                                        "initialMain=$originalMain alignedMain=$alignedMain targetTx=$txHz targetRx=$rxHz")
+                                } else {
+                                    val undone = withContext(NonCancellable) {
+                                        sendAndWaitAck(exchange) && sendAndWaitAck(mainAccess)
+                                    }
+                                    diagnose("band-align/failed",
+                                        "initialMain=$originalMain afterSwap=$alignedMain restored=$undone",
+                                        ControlDiagnosticSeverity.ERROR)
+                                    failedStage = "align-main-tx-band"
+                                }
+                            }
+                        } else if (txBand != null && ic820Band(oldMain!!) != txBand) {
+                            failedStage = "unexpected-main-band"
+                        }
+                    }
+
                     // Bring original SUB to the only band used for frequency writes.
                     step("exchange-sub-to-main", exchange)
                     if (failedStage == null) swapped = true

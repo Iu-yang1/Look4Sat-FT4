@@ -414,7 +414,6 @@ class UsbSerialRadioTransport(
         if (!isCp210xLineConfigurationSupported(device.interfaceCount, port.portIndex, serialLine)) return false
         val index = port.portIndex
         if (cp210xOut(connection, CP210X_IFC_ENABLE, 1, index) != 0) return false
-        if (cp210xOut(connection, CP210X_SET_MHS, cp210xModemControl(catRtsOnConnect, cdcDtrOnConnect), index) != 0) return false
         val noFlowControl = ByteArray(CP210X_FLOW_CONTROL_BYTES)
         if (connection.controlTransfer(
                 USB_VENDOR_OUT_INTERFACE,
@@ -442,7 +441,10 @@ class UsbSerialRadioTransport(
                 IO_TIMEOUT_MILLIS
             ) < 0
         ) return false
-        return cp210xOut(connection, CP210X_SET_LINE_CONTROL, serialLine.cp210xLineControl, index) == 0
+        // SET_FLOW can reset manual modem outputs: write the requested levels last.
+        if (cp210xOut(connection, CP210X_SET_LINE_CONTROL, serialLine.cp210xLineControl, index) != 0) return false
+        return cp210xOut(connection, CP210X_SET_MHS,
+            cp210xModemControl(catRtsOnConnect, cdcDtrOnConnect), index) == 0
     }
 
     private fun configureFtdi(
@@ -567,6 +569,7 @@ internal fun ftdiModemControl(rts: Boolean, dtr: Boolean): Int =
 
 internal fun ch34xModemControl(rts: Boolean, dtr: Boolean): Int =
     0xFFFF and ((if (dtr) 0x20 else 0) or (if (rts) 0x40 else 0)).inv()
+
 internal fun usbRadioWriteTimeoutMillis(nativeCdc: Boolean, driver: UsbSerialDriverKind?): Int =
     if (nativeCdc && driver==UsbSerialDriverKind.CDC_ACM) 150 else 1000
 

@@ -395,6 +395,13 @@ class Ic705ControllerTest {
         assertTrue(transport.payloads.contains("05:30:38:96:45:01"))
         assertEquals(145_963_830L, radio.readTxVfoFrequency())
         assertEquals(435_613_490L, radio.readWorkingFrequency())
+        transport.payloads.clear()
+        assertEquals(FrequencyPairResult.APPLIED,
+            radio.setTrackingFrequencies(435_613_570L, 145_963_910L))
+        assertEquals(4, transport.payloads.size)
+        assertFalse(transport.payloads.contains("07:B0"))
+        assertEquals(145_963_910L, radio.readTxVfoFrequency())
+        assertEquals(435_613_570L, radio.readWorkingFrequency())
         radio.disconnect()
     }
 

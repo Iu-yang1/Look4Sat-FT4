@@ -4,13 +4,13 @@ on:
   push:
     branches: [main]
     paths:
-      - .github/workflows/publish-look4sat-13-18.yml
+      - .github/workflows/publish-look4sat-13-19.yml
 
 permissions:
   contents: write
 
 concurrency:
-  group: look4sat-13-18-release
+  group: look4sat-13-19-release
   cancel-in-progress: false
 
 jobs:
@@ -187,7 +187,7 @@ jobs:
       - name: Archive verified signed release assets
         uses: actions/upload-artifact@v4
         with:
-          name: look4sat-13-18-signed-release
+          name: look4sat-13-19-signed-release
           path: |
             dist/*.apk
             dist/*.aab

@@ -112,14 +112,14 @@ jobs:
           BUILD_TOOLS=$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)
           SIGNER_REPORT=$("$BUILD_TOOLS/apksigner" verify --verbose --print-certs "$RELEASE_APK")
           printf '%s\n' "$SIGNER_REPORT"
-          ACTUAL_CERT_SHA=$(printf '%s\n' "$SIGNER_REPORT" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -1 | tr '[:upper:]' '[:lower:]' | tr -d '\r\n ')
+          ACTUAL_CERT_SHA=$(printf '%s\n' "$SIGNER_REPORT" | awk '/certificate SHA-256 digest:/ {print $NF; exit}' | tr '[:upper:]' '[:lower:]')
           keytool -exportcert -noprompt -keystore "$LOOK4SAT_RELEASE_STORE_FILE" -alias "$LOOK4SAT_RELEASE_KEY_ALIAS" -storepass "$LOOK4SAT_RELEASE_STORE_PASSWORD" -file "$RUNNER_TEMP/look4sat-cert.der"
           EXPECTED_CERT_SHA=$(sha256sum "$RUNNER_TEMP/look4sat-cert.der" | awk '{print $1}')
           test -n "$ACTUAL_CERT_SHA"
           test "$ACTUAL_CERT_SHA" = "$EXPECTED_CERT_SHA"
 
           "$BUILD_TOOLS/zipalign" -c -v 4 "$RELEASE_APK"
-          BADGING=$("$BUILD_TOOLS/aapt" dump badging "$RELEASE_APK" | head -n 1)
+          BADGING=$("$BUILD_TOOLS/aapt" dump badging "$RELEASE_APK")
           echo "$BADGING"
           [[ "$BADGING" == *"name='cn.ba7opf.look4sat'"* ]]
           [[ "$BADGING" == *"versionCode='621'"* ]]

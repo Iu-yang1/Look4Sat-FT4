@@ -354,7 +354,11 @@ class Ic705ControllerTest {
     }
 
     @Test
-    fun ic820SerializedControllerForwardsBandAlignmentAndAllowsFull1200BaudInitialization() = runTest {
+    fun ic820SerializedControllerForwardsBandAlignmentAndAllowsFull1200BaudInitialization() = kotlinx.coroutines.runBlocking {
+        val actorScope = kotlinx.coroutines.CoroutineScope(
+            kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Default
+        )
+        try {
         val transport = ScriptedCivTransport(
             civAddress = 0x42, trackFrequencyWrites = true, ic820BandAccess = true,
             initialMainFrequency = 433_000_000L,
@@ -362,7 +366,7 @@ class Ic705ControllerTest {
             rejectCrossBandFrequencyWrites = true
         )
         val delegate = Ic705Controller(null, "USB", 0x42, transport, IcomCivVariant.IC820)
-        val actor = RadioCommandActor(backgroundScope) { _, _ -> }
+        val actor = RadioCommandActor(actorScope) { _, _ -> }
         val radio = SerialRadioController(delegate, actor)
         assertEquals(8_000L, radio.commandTimeoutMillis)
         assertTrue(radio.connect())
@@ -373,6 +377,9 @@ class Ic705ControllerTest {
         assertEquals(FrequencyPairResult.APPLIED,
             radio.setTrackingFrequencies(435_613_490L, 145_963_830L))
         radio.disconnect()
+        } finally {
+            actorScope.coroutineContext[kotlinx.coroutines.Job]?.cancel()
+        }
     }
 
     @Test

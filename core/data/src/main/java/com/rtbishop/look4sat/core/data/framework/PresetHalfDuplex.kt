@@ -17,7 +17,12 @@ internal fun presetHalfDuplexLeg(observed: Long, rxHz: Long?, txHz: Long?): Bool
     return rxDistance < txDistance
 }
 
-/** Band access on IC-820 changes CI-V access only, not RF MAIN/SUB transmit roles. */
+/**
+ * IC-820H uses SUB for RX and MAIN for TX. Select by role, never by
+ * frequency-band guessing: both legs can be tuned independently through 07 D0/D1 + 05.
+ * Verify the final pair after both writes, since the radio's front-panel SAT
+ * tracking can couple the two frequencies even when each CI-V write was ACKed.
+ */
 internal suspend fun tunePresetHalfDuplex(
     radio: IRadioController, ic820: Boolean, rxHz: Long?, txHz: Long?
 ): PresetTuningResult {
@@ -33,21 +38,24 @@ internal suspend fun tunePresetHalfDuplex(
     }
     var appliedTx: Long? = null
     var appliedRx: Long? = null
-    var rxSelected = rxHz == null
+    var successful = true
+    var rxRestored = false
     try {
         if (txHz != null) {
-            if (!radio.setBand(txHz) || !radio.setFrequency(txHz)) return PresetTuningResult(success = false)
-            appliedTx = txHz
+            successful = radio.setTxVfoFrequency(txHz)
+            if (successful) appliedTx = txHz
         }
-        if (rxHz != null) {
-            rxSelected = radio.setBand(rxHz)
-            if (!rxSelected || !radio.setFrequency(rxHz)) return PresetTuningResult(txHz = appliedTx, success = false)
-            appliedRx = rxHz
+        if (successful && rxHz != null) {
+            successful = radio.setWorkingFrequency(rxHz)
+            if (successful) appliedRx = rxHz
         }
+        // An ACK/individual readback is not enough if SATL-N/REV moved the other leg.
+        if (successful && txHz != null) successful = radio.readTxVfoFrequency() == txHz
+        if (successful && rxHz != null) successful = radio.readWorkingFrequency() == rxHz
     } finally {
-        if (!rxSelected && rxHz != null) withContext(NonCancellable) {
-            withTimeoutOrNull(1_500L) { radio.setBand(rxHz) }
+        rxRestored = withContext(NonCancellable) {
+            withTimeoutOrNull(1_500L) { radio.setVfo(vfoA = true) } == true
         }
     }
-    return PresetTuningResult(appliedRx, appliedTx)
+    return PresetTuningResult(appliedRx, appliedTx, successful && rxRestored)
 }

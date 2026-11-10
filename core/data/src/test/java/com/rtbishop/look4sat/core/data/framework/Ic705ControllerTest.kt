@@ -726,6 +726,14 @@ private class ScriptedCivTransport(
                 val acknowledged = (payload.size < 2 && acknowledgeConnect) ||
                     (payload.size >= 2 && (!selectsTx || acknowledgeTxSelection))
                 if (acknowledged && payload.size >= 2) {
+                    if (ic820BandAccess && payload[1] == 0xB0.toByte()) {
+                        val oldMainFrequency = mainFrequency
+                        mainFrequency = subFrequency
+                        subFrequency = oldMainFrequency
+                        val oldMainMode = mainMode
+                        mainMode = subMode
+                        subMode = oldMainMode
+                    }
                     mainSelected = payload[1] == 0x00.toByte() ||
                         payload[1] == (if (ic820BandAccess) 0xD1 else 0xD0).toByte()
                 }

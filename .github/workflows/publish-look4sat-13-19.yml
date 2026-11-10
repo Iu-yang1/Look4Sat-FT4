@@ -1,10 +1,13 @@
 name: Publish Look4Sat 13.19 signed GitHub release
 
+# Publication is manually gated. Never publish from a branch push.
 on:
-  push:
-    branches: [main]
-    paths:
-      - .github/workflows/publish-look4sat-13-19.yml
+  workflow_dispatch:
+    inputs:
+      confirm_publish:
+        description: Type PUBLISH to explicitly authorize the signed 13.19 release
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -15,6 +18,7 @@ concurrency:
 
 jobs:
   publish:
+    if: ${{ inputs.confirm_publish == 'PUBLISH' }}
     runs-on: ubuntu-latest
     timeout-minutes: 180
     env:

@@ -422,6 +422,74 @@ class Ic705Controller(
     }
 
     /**
+     * Low-latency IC-820 Doppler updates at 1200 baud.
+     *
+     * The initial pair is fully read back. Thereafter only changed legs are
+     * written, each with a strict FB/FA ACK; every 16 active updates a full
+     * two-band readback audits orientation and SATL coupling. Documented 07 D0
+     * SUB access is used only when a read-only probe has verified its band.
+     * Otherwise the 07 B0 exchange path remains available.
+     *
+     * Caller holds ioMutex. null requests the full verified transaction.
+     */
+    private suspend fun tuneIc820FastLocked(rxHz: Long, txHz: Long?): FrequencyPairResult? {
+        if (!ic820PairReady || txHz == null || ic820FastCycles >= IC820_VERIFY_EVERY_CYCLES) return null
+        val updateRx = ic820LastRxHz?.let { kotlin.math.abs(it - rxHz) >= IC820_TUNE_THRESHOLD_HZ } ?: true
+        val updateTx = ic820LastTxHz?.let { kotlin.math.abs(it - txHz) >= IC820_TUNE_THRESHOLD_HZ } ?: true
+        if (!updateRx && !updateTx) return FrequencyPairResult.APPLIED
+
+        val main = IcomCivProtocol.buildIc820BandAccessCommand(main = true)
+        val sub = IcomCivProtocol.buildIc820BandAccessCommand(main = false)
+        val exchange = IcomCivProtocol.buildIc820MainSubExchangeCommand()
+        var failed: String? = null
+        var swapped = false
+
+        try {
+            if (updateRx) {
+                val access = if (ic820FastSubAccess) sub else exchange
+                if (!sendAndWaitAck(access)) {
+                    failed = "fast-access-sub"
+                } else if (!ic820FastSubAccess) {
+                    swapped = true
+                    if (!sendAndWaitAck(main)) failed = "fast-select-exchanged-main"
+                }
+                if (failed == null && !sendAndWaitAck(IcomCivProtocol.buildSetFreqCommand(rxHz))) {
+                    failed = "fast-write-sub"
+                }
+            }
+        } finally {
+            if (swapped) {
+                if (withContext(NonCancellable) { sendAndWaitAck(exchange) }) swapped = false
+                else if (failed == null) failed = "fast-restore-band-exchange"
+            }
+            // D0 and B0 both require MAIN access restoration before TX.
+            if (updateRx && !withContext(NonCancellable) { sendAndWaitAck(main) } && failed == null) {
+                failed = "fast-restore-main-access"
+            }
+        }
+        if (failed == null && updateTx) {
+            if (!updateRx && !sendAndWaitAck(main)) failed = "fast-select-main"
+            else if (!sendAndWaitAck(IcomCivProtocol.buildSetFreqCommand(txHz))) failed = "fast-write-main"
+        }
+        if (failed != null || swapped) {
+            ic820PairReady = false
+            if (ic820FastSubAccess && failed == "fast-write-sub") ic820FastSubAccess = false
+            diagnose("pair/failed",
+                "stage=${failed ?: "fast-exchange-unknown"} fast=true directSub=$ic820FastSubAccess " +
+                    "targetMainTx=$txHz targetSubRx=$rxHz exchangeOutstanding=$swapped",
+                ControlDiagnosticSeverity.ERROR)
+            return FrequencyPairResult.FAILED
+        }
+        if (updateRx) ic820LastRxHz = rxHz
+        if (updateTx) ic820LastTxHz = txHz
+        ic820FastCycles++
+        diagnose("pair/ready",
+            "mode=${if (ic820FastSubAccess) "fast-sub-access" else "fast-exchange"} " +
+                "rxUpdated=$updateRx txUpdated=$updateTx targetMainTx=$txHz targetSubRx=$rxHz")
+        return FrequencyPairResult.APPLIED
+    }
+
+    /**
      * IC-820 native MAIN TX / SUB RX tuning using its documented CI-V controls.
      *
      * 07 B0 exchanges the complete MAIN/SUB bands; it is NOT a copy operation.
@@ -439,6 +507,7 @@ class Ic705Controller(
             if (ic820Band(rxHz) == null || (txHz != null && ic820Band(txHz) == null))
                 return@withContext FrequencyPairResult.FAILED
             ioMutex.withLock {
+                tuneIc820FastLocked(rxHz, txHz)?.let { return@withLock it }
                 val mainAccess = IcomCivProtocol.buildIc820BandAccessCommand(main = true)
                 val exchange = IcomCivProtocol.buildIc820MainSubExchangeCommand()
                 var swapped = false
@@ -548,13 +617,18 @@ class Ic705Controller(
                     if (!mainRestored && failedStage == null) failedStage = "restore-main-access"
                 }
                 if (failedStage != null) {
+                    ic820PairReady = false
                     diagnose("pair/failed", "stage=$failedStage targetMainTx=$txHz targetSubRx=$rxHz " +
                         "oldMain=$oldMain observedMainTx=$finalMain subAfterWrite=$subAfterWrite " +
                         "finalSubRx=$finalSub exchangeOutstanding=$swapped",
                         ControlDiagnosticSeverity.ERROR)
                     FrequencyPairResult.FAILED
                 } else {
-                    diagnose("pair/ready", "mode=swapped-main-write targetMainTx=$txHz targetSubRx=$rxHz")
+                    ic820LastRxHz = rxHz
+                    ic820LastTxHz = txHz ?: oldMain
+                    ic820FastCycles = 0
+                    ic820PairReady = true
+                    diagnose("pair/ready", "mode=swapped-main-write-verified targetMainTx=$txHz targetSubRx=$rxHz")
                     FrequencyPairResult.APPLIED
                 }
             }

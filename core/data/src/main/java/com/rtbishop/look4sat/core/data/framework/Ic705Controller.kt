@@ -368,7 +368,11 @@ class Ic705Controller(
                     // physical bands are already configured for the same band.
                     val (restored, originalSub) = ic820WithSubAsMainLocked { readFrequencyLocked() }
                     val matched = restored && originalSub != null && ic820Band(originalSub) == rxBand
-                    ic820FastSubAccess = matched && probeIc820SubAccessLocked(rxBand)
+                    if (matched) {
+                        val available = probeIc820SubAccessLocked(rxBand)
+                            ?: return@withLock false
+                        ic820FastSubAccess = available
+                    } else ic820FastSubAccess = false
                     diagnose(if (matched) "band-align/ready" else "band-align/mismatch",
                         "swapped=false main=$originalMain sub=$originalSub txBand=$txBand rxBand=$rxBand",
                         if (matched) ControlDiagnosticSeverity.INFO else ControlDiagnosticSeverity.ERROR)
@@ -384,7 +388,9 @@ class Ic705Controller(
                 val mainSelected = sendAndWaitAck(main)
                 val alignedMain = if (mainSelected) readFrequencyLocked() else null
                 if (alignedMain != null && ic820Band(alignedMain) == txBand) {
-                    ic820FastSubAccess = probeIc820SubAccessLocked(rxBand)
+                    val available = probeIc820SubAccessLocked(rxBand)
+                        ?: return@withLock false
+                    ic820FastSubAccess = available
                     diagnose("band-align/ready",
                         "swapped=true originalMain=$originalMain alignedMain=$alignedMain txBand=$txBand rxBand=$rxBand")
                     return@withLock true
@@ -400,23 +406,28 @@ class Ic705Controller(
             }
         }
 
-    /** Probe documented 07 D0 SUB access without writing or swapping anything. */
-    private suspend fun probeIc820SubAccessLocked(rxBand: Int): Boolean {
+    /**
+     * A null result means MAIN access could not be restored, which is fatal
+     * to further CAT writes. false means SUB direct access was simply not
+     * supported; the verified 07 B0 exchange path is still usable.
+     */
+    private suspend fun probeIc820SubAccessLocked(rxBand: Int): Boolean? {
         val sub = IcomCivProtocol.buildIc820BandAccessCommand(main = false)
         val main = IcomCivProtocol.buildIc820BandAccessCommand(main = true)
         var frequency: Long? = null
         val entered = sendAndWaitAck(sub)
+        var mainRestored = false
         try {
             if (entered) frequency = readFrequencyLocked()
         } finally {
-            // MAIN must be selected for all following TX commands.
-            if (!sendAndWaitAck(main)) {
-                diagnose("band-align/sub-access", "Unable to restore MAIN after SUB probe",
-                    ControlDiagnosticSeverity.ERROR)
-                return false
-            }
+            mainRestored = withContext(NonCancellable) { sendAndWaitAck(main) }
         }
-        val supported = entered && frequency != null && ic820Band(frequency!!) == rxBand
+        if (!mainRestored) {
+            diagnose("band-align/sub-access", "Unable to restore MAIN after SUB probe",
+                ControlDiagnosticSeverity.ERROR)
+            return null
+        }
+        val supported = entered && frequency != null && ic820Band(frequency) == rxBand
         diagnose("band-align/sub-access", "available=$supported selectedSub=$frequency")
         return supported
     }

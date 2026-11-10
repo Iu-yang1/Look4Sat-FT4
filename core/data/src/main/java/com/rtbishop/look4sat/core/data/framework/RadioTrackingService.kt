@@ -159,6 +159,7 @@ class RadioTrackingService(
 
     override suspend fun applyRadioControlSettings(settings:RadioControlSettings):Boolean=connectionMutex.withLock connection@ {
         var reconnectRequired=false
+        var wasConnected=false
         val accepted=transmitMutex.withLock edit@ {
             val current = _state.value
             val remote = txController?.remoteState?.value ?: current.remoteRadio
@@ -187,6 +188,7 @@ class RadioTrackingService(
             // Saving CAT configuration is not a frequency edit. It must not depend on
             // an attached USB device, a closed radio menu or a profile-store ACK.
             val old=settingsRepo.radioControlSettings.value
+            wasConnected=connected
             reconnectRequired=old.radioModel!=settings.radioModel || old.catTransport!=settings.catTransport ||
                 old.txRadioAddress!=settings.txRadioAddress || old.rxRadioAddress!=settings.rxRadioAddress ||
                 old.baudRate!=settings.baudRate || old.civAddress!=settings.civAddress ||
@@ -204,6 +206,12 @@ class RadioTrackingService(
         }
         if(accepted && reconnectRequired) {
             try { disconnectRadiosLocked() } finally { pendingControls.decrementAndGet() }
+            // Applying new USB/CAT settings must not silently strand a live connection.
+            // Do not reconnect a radio the operator previously left disconnected.
+            if(wasConnected && settings.enabled && settings.catTransport != RadioControlSettings.TRANSPORT_VOX) {
+                diagnose("connect/settings-reopen", "Reopening CAT after configuration change")
+                connectRadiosLocked()
+            }
         }
         accepted
     }

@@ -1,0 +1,60 @@
+name: Audit upstream 20.3 merge conflicts
+
+on:
+  push:
+    branches:
+      - sync/upstream-20261110-100hz
+    paths:
+      - .github/workflows/sync-upstream-l4s-audit.yml
+
+permissions:
+  contents: read
+
+jobs:
+  merge-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Attempt exact Git 3-way merge (dry-run)
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "Look4Sat upstream audit"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git fetch --no-tags https://github.com/atsunatsu/Look4Sat.git d4b80126b5cc44fa45b0e6591dbb6a759f9f4512
+          UPSTREAM=FETCH_HEAD
+          echo "BASE $(git merge-base HEAD "$UPSTREAM")"
+          echo "OURS $(git rev-parse HEAD)"
+          echo "THEIRS $(git rev-parse "$UPSTREAM")"
+          set +e
+          git merge --no-commit --no-ff "$UPSTREAM" >/tmp/merge.log 2>&1
+          rc=$?
+          set -e
+          echo '--- MERGE STATUS ---'
+          cat /tmp/merge.log
+          echo "MERGE_RC=$rc"
+          echo '--- UNMERGED FILES ---'
+          git diff --name-only --diff-filter=U
+          echo '--- 3-WAY CONFLICT COUNT ---'
+          git diff --name-only --diff-filter=U | wc -l
+          echo '--- CONFLICT CONTEXT CW / frequency / CAT ---'
+          for f in feature/radar/src/main/java/com/rtbishop/look4sat/feature/radar/CwConsole.kt feature/radar/src/main/java/com/rtbishop/look4sat/feature/radar/TransceiversPage.kt core/data/src/main/java/com/rtbishop/look4sat/core/data/framework/L4sController.kt core/data/src/main/java/com/rtbishop/look4sat/core/data/framework/RadioTrackingService.kt core/domain/src/main/java/com/rtbishop/look4sat/core/domain/repository/RemoteRadioState.kt; do
+            if git diff --name-only --diff-filter=U | grep -Fxq "$f"; then
+              echo "CONFLICT $f"
+              grep -n -A 13 -B 5 '^<<<<<<< ' "$f" | head -240 || true
+            else
+              echo "NO_CONFLICT $f"
+            fi
+          done
+          mkdir -p /tmp/upstream-audit
+          cp /tmp/merge.log /tmp/upstream-audit/merge.log
+          git diff --name-only --diff-filter=U > /tmp/upstream-audit/conflicts.txt
+          git status --short > /tmp/upstream-audit/status.txt
+          echo "Audit completed. No merge commit or branch push."
+      - name: Archive dry-run merge audit
+        uses: actions/upload-artifact@v4
+        with:
+          name: upstream-20-3-dry-run
+          path: /tmp/upstream-audit/

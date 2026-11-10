@@ -335,28 +335,45 @@ class Ic705Controller(
             if (ic820Band(rxHz) == null || (txHz != null && ic820Band(txHz) == null))
                 return@withContext FrequencyPairResult.FAILED
             ioMutex.withLock {
-                var verified = true
+                var failedStage: String? = null
+                var observedTx: Long? = null
+                var observedRx: Long? = null
                 var rxRestored = false
                 try {
                     if (txHz != null) {
-                        verified = sendAndWaitAck(IcomCivProtocol.buildIc820BandAccessCommand(main = true)) &&
-                            sendAndWaitAck(IcomCivProtocol.buildSetFreqCommand(txHz))
+                        if (!sendAndWaitAck(IcomCivProtocol.buildIc820BandAccessCommand(main = true)))
+                            failedStage = "select-main"
+                        else if (!sendAndWaitAck(IcomCivProtocol.buildSetFreqCommand(txHz)))
+                            failedStage = "write-main-frequency"
                     }
-                    if (verified) {
-                        verified = sendAndWaitAck(IcomCivProtocol.buildIc820BandAccessCommand(main = false)) &&
-                            sendAndWaitAck(IcomCivProtocol.buildSetFreqCommand(rxHz)) &&
-                            readFrequencyLocked() == rxHz
+                    if (failedStage == null) {
+                        if (!sendAndWaitAck(IcomCivProtocol.buildIc820BandAccessCommand(main = false)))
+                            failedStage = "select-sub"
+                        else if (!sendAndWaitAck(IcomCivProtocol.buildSetFreqCommand(rxHz)))
+                            failedStage = "write-sub-frequency"
+                        else {
+                            observedRx = readFrequencyLocked()
+                            if (observedRx != rxHz) failedStage = "read-sub-frequency"
+                        }
                     }
-                    if (verified && txHz != null) {
-                        verified = sendAndWaitAck(IcomCivProtocol.buildIc820BandAccessCommand(main = true)) &&
-                            readFrequencyLocked() == txHz
+                    if (failedStage == null && txHz != null) {
+                        if (!sendAndWaitAck(IcomCivProtocol.buildIc820BandAccessCommand(main = true)))
+                            failedStage = "reselect-main"
+                        else {
+                            observedTx = readFrequencyLocked()
+                            if (observedTx != txHz) failedStage = "read-main-frequency"
+                        }
                     }
                 } finally {
-                    rxRestored = withContext(NonCancellable) {
-                        restoreRxVfo()
-                    }
+                    rxRestored = withContext(NonCancellable) { restoreRxVfo() }
                 }
-                if (verified && rxRestored) FrequencyPairResult.APPLIED else FrequencyPairResult.FAILED
+                if (failedStage != null || !rxRestored) {
+                    diagnose("pair/failed", "stage=${failedStage ?: "restore-sub"} " +
+                        "targetMainTx=$txHz targetSubRx=$rxHz " +
+                        "readMainTx=$observedTx readSubRx=$observedRx restoredSub=$rxRestored",
+                        ControlDiagnosticSeverity.ERROR)
+                    FrequencyPairResult.FAILED
+                } else FrequencyPairResult.APPLIED
             }
         }
 

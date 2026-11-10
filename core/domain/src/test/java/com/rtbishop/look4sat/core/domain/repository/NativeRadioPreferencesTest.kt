@@ -21,7 +21,11 @@ class NativeRadioPreferencesTest {
         assertEquals(10L,normalizeL4sStep(1));assertEquals(250L,normalizeL4sStep(259))
     }
     @Test fun default100HzControlQuantumKeepsIndependentRxTxAndTenHzCorrections() {
-        assertEquals(100L, RadioControlSettings().l4sDopplerStepHz)
+        assertEquals(100L, RadioControlSettings(
+            enabled = true, radioModel = RadioControlSettings.MODEL_QUANSHENG_UVK1,
+            txRadioAddress = "", rxRadioAddress = "", txRadioName = "", rxRadioName = "",
+            baudRate = 9600
+        ).l4sDopplerStepHz)
         assertEquals(435100000L, l4sTrackingTarget(435100049L, 0L, 100L))
         assertEquals(435100100L, l4sTrackingTarget(435100050L, 0L, 100L))
         assertEquals(435100110L, l4sTrackingTarget(435100050L, 10L, 100L))

@@ -131,6 +131,25 @@ class RadioTrackingServiceTest {
         assertEquals("split-modes:USB:CW",tx.operations.last {it.startsWith("split-modes:")})
         fixture.close()
     }
+    @Test fun l4sCwTransponderAndManualModesReflectUsbReceiveCwTransmit()=runTest {
+        for(model in listOf(RadioControlSettings.MODEL_QUANSHENG_UVK1,
+            RadioControlSettings.MODEL_QUANSHENG_UVK5V3)) {
+            val tx=FakeRadioController(remote=remoteFixtureState())
+            val fixture=Fixture(backgroundScope,tx,FakeRadioController(),
+                radioModel=model,splitMode=true,transport=RadioControlSettings.TRANSPORT_USB)
+            fixture.service.connectRadios()
+            fixture.service.setTransponder(fixture.transponder);runCurrent()
+            assertEquals("USB",fixture.service.state.value.rxMode)
+            assertEquals("CW",fixture.service.state.value.txMode)
+
+            fixture.service.setMode("CW","CW");runCurrent()
+            assertEquals("split-modes:USB:CW",tx.operations.last {it.startsWith("split-modes:")})
+            assertEquals("USB",fixture.service.state.value.rxMode)
+            assertEquals("CW",fixture.service.state.value.txMode)
+            fixture.close()
+        }
+    }
+
     @Test fun n76UsesAtomicNativeTrackingAndDoesNotApplyTheL4s250HzQuantizer() = runTest {
         val remote = remoteFixtureState().also { flow ->
             flow.value = flow.value.copy(capabilities = flow.value.capabilities!!.copy(

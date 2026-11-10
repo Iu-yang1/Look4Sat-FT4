@@ -235,6 +235,35 @@ class Ic705ControllerTest {
     }
 
     @Test
+    fun ic820FrequencyPairAcceptsSingleFeAckOnlyAfterAnExactSubAccessEcho() = runTest {
+        val transport = ScriptedCivTransport(
+            civAddress = 0x42, trackFrequencyWrites = true, ic820BandAccess = true,
+            shortPreambleAckAfterSubEcho = true
+        )
+        val radio = Ic705Controller(null, "USB", 0x42, transport, IcomCivVariant.IC820)
+        assertTrue(radio.connect())
+        transport.payloads.clear()
+        assertEquals(FrequencyPairResult.APPLIED,
+            radio.setTrackingFrequencies(435_100_000L, 145_900_000L))
+        assertTrue(transport.payloads.contains("07:D0"))
+        radio.disconnect()
+    }
+
+    @Test
+    fun ic820FrequencyPairStillRejectsAnExplicitNakAfterSuccessfulBandSelection() = runTest {
+        val transport = ScriptedCivTransport(
+            civAddress = 0x42, ic820BandAccess = true,
+            shortPreambleAckAfterSubEcho = true, acknowledgeSetFrequency = false,
+            rejectSetFrequencyWithNak = true
+        )
+        val radio = Ic705Controller(null, "USB", 0x42, transport, IcomCivVariant.IC820)
+        assertTrue(radio.connect())
+        assertEquals(FrequencyPairResult.FAILED,
+            radio.setTrackingFrequencies(435_100_000L, 145_900_000L))
+        radio.disconnect()
+    }
+
+    @Test
     fun ic820AtomicFrequencyPairRejectsSatelliteCouplingAndRestoresReceiveAccess() = runTest {
         val transport = ScriptedCivTransport(
             civAddress = 0x42, trackFrequencyWrites = true, ic820BandAccess = true,
@@ -650,7 +679,9 @@ private class ScriptedCivTransport(
     private val coupleBandFrequencyWrites: Boolean = false,
     private val frequencyPayloadOverride: ByteArray? = null,
     private val rejectIc910Fm04: Boolean = false,
-    private val pttReadbackOverride: Boolean? = null
+    private val pttReadbackOverride: Boolean? = null,
+    private val shortPreambleAckAfterSubEcho: Boolean = false,
+    private val rejectSetFrequencyWithNak: Boolean = false
 ) : RadioTransport {
     companion object { val instances = mutableListOf<ScriptedCivTransport>() }
     init { instances += this }
@@ -698,7 +729,9 @@ private class ScriptedCivTransport(
                     mainSelected = payload[1] == 0x00.toByte() ||
                         payload[1] == (if (ic820BandAccess) 0xD1 else 0xD0).toByte()
                 }
-                if (acknowledged) replies += ack()
+                if (acknowledged) replies += if (shortPreambleAckAfterSubEcho &&
+                    payload.getOrNull(1) == 0xD0.toByte())
+                    bytes + ack().copyOfRange(1, 6) else ack()
             }
             0x03 -> {
                 val frequency = if (mainSelected || (!trackFrequencyWrites && !ic820BandAccess)) mainFrequency else subFrequency
@@ -717,7 +750,7 @@ private class ScriptedCivTransport(
                     } else if (mainSelected) mainFrequency = frequency else subFrequency = frequency
                 }
                 replies += ack()
-            }
+            } else if (rejectSetFrequencyWithNak) replies += response(0xFA)
             0x0F -> if (payload.size >= 2) {
                 splitMode = payload[1] == 1.toByte()
                 replies += ack()

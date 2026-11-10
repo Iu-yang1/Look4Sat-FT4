@@ -354,6 +354,28 @@ class Ic705ControllerTest {
     }
 
     @Test
+    fun ic820SerializedControllerForwardsBandAlignmentAndAllowsFull1200BaudInitialization() = runTest {
+        val transport = ScriptedCivTransport(
+            civAddress = 0x42, trackFrequencyWrites = true, ic820BandAccess = true,
+            initialMainFrequency = 433_000_000L,
+            initialSubFrequency = 145_900_000L,
+            rejectCrossBandFrequencyWrites = true
+        )
+        val delegate = Ic705Controller(null, "USB", 0x42, transport, IcomCivVariant.IC820)
+        val actor = RadioCommandActor(backgroundScope) { _, _ -> }
+        val radio = SerialRadioController(delegate, actor)
+        assertEquals(8_000L, radio.commandTimeoutMillis)
+        assertTrue(radio.connect())
+        transport.payloads.clear()
+        assertTrue(radio.prepareSatelliteBands(435_613_490L, 145_963_830L))
+        assertTrue(transport.payloads.contains("07:B0"))
+        assertEquals(145_900_000L, radio.readTxVfoFrequency())
+        assertEquals(FrequencyPairResult.APPLIED,
+            radio.setTrackingFrequencies(435_613_490L, 145_963_830L))
+        radio.disconnect()
+    }
+
+    @Test
     fun ic820Reversed433MHzMainIsAlignedBeforeWriting435MHzSubForSatelliteTracking() = runTest {
         val transport = ScriptedCivTransport(
             civAddress = 0x42, trackFrequencyWrites = true, ic820BandAccess = true,

@@ -24,7 +24,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 import com.rtbishop.look4sat.core.data.database.entity.SatEntry
 import com.rtbishop.look4sat.core.data.database.entity.SatRadio
 
-@Database(entities = [SatEntry::class, SatRadio::class], version = 4, exportSchema = false)
+@Database(entities = [SatEntry::class, SatRadio::class], version = 5, exportSchema = false)
 abstract class Look4SatDb : RoomDatabase() {
     abstract fun look4SatDao(): Look4SatDao
 }
@@ -91,7 +91,7 @@ val MIGRATION_3_4 = object : Migration(3, 4) {
 /** Repairs names saved by older SatNOGS TLE imports. Parsing now strips the optional
  *  "0 " line-zero marker, but existing rows survive app upgrades without a refresh.
  *  Update only the name column so ephemerides, selections and transceivers are preserved. */
-val MIGRATION_3_4 = object : Migration(3, 4) {
+val MIGRATION_4_5 = object : Migration(4, 5) {
     override fun migrate(db: SupportSQLiteDatabase) {
         db.execSQL("UPDATE entries SET name = substr(name, 3) WHERE name LIKE '0 %'")
     }

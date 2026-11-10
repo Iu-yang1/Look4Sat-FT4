@@ -1475,6 +1475,7 @@ class RadioTrackingService(
     // A cycle and a settings change own the same lock as transmit preparation.
     // During PTT, hold both CAT legs and suppress dial-change detection.
     private suspend fun runPresetSingleTracking(transponder: SatRadio, initialTxBaseFreqHz: Long?) {
+        val radio = txController ?: return failTrackingInitialization("No CAT radio is connected")
         transmitMutex.withLock {
             val txBase = if (transponder.uplinkLow == null) null else initialTxBaseFreqHz ?: transponder.uplinkCenterFrequency()
             val rxBase = transponder.downlinkLow

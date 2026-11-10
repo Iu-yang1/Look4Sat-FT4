@@ -31,6 +31,7 @@ import com.rtbishop.look4sat.core.data.database.Look4SatDb
 import com.rtbishop.look4sat.core.data.database.MIGRATION_1_2
 import com.rtbishop.look4sat.core.data.database.MIGRATION_2_3
 import com.rtbishop.look4sat.core.data.database.MIGRATION_3_4
+import com.rtbishop.look4sat.core.data.database.MIGRATION_4_5
 import com.rtbishop.look4sat.core.data.database.QsoDatabase
 import com.rtbishop.look4sat.core.data.database.QSO_MIGRATION_1_2
 import com.rtbishop.look4sat.core.data.database.QSO_MIGRATION_2_3
@@ -317,7 +318,7 @@ class MainContainer(private val context: Context) : IMainContainer {
     private fun provideLocalSource(): ILocalSource {
         val builder = Room.databaseBuilder(context, Look4SatDb::class.java, "Look4SatDBv400")
         val database = builder
-            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
             .fallbackToDestructiveMigration(false)
             .build()
         return LocalSource(database.look4SatDao())

@@ -588,12 +588,18 @@ class Ic705Controller(
         }
         if (!write(cmd)) return false
         delay(WRITE_SETTLE_MS)
-        val buf = drainWithTimeout(responseTimeoutMs) {
-            IcomCivProtocol.ackStatus(it, civAddress) != null
-        }
-        val ok = IcomCivProtocol.ackStatus(buf, civAddress) == true
-        if (!ok) reportReplyFailure(cmd, buf)
-        return ok
+        val echoed = addressCommand(cmd)
+        fun ackStatus(buf: ByteArray): Boolean? =
+            if (variant == IcomCivVariant.IC820)
+                IcomCivProtocol.ackStatusAfterEcho(buf, civAddress, echoed)
+            else IcomCivProtocol.ackStatus(buf, civAddress)
+        val buf = drainWithTimeout(responseTimeoutMs) { ackStatus(it) != null }
+        val standardAck = IcomCivProtocol.ackStatus(buf, civAddress)
+        val status = ackStatus(buf)
+        if (standardAck == null && status != null)
+            diagnose("reply/echo-recovered", "command=${commandHex(cmd)} status=${if (status) "FB" else "FA"} one-FE preamble after exact echo", ControlDiagnosticSeverity.WARNING)
+        if (status != true) reportReplyFailure(cmd, buf, status)
+        return status == true
     }
 
     /**
@@ -633,9 +639,11 @@ class Ic705Controller(
         return response?.payload
     }
 
-    private fun reportReplyFailure(cmd: ByteArray, buf: ByteArray) {
+    private fun reportReplyFailure(
+        cmd: ByteArray, buf: ByteArray, ackResult: Boolean? = IcomCivProtocol.ackStatus(buf, civAddress)
+    ) {
         val stage = when {
-            IcomCivProtocol.ackStatus(buf, civAddress) == false -> "reply/rejected"
+            ackResult == false -> "reply/rejected"
             !isConnected || !transport.isConnected -> "reply/disconnected"
             else -> "reply/timeout"
         }

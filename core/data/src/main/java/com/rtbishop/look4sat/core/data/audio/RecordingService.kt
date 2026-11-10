@@ -51,8 +51,13 @@ internal class RecordingService(
         val wlan=if(config.radioAudio.backend==RadioAudioBackend.ICOM_WLAN)
             listOf(RecordingSource("wlan","IC-705 WLAN",RecordingSourceKind.WLAN)) else emptyList()
         // A disconnected N76 or WLAN source must not hide available USB / microphone inputs.
-        val localInputs=local.inputDevices.value
+        val devices=local.inputDevices.value
             .filter {(it.external && it.type!=AudioDeviceInfo.TYPE_BLUETOOTH_SCO) || it.type==AudioDeviceInfo.TYPE_BUILTIN_MIC}
+        val configured=if(config.radioAudio.backend==RadioAudioBackend.ANDROID_DEVICE &&
+            config.radioAudio.rxDeviceKey.isNotBlank())
+            devices.filter {it.key==config.radioAudio.rxDeviceKey}
+        else devices
+        val localInputs=configured
             .distinctBy {if(it.type==AudioDeviceInfo.TYPE_BUILTIN_MIC) "phone-microphone" else it.key}
             .map {RecordingSource(it.key,it.name,
                 if(it.external) RecordingSourceKind.DEVICE else RecordingSourceKind.MICROPHONE)}

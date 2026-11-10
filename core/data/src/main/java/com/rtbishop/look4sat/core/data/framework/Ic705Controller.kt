@@ -325,6 +325,56 @@ class Ic705Controller(
     override val supportsAtomicPair: Boolean get() = variant == IcomCivVariant.IC820
 
     /**
+     * Physical MAIN can be either VHF or UHF on the IC-820. In SATL operation
+     * MAIN transmits and SUB receives, so do not assign modes until MAIN is on
+     * the desired TX band. CI-V 07 B0 exchanges those two physical roles.
+     */
+    override suspend fun prepareSatelliteBands(rxHz: Long, txHz: Long): Boolean =
+        withContext(Dispatchers.IO) {
+            if (variant != IcomCivVariant.IC820) return@withContext true
+            val txBand = ic820Band(txHz) ?: return@withContext false
+            val rxBand = ic820Band(rxHz) ?: return@withContext false
+            val main = IcomCivProtocol.buildIc820BandAccessCommand(main = true)
+            val swap = IcomCivProtocol.buildIc820MainSubExchangeCommand()
+            ioMutex.withLock {
+                if (!sendAndWaitAck(main)) return@withLock false
+                val originalMain = readFrequencyLocked() ?: return@withLock false
+                if (ic820Band(originalMain) == txBand) {
+                    // Checking SUB prevents a misleading ready state when both
+                    // physical bands are already configured for the same band.
+                    val (restored, originalSub) = ic820WithSubAsMainLocked { readFrequencyLocked() }
+                    val matched = restored && originalSub != null && ic820Band(originalSub) == rxBand
+                    diagnose(if (matched) "band-align/ready" else "band-align/mismatch",
+                        "swapped=false main=$originalMain sub=$originalSub txBand=$txBand rxBand=$rxBand",
+                        if (matched) ControlDiagnosticSeverity.INFO else ControlDiagnosticSeverity.ERROR)
+                    return@withLock matched
+                }
+                if (ic820Band(originalMain) != rxBand || rxBand == txBand) {
+                    diagnose("band-align/mismatch",
+                        "main=$originalMain txBand=$txBand rxBand=$rxBand",
+                        ControlDiagnosticSeverity.ERROR)
+                    return@withLock false
+                }
+                if (!sendAndWaitAck(swap)) return@withLock false
+                val mainSelected = sendAndWaitAck(main)
+                val alignedMain = if (mainSelected) readFrequencyLocked() else null
+                if (alignedMain != null && ic820Band(alignedMain) == txBand) {
+                    diagnose("band-align/ready",
+                        "swapped=true originalMain=$originalMain alignedMain=$alignedMain txBand=$txBand rxBand=$rxBand")
+                    return@withLock true
+                }
+                val restored = withContext(NonCancellable) {
+                    val undo = sendAndWaitAck(swap)
+                    undo && sendAndWaitAck(main)
+                }
+                diagnose("band-align/failed",
+                    "originalMain=$originalMain afterSwap=$alignedMain restored=$restored",
+                    ControlDiagnosticSeverity.ERROR)
+                false
+            }
+        }
+
+    /**
      * IC-820 native MAIN TX / SUB RX tuning using its documented CI-V controls.
      *
      * 07 B0 exchanges the complete MAIN/SUB bands; it is NOT a copy operation.

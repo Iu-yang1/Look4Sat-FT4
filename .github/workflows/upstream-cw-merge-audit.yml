@@ -1,44 +1,62 @@
-name: Audit upstream merge preserving CW and L4S frequency control
+name: Integrate all upstream commits with reviewed CW conflict resolutions
 on:
   push:
     branches: [integration/upstream-20261110-cw100]
     paths:
       - .github/workflows/upstream-cw-merge-audit.yml
 permissions:
-  contents: read
+  contents: write
 jobs:
-  audit:
+  merge:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Git three-way merge and conflict report
+      - name: Three-way merge of all 69 commits and resolve reviewed hunks
         shell: bash
         run: |
           set -euo pipefail
           git remote add upstream https://github.com/atsunatsu/Look4Sat.git
           git fetch --no-tags --depth=100 upstream d4b80126b5cc44fa45b0e6591dbb6a759f9f4512
-          git config user.name 'Look4Sat Upstream Audit'
-          git config user.email 'github-actions[bot]@users.noreply.github.com'
-          mkdir -p mergerpt
           set +e
-          git -c merge.conflictStyle=diff3 merge --no-commit --no-ff FETCH_HEAD > mergerpt/merge-output.txt 2>&1
-          result=$?
+          git -c merge.conflictStyle=diff3 merge --no-commit --no-ff FETCH_HEAD
+          merge_status=$?
           set -e
-          echo "MERGE_RESULT=$result"
-          cat mergerpt/merge-output.txt
-          git diff --name-only --diff-filter=U | tee mergerpt/conflicted-files.txt
-          printf 'UNMERGED_COUNT=%s\n' "$(wc -l < mergerpt/conflicted-files.txt)"
-          printf 'AUTO_MERGED_FILES=%s\n' "$(git diff --cached --name-only | wc -l)"
-          while IFS= read -r file; do
-            echo "### CONFLICT FILE: $file"
-            awk '/^<<<<<<< /{inside=1; count=0} inside{print;count++} /^>>>>>>> /{inside=0; print "---"} count>=65 {inside=0;print "[conflict truncated]"}' "$file" | head -n 170 || true
-          done < mergerpt/conflicted-files.txt
-          git diff --cached --name-only > mergerpt/auto-merged-paths.txt
-      - name: Upload merge audit
-        uses: actions/upload-artifact@v4
-        with:
-          name: upstream-merge-audit
-          path: mergerpt/
+          if [[ $merge_status != 0 && -z "$(git diff --name-only --diff-filter=U)" ]]; then
+            echo "::error::Merge failed without resolvable conflicts"
+            exit 1
+          fi
+          python3 tools/resolve-upstream-20261110.py
+          git add -A
+          if [[ -n "$(git ls-files -u)" ]]; then
+            echo "::error::Conflicted index entries remain"
+            git ls-files -u
+            exit 1
+          fi
+          git diff --cached --check
+          if git grep -n -E '^(<<<<<<< |=======$|>>>>>>> )' -- '*.kt' '*.xml' '*.c' '*.h' '*.toml'; then
+            echo "::error::Unresolved conflict markers found"
+            exit 1
+          fi
+          printf 'Merge parent commits:\n'
+          git rev-parse HEAD FETCH_HEAD
+          git diff --cached --stat | tail -45
+      - name: Sign the upstream merge commit and push integration branch
+        shell: bash
+        env:
+          PUSH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          git config user.name "Look4Sat integration bot"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          gpg --batch --pinentry-mode loopback --passphrase '' \
+            --quick-generate-key 'Look4Sat integration bot <github-actions[bot]@users.noreply.github.com>' ed25519 sign 0
+          signing_key=$(gpg --list-secret-keys --with-colons --keyid-format LONG | awk -F: '$1=="sec" { print $5; exit }')
+          test -n "$signing_key"
+          git config user.signingkey "$signing_key"
+          git config commit.gpgsign true
+          git commit -S -m 'merge: integrate atsunatsu upstream through d4b80126 preserving CW, CAT and logbook fixes'
+          git show -s --format='%H %P %G?' HEAD
+          git push origin HEAD:refs/heads/integration/upstream-20261110-cw100

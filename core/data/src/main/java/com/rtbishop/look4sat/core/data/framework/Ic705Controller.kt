@@ -96,7 +96,13 @@ class Ic705Controller(
 
     @Volatile override var isConnected: Boolean = false
         private set
-    override val commandTimeoutMillis get() = if (variant == IcomCivVariant.IC705) 15_000L else 3_000L
+    override val commandTimeoutMillis get() = when (variant) {
+        IcomCivVariant.IC705 -> 15_000L
+        // Full initial 1200-baud MAIN/SUB verification exceeds the generic 3 s actor budget.
+        // Fast steady-state transactions still return immediately on each FB/FA reply.
+        IcomCivVariant.IC820 -> 8_000L
+        else -> 3_000L
+    }
 
     // ── Connection ──────────────────────────────────────────────────────────
 

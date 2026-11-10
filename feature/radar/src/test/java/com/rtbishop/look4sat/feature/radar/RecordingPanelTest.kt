@@ -39,13 +39,11 @@ class RecordingPanelTest {
     private fun exercise(dark:Boolean) {
         val recorder=Recorder();val visible=mutableStateOf(true)
         compose.setContent {MainTheme(isDarkTheme=dark) {if(visible.value) RecordingPanel("RS-44",10,recorder,maxElevation=87.8) {visible.value=false}}}
-        compose.onNodeWithText("Start recording").assertIsNotEnabled()
-        compose.onNodeWithText("IC-705 WLAN").performClick()
         compose.onNodeWithText("Start recording").assertIsEnabled().performClick()
         compose.onNodeWithText("Stop recording").assertExists()
         compose.runOnIdle {assertEquals(1,recorder.starts);assertEquals(RecordingRequest("wlan","RS-44",10,87.8),recorder.lastRequest);visible.value=false}
         compose.runOnIdle {assertEquals(0,recorder.stops);assertTrue(recorder.state.value.active)}
     }
     @Test fun dismissingDarkPanelDoesNotStopBackgroundRecording()=exercise(true)
-    @Test fun lightPanelRequiresExplicitReceiveSource()=exercise(false)
+    @Test fun lightPanelSelectsAvailableReceiveSourceAutomatically()=exercise(false)
 }

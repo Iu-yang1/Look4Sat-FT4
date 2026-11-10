@@ -178,7 +178,7 @@ data class RadioControlSettings(
     /** Optional spacing between commands sharing one physical CAT connection. */
     val sharedBusCommandDelayMillis: Long = 0L,
     /** L4S tracking/control quantum, distinct from the radio's 10 Hz hardware resolution. */
-    val l4sDopplerStepHz: Long = 250L,
+    val l4sDopplerStepHz: Long = 100L,
     val l4sCorrectionEditStepHz: Long = 10L,
     val n76BluetoothAudio: Boolean = false,
     val n76Options: N76ControlOptions = N76ControlOptions(),

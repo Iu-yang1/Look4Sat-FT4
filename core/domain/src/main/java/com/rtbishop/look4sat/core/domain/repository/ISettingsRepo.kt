@@ -151,15 +151,19 @@ interface ISettingsRepo {
     /** Confirmed satellite QSOs grouped by worked 4-char gridsquare (map tap detail). */
     fun getWorkedGridQsos(): Map<String, List<com.rtbishop.look4sat.core.domain.model.GridQso>>
     fun setWorkedGridQsos(qsos: Map<String, List<com.rtbishop.look4sat.core.domain.model.GridQso>>)
+    /** User-confirmed WAIPA province assignments, keyed by stable QSO fingerprint. */
+    fun getWaipaManualOverrides(): Map<String, String> = emptyMap()
+    fun setWaipaManualOverrides(overrides: Map<String, String>) = Unit
     /** Distinct 4-char gridsquares the account operated from (LoTW <MY_GRIDSQUARE>). */
     fun getRoamedGrids(): Set<String>
     fun setRoamedGrids(grids: Set<String>)
     /** VUCC map's operated-station selection; empty means All. Grid-set IDs are source-independent. */
     fun getVuccSelectedStationIds(): Set<String>
     fun setVuccSelectedStationIds(ids: Set<String>)
-    /** Stations the user marked as "want to contact" in unworked gridsquares
-     *  (grid -> ordered list of marks; the first is the pinned/top one). The
-     *  whole grid clears automatically once it becomes worked. */
+    /** Stations the user marked as "want to contact" in gridsquares
+     *  (grid -> ordered list of marks; first is pinned/top). Marks with a
+     *  stationIds scope clear only when that grid is worked in that scope;
+     *  empty stationIds preserves the legacy/All behavior. */
     fun getMarkedGridStations(): Map<String, List<com.rtbishop.look4sat.core.domain.model.MarkedStation>>
     fun setMarkedGridStations(stations: Map<String, List<com.rtbishop.look4sat.core.domain.model.MarkedStation>>)
     //endregion

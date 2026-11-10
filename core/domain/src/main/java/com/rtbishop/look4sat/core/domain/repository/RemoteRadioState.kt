@@ -100,7 +100,7 @@ data class RemoteRadioState(
     val nativeRxCorrectionHz: Long = 0,
     val nativeTxCorrectionHz: Long = 0,
     val nativeSquelch: Int? = null,
-    val nativeStepHz: Long = 250,
+    val nativeStepHz: Long = 100,
     val nativeProfileGeneration: Long? = null,
     val nativeProfileCapacity: Int? = null,
     val profileStore:RadioProfileStoreStatus?=null,

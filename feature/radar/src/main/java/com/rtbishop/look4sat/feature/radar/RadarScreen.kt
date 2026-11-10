@@ -333,17 +333,29 @@ private fun RadarScreen(
                 )
             }
     }
-    val timeNow = System.currentTimeMillis()
-    val trackBPosition = mutualData.trackSamples
-        .filter { it.time <= timeNow }
-        .lastOrNull()
-        ?.let {
-            OrbitalPos(
-                azimuth = it.azimuthB * PI / 180.0,
-                elevation = it.elevationB * PI / 180.0,
-                time = it.time
-            )
-        }
+    // Prefer the actual, per-second position at station B. Sample-only legacy
+    // sessions lack coordinates: do not hold their last above-horizon sample
+    // forever once the mutual pass has ended.
+    val trackBPosition = if (
+        mutualData.stationBLatitude != null && mutualData.stationBLongitude != null
+    ) {
+        uiState.oppositeStationPos
+    } else {
+        val timeNow = uiState.orbitalPos?.time ?: System.currentTimeMillis()
+        mutualData.trackSamples
+            .takeIf {
+                isWithinMatchedRadarWindow(timeNow, mutualData.startTime to mutualData.endTime)
+            }
+            ?.lastOrNull { it.time <= timeNow }
+            ?.takeIf { it.elevationB > 0.0 }
+            ?.let {
+                OrbitalPos(
+                    azimuth = it.azimuthB * PI / 180.0,
+                    elevation = it.elevationB * PI / 180.0,
+                    time = it.time
+                )
+            }
+    }
     val context = LocalContext.current
     var showMatchDialog by rememberSaveable { mutableStateOf(false) }
     var showToolsMenu by remember { mutableStateOf(false) }
@@ -415,7 +427,7 @@ private fun RadarScreen(
                 // carry weight(1f), so side by side they split the width into two halves.
                 TopBar {
                     IconCard(action = navigateUp, resId = R.drawable.ic_back)
-                    TimerRow(timeString = uiState.currentTime, isTimeAos = uiState.isTimeAos)
+                    TimerRow(timeString = uiState.currentTime, isTimeAos = uiState.isTimeAos, isEnded = uiState.isPassEnded)
                     toolsMenu()
                 }
                 TopBar {
@@ -430,7 +442,7 @@ private fun RadarScreen(
             } else {
                 TopBar {
                     IconCard(action = navigateUp, resId = R.drawable.ic_back)
-                    TimerRow(timeString = uiState.currentTime, isTimeAos = uiState.isTimeAos)
+                    TimerRow(timeString = uiState.currentTime, isTimeAos = uiState.isTimeAos, isEnded = uiState.isPassEnded)
                     NextPassRow(pass = upcomingPass, modifier = Modifier.weight(1f), isUtc = uiState.isUtc)
                     toolsMenu()
                 }
@@ -635,6 +647,11 @@ private fun RadarActionsMenu(
                 label = stringResource(R.string.nav_map),
                 enabled = hasPass,
                 onClick = onMap
+            )
+            RadarToolMenuItem(
+                iconRes = R.drawable.ic_recording,
+                label = stringResource(if (recordingActive) R.string.recording_active else R.string.recording_title),
+                onClick = onRecording
             )
         }
     }

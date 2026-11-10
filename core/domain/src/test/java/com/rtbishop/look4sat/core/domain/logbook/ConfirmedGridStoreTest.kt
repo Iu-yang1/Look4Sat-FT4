@@ -46,7 +46,8 @@ class ConfirmedGridStoreTest {
             band = "2M", rxBand = "70CM", lotwQslDate = "20260909", country = "Japan", comment = "Portable contact"
         )
         val decoded = AdifCodec.decode(AdifCodec.encode(listOf(record))).single()
-        assertEquals(record.copy(theirFullGrids = listOf("PM74AB"), myFullGrids = listOf("PM74", "PM75")), decoded)
+        assertEquals(record.copy(theirFullGrids = listOf("PM74AB"), myFullGrids = listOf("PM74", "PM75"),
+            sentReport = "599", receivedReport = "599"), decoded)
         assertFalse(AdifCodec.encode(listOf(record)).contains("FT4"))
     }
 

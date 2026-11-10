@@ -31,7 +31,7 @@ class L4sController(
     private val scope: CoroutineScope,
     private val dispatcher: CoroutineDispatcher = Dispatchers.IO,
     private val diagnostics: IControlDiagnostics = NoOpControlDiagnostics,
-    private val tuningStepHz: () -> Long = {250L},
+    private val tuningStepHz: () -> Long = {100L},
     private val correctionStepHz:()->Long={10L},
     private val newSession: () -> Long = { (SecureRandom().nextInt().toLong() and 0xffffffffL).coerceAtLeast(1) }
 ) : IRadioController {

@@ -1,5 +1,6 @@
 package com.rtbishop.look4sat.feature.radar
 
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.test.*
@@ -40,7 +41,7 @@ class CalculatorReferenceUiTest {
                     onTuningChange={tunings+=it})
             }
         }
-        val format=if(nominal) "%.3f" else "%.6f"
+        val format=if(nominal) "%.4f" else "%.6f"
         fun assertFrequency(tag: String, hz: Long) {
             compose.onNodeWithTag(tag).assertTextEquals(String.format(java.util.Locale.ENGLISH,format,hz/1e6))
         }
@@ -76,6 +77,78 @@ class CalculatorReferenceUiTest {
 
     @Test fun trackingCalculatorUpdatesBothReferencesWithoutAutomaticallyRetuning()=exercise(false)
     @Test fun cwCalculatorUsesTheSameReferencesAndKeepsNominalTuningAcrossDopplerChanges()=exercise(true)
+
+    @Test fun cwStepSelectorSupportsQuarterKilohertzAndSnapsTheVisibleFrequency() {
+        val step = mutableLongStateOf(1_000L)
+        val reference = CalculatorReference(145962000, 435057000)
+        compose.setContent {
+            MainTheme(isDarkTheme = true) {
+                DopplerFrequencyCalculator(
+                    radio, OrbitalPos(), initialTxBaseHz = reference.txHz,
+                    reference = reference, displayNominalFrequencies = true,
+                    frequencyStepHz = step.longValue,
+                    onFrequencyStepChange = { step.longValue = it }
+                )
+            }
+        }
+        compose.onNodeWithTag("calculatorTxFrequency").assertTextEquals("145.962")
+        compose.onNodeWithTag("cwCalculatorStepSelector").performClick()
+        compose.onNodeWithTag("cwCalculatorStepOption250").performClick()
+        compose.onNodeWithTag("calculatorTxFrequency").assertTextEquals("145.96200")
+        compose.onAllNodesWithText("+").onFirst().performClick()
+        compose.onNodeWithTag("calculatorTxFrequency").assertTextEquals("145.96225")
+        compose.onNodeWithTag("cwCalculatorStepSelector").performClick()
+        compose.onNodeWithTag("cwCalculatorStepOption5000").performClick()
+        compose.onNodeWithTag("calculatorTxFrequency").assertTextEquals("145.960")
+        compose.runOnIdle { assertEquals(5_000L, step.longValue) }
+    }
+
+    @Test fun cwOffsetStepperChangesOffsetAndRecalculatesTheDownlink() {
+        val offset = mutableStateOf("2.5")
+        val pair = mutableStateOf(0L to 0L)
+        compose.setContent {
+            MainTheme(isDarkTheme = true) {
+                DopplerFrequencyCalculator(
+                    radio, OrbitalPos(),
+                    offsetKHz = offset.value,
+                    onOffsetChange = { offset.value = it },
+                    initialTxBaseHz = 145962000,
+                    reference = CalculatorReference(145962000, 435057000, 2500),
+                    displayNominalFrequencies = true,
+                    onFrequencyChange = { tx, rx -> pair.value = tx to rx },
+                    onFrequencyStepChange = {}
+                )
+            }
+        }
+        compose.onNodeWithTag("cwCalculatorOffsetInput").assertTextEquals("2.5")
+        compose.onNodeWithTag("cwCalculatorOffsetIncrease").performClick()
+        compose.onNodeWithTag("cwCalculatorOffsetInput").assertTextEquals("2.6")
+        compose.onNodeWithTag("calculatorRxFrequency").assertTextEquals("435.0571")
+        compose.waitUntil(timeoutMillis = 3_000) { pair.value.second == 435057100L }
+        compose.runOnIdle { assertEquals(435057100L, pair.value.second) }
+
+        compose.onNodeWithTag("cwCalculatorOffsetDecrease").performClick()
+        compose.onNodeWithTag("cwCalculatorOffsetInput").assertTextEquals("2.5")
+        compose.onNodeWithTag("calculatorRxFrequency").assertTextEquals("435.0570")
+        compose.waitUntil(timeoutMillis = 3_000) { pair.value.second == 435057000L }
+    }
+
+    @Test fun offsetStepperUsesExactTenthKilohertzStepsAndClampsAtTheLimits() {
+        assertEquals("0.1", adjustCalculatorOffset("", increase = true))
+        assertEquals("-0.1", adjustCalculatorOffset("", increase = false))
+        assertEquals("2.6", adjustCalculatorOffset("2.5", increase = true))
+        assertEquals("2.4", adjustCalculatorOffset("2.5", increase = false))
+        assertEquals("10000", adjustCalculatorOffset("9999.9", increase = true))
+        assertEquals("-10000", adjustCalculatorOffset("-9999.9", increase = false))
+    }
+
+    @Test fun calculatorStepRoundingSupportsEveryCwStep() {
+        for ((step, _) in CW_CALCULATOR_FREQUENCY_STEPS) {
+            val snapped = snapCalculatorFrequency(145_962_310L, step)
+            assertEquals(0L, snapped % step)
+            assertTrue(kotlin.math.abs(snapped - 145_962_310L) <= step / 2)
+        }
+    }
 
     @Test fun reopeningTrackingCalculatorAfterEditingBasesDoesNotRestoreTheOldFrequencies() {
         val visible=mutableStateOf(true)

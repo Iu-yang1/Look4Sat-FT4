@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="recording_microphone_required">请允许麦克风权限以录制此输入</string>
+</resources>

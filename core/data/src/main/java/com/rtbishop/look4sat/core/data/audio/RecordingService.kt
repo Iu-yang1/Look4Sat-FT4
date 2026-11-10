@@ -46,14 +46,22 @@ internal class RecordingService(
 
     override fun sources(): List<RecordingSource> {
         val config=settings.radioControlSettings.value
-        if(config.enabled && config.radioModel==RadioControlSettings.MODEL_VERO_N76)
-            return listOf(RecordingSource("n76","N76",RecordingSourceKind.N76))
-        if(config.radioAudio.backend==RadioAudioBackend.ICOM_WLAN)
-            return listOf(RecordingSource("wlan","IC-705 WLAN",RecordingSourceKind.WLAN))
-        return local.inputDevices.value.filter {(it.external && it.type!=AudioDeviceInfo.TYPE_BLUETOOTH_SCO) || it.type==AudioDeviceInfo.TYPE_BUILTIN_MIC}
-            .filter { config.radioAudio.backend!=RadioAudioBackend.ANDROID_DEVICE || it.key==config.radioAudio.rxDeviceKey }
-            .distinctBy { if(it.type==AudioDeviceInfo.TYPE_BUILTIN_MIC) "phone-microphone" else it.key }
-            .map {RecordingSource(it.key,it.name,if(it.external) RecordingSourceKind.DEVICE else RecordingSourceKind.MICROPHONE)}
+        val n76=if(config.enabled && config.radioModel==RadioControlSettings.MODEL_VERO_N76)
+            listOf(RecordingSource("n76","N76",RecordingSourceKind.N76)) else emptyList()
+        val wlan=if(config.radioAudio.backend==RadioAudioBackend.ICOM_WLAN)
+            listOf(RecordingSource("wlan","IC-705 WLAN",RecordingSourceKind.WLAN)) else emptyList()
+        // A disconnected N76 or WLAN source must not hide available USB / microphone inputs.
+        val devices=local.inputDevices.value
+            .filter {(it.external && it.type!=AudioDeviceInfo.TYPE_BLUETOOTH_SCO) || it.type==AudioDeviceInfo.TYPE_BUILTIN_MIC}
+        val configured=if(config.radioAudio.backend==RadioAudioBackend.ANDROID_DEVICE &&
+            config.radioAudio.rxDeviceKey.isNotBlank())
+            devices.filter {it.key==config.radioAudio.rxDeviceKey}
+        else devices
+        val localInputs=configured
+            .distinctBy {if(it.type==AudioDeviceInfo.TYPE_BUILTIN_MIC) "phone-microphone" else it.key}
+            .map {RecordingSource(it.key,it.name,
+                if(it.external) RecordingSourceKind.DEVICE else RecordingSourceKind.MICROPHONE)}
+        return n76 + wlan + localInputs
     }
     @Synchronized override fun start(request: RecordingRequest) {
         if(state.value.active) return

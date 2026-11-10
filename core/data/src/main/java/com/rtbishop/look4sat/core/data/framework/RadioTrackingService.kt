@@ -1472,15 +1472,25 @@ class RadioTrackingService(
         transmitMutex.withLock {
             val txBase = if (transponder.uplinkLow == null) null else initialTxBaseFreqHz ?: transponder.uplinkCenterFrequency()
             val rxBase = transponder.downlinkLow
+            val ic820 = settingsRepo.radioControlSettings.value.radioModel == RadioControlSettings.MODEL_ICOM_IC820
+            val txMode = controlUplinkMode(transponder)
+            val rxMode = controlDownlinkMode(transponder, txMode)
+            // The IC-820H controls TX on MAIN and RX on SUB through CI-V band access.
+            // Do not change ordinary split or the operator's SATL-N/REV front-panel mode.
+            if (ic820 && !radio.setSplitModes(rxMode, txMode)) {
+                return failTrackingInitialization("IC-820 MAIN/SUB modes were not acknowledged")
+            }
             if (nativeBaseOverride == null && rxBase != null) {
                 val offset = if (DopplerFrequencyCalculator.isLinearTransponder(transponder))
                     DopplerFrequencyCalculator.parseOffsetHz(settingsRepo.getSatelliteOffset(transponder.catnum ?: 0)) else 0L
                 nativeBaseOverride = com.rtbishop.look4sat.core.domain.repository.RadioBaseFrequencies(rxBase + offset, txBase)
             }
             _state.update { it.copy(isActive = true, trackingPhase = TrackingPhase.READY,
-                txMode = controlUplinkMode(transponder), rxMode = controlDownlinkMode(transponder, controlUplinkMode(transponder)),
+                txMode = txMode, rxMode = rxMode,
                 txBaseFrequencyHz = if(nativeBaseOverride!=null) nativeBaseOverride?.txHz else txBase) }
-            diagnose("tracking/ready", "mode=single-radio-preset; radio owns TX/RX mode and VFO selection")
+            diagnose("tracking/ready", if (ic820)
+                "mode=ic820-main-tx-sub-rx; independent CI-V band access"
+                else "mode=single-radio-preset; radio owns TX/RX mode and VFO selection")
         }
         runTrackingLoop(split = true, presetSingle = true)
     }

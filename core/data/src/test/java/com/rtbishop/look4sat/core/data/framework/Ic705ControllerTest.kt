@@ -436,8 +436,10 @@ class Ic705ControllerTest {
         transport.payloads.clear()
         assertEquals(FrequencyPairResult.APPLIED,
             radio.setTrackingFrequencies(435_101_360L, 145_901_360L))
-        assertTrue(transport.payloads.count { it == "03" } >= 3)
-        assertTrue(transport.payloads.count { it == "07:B0" } >= 4)
+        assertEquals(2, transport.payloads.count { it == "03" })
+        assertFalse(transport.payloads.contains("07:B0"))
+        assertEquals(listOf("07:D0", "03", "07:D1", "03"), transport.payloads.take(4))
+        assertEquals(8, transport.payloads.size)
         radio.disconnect()
     }
 

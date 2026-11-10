@@ -211,6 +211,10 @@ class RadioTrackingService(
     // ── Connection ──────────────────────────────────────────────────────────
 
     override suspend fun connectRadios() {
+        val settings = settingsRepo.radioControlSettings.value
+        diagnose("connect/request", "model=${settings.radioModel} transport=${settings.catTransport} " +
+            "enabled=${settings.enabled} split=${settings.splitMode} " +
+            "txConfigured=${settings.txRadioAddress.isNotBlank()} rxConfigured=${settings.rxRadioAddress.isNotBlank()}")
         if (!connecting.compareAndSet(false, true)) {
             diagnose("connect/skipped", "Connection attempt already in progress")
             return
@@ -1475,7 +1479,8 @@ class RadioTrackingService(
     // A cycle and a settings change own the same lock as transmit preparation.
     // During PTT, hold both CAT legs and suppress dial-change detection.
     private suspend fun runPresetSingleTracking(transponder: SatRadio, initialTxBaseFreqHz: Long?) {
-        val radio = txController ?: return failTrackingInitialization("No CAT radio is connected")
+        val radio = txController?.takeIf { it.isConnected }
+            ?: return failTrackingInitialization("No CAT radio is connected")
         transmitMutex.withLock {
             val txBase = if (transponder.uplinkLow == null) null else initialTxBaseFreqHz ?: transponder.uplinkCenterFrequency()
             val rxBase = transponder.downlinkLow

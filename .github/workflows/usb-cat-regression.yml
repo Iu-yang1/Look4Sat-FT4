@@ -3,6 +3,7 @@ on:
   push:
     branches:
       - 'fix/uvk1-usb-reconnect-*'
+      - 'fix/ic820-auto-align-main-sub-bands-*'
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -27,10 +28,10 @@ jobs:
       - name: Compile Android and run radio reconnect tests
         run: ./gradlew --no-daemon :core:domain:test :core:data:testDebugUnitTest :feature:radar:testDebugUnitTest :app:compileDebugKotlin
       - name: Run aislop code quality review of PR changes
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' || startsWith(github.ref, 'refs/heads/fix/ic820-auto-align-main-sub-bands-')
         continue-on-error: true
         env:
-          BASE_BRANCH: ${{ github.base_ref }}
+          BASE_BRANCH: ${{ github.base_ref || 'main' }}
         run: |
           git fetch origin "$BASE_BRANCH" --depth=1
           npx --yes aislop@latest scan --changes --base "origin/$BASE_BRANCH" --json > "$RUNNER_TEMP/aislop-report.json"

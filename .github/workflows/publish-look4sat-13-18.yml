@@ -1,0 +1,218 @@
+name: Publish Look4Sat 13.18 signed GitHub release
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/publish-look4sat-13-18.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: look4sat-13-18-release
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: 4.4.8-ba7opf.13.18
+      VERSION_CODE: "621"
+      LOOK4SAT_RELEASE_STORE_PASSWORD: ${{ secrets.KEY_STORE_PASSWORD }}
+      LOOK4SAT_RELEASE_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+      LOOK4SAT_RELEASE_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+    steps:
+      - name: Checkout exact release source
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+
+      - name: Verify version and release uniqueness
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -Fq 'appVersionCode = "621"' gradle/libs.versions.toml
+          grep -Fq 'appVersionName = "4.4.8-ba7opf.13.18"' gradle/libs.versions.toml
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::error::Release already exists; refusing to replace any published assets."
+            exit 1
+          fi
+
+      - name: Configure Java and Gradle
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Install pinned native Android toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'ndk;26.1.10909125' 'cmake;3.22.1'
+
+      - name: Set up pinned Rust for FT4 and JTTY
+        uses: dtolnay/rust-toolchain@1.98.1
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android
+
+      - name: Check CW templates
+        run: python3 tools/check-cw-template-icu.py
+
+      - name: Prepare release signing
+        shell: bash
+        env:
+          KEY_STORE_BASE64: ${{ secrets.KEY_STORE }}
+        run: |
+          set -euo pipefail
+          for name in KEY_STORE_BASE64 LOOK4SAT_RELEASE_STORE_PASSWORD LOOK4SAT_RELEASE_KEY_ALIAS LOOK4SAT_RELEASE_KEY_PASSWORD; do
+            if [[ -z "${!name:-}" ]]; then
+              echo "::error::Missing release signing secret: $name"
+              exit 1
+            fi
+          done
+          printf '%s' "$KEY_STORE_BASE64" | base64 --decode > "$RUNNER_TEMP/look4sat-release.jks"
+          echo "LOOK4SAT_RELEASE_STORE_FILE=$RUNNER_TEMP/look4sat-release.jks" >> "$GITHUB_ENV"
+
+      - name: Run Android regression and assemble signed APK and AAB
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./gradlew --no-daemon :core:data:testDebugUnitTest :app:compileDebugKotlin :app:assembleRelease :app:bundleRelease
+
+      - name: Verify app identity, signing certificate, native ABIs and checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t APK_FILES < <(find app/build/outputs/apk/release -maxdepth 1 -type f -name '*.apk')
+          mapfile -t AAB_FILES < <(find app/build/outputs/bundle/release -maxdepth 1 -type f -name '*.aab')
+          test "${#APK_FILES[@]}" -eq 1
+          test "${#AAB_FILES[@]}" -eq 1
+          mkdir -p dist
+          SHORT_SHA="${GITHUB_SHA:0:8}"
+          RELEASE_APK="$PWD/dist/Look4Sat-FT4-$TAG-$SHORT_SHA-release.apk"
+          RELEASE_AAB="$PWD/dist/Look4Sat-FT4-$TAG-$SHORT_SHA-release.aab"
+          cp "${APK_FILES[0]}" "$RELEASE_APK"
+          cp "${AAB_FILES[0]}" "$RELEASE_AAB"
+          echo "RELEASE_APK=$RELEASE_APK" >> "$GITHUB_ENV"
+          echo "RELEASE_AAB=$RELEASE_AAB" >> "$GITHUB_ENV"
+
+          BUILD_TOOLS=$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)
+          SIGNER_REPORT=$("$BUILD_TOOLS/apksigner" verify --verbose --print-certs "$RELEASE_APK")
+          printf '%s\n' "$SIGNER_REPORT"
+          ACTUAL_CERT_SHA=$(printf '%s\n' "$SIGNER_REPORT" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -1 | tr '[:upper:]' '[:lower:]' | tr -d '\r\n ')
+          keytool -exportcert -noprompt -keystore "$LOOK4SAT_RELEASE_STORE_FILE" -alias "$LOOK4SAT_RELEASE_KEY_ALIAS" -storepass "$LOOK4SAT_RELEASE_STORE_PASSWORD" -file "$RUNNER_TEMP/look4sat-cert.der"
+          EXPECTED_CERT_SHA=$(sha256sum "$RUNNER_TEMP/look4sat-cert.der" | awk '{print $1}')
+          test -n "$ACTUAL_CERT_SHA"
+          test "$ACTUAL_CERT_SHA" = "$EXPECTED_CERT_SHA"
+
+          "$BUILD_TOOLS/zipalign" -c -v 4 "$RELEASE_APK"
+          BADGING=$("$BUILD_TOOLS/aapt" dump badging "$RELEASE_APK" | head -n 1)
+          echo "$BADGING"
+          [[ "$BADGING" == *"name='cn.ba7opf.look4sat'"* ]]
+          [[ "$BADGING" == *"versionCode='621'"* ]]
+          [[ "$BADGING" == *"versionName='4.4.8-ba7opf.13.18'"* ]]
+          jarsigner -verify "$RELEASE_AAB" > "$RUNNER_TEMP/aab-signature-check.log"
+          python3 - <<'PY'
+          import os, pathlib, zipfile
+          apk = pathlib.Path(os.environ['RELEASE_APK']) if 'RELEASE_APK' in os.environ else next(pathlib.Path('dist').glob('*.apk'))
+          assert 100_000 < apk.stat().st_size < 250_000_000, 'Unexpected APK size'
+          with zipfile.ZipFile(apk) as z:
+              names=set(z.namelist())
+              for abi in ('arm64-v8a','armeabi-v7a'):
+                  assert f'lib/{abi}/liblook4sat_ft4.so' in names, f'Missing {abi} native library'
+          print('APK ABIs verified')
+          PY
+          (cd dist && sha256sum *.apk *.aab > SHA256SUMS.txt)
+          (cd dist && sha256sum --check SHA256SUMS.txt)
+          python3 - <<'PY'
+          import hashlib, json, os, pathlib
+          directory=pathlib.Path('dist')
+          files=sorted(directory.glob('*.apk'))+sorted(directory.glob('*.aab'))
+          report={'tag':'4.4.8-ba7opf.13.18', 'version_code':621,
+                  'source_commit':os.environ['GITHUB_SHA'],
+                  'signing_certificate_verified':True, 'apk_alignment_verified':True,
+                  'aab_signature_verified':True, 'native_abis':['arm64-v8a','armeabi-v7a'],
+                  'assets':{p.name:{'size_bytes':p.stat().st_size,
+                                    'sha256':hashlib.sha256(p.read_bytes()).hexdigest()} for p in files}}
+          (directory/'verification.json').write_text(json.dumps(report,indent=2,ensure_ascii=False)+'\n',encoding='utf-8')
+          PY
+
+      - name: Run aislop review on release changes
+        continue-on-error: true
+        shell: bash
+        run: |
+          npx --yes aislop@latest scan --changes --base HEAD~3 --json > dist/aislop-report.json
+          test -s dist/aislop-report.json
+
+      - name: Write bilingual release notes
+        shell: bash
+        run: |
+          cat > dist/RELEASE_NOTES.md <<'NOTES'
+          ## 4.4.8-ba7opf.13.18
+
+          - Add IC-820 independent MAIN TX / SUB RX CI-V mode and frequency tracking with readback validation (PR #19).
+          - Add separately configurable and persisted USB CAT RTS and DTR lines for CDC ACM, CP210x, FTDI, CH34x and PL2303; native L4S CDC initialization remains independent (PR #19).
+          - Adapt UV-K1 / UV-K5 V3 L4S satellite CW to effective USB receive / CW transmit; no automatic 600 Hz receive-frequency or BFO offset (PR #20).
+          - Preserve atomic RX/TX frequency-pair updates, per-leg Doppler corrections, and the firmware's MAIN TX / DUAL RX channel ownership (PR #20).
+          - Advance Android version name/code to 4.4.8-ba7opf.13.18 / 621.
+
+          Verification: PR #19 and #20 Android compilation and unit-test CI passed. This release workflow runs core:data unit tests, Android compilation, signed APK/AAB assembly, package/version and signer-certificate checks, two native ABI checks, APK alignment and SHA-256 asset verification. No physical radio, PTT or RF tests were performed.
+
+          ## 4.4.8-ba7opf.13.18
+
+          - 为 IC-820 增加独立 MAIN 发射／SUB 接收的 CI-V 模式与频率跟踪，并进行回读核验（PR #19）。
+          - 为 CDC ACM、CP210x、FTDI、CH34x 和 PL2303 增加可分别配置并持久化的 USB CAT RTS、DTR 控制；原生 L4S CDC 初始化保持独立（PR #19）。
+          - 适配 UV-K1／UV-K5 V3 固件的卫星 CW：USB 接收、CW 发射；不自动施加 600 Hz 接收频率或 BFO 偏移（PR #20）。
+          - 保留原子 RX/TX 频率对、双路多普勒补偿，以及固件 MAIN TX / DUAL RX 的信道归属机制（PR #20）。
+          - Android 版本名／版本码升级为 4.4.8-ba7opf.13.18 / 621。
+
+          验证：PR #19 和 #20 的 Android 编译及单元测试 CI 已通过。本次发布工作流运行 core:data 单元测试、Android 编译、签名 APK／AAB 构建、包名／版本与证书核验、两个原生 ABI 核验、APK 对齐及 SHA-256 文件校验。未执行实体电台、PTT 或射频测试。
+          NOTES
+
+      - name: Archive verified signed release assets
+        uses: actions/upload-artifact@v4
+        with:
+          name: look4sat-13-18-signed-release
+          path: |
+            dist/*.apk
+            dist/*.aab
+            dist/SHA256SUMS.txt
+            dist/verification.json
+            dist/RELEASE_NOTES.md
+            dist/aislop-report.json
+          if-no-files-found: error
+
+      - name: Create signed-version Git tag and publish release
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::error::Refusing to replace an existing published release."
+            exit 1
+          fi
+          TAG_SHA=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" --jq '.object.sha' 2>/dev/null || true)
+          if [[ -n "$TAG_SHA" && "$TAG_SHA" != "$GITHUB_SHA" ]]; then
+            echo "::error::Existing tag points to a different commit: $TAG_SHA"
+            exit 1
+          fi
+          if [[ -z "$TAG_SHA" ]]; then
+            gh api --method POST "repos/$GITHUB_REPOSITORY/git/refs" -f "ref=refs/tags/$TAG" -f "sha=$GITHUB_SHA"
+          fi
+          gh release create "$TAG" "$RELEASE_APK" "$RELEASE_AAB" dist/SHA256SUMS.txt dist/verification.json \
+            --repo "$GITHUB_REPOSITORY" --verify-tag --latest \
+            --title "Look4Sat v$TAG — CAT + L4S firmware compatibility" \
+            --notes-file dist/RELEASE_NOTES.md
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json url,tagName,isDraft,isPrerelease,assets
+
+      - name: Remove temporary release credentials
+        if: always()
+        shell: bash
+        run: |
+          rm -f "$RUNNER_TEMP/look4sat-release.jks" "$RUNNER_TEMP/look4sat-cert.der"

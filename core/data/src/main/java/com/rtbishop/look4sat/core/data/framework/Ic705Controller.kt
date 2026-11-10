@@ -325,9 +325,16 @@ class Ic705Controller(
     override val supportsAtomicPair: Boolean get() = variant == IcomCivVariant.IC820
 
     /**
-     * One serialized IC-820 frequency-pair transaction. 07 D1 selects TX MAIN,
-     * 07 D0 selects RX SUB. Confirm both frequencies after the last write:
-     * front-panel satellite tracking may change the other frequency as a side effect.
+     * IC-820 native MAIN TX / SUB RX tuning using its documented CI-V controls.
+     *
+     * 07 B0 exchanges the complete MAIN/SUB bands; it is NOT a copy operation.
+     * With the original SUB temporarily on MAIN, 05 can set the RX frequency.
+     * Exchange back, then write the original MAIN TX frequency LAST. Check both
+     * actual frequencies after the final write, since front-panel SATL tracking
+     * may move the other side as a side effect.
+     *
+     * 07 D0 direct SUB access is deliberately avoided in this transaction:
+     * real 1200-baud IC-820 traces have returned ambiguous ACK/NG there.
      */
     override suspend fun setTrackingFrequencies(rxHz: Long, txHz: Long?): FrequencyPairResult =
         withContext(Dispatchers.IO) {
@@ -335,45 +342,90 @@ class Ic705Controller(
             if (ic820Band(rxHz) == null || (txHz != null && ic820Band(txHz) == null))
                 return@withContext FrequencyPairResult.FAILED
             ioMutex.withLock {
+                val mainAccess = IcomCivProtocol.buildIc820BandAccessCommand(main = true)
+                val exchange = IcomCivProtocol.buildIc820MainSubExchangeCommand()
+                var swapped = false
                 var failedStage: String? = null
-                var observedTx: Long? = null
-                var observedRx: Long? = null
-                var rxRestored = false
+                var oldMain: Long? = null
+                var finalMain: Long? = null
+                var subAfterWrite: Long? = null
+                var finalSub: Long? = null
+
+                suspend fun step(stage: String, command: ByteArray) {
+                    if (failedStage == null && !sendAndWaitAck(command)) failedStage = stage
+                }
+
                 try {
-                    if (txHz != null) {
-                        if (!sendAndWaitAck(IcomCivProtocol.buildIc820BandAccessCommand(main = true)))
-                            failedStage = "select-main"
-                        else if (!sendAndWaitAck(IcomCivProtocol.buildSetFreqCommand(txHz)))
-                            failedStage = "write-main-frequency"
-                    }
+                    step("select-main", mainAccess)
                     if (failedStage == null) {
-                        if (!sendAndWaitAck(IcomCivProtocol.buildIc820BandAccessCommand(main = false)))
-                            failedStage = "select-sub"
-                        else if (!sendAndWaitAck(IcomCivProtocol.buildSetFreqCommand(rxHz)))
-                            failedStage = "write-sub-frequency"
-                        else {
-                            observedRx = readFrequencyLocked()
-                            if (observedRx != rxHz) failedStage = "read-sub-frequency"
+                        oldMain = readFrequencyLocked()
+                        if (oldMain == null) failedStage = "read-original-main"
+                    }
+
+                    // Bring original SUB to the only band used for frequency writes.
+                    step("exchange-sub-to-main", exchange)
+                    if (failedStage == null) swapped = true
+                    step("access-exchanged-main", mainAccess)
+                    if (failedStage == null) {
+                        step("write-sub-via-main", IcomCivProtocol.buildSetFreqCommand(rxHz))
+                        if (failedStage == null) {
+                            subAfterWrite = readFrequencyLocked()
+                            if (subAfterWrite != rxHz) failedStage = "read-sub-after-write"
                         }
                     }
-                    if (failedStage == null && txHz != null) {
-                        if (!sendAndWaitAck(IcomCivProtocol.buildIc820BandAccessCommand(main = true)))
-                            failedStage = "reselect-main"
-                        else {
-                            observedTx = readFrequencyLocked()
-                            if (observedTx != txHz) failedStage = "read-main-frequency"
+
+                    // Restore TX MAIN position before writing the desired uplink.
+                    if (swapped) {
+                        val restored = withContext(NonCancellable) { sendAndWaitAck(exchange) }
+                        if (restored) swapped = false
+                        else if (failedStage == null) failedStage = "restore-main-sub-after-rx"
+                    }
+                    step("access-restored-main", mainAccess)
+                    if (failedStage == null) {
+                        val targetMain = txHz ?: oldMain
+                        if (targetMain == null) {
+                            failedStage = "missing-original-main"
+                        } else {
+                            step("write-final-main", IcomCivProtocol.buildSetFreqCommand(targetMain))
+                            if (failedStage == null) {
+                                finalMain = readFrequencyLocked()
+                                if (finalMain != targetMain) failedStage = "read-final-main"
+                            }
+                        }
+                    }
+
+                    // The final MAIN write may affect SUB in SATL-N / SATL-R.
+                    // Check the final pair, not just each isolated write ACK.
+                    if (failedStage == null) {
+                        step("exchange-to-verify-sub", exchange)
+                        if (failedStage == null) swapped = true
+                        step("access-main-for-sub-verify", mainAccess)
+                        if (failedStage == null) {
+                            finalSub = readFrequencyLocked()
+                            if (finalSub != rxHz) failedStage = "read-final-sub-after-main-write"
                         }
                     }
                 } finally {
-                    rxRestored = withContext(NonCancellable) { restoreRxVfo() }
+                    if (swapped) {
+                        val restored = withContext(NonCancellable) { sendAndWaitAck(exchange) }
+                        if (restored) swapped = false
+                        else if (failedStage == null) failedStage = "restore-main-sub-after-verify"
+                    }
+                    val mainRestored = withContext(NonCancellable) {
+                        sendAndWaitAck(mainAccess)
+                    }
+                    if (!mainRestored && failedStage == null) failedStage = "restore-main-access"
                 }
-                if (failedStage != null || !rxRestored) {
-                    diagnose("pair/failed", "stage=${failedStage ?: "restore-sub"} " +
-                        "targetMainTx=$txHz targetSubRx=$rxHz " +
-                        "readMainTx=$observedTx readSubRx=$observedRx restoredSub=$rxRestored",
+                if (failedStage != null) {
+                    diagnose("pair/failed", "stage=$failedStage targetMainTx=$txHz targetSubRx=$rxHz " +
+                        "oldMain=$oldMain observedMainTx=$finalMain subAfterWrite=$subAfterWrite " +
+                        "finalSubRx=$finalSub exchangeOutstanding=$swapped",
                         ControlDiagnosticSeverity.ERROR)
                     FrequencyPairResult.FAILED
-                } else FrequencyPairResult.APPLIED
+                } else {
+                    diagnose("pair/ready", "mode=swapped-main-write targetMainTx=$txHz targetSubRx=$rxHz")
+                    FrequencyPairResult.APPLIED
+                }
             }
         }
 

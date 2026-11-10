@@ -1,5 +1,6 @@
 package com.rtbishop.look4sat.core.data.framework
 
+import com.rtbishop.look4sat.core.domain.repository.FrequencyPairResult
 import com.rtbishop.look4sat.core.domain.repository.IRadioController
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
@@ -35,6 +36,11 @@ internal suspend fun tunePresetHalfDuplex(
                 else PresetTuningResult(success = false)
             null -> PresetTuningResult(success = false)
         }
+    }
+    if (radio.supportsAtomicPair && rxHz != null) {
+        return if (radio.setTrackingFrequencies(rxHz, txHz) == FrequencyPairResult.APPLIED)
+            PresetTuningResult(rxHz, txHz)
+        else PresetTuningResult(success = false)
     }
     var appliedTx: Long? = null
     var appliedRx: Long? = null

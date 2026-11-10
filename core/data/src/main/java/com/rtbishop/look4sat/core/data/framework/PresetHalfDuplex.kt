@@ -57,5 +57,6 @@ internal suspend fun tunePresetHalfDuplex(
             withTimeoutOrNull(1_500L) { radio.setVfo(vfoA = true) } == true
         }
     }
-    return PresetTuningResult(appliedRx, appliedTx, successful && rxRestored)
+    return if (successful && rxRestored) PresetTuningResult(appliedRx, appliedTx)
+        else PresetTuningResult(success = false)
 }

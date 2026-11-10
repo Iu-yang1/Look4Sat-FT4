@@ -736,7 +736,10 @@ private class ScriptedCivTransport(
     private val pttReadbackOverride: Boolean? = null,
     private val shortPreambleAckAfterExchangeEcho: Boolean = false,
     private val rejectSetFrequencyWithNak: Boolean = false,
-    private val rejectExchangeWithNak: Boolean = false
+    private val rejectExchangeWithNak: Boolean = false,
+    private val initialMainFrequency: Long = 145_590_000L,
+    private val initialSubFrequency: Long = 435_100_000L,
+    private val rejectCrossBandFrequencyWrites: Boolean = false
 ) : RadioTransport {
     companion object { val instances = mutableListOf<ScriptedCivTransport>() }
     init { instances += this }
@@ -744,8 +747,8 @@ private class ScriptedCivTransport(
     val commandBytes = mutableListOf<Int>()
     val payloads = mutableListOf<String>()
     val destinations = mutableListOf<Int>()
-    private var mainFrequency = 145_590_000L
-    private var subFrequency = 435_100_000L
+    private var mainFrequency = initialMainFrequency
+    private var subFrequency = initialSubFrequency
     private var mainSelected = true
     private var mainMode = 0x01
     private var subMode = 0x05
@@ -805,18 +808,24 @@ private class ScriptedCivTransport(
                 replies += response(0x03, *data.map { it.toInt() and 0xFF }.toIntArray())
             }
             0x04 -> replies += response(0x04, modeReadbackOverride ?: if (mainSelected) mainMode else subMode, 0x02)
-            0x05 -> if (acknowledgeSetFrequency) {
-                if (trackFrequencyWrites) {
-                    val frequency = IcomCivProtocol.decodeFrequencyBcd(payload.copyOfRange(1, 6))
-                    if (coupleBandFrequencyWrites) {
-                        val previous = if (mainSelected) mainFrequency else subFrequency
-                        val delta = frequency - previous
-                        mainFrequency += delta
-                        subFrequency += delta
-                    } else if (mainSelected) mainFrequency = frequency else subFrequency = frequency
-                }
-                replies += ack()
-            } else if (rejectSetFrequencyWithNak) replies += response(0xFA)
+            0x05 -> {
+                val frequency = if (trackFrequencyWrites || rejectCrossBandFrequencyWrites)
+                    IcomCivProtocol.decodeFrequencyBcd(payload.copyOfRange(1, 6)) else null
+                val selectedFrequency = if (mainSelected) mainFrequency else subFrequency
+                if (rejectCrossBandFrequencyWrites &&
+                    frequency?.let(::frequencyBand) != frequencyBand(selectedFrequency)) {
+                    replies += response(0xFA)
+                } else if (acknowledgeSetFrequency) {
+                    if (trackFrequencyWrites && frequency != null) {
+                        if (coupleBandFrequencyWrites) {
+                            val delta = frequency - selectedFrequency
+                            mainFrequency += delta
+                            subFrequency += delta
+                        } else if (mainSelected) mainFrequency = frequency else subFrequency = frequency
+                    }
+                    replies += ack()
+                } else if (rejectSetFrequencyWithNak) replies += response(0xFA)
+            }
             0x0F -> if (payload.size >= 2) {
                 splitMode = payload[1] == 1.toByte()
                 replies += ack()
@@ -885,6 +894,12 @@ private class ScriptedCivTransport(
 
     override suspend fun readAvailable(maxBytes: Int): ByteArray =
         replies.poll()?.let { it.copyOf(minOf(it.size, maxBytes)) } ?: ByteArray(0)
+
+    private fun frequencyBand(frequency: Long): Int? = when (frequency) {
+        in 136_000_000L..174_000_000L -> 2
+        in 430_000_000L..450_000_000L -> 70
+        else -> null
+    }
 
     private fun ack(): ByteArray = response(0xFB)
 

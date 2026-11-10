@@ -370,7 +370,7 @@ class Ic705ControllerTest {
         assertEquals(FrequencyPairResult.APPLIED,
             radio.setTrackingFrequencies(435_613_490L, 145_963_830L))
         assertTrue(transport.payloads.contains("05:90:34:61:35:04"))
-        assertTrue(transport.payloads.contains("05:83:63:96:45:01"))
+        assertTrue(transport.payloads.contains("05:30:38:96:45:01"))
         assertEquals(145_963_830L, radio.readTxVfoFrequency())
         assertEquals(435_613_490L, radio.readWorkingFrequency())
         radio.disconnect()

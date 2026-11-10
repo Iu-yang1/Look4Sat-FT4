@@ -26,3 +26,13 @@ jobs:
           yes | "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" 'ndk;26.1.10909125' 'cmake;3.22.1'
       - name: Compile Android and run radio reconnect tests
         run: ./gradlew --no-daemon :core:domain:test :core:data:testDebugUnitTest :feature:radar:testDebugUnitTest :app:compileDebugKotlin
+      - name: Run aislop code quality review of PR changes
+        if: github.event_name == 'pull_request'
+        continue-on-error: true
+        env:
+          BASE_BRANCH: ${{ github.base_ref }}
+        run: |
+          git fetch origin "$BASE_BRANCH" --depth=1
+          npx --yes aislop@latest scan --changes --base "origin/$BASE_BRANCH" --json > "$RUNNER_TEMP/aislop-report.json"
+          test -s "$RUNNER_TEMP/aislop-report.json"
+          python3 -c "import json,os; p=os.environ['RUNNER_TEMP']+'/aislop-report.json'; d=json.load(open(p)); print(json.dumps(d,ensure_ascii=False)[:8000])"

@@ -359,6 +359,7 @@ class Ic705ControllerTest {
             kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Default
         )
         try {
+        kotlinx.coroutines.withTimeout(15_000L) {
         val transport = ScriptedCivTransport(
             civAddress = 0x42, trackFrequencyWrites = true, ic820BandAccess = true,
             initialMainFrequency = 433_000_000L,
@@ -377,6 +378,7 @@ class Ic705ControllerTest {
         assertEquals(FrequencyPairResult.APPLIED,
             radio.setTrackingFrequencies(435_613_490L, 145_963_830L))
         radio.disconnect()
+        }
         } finally {
             actorScope.coroutineContext[kotlinx.coroutines.Job]?.cancel()
         }

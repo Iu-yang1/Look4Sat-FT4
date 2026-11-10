@@ -37,14 +37,14 @@ import java.lang.reflect.Proxy
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class QsoRepositoryTest {
-    @Test fun uploadedStationStoresTheCompleteMainGridSetInsteadOfOnlyItsFirstMember() = runBlocking {
+    @Test fun uploadedStationRetainsFullMainGridSetAndPrimaryLocator() = runBlocking {
         val dao=FakeQsoDao()
         val repository=QsoRepository(dao,Dispatchers.Unconfined)
         val id=repository.save(QsoRecord(startUtcMillis=1,theirCallsign="JA1ABC",myCallsign="BA7OPF",myGrid="OL62TI",myFullGrids=listOf("OL62TI")))
         repository.markUploaded(listOf(id),listOf("OL62TI","OL63AB"),"BA7OPF")
         val row=dao.getAll().single()
-        assertEquals("OL62,OL63",row.myGrid)
-        assertEquals("OL62,OL63",row.myFullGrids)
+        assertEquals("OL62TI",row.myGrid)
+        assertEquals("OL62TI,OL63AB",row.myFullGrids)
         assertEquals("OL62,OL63",row.vuccGrids)
     }
     @Test fun unconfirmedDownloadMergesWithoutConfirmingOrDuplicatingLocalDetails() = runTest {

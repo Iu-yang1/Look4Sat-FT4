@@ -1739,7 +1739,11 @@ class RadioTrackingService(
                 tuningRevision.incrementAndGet()
             }
             val interval = settingsRepo.radioControlSettings.value.let {
-                if (it.radioModel == RadioControlSettings.MODEL_VERO_N76) it.n76Options.normalized().pollMillis else 1_000L
+                when (it.radioModel) {
+                    RadioControlSettings.MODEL_VERO_N76 -> it.n76Options.normalized().pollMillis
+                    RadioControlSettings.MODEL_ICOM_IC820 -> 350L
+                    else -> 1_000L
+                }
             }
             withTimeoutOrNull(interval) { tuningWake.receive() }
         }

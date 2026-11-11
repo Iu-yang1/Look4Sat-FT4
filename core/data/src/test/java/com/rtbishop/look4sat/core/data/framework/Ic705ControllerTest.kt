@@ -432,11 +432,11 @@ class Ic705ControllerTest {
             "05:80:00:90:45:01"), transport.payloads)
         transport.payloads.clear()
         assertEquals(FrequencyPairResult.APPLIED,
-            radio.setTrackingFrequencies(435_100_085L, 145_900_085L))
-        assertTrue(transport.payloads.isEmpty()) // Both legs changed by less than 10 Hz.
+            radio.setTrackingFrequencies(435_100_080L, 145_900_080L))
+        assertTrue(transport.payloads.isEmpty()) // Identical target produces no CAT traffic.
         assertEquals(FrequencyPairResult.APPLIED,
-            radio.setTrackingFrequencies(435_100_095L, 145_900_095L))
-        assertEquals(4, transport.payloads.size) // A 15 Hz change is no longer suppressed.
+            radio.setTrackingFrequencies(435_100_081L, 145_900_081L))
+        assertEquals(4, transport.payloads.size) // A 1 Hz Doppler change is immediately applied.
         radio.disconnect()
     }
 

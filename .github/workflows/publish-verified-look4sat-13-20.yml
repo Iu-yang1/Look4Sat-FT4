@@ -1,0 +1,96 @@
+name: Publish verified Look4Sat 13.20 artifact
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/publish-verified-look4sat-13-20.yml
+
+permissions:
+  actions: read
+  contents: write
+
+concurrency:
+  group: look4sat-13-20-verified-publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: 4.4.8-ba7opf.13.20
+      SOURCE_SHA: e37d44ed3986272d2f1586e9f103fcd6c3d41393
+      VERIFIED_RUN: "42973907597"
+    steps:
+      - name: Retrieve previously verified signed APK and AAB
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          gh run download "$VERIFIED_RUN" --repo "$GITHUB_REPOSITORY" \
+            --name look4sat-13-20-signed-release --dir dist
+          test -f dist/verification.json
+          test -f dist/SHA256SUMS.txt
+          test -f dist/RELEASE_NOTES.md
+
+      - name: Revalidate artifact provenance and SHA-256 digests
+        shell: bash
+        run: |
+          set -euo pipefail
+          RUN_SHA=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$VERIFIED_RUN" --jq '.head_sha')
+          test "$RUN_SHA" = "$SOURCE_SHA"
+          python3 - <<'PY'
+          import hashlib, json, os, pathlib
+          dist=pathlib.Path('dist')
+          report=json.loads((dist/'verification.json').read_text(encoding='utf-8'))
+          assert report['tag']==os.environ['RELEASE_TAG']
+          assert report['version_code']==623
+          assert report['source_commit']==os.environ['SOURCE_SHA']
+          assert report['signing_certificate_verified'] is True
+          assert report['apk_alignment_verified'] is True
+          assert report['aab_signature_verified'] is True
+          assert set(report['native_abis'])=={'arm64-v8a','armeabi-v7a'}
+          assets=report['assets']
+          assert len(list(dist.glob('*.apk')))==1
+          assert len(list(dist.glob('*.aab')))==1
+          assert len(assets)==2
+          for name, meta in assets.items():
+              item=dist/name
+              assert item.exists() and item.stat().st_size==meta['size_bytes']
+              assert hashlib.sha256(item.read_bytes()).hexdigest()==meta['sha256']
+          notes=(dist/'RELEASE_NOTES.md').read_text(encoding='utf-8')
+          assert notes.count('## 4.4.8-ba7opf.13.20')==2
+          print('Source, signing report, APK/AAB fingerprints and bilingual notes verified.')
+          PY
+          (cd dist && sha256sum --check SHA256SUMS.txt)
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::error::Release already exists; will not replace it."
+            exit 1
+          fi
+
+      - name: Create immutable version tag and publish validated assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG_SHA=''
+          if FOUND_SHA=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$RELEASE_TAG" --jq '.object.sha' 2>/dev/null); then
+            TAG_SHA="$FOUND_SHA"
+          fi
+          if [[ -n "$TAG_SHA" && ! "$TAG_SHA" =~ ^[0-9a-f]{40}$ ]]; then TAG_SHA=''; fi
+          if [[ -n "$TAG_SHA" && "$TAG_SHA" != "$SOURCE_SHA" ]]; then
+            echo "::error::Existing version tag points to a different source commit."
+            exit 1
+          fi
+          if [[ -z "$TAG_SHA" ]]; then
+            gh api --method POST "repos/$GITHUB_REPOSITORY/git/refs" \
+              -f "ref=refs/tags/$RELEASE_TAG" -f "sha=$SOURCE_SHA" --jq '.ref'
+          fi
+          gh release create "$RELEASE_TAG" dist/*.apk dist/*.aab \
+            dist/SHA256SUMS.txt dist/verification.json \
+            --repo "$GITHUB_REPOSITORY" --verify-tag --latest \
+            --title "Look4Sat v$RELEASE_TAG — Upstream v21.1 and IC-820 Doppler fixes" \
+            --notes-file dist/RELEASE_NOTES.md
+          gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
+            --json url,tagName,isDraft,isPrerelease,assets

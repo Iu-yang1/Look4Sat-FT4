@@ -1,10 +1,9 @@
 name: Publish Look4Sat 13.20 signed GitHub release
 
+# This release's signed APK/AAB were verified by run 42973907597.
+# Publishing uses the pinned artifact workflow. Keep the full build available for manual verification only.
 on:
-  push:
-    branches: [main]
-    paths:
-      - .github/workflows/publish-look4sat-13-20.yml
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -208,6 +207,7 @@ jobs:
             exit 1
           fi
           TAG_SHA=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" --jq '.object.sha' 2>/dev/null || true)
+          if [[ ! "$TAG_SHA" =~ ^[0-9a-f]{40}$ ]]; then TAG_SHA=''; fi
           if [[ -n "$TAG_SHA" && "$TAG_SHA" != "$GITHUB_SHA" ]]; then
             echo "::error::Existing tag points to a different commit: $TAG_SHA"
             exit 1

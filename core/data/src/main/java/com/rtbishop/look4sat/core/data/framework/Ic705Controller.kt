@@ -92,7 +92,7 @@ class Ic705Controller(
     private var ic820FastSubAccess = false
     private var ic820FastCycles = 0
     private var ic820LastAuditNanos = 0L
-    private val IC820_TUNE_THRESHOLD_HZ = 10L
+    private val IC820_TUNE_THRESHOLD_HZ = 1L
     private val IC820_VERIFY_EVERY_CYCLES = 16
     private val IC820_AUDIT_INTERVAL_NANOS = 20_000_000_000L
 

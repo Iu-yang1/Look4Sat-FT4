@@ -163,7 +163,7 @@ jobs:
           cat > dist/RELEASE_NOTES.md <<'NOTES'
           ## 4.4.8-ba7opf.13.20 — English
           
-          - Integrate upstream Look4Sat v21 (f0107d71): opt-in GridMaster.fr satellite grid activity heatmap, percentage filters, cached data, bilingual UI labels and grid QSO activity details. Percentages represent submitted satellite logs, not live activity.
+          - Integrate upstream Look4Sat v21.1 (fa82a630): opt-in GridMaster.fr satellite grid activity heatmap, Most Wanted adaptive colour bands and labels, percentage filters, cached data, bilingual UI labels and grid QSO activity details. Percentages represent submitted satellite logs, not live activity.
           - Fix system/predictive Back leaving matched radar by clearing station B overlays, preserving this fork's custom FT4, JTTY and navigation.
           - Restore USB CAT after settings changes and connect automatically on Track for IC-820; recover correctly matched short-preamble CI-V ACK while rejecting explicit FA (PRs #22–#23).
           - Align actual MAIN TX / SUB RX orientation with IC-820 07 B0 recovery; use read-verified direct SUB access with fallback (PRs #24–#25).
@@ -175,7 +175,7 @@ jobs:
           
           ## 4.4.8-ba7opf.13.20 — 中文
           
-          - 合入上游 Look4Sat v21（f0107d71）：可选的 GridMaster.fr 卫星网格活跃度热力图、百分比筛选、数据缓存、中英文界面和网格 QSO 活跃度详情；百分比来自提交的卫星日志，并非实时活跃度。
+          - 合入上游 Look4Sat v21.1（fa82a630）：可选的 GridMaster.fr 卫星网格活跃度热力图、Most Wanted 自适应配色及标签、百分比筛选、数据缓存、中英文界面和网格 QSO 活跃度详情；百分比来自提交的卫星日志，并非实时活跃度。
           - 修复 Android 系统／预测式返回离开匹配雷达时未清除 B 台站图层的问题，保留本分支 FT4、JTTY 和自定义导航。
           - 修复 IC-820 设置变化后的 USB CAT 重连与点击 Track 时的自动连接；仅恢复准确关联的短前导码 CI-V 应答，仍拒绝明确的 FA（PR #22–#23）。
           - 根据 IC-820 07 B0 交换恢复校正实际 MAIN 发射／SUB 接收方向；在回读确认后使用 SUB 直接访问及回退机制（PR #24–#25）。

@@ -26,7 +26,7 @@ jobs:
         run: |
           yes | "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" 'ndk;26.1.10909125' 'cmake;3.22.1'
       - name: Compile Android and run radio reconnect tests
-        run: ./gradlew --no-daemon :core:domain:test :core:data:testDebugUnitTest :feature:radar:testDebugUnitTest :app:compileDebugKotlin
+        run: ./gradlew --no-daemon :core:domain:test :core:data:testDebugUnitTest :feature:radar:testDebugUnitTest :feature:map:testDebugUnitTest :app:compileDebugKotlin
       - name: Run aislop code quality review of PR changes
         if: github.event_name == 'pull_request' || startsWith(github.ref, 'refs/heads/fix/ic820-auto-align-main-sub-bands-')
         continue-on-error: true

@@ -209,7 +209,7 @@ class Ic705ControllerTest {
         assertEquals(435_100_000L, radio.readWorkingFrequency())
         assertTrue(transport.payloads.contains("07:D1"))
         assertTrue(transport.payloads.contains("07:B0"))
-        assertFalse(transport.payloads.contains("07:D0"))
+        assertTrue(transport.payloads.contains("07:D0")) // One read-only SUB probe primes RX-only fast tuning.
         assertFalse(transport.payloads.any { it == "07" || it.startsWith("07:00") ||
             it.startsWith("07:01") || it.startsWith("1A:") || it.startsWith("25:") })
         assertEquals("07:D1", transport.payloads.last())
@@ -314,7 +314,7 @@ class Ic705ControllerTest {
         assertTrue(radio.setWorkingFrequency(435_105_000L))
         assertEquals(145_590_000L, radio.readTxVfoFrequency())
         assertEquals(435_105_000L, radio.readWorkingFrequency())
-        assertFalse(transport.payloads.contains("07:D0"))
+        assertTrue(transport.payloads.contains("07:D0")) // Read-only access probe preserves MAIN TX.
         assertEquals("07:D1", transport.payloads.last())
         radio.disconnect()
     }

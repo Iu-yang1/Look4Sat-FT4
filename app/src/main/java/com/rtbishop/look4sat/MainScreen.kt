@@ -153,8 +153,12 @@ fun NavRoot(deeplink: String? = null) {
         }
     }
     val navigateBackFrom: (NavKey?) -> Unit = { entry ->
-        if (entry is RadarMatchGridPickerDestination) finishRadarGridPicker(null)
-        else rootBackStack.popCurrentEntry(entry)
+        if (entry is RadarMatchGridPickerDestination) {
+            finishRadarGridPicker(null)
+        } else if (rootBackStack.popCurrentEntry(entry) && entry is RadarMatchDestination) {
+            // System and predictive Back must clear the matched station B radar overlay.
+            container.setMutualPassData(MutualPassData())
+        }
     }
     val navigateBack: () -> Unit = { navigateBackFrom(rootCurrentKey) }
     val openRadarGridPicker: () -> Unit = {

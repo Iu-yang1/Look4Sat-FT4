@@ -459,6 +459,28 @@ class Ic705ControllerTest {
     }
 
     @Test
+    fun ic820ReceiveOnlyCorrectsReversedMainBandBeforeDirectSubUpdates() = runTest {
+        val transport = ScriptedCivTransport(
+            civAddress = 0x42, trackFrequencyWrites = true, ic820BandAccess = true,
+            initialMainFrequency = 433_000_000L,
+            initialSubFrequency = 145_900_000L,
+            rejectCrossBandFrequencyWrites = true
+        )
+        val radio = Ic705Controller(null, "USB", 0x42, transport, IcomCivVariant.IC820)
+        assertTrue(radio.connect())
+        assertEquals(FrequencyPairResult.APPLIED,
+            radio.setTrackingFrequencies(435_100_000L, null))
+        assertEquals(145_900_000L, radio.readTxVfoFrequency())
+        transport.payloads.clear()
+        assertEquals(FrequencyPairResult.APPLIED,
+            radio.setTrackingFrequencies(435_100_020L, null))
+        assertEquals(listOf("07:D0", "05:20:00:10:35:04", "07:D1"), transport.payloads)
+        assertEquals(145_900_000L, radio.readTxVfoFrequency())
+        assertEquals(435_100_020L, radio.readWorkingFrequency())
+        radio.disconnect()
+    }
+
+    @Test
     fun ic820ReceiveOnlySatelliteFallsBackWhenSubAccessIsUnavailable() = runTest {
         val transport = ScriptedCivTransport(
             civAddress = 0x42, trackFrequencyWrites = true, ic820BandAccess = true,

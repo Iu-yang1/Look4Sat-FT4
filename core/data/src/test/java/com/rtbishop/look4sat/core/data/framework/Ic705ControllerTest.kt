@@ -432,8 +432,49 @@ class Ic705ControllerTest {
             "05:80:00:90:45:01"), transport.payloads)
         transport.payloads.clear()
         assertEquals(FrequencyPairResult.APPLIED,
-            radio.setTrackingFrequencies(435_100_115L, 145_900_115L))
-        assertTrue(transport.payloads.isEmpty())
+            radio.setTrackingFrequencies(435_100_085L, 145_900_085L))
+        assertTrue(transport.payloads.isEmpty()) // Both legs changed by less than 10 Hz.
+        assertEquals(FrequencyPairResult.APPLIED,
+            radio.setTrackingFrequencies(435_100_095L, 145_900_095L))
+        assertEquals(4, transport.payloads.size) // A 15 Hz change is no longer suppressed.
+        radio.disconnect()
+    }
+
+    @Test
+    fun ic820ReceiveOnlySatelliteTracksSubWithoutRepeatedFullSwaps() = runTest {
+        val transport = ScriptedCivTransport(
+            civAddress = 0x42, trackFrequencyWrites = true, ic820BandAccess = true
+        )
+        val radio = Ic705Controller(null, "USB", 0x42, transport, IcomCivVariant.IC820)
+        assertTrue(radio.connect())
+        assertEquals(FrequencyPairResult.APPLIED,
+            radio.setTrackingFrequencies(435_100_000L, null))
+        transport.payloads.clear()
+        assertEquals(FrequencyPairResult.APPLIED,
+            radio.setTrackingFrequencies(435_100_020L, null))
+        assertEquals(listOf("07:D0", "05:20:00:10:35:04", "07:D1"), transport.payloads)
+        assertEquals(145_590_000L, radio.readTxVfoFrequency())
+        assertEquals(435_100_020L, radio.readWorkingFrequency())
+        radio.disconnect()
+    }
+
+    @Test
+    fun ic820ReceiveOnlySatelliteFallsBackWhenSubAccessIsUnavailable() = runTest {
+        val transport = ScriptedCivTransport(
+            civAddress = 0x42, trackFrequencyWrites = true, ic820BandAccess = true,
+            rejectDirectSubAccess = true
+        )
+        val radio = Ic705Controller(null, "USB", 0x42, transport, IcomCivVariant.IC820)
+        assertTrue(radio.connect())
+        assertEquals(FrequencyPairResult.APPLIED,
+            radio.setTrackingFrequencies(435_100_000L, null))
+        transport.payloads.clear()
+        assertEquals(FrequencyPairResult.APPLIED,
+            radio.setTrackingFrequencies(435_100_020L, null))
+        assertEquals(listOf("07:B0", "07:D1", "05:20:00:10:35:04",
+            "07:B0", "07:D1"), transport.payloads)
+        assertEquals(145_590_000L, radio.readTxVfoFrequency())
+        assertEquals(435_100_020L, radio.readWorkingFrequency())
         radio.disconnect()
     }
 

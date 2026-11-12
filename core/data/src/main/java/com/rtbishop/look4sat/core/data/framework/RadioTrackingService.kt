@@ -193,6 +193,7 @@ class RadioTrackingService(
                 old.txRadioAddress!=settings.txRadioAddress || old.rxRadioAddress!=settings.rxRadioAddress ||
                 old.baudRate!=settings.baudRate || old.civAddress!=settings.civAddress ||
                 old.catRts!=settings.catRts || old.catDtr!=settings.catDtr ||
+                old.usbFlowControl!=settings.usbFlowControl ||
                 old.splitMode!=settings.splitMode || old.duplexMode!=settings.duplexMode || old.tcpProtocol!=settings.tcpProtocol ||
                 settings.radioModel==RadioControlSettings.MODEL_VERO_N76 && old.n76BluetoothAudio!=settings.n76BluetoothAudio
             if(reconnectRequired) {
@@ -237,8 +238,13 @@ class RadioTrackingService(
     private suspend fun connectRadiosLocked() {
         cancelTrackingAndJoin()
         emergencyPttOff()
-        txController?.disconnect()
-        rxController?.disconnect()
+        withContext(NonCancellable) {
+            for ((leg, controller) in listOf("tx" to txController, "rx" to rxController)) {
+                runCatching { controller?.disconnect() }.onFailure { error ->
+                    diagnose("disconnect/$leg", error.message ?: "CAT cleanup failed", ControlDiagnosticSeverity.ERROR)
+                }
+            }
+        }
         txController = null
         rxController = null
         remoteMonitorJob?.cancel()
@@ -494,6 +500,7 @@ class RadioTrackingService(
         // L4S uses its own firmware-specific DTR handshake.
         if (settings.catTransport == RadioControlSettings.TRANSPORT_USB && !profile.isL4s) {
             transport?.setCatSerialControlLines(settings.catRts, settings.catDtr)
+            transport?.setUsbFlowControl(settings.usbFlowControl)
         }
         val controller = injected ?: if (profile.isN76) {
             N76Controller(transport ?: BluetoothSppRadioTransport(bluetoothManager, address, diagnostics), appScope, diagnostics,
@@ -570,8 +577,13 @@ class RadioTrackingService(
         macroSyncJob?.cancelAndJoin();macroSyncJob=null
         cancelTrackingAndJoin()
         emergencyPttOff()
-        txController?.disconnect()
-        rxController?.disconnect()
+        withContext(NonCancellable) {
+            for ((leg, controller) in listOf("tx" to txController, "rx" to rxController)) {
+                runCatching { controller?.disconnect() }.onFailure { error ->
+                    diagnose("disconnect/$leg", error.message ?: "CAT cleanup failed", ControlDiagnosticSeverity.ERROR)
+                }
+            }
+        }
         txController = null
         rxController = null
         remoteMonitorJob?.cancel()

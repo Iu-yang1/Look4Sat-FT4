@@ -1349,6 +1349,7 @@ class SettingsRepo(
     private val keyRadioBaudRate = "radioBaudRate"
     private val keyRadioCatRts = "radioCatRts"
     private val keyRadioCatDtr = "radioCatDtr"
+    private val keyRadioUsbFlow = "radioUsbFlow"
     private val keyRadioSplitMode = "radioSplitMode"
     private val keyRadioCatTransport = "radioCatTransport"
     private val keyRadioDuplexMode = "radioDuplexMode"
@@ -1393,6 +1394,7 @@ class SettingsRepo(
             putInt(keyRadioBaudRate, normalized.baudRate)
             putBoolean(keyRadioCatRts, normalized.catRts)
             putBoolean(keyRadioCatDtr, normalized.catDtr)
+            putString(keyRadioUsbFlow, normalized.usbFlowControl.name)
             putBoolean(keyRadioSplitMode, normalized.splitMode)
             putString(keyRadioCatTransport, normalized.catTransport)
             putString(keyRadioDuplexMode, normalized.duplexMode)
@@ -1439,6 +1441,9 @@ class SettingsRepo(
                 .takeIf { it in supportedBaudRates } ?: supportedBaudRates.first(),
             catRts = preferences.getBoolean(keyRadioCatRts, false),
             catDtr = preferences.getBoolean(keyRadioCatDtr, false),
+            usbFlowControl = com.rtbishop.look4sat.core.domain.control.SerialUsbFlow.entries.firstOrNull {
+                it.name == preferences.getString(keyRadioUsbFlow, null)
+            } ?: com.rtbishop.look4sat.core.domain.control.SerialUsbFlow.NONE,
             splitMode = preferences.getBoolean(keyRadioSplitMode, false),
             catTransport = preferences.getString(keyRadioCatTransport, null)
                 ?: RadioControlSettings.TRANSPORT_BLUETOOTH,

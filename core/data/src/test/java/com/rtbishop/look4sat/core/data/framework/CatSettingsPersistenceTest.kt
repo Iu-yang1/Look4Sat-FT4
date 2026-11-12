@@ -121,6 +121,20 @@ class CatSettingsPersistenceTest {
         service.disconnectRadios()
     }
 
+    @Test fun changingHardwareFlowSavesAndReopensWithoutTransmitting() = runTest {
+        val settings = settings(RadioControlSettings.MODEL_ICOM_IC820, true)
+        val tx = Radio()
+        val service = service(backgroundScope, settings, tx, Radio())
+        service.connectRadios()
+        val flow = com.rtbishop.look4sat.core.domain.control.SerialUsbFlow.RTS_CTS
+        assertTrue(service.applyRadioControlSettings(settings.value.copy(usbFlowControl = flow)))
+        assertEquals(flow, settings.value.usbFlowControl)
+        assertEquals(2, tx.commands.count { it == "connect" })
+        assertTrue(tx.isConnected)
+        assertFalse(tx.commands.contains("ptt:on"))
+        service.disconnectRadios()
+    }
+
     @Test fun ic820SinglePresetUsesOnePhysicalConnectionAndDoesNotEnablePtt() = runTest {
         val tx = Radio(); val rx = Radio()
         val service = service(backgroundScope, settings(RadioControlSettings.MODEL_ICOM_IC820, true), tx, rx)

@@ -21,12 +21,17 @@ import com.rtbishop.look4sat.core.domain.control.ControlDiagnosticSeverity
 import com.rtbishop.look4sat.core.domain.control.ControlDiagnosticSource
 import com.rtbishop.look4sat.core.domain.control.IControlDiagnostics
 import com.rtbishop.look4sat.core.domain.control.NoOpControlDiagnostics
+import com.rtbishop.look4sat.core.domain.control.SerialUsbDriver
+import com.rtbishop.look4sat.core.domain.control.SerialUsbFlow
+import com.rtbishop.look4sat.core.domain.control.SerialUsbInterface
+import com.rtbishop.look4sat.core.domain.control.discoverSerialUsbPorts
 import com.rtbishop.look4sat.core.domain.model.RadioTcpEndpoint
 import com.rtbishop.look4sat.core.domain.model.parseRadioTcpEndpoint
 import java.net.InetSocketAddress
 import java.net.Socket
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.runInterruptible
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
@@ -42,6 +47,8 @@ interface RadioTransport : ControlTransport {
     fun setCdcDtrOnConnect(enabled: Boolean) = Unit
     /** Configure physical USB CAT modem-control lines before connect; not CAT PTT. */
     fun setCatSerialControlLines(rts: Boolean, dtr: Boolean) = Unit
+    fun setUsbFlowControl(flow: SerialUsbFlow) = Unit
+    suspend fun readUsbModemStatus(): UsbModemStatus? = null
 }
 
 class TcpRadioTransport(
@@ -82,7 +89,7 @@ class TcpRadioTransport(
         }
     }
 
-    override suspend fun disconnect() = withContext(Dispatchers.IO) {
+    override suspend fun disconnect() = withContext(Dispatchers.IO + NonCancellable) {
         runCatching { socket?.close() }
         socket = null
     }
@@ -155,6 +162,11 @@ class UsbSerialRadioTransport(
 ) : RadioTransport {
     private var cdcDtrOnConnect = false
     private var catRtsOnConnect = false
+    private var flowControl = SerialUsbFlow.NONE
+    private var statusEndpoint: UsbEndpoint? = null
+    private var lastStatus: UsbModemStatus? = null
+    private var nextStatusPoll = 0L
+    override fun setUsbFlowControl(flow: SerialUsbFlow) { flowControl = flow }
     private var nativeCdcFastWrites = false
     @Volatile override var lastIoFailure: String? = null
         private set
@@ -180,7 +192,11 @@ class UsbSerialRadioTransport(
     override val connectionDescription get() = "usb driver=${selectedPort?.driver ?: "unopened"} " +
         "control=${selector?.controlInterfaceId} data=${selector?.dataInterfaceId} baud=$baudRate stopBits=$stopBits RTS=$catRtsOnConnect DTR=$cdcDtrOnConnect"
     override val isConnected: Boolean
-        get() = connection != null && claimedInterfaces.isNotEmpty() && input != null && output != null
+        get() = connection != null && claimedInterfaces.isNotEmpty() && input != null && output != null &&
+            connectedDevice?.let { device ->
+                manager.deviceList.values.any { it.deviceName == device.deviceName &&
+                    it.deviceId == device.deviceId && it.vendorId == device.vendorId && it.productId == device.productId }
+            } == true
 
     override suspend fun connect(): Boolean = withContext(Dispatchers.IO) {
         disconnect()
@@ -194,9 +210,10 @@ class UsbSerialRadioTransport(
         if (baudRate <= 0) return@withContext connectionFailed("Invalid USB baud rate")
         val opened = manager.openDevice(device) ?: return@withContext connectionFailed("Android could not open USB device")
         val claimed = mutableListOf<UsbInterface>()
+        var configuringPort: UsbSerialPortCandidate? = null
         try {
             val descriptors = opened.rawDescriptors ?: ByteArray(0)
-            val ports = findUsbSerialPorts(device, parseCdcInterfaceAssociations(descriptors))
+            val ports = findUsbSerialPorts(device, descriptors, parsedSelector.driver)
             val port = ports.firstOrNull {
                 it.control.id == parsedSelector.controlInterfaceId &&
                     it.data.id == parsedSelector.dataInterfaceId
@@ -205,14 +222,10 @@ class UsbSerialRadioTransport(
                 opened.close()
                 return@withContext connectionFailed("Selected USB serial interface not found")
             }
-            val interfaces = if (port.driver == UsbSerialDriverKind.CH34X) {
-                // Composite CH34x devices can expose a USB-audio function next to CAT.
-                // Claim only non-audio interfaces so FT4 can keep using that audio path.
-                (0 until device.interfaceCount).map(device::getInterface).filterNot {
-                    it.interfaceClass == UsbConstants.USB_CLASS_AUDIO
-                }
-            } else {
-                listOf(port.control, port.data).distinctBy { it.id }
+            val interfaces = listOf(port.control, port.data).distinctBy { it.id }
+            if (!com.rtbishop.look4sat.core.domain.control.serialUsbSupportsFlow(port.driver, flowControl)) {
+                opened.close()
+                return@withContext connectionFailed("Selected driver does not support $flowControl")
             }
             for (intf in interfaces) {
                 if (!opened.claimInterface(intf, true)) {
@@ -226,6 +239,7 @@ class UsbSerialRadioTransport(
                 .firstOrNull { it.type == UsbConstants.USB_ENDPOINT_XFER_BULK && it.direction == UsbConstants.USB_DIR_IN }
             val selectedOutput = (0 until port.data.endpointCount).map(port.data::getEndpoint)
                 .firstOrNull { it.type == UsbConstants.USB_ENDPOINT_XFER_BULK && it.direction == UsbConstants.USB_DIR_OUT }
+            configuringPort = port
             val configured = selectedInput != null && selectedOutput != null && when (port.driver) {
                 UsbSerialDriverKind.CDC_ACM -> configureCdc(opened, port.control, serialLine)
                 UsbSerialDriverKind.CP210X -> configureCp210x(opened, device, port, serialLine)
@@ -233,12 +247,13 @@ class UsbSerialRadioTransport(
                 UsbSerialDriverKind.CH34X -> configureCh34x(opened, baudRate, serialLine)
                 UsbSerialDriverKind.PROLIFIC -> configureProlificSerial(
                     device.productId, device.deviceClass, descriptors, baudRate, stopBits,
-                    catRtsOnConnect, cdcDtrOnConnect
+                    catRtsOnConnect, cdcDtrOnConnect, flowControl == SerialUsbFlow.RTS_CTS
                 ) { type, request, value, index, data ->
                     opened.controlTransfer(type, request, value, index, data, data?.size ?: 0, IO_TIMEOUT_MILLIS)
                 }
             }
             if (!configured) {
+                releaseControlLines(opened, port)
                 claimed.asReversed().forEach { opened.releaseInterface(it) }
                 opened.close()
                 return@withContext connectionFailed("Serial configuration failed driver=${port.driver} portIndex=${port.portIndex}; check baud/line settings")
@@ -247,18 +262,48 @@ class UsbSerialRadioTransport(
             selectedPort = port
             input = selectedInput
             output = selectedOutput
+            statusEndpoint = interfaces.asSequence().flatMap { intf ->
+                (0 until intf.endpointCount).asSequence().map(intf::getEndpoint)
+            }.firstOrNull { it.type == UsbConstants.USB_ENDPOINT_XFER_INT && it.direction == UsbConstants.USB_DIR_IN }
             connection = opened
             connectedDevice = device
+            if (!configureUsbFlow(port.driver, port.portIndex, flowControl, catRtsOnConnect,
+                    cdcDtrOnConnect) { type, request, value, index, bytes ->
+                    opened.controlTransfer(type, request, value, index, bytes, bytes?.size ?: 0, IO_TIMEOUT_MILLIS)
+                }) {
+                disconnect()
+                return@withContext connectionFailed("USB flow-control configuration failed")
+            }
+            val purged = purgeUsbBuffers(port.driver, port.portIndex) { type, request, value, index, bytes ->
+                opened.controlTransfer(type, request, value, index, bytes, bytes?.size ?: 0, IO_TIMEOUT_MILLIS)
+            }
+            if (purged == false) diagnostics.record(ControlDiagnosticSource.RADIO, "usb/purge",
+                "Hardware purge unavailable; discarding pending input", ControlDiagnosticSeverity.WARNING)
+            if (purged != true) {
+                val scratch = ByteArray(selectedInput.maxPacketSize.coerceAtLeast(64))
+                for (attempt in 0 until 4) {
+                    if (opened.bulkTransfer(selectedInput, scratch, scratch.size, 10) <= 0) break
+                }
+            }
+            val version = if (descriptors.size >= 14)
+                (descriptors[12].toInt() and 255) or ((descriptors[13].toInt() and 255) shl 8) else 0
+            val chip = com.rtbishop.look4sat.core.domain.control.serialUsbChipName(device.vendorId, device.productId, version)
             diagnostics.record(ControlDiagnosticSource.RADIO, "usb/connected",
-                "$connectionDescription portIndex=${port.portIndex} VID=%04X PID=%04X IN=${selectedInput.address} OUT=${selectedOutput.address}".format(device.vendorId, device.productId))
+                "$connectionDescription chip=$chip flow=$flowControl portIndex=${port.portIndex} VID=%04X PID=%04X IN=${selectedInput.address} OUT=${selectedOutput.address}".format(device.vendorId, device.productId))
             true
         } catch (cancelled: CancellationException) {
-            claimed.asReversed().forEach { runCatching { opened.releaseInterface(it) } }
-            runCatching { opened.close() }
+            if (connection === opened) disconnect() else {
+                configuringPort?.let { releaseControlLines(opened, it) }
+                claimed.asReversed().forEach { runCatching { opened.releaseInterface(it) } }
+                runCatching { opened.close() }
+            }
             throw cancelled
         } catch (error: Exception) {
-            claimed.asReversed().forEach { runCatching { opened.releaseInterface(it) } }
-            runCatching { opened.close() }
+            if (connection === opened) disconnect() else {
+                configuringPort?.let { releaseControlLines(opened, it) }
+                claimed.asReversed().forEach { runCatching { opened.releaseInterface(it) } }
+                runCatching { opened.close() }
+            }
             connectionFailed("${error.javaClass.simpleName}: ${error.message.orEmpty()}")
         }
     }
@@ -269,48 +314,59 @@ class UsbSerialRadioTransport(
         return false
     }
 
-    override suspend fun disconnect() = withContext(Dispatchers.IO) {
+    override suspend fun disconnect() = withContext(Dispatchers.IO + NonCancellable) {
         val opened = connection
         val port = selectedPort
         if (opened != null) diagnostics.record(ControlDiagnosticSource.RADIO, "usb/close", "origin=app $connectionDescription disconnect requested by caller")
-        if (opened != null && port != null) runCatching {
-            when (port.driver) {
-                UsbSerialDriverKind.CDC_ACM -> opened.controlTransfer(
-                    CDC_REQUEST_TYPE,
-                    CDC_SET_CONTROL_LINE_STATE,
-                    0,
-                    port.control.id,
-                    null,
-                    0,
-                    IO_TIMEOUT_MILLIS
-                )
-                UsbSerialDriverKind.CP210X -> opened.controlTransfer(
-                    USB_VENDOR_OUT_INTERFACE,
-                    CP210X_IFC_ENABLE,
-                    0,
-                    port.portIndex,
-                    null,
-                    0,
-                    IO_TIMEOUT_MILLIS
-                )
-                else -> Unit
-            }
-        }
+        if (opened != null && port != null) releaseControlLines(opened, port)
         claimedInterfaces.asReversed().forEach { intf ->
             runCatching { opened?.releaseInterface(intf) }
         }
-        opened?.close()
-        connection = null
-        connectedDevice = null
-        claimedInterfaces = emptyList()
-        selectedPort = null
-        input = null
-        output = null
-        pendingRead = ByteArray(0)
+        try {
+            runCatching { opened?.close() }.onFailure {
+                diagnostics.record(ControlDiagnosticSource.RADIO, "usb/close-failed",
+                    it.javaClass.simpleName, ControlDiagnosticSeverity.WARNING)
+            }
+        } finally {
+            connection = null
+            connectedDevice = null
+            claimedInterfaces = emptyList()
+            selectedPort = null
+            input = null
+            output = null
+            statusEndpoint = null
+            lastStatus = null
+            pendingRead = ByteArray(0)
+            nextStatusPoll = 0L
+        }
+        Unit
+    }
+
+    private fun releaseControlLines(opened: UsbDeviceConnection, port: UsbSerialPortCandidate) {
+        if (flowControl != SerialUsbFlow.NONE) runCatching {
+            val transfer: UsbControlTransfer = { type, request, value, index, bytes ->
+                opened.controlTransfer(type, request, value, index, bytes, bytes?.size ?: 0, IO_TIMEOUT_MILLIS)
+            }
+            if (port.driver == SerialUsbDriver.PROLIFIC) {
+                val device = connectedDevice
+                if (device != null) setProlificFlow(prolificUsesHxn(device.productId, device.deviceClass,
+                    opened.rawDescriptors ?: byteArrayOf(), transfer), false, transfer)
+            } else configureUsbFlow(port.driver, port.portIndex, SerialUsbFlow.NONE, false, false, transfer)
+        }
+        val released = releaseUsbSerialControlLines(port.driver, port.control.id, port.portIndex) { type, request, value, index ->
+            opened.controlTransfer(type, request, value, index, null, 0, IO_TIMEOUT_MILLIS)
+        }
+        if (!released) diagnostics.record(ControlDiagnosticSource.RADIO, "usb/control-lines",
+            "Could not confirm RTS/DTR release before close", ControlDiagnosticSeverity.WARNING)
     }
 
     override suspend fun write(bytes: ByteArray): Boolean = withContext(Dispatchers.IO) {
         if (bytes.isEmpty()) return@withContext true
+        if (!isConnected) {
+            lastIoFailure = "USB device detached or connection closed"
+            disconnect()
+            return@withContext false
+        }
         val current = connection ?: run { lastIoFailure="USB connection closed";return@withContext false }
         val endpoint = output ?: run { lastIoFailure="USB OUT endpoint unavailable";return@withContext false }
         lastIoFailure=null
@@ -319,12 +375,17 @@ class UsbSerialRadioTransport(
         while (offset < bytes.size) {
             val count = minOf(bytes.size - offset, MAX_USB_TRANSFER_BYTES)
             val written = try { current.bulkTransfer(endpoint, bytes, offset, count, timeout) }
-            catch(cancelled:CancellationException) {throw cancelled}
-            catch(error:Exception) { lastIoFailure="bulk OUT exception=${error.javaClass.simpleName} sent=$offset/${bytes.size}";return@withContext false }
+            catch(cancelled:CancellationException) { disconnect(); throw cancelled }
+            catch(error:Exception) {
+                lastIoFailure="bulk OUT exception=${error.javaClass.simpleName} sent=$offset/${bytes.size}"
+                disconnect()
+                return@withContext false
+            }
             if (written <= 0) {
                 val device=connectedDevice
                 val attached=runCatching { device!=null && manager.deviceList.values.any { it.deviceId==device.deviceId } }.getOrNull()
                 lastIoFailure="bulk OUT result=$written sent=$offset/${bytes.size} timeoutMs=$timeout attached=$attached driver=${selectedPort?.driver}"
+                disconnect()
                 return@withContext false
             }
             offset += written
@@ -334,6 +395,13 @@ class UsbSerialRadioTransport(
 
     override suspend fun readAvailable(maxBytes: Int): ByteArray = withContext(Dispatchers.IO) {
         if (maxBytes <= 0) return@withContext ByteArray(0)
+        if (!isConnected) {
+            if (connection != null) {
+                lastIoFailure = "USB device detached"
+                disconnect()
+            }
+            return@withContext ByteArray(0)
+        }
         if (pendingRead.isNotEmpty()) {
             val (result, remaining) = splitReadChunk(pendingRead, maxBytes)
             pendingRead = remaining
@@ -342,6 +410,21 @@ class UsbSerialRadioTransport(
         val current = connection ?: return@withContext ByteArray(0)
         val endpoint = input ?: return@withContext ByteArray(0)
         val port = selectedPort ?: return@withContext ByteArray(0)
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (now >= nextStatusPoll) {
+            nextStatusPoll = now + 5_000
+            val previous = lastStatus
+            try {
+                readUsbModemStatus()?.takeIf { it != previous }?.let {
+                    diagnostics.record(ControlDiagnosticSource.RADIO, "usb/modem", it.toString())
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                diagnostics.record(ControlDiagnosticSource.RADIO, "usb/modem",
+                    "Status unavailable: ${error.javaClass.simpleName}", ControlDiagnosticSeverity.WARNING)
+            }
+        }
         val buffer = if (port.driver == UsbSerialDriverKind.FTDI) {
             val size = ftdiReadBufferSize(maxBytes, endpoint.maxPacketSize)
             if (size <= 0) return@withContext ByteArray(0)
@@ -362,9 +445,16 @@ class UsbSerialRadioTransport(
         } catch (error: Exception) {
             lastIoFailure = "bulk IN ${error.javaClass.simpleName}: ${error.message.orEmpty()}"
             diagnostics.record(ControlDiagnosticSource.RADIO, "usb/read-failed", "$connectionDescription $lastIoFailure", ControlDiagnosticSeverity.ERROR)
+            disconnect()
             throw error
         }
-        if (count <= 0) return@withContext ByteArray(0)
+        if (count <= 0) {
+            if (!isConnected) {
+                lastIoFailure = "USB device detached during read"
+                disconnect()
+            }
+            return@withContext ByteArray(0)
+        }
         val payload = if (port.driver == UsbSerialDriverKind.FTDI) {
             filterFtdiStatusBytes(buffer, count, endpoint.maxPacketSize)
         } else {
@@ -414,17 +504,6 @@ class UsbSerialRadioTransport(
         if (!isCp210xLineConfigurationSupported(device.interfaceCount, port.portIndex, serialLine)) return false
         val index = port.portIndex
         if (cp210xOut(connection, CP210X_IFC_ENABLE, 1, index) != 0) return false
-        val noFlowControl = ByteArray(CP210X_FLOW_CONTROL_BYTES)
-        if (connection.controlTransfer(
-                USB_VENDOR_OUT_INTERFACE,
-                CP210X_SET_FLOW,
-                0,
-                index,
-                noFlowControl,
-                noFlowControl.size,
-                IO_TIMEOUT_MILLIS
-            ) != noFlowControl.size
-        ) return false
         val rate = byteArrayOf(
             baudRate.toByte(),
             (baudRate shr 8).toByte(),
@@ -439,12 +518,25 @@ class UsbSerialRadioTransport(
                 rate,
                 rate.size,
                 IO_TIMEOUT_MILLIS
-            ) < 0
+            ) != rate.size
         ) return false
-        // SET_FLOW can reset manual modem outputs: write the requested levels last.
-        if (cp210xOut(connection, CP210X_SET_LINE_CONTROL, serialLine.cp210xLineControl, index) != 0) return false
-        return cp210xOut(connection, CP210X_SET_MHS,
-            cp210xModemControl(catRtsOnConnect, cdcDtrOnConnect), index) == 0
+        // Flow configuration and manual levels are applied together after line coding.
+        return cp210xOut(connection, CP210X_SET_LINE_CONTROL, serialLine.cp210xLineControl, index) == 0
+    }
+
+    override suspend fun readUsbModemStatus(): UsbModemStatus? = withContext(Dispatchers.IO) {
+        if (!isConnected) return@withContext null
+        val opened = connection ?: return@withContext null
+        val port = selectedPort ?: return@withContext null
+        val value = readUsbStatus(port.driver, port.portIndex) { type, request, value, index, bytes ->
+            opened.controlTransfer(type, request, value, index, bytes, bytes?.size ?: 0, 50)
+        } ?: statusEndpoint?.let { endpoint ->
+            val packet = ByteArray(maxOf(10, endpoint.maxPacketSize))
+            val size = opened.bulkTransfer(endpoint, packet, packet.size, 10)
+            parseUsbStatusNotification(port.driver, packet, size)
+        }
+        if (value != null) lastStatus = value
+        lastStatus
     }
 
     private fun configureFtdi(
@@ -472,22 +564,22 @@ class UsbSerialRadioTransport(
     ): Boolean {
         val initial = ByteArray(2)
         if (vendorIn(connection, CH34X_READ_VERSION, 0, 0, initial) != initial.size) return false
-        if (vendorOut(connection, CH34X_SERIAL_INIT, 0, 0) < 0) return false
+        if (vendorOut(connection, CH34X_SERIAL_INIT, 0, 0) != 0) return false
         if (!setCh34xBaudRate(connection, CH34X_DEFAULT_BAUD_RATE)) return false
         val register = ByteArray(2)
         if (vendorIn(connection, CH34X_READ_REG, 0x2518, 0, register) != register.size) return false
-        if (vendorOut(connection, CH34X_WRITE_REG, 0x2518, serialLine.ch34xLineControl) < 0) return false
+        if (vendorOut(connection, CH34X_WRITE_REG, 0x2518, serialLine.ch34xLineControl) != 0) return false
         if (vendorIn(connection, CH34X_READ_REG, 0x0706, 0, register) != register.size) return false
-        if (vendorOut(connection, CH34X_SERIAL_INIT, 0x501F, 0xD90A) < 0) return false
+        if (vendorOut(connection, CH34X_SERIAL_INIT, 0x501F, 0xD90A) != 0) return false
         if (!setCh34xBaudRate(connection, requestedBaudRate)) return false
-        if (vendorOut(connection, CH34X_MODEM_CTRL, ch34xModemControl(catRtsOnConnect, cdcDtrOnConnect), 0) < 0) return false
-        return vendorOut(connection, CH34X_WRITE_REG, 0x2518, serialLine.ch34xLineControl) >= 0
+        if (vendorOut(connection, CH34X_MODEM_CTRL, ch34xModemControl(catRtsOnConnect, cdcDtrOnConnect), 0) != 0) return false
+        return vendorOut(connection, CH34X_WRITE_REG, 0x2518, serialLine.ch34xLineControl) == 0
     }
 
     private fun setCh34xBaudRate(connection: UsbDeviceConnection, rate: Int): Boolean {
         val registers = calculateCh34xBaudRegisters(rate) ?: return false
-        return vendorOut(connection, CH34X_WRITE_REG, 0x1312, registers.first) >= 0 &&
-            vendorOut(connection, CH34X_WRITE_REG, 0x0F2C, registers.second) >= 0
+        return vendorOut(connection, CH34X_WRITE_REG, 0x1312, registers.first) == 0 &&
+            vendorOut(connection, CH34X_WRITE_REG, 0x0F2C, registers.second) == 0
     }
 
     private fun vendorOut(connection: UsbDeviceConnection, request: Int, value: Int, index: Int): Int =
@@ -539,10 +631,7 @@ class UsbSerialRadioTransport(
         const val USB_VENDOR_OUT_INTERFACE = 0x41
         const val CP210X_IFC_ENABLE = 0x00
         const val CP210X_SET_LINE_CONTROL = 0x03
-        const val CP210X_SET_MHS = 0x07
-        const val CP210X_SET_FLOW = 0x13
         const val CP210X_SET_BAUD_RATE = 0x1E
-        const val CP210X_FLOW_CONTROL_BYTES = 16
         const val FTDI_RESET = 0
         const val FTDI_MODEM_CONTROL = 1
         const val FTDI_FLOW_CONTROL = 2
@@ -570,6 +659,28 @@ internal fun ftdiModemControl(rts: Boolean, dtr: Boolean): Int =
 internal fun ch34xModemControl(rts: Boolean, dtr: Boolean): Int =
     0xFFFF and ((if (dtr) 0x20 else 0) or (if (rts) 0x40 else 0)).inv()
 
+/** Release static modem outputs before closing the host handle; close alone need not reset a bridge. */
+internal fun releaseUsbSerialControlLines(
+    driver: UsbSerialDriverKind,
+    controlInterfaceId: Int,
+    portIndex: Int,
+    transfer: (type: Int, request: Int, value: Int, index: Int) -> Int
+): Boolean {
+    fun send(type: Int, request: Int, value: Int, index: Int) =
+        runCatching { transfer(type, request, value, index) == 0 }.getOrDefault(false)
+    return when (driver) {
+        UsbSerialDriverKind.CDC_ACM -> send(0x21, 0x22, 0, controlInterfaceId)
+        UsbSerialDriverKind.PROLIFIC -> send(0x21, 0x22, 0, 0)
+        UsbSerialDriverKind.CP210X -> {
+            val released = send(0x41, 0x07, cp210xModemControl(false, false), portIndex)
+            val disabled = send(0x41, 0x00, 0, portIndex)
+            released && disabled
+        }
+        UsbSerialDriverKind.FTDI -> send(0x40, 0x01, ftdiModemControl(false, false), portIndex + 1)
+        UsbSerialDriverKind.CH34X -> send(0x40, 0xA4, ch34xModemControl(false, false), 0)
+    }
+}
+
 internal fun usbRadioWriteTimeoutMillis(nativeCdc: Boolean, driver: UsbSerialDriverKind?): Int =
     if (nativeCdc && driver==UsbSerialDriverKind.CDC_ACM) 150 else 1000
 
@@ -578,16 +689,11 @@ internal data class UsbSerialSelector(
     val controlInterfaceId: Int,
     val dataInterfaceId: Int,
     val vendorId: Int?,
-    val productId: Int?
+    val productId: Int?,
+    val driver: SerialUsbDriver? = null
 )
 
-internal enum class UsbSerialDriverKind(val displayName: String) {
-    CDC_ACM("CDC-ACM"),
-    CP210X("CP210x"),
-    FTDI("FTDI"),
-    CH34X("CH34x"),
-    PROLIFIC("PL2303")
-}
+internal typealias UsbSerialDriverKind = SerialUsbDriver
 
 internal data class UsbSerialLineConfiguration(
     val cdcStopBits: Byte,
@@ -631,14 +737,16 @@ private data class UsbSerialPortCandidate(
 
 internal fun parseUsbSerialSelector(value: String): UsbSerialSelector? {
     val parts = value.split(':')
-    if (parts.size != 3 && parts.size != 5) return null
+    if (parts.size !in setOf(3, 5, 6)) return null
     val deviceId = parts[0].toIntOrNull() ?: return null
     val controlId = parts[1].toIntOrNull()?.takeIf { it >= 0 } ?: return null
     val dataId = parts[2].toIntOrNull()?.takeIf { it >= 0 } ?: return null
     val vendorId = parts.getOrNull(3)?.toIntOrNull()?.takeIf { it in 0..0xFFFF }
     val productId = parts.getOrNull(4)?.toIntOrNull()?.takeIf { it in 0..0xFFFF }
-    if (parts.size == 5 && (vendorId == null || productId == null)) return null
-    return UsbSerialSelector(deviceId, controlId, dataId, vendorId, productId)
+    if (parts.size >= 5 && (vendorId == null || productId == null)) return null
+    val driver = if (parts.size == 6) SerialUsbDriver.entries.firstOrNull { it.name == parts[5] }
+        ?: return null else null
+    return UsbSerialSelector(deviceId, controlId, dataId, vendorId, productId, driver)
 }
 
 private fun resolveUsbDevice(devices: Collection<UsbDevice>, selector: UsbSerialSelector): UsbDevice? {
@@ -651,68 +759,17 @@ private fun resolveUsbDevice(devices: Collection<UsbDevice>, selector: UsbSerial
     return devices.filter(matchesIdentity).singleOrNull()
 }
 
-internal fun usbSerialDriverForVendor(vendorId: Int): UsbSerialDriverKind? = when (vendorId) {
-    USB_VENDOR_SILICON_LABS -> UsbSerialDriverKind.CP210X
-    USB_VENDOR_FTDI -> UsbSerialDriverKind.FTDI
-    USB_VENDOR_QINHENG, USB_VENDOR_CH34X_ALT -> UsbSerialDriverKind.CH34X
-    0x067B -> UsbSerialDriverKind.PROLIFIC
-    else -> null
-}
-
 private fun findUsbSerialPorts(
     device: UsbDevice,
-    associations: Map<Int, Set<Int>>
+    descriptors: ByteArray,
+    override: SerialUsbDriver?
 ): List<UsbSerialPortCandidate> {
     val interfaces = (0 until device.interfaceCount).map(device::getInterface)
-    val cdcPorts = findCdcAcmPairs(interfaces, associations).map { pair ->
-        UsbSerialPortCandidate(
-            driver = UsbSerialDriverKind.CDC_ACM,
-            control = pair.control,
-            data = pair.data,
-            portIndex = interfaces.indexOf(pair.data)
-        )
-    }
-    if (cdcPorts.isNotEmpty()) return cdcPorts
-    val driver = usbSerialDriverForVendor(device.vendorId) ?: return emptyList()
-    if (driver == UsbSerialDriverKind.PROLIFIC &&
-        !com.rtbishop.look4sat.core.domain.control.isProlificSerialAdapter(device.vendorId, device.productId)) return emptyList()
-    if (driver == UsbSerialDriverKind.CH34X) {
-        val data = interfaces.lastOrNull(::hasBulkSerialEndpoints) ?: return emptyList()
-        return listOf(UsbSerialPortCandidate(driver, data, data, portIndex = 0))
-    }
-    return interfaces.mapIndexedNotNull { index, intf ->
-        intf.takeIf(::hasBulkSerialEndpoints)?.let {
-            UsbSerialPortCandidate(driver, it, it, index)
-        }
-    }
-}
-
-private data class CdcAcmPair(val control: UsbInterface, val data: UsbInterface)
-
-private fun findCdcAcmPairs(
-    interfaces: List<UsbInterface>,
-    associations: Map<Int, Set<Int>>
-): List<CdcAcmPair> {
-    val controls = interfaces.filter {
-        it.interfaceClass == UsbConstants.USB_CLASS_COMM && it.interfaceSubclass == CDC_ACM_SUBCLASS
-    }
-    val dataInterfaces = interfaces.filter { intf ->
-        intf.interfaceClass == UsbConstants.USB_CLASS_CDC_DATA && hasBulkSerialEndpoints(intf)
-    }
-    val explicit = controls.flatMap { control ->
-        associations[control.id].orEmpty().mapNotNull { dataId ->
-            dataInterfaces.firstOrNull { it.id == dataId }?.let { CdcAcmPair(control, it) }
-        }
-    }
-    if (explicit.isNotEmpty()) return explicit.distinctBy { it.control.id to it.data.id }
-    val adjacent = controls.mapNotNull { control ->
-        dataInterfaces.firstOrNull { it.id == control.id + 1 }?.let { CdcAcmPair(control, it) }
-    }
-    if (adjacent.isNotEmpty()) return adjacent.distinctBy { it.control.id to it.data.id }
-    return if (controls.size == 1 && dataInterfaces.size == 1) {
-        listOf(CdcAcmPair(controls.single(), dataInterfaces.single()))
-    } else {
-        emptyList()
+    return discoverSerialUsbPorts(device.vendorId, device.productId, interfaces.mapIndexed { index, intf ->
+        SerialUsbInterface(intf.id, index, intf.interfaceClass, intf.interfaceSubclass, hasBulkSerialEndpoints(intf))
+    }, descriptors, override).map { port ->
+        UsbSerialPortCandidate(port.driver, interfaces.first { it.id == port.controlId },
+            interfaces.first { it.id == port.dataId }, port.portIndex)
     }
 }
 
@@ -838,41 +895,9 @@ internal fun splitReadChunk(bytes: ByteArray, maxBytes: Int): Pair<ByteArray, By
 }
 
 internal fun parseCdcInterfaceAssociations(descriptors: ByteArray): Map<Int, Set<Int>> {
-    val associations = mutableMapOf<Int, MutableSet<Int>>()
-    var offset = 0
-    while (offset + 1 < descriptors.size) {
-        val length = descriptors[offset].toInt() and 0xff
-        val type = descriptors[offset + 1].toInt() and 0xff
-        if (length < 2 || offset + length > descriptors.size) break
-        when {
-            type == USB_DESCRIPTOR_TYPE_CS_INTERFACE && length >= 5 &&
-                (descriptors[offset + 2].toInt() and 0xff) == CDC_UNION_SUBTYPE -> {
-                val master = descriptors[offset + 3].toInt() and 0xff
-                val slaves = associations.getOrPut(master) { mutableSetOf() }
-                for (index in offset + 4 until offset + length) slaves += descriptors[index].toInt() and 0xff
-            }
-            type == USB_DESCRIPTOR_TYPE_IAD && length >= 8 &&
-                (descriptors[offset + 4].toInt() and 0xff) == UsbConstants.USB_CLASS_COMM &&
-                (descriptors[offset + 5].toInt() and 0xff) == CDC_ACM_SUBCLASS -> {
-                val first = descriptors[offset + 2].toInt() and 0xff
-                val count = descriptors[offset + 3].toInt() and 0xff
-                val members = associations.getOrPut(first) { mutableSetOf() }
-                for (id in first + 1 until first + count) members += id
-            }
-        }
-        offset += length
-    }
-    return associations.mapValues { it.value.toSet() }
+    return com.rtbishop.look4sat.core.domain.control.serialUsbAssociations(descriptors)
 }
 
-private const val CDC_ACM_SUBCLASS = 0x02
-private const val USB_DESCRIPTOR_TYPE_IAD = 0x0b
-private const val USB_DESCRIPTOR_TYPE_CS_INTERFACE = 0x24
-private const val CDC_UNION_SUBTYPE = 0x06
-private const val USB_VENDOR_FTDI = 0x0403
-private const val USB_VENDOR_SILICON_LABS = 0x10C4
-private const val USB_VENDOR_QINHENG = 0x1A86
-private const val USB_VENDOR_CH34X_ALT = 0x4348
 private const val FTDI_PACKET_STATUS_BYTES = 2
 private const val MAX_USB_TRANSFER_BYTES = 16_384
 

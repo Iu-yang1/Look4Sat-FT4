@@ -188,7 +188,9 @@ data class RadioControlSettings(
         com.rtbishop.look4sat.core.domain.audio.RadioAudioSettings(),
     /** Physical USB CAT serial control lines; never used as application PTT commands. */
     val catRts: Boolean = false,
-    val catDtr: Boolean = false
+    val catDtr: Boolean = false,
+    val usbFlowControl: com.rtbishop.look4sat.core.domain.control.SerialUsbFlow =
+        com.rtbishop.look4sat.core.domain.control.SerialUsbFlow.NONE
 ) {
     companion object {
         const val MODEL_YAESU_FT817 = "Yaesu FT-817/818"

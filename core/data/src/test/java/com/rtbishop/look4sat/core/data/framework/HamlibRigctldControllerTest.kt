@@ -6,8 +6,42 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.launch
 
 class HamlibRigctldControllerTest {
+    @Test fun cancelledPartialResponseClosesStreamBeforeNextCommand() = runTest {
+        val base = FakeRigctldTransport()
+        val entered = kotlinx.coroutines.CompletableDeferred<Unit>()
+        var blockReads = false
+        var closed = false
+        val link = object : RadioTransport by base {
+            override suspend fun readAvailable(maxBytes: Int): ByteArray {
+                if (!blockReads) return base.readAvailable(maxBytes)
+                entered.complete(Unit)
+                kotlinx.coroutines.awaitCancellation()
+            }
+            override suspend fun disconnect() {
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                closed = true
+                base.disconnect()
+            }
+        }
+        val radio = HamlibRigctldController("localhost:4532", link)
+        assertTrue(radio.connect())
+        blockReads = true
+        val reading = backgroundScope.launch { radio.readFrequencyAndMode() }
+        entered.await()
+        reading.cancelAndJoin()
+        assertTrue(closed)
+        assertFalse(radio.isConnected)
+        blockReads = false
+        assertTrue(radio.connect())
+        assertEquals(145_900_000L to "USB", radio.readFrequencyAndMode())
+        radio.disconnect()
+    }
+
     @Test fun legacyRigWithoutPttCapabilityNeverQueriesUnsupportedStatus()=runTest {
         val transport=FakeRigctldTransport()
         val radio=HamlibRigctldController("localhost:4532",transport,pttReadbackSupported=false)

@@ -73,4 +73,20 @@ class ProlificSerialTest {
                 _, _, _, _, _ -> fail("Unexpected control transfer"); 0
         })
     }
+
+    @Test fun handshakeCanBeEnabledAndDisabledWithoutReinitializingEitherVariant() {
+        for (hxn in listOf(false, true)) for (enabled in listOf(false, true)) {
+            var count = 0
+            assertTrue(setProlificFlow(hxn, enabled) { type, request, value, index, bytes ->
+                count++
+                assertEquals(0x40, type)
+                assertEquals(if (hxn) 0x80 else 1, request)
+                assertEquals(if (hxn) 10 else 0, value)
+                assertEquals(if (hxn) { if (enabled) 0xfa else 0xff } else { if (enabled) 0x61 else 0 }, index)
+                assertNull(bytes)
+                0
+            })
+            assertEquals(1, count)
+        }
+    }
 }

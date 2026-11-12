@@ -20,6 +20,34 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class RadioTransportTest {
+    @Test fun closingUsbCatReleasesBothOutputsOnEveryBridgeAndUsesSelectedPort() {
+        val expected = mapOf(
+            UsbSerialDriverKind.CDC_ACM to listOf(listOf(0x21, 0x22, 0, 4)),
+            UsbSerialDriverKind.PROLIFIC to listOf(listOf(0x21, 0x22, 0, 0)),
+            UsbSerialDriverKind.CP210X to listOf(listOf(0x41, 0x07, 0x0300, 2), listOf(0x41, 0, 0, 2)),
+            UsbSerialDriverKind.FTDI to listOf(listOf(0x40, 1, 0x0300, 3)),
+            UsbSerialDriverKind.CH34X to listOf(listOf(0x40, 0xA4, 0xFFFF, 0))
+        )
+        for ((driver, requests) in expected) {
+            val sent = mutableListOf<List<Int>>()
+            assertTrue(releaseUsbSerialControlLines(driver, 4, 2) { type, request, value, index ->
+                sent += listOf(type, request, value, index)
+                0
+            })
+            assertEquals(requests, sent)
+        }
+    }
+
+    @Test fun failedModemReleaseStillAttemptsToDisableCp210xUart() {
+        val requests = mutableListOf<Int>()
+        assertFalse(releaseUsbSerialControlLines(UsbSerialDriverKind.CP210X, 0, 0) { _, request, _, _ ->
+            requests += request
+            if (request == 7) throw java.io.IOException("device detached")
+            0
+        })
+        assertEquals(listOf(7, 0), requests)
+    }
+
     @Test fun onlyL4sNativeCdcUsesShortBoundedWriteTimeout() {
         assertEquals(150,usbRadioWriteTimeoutMillis(true,UsbSerialDriverKind.CDC_ACM))
         assertEquals(1000,usbRadioWriteTimeoutMillis(false,UsbSerialDriverKind.CDC_ACM))
@@ -82,11 +110,14 @@ class RadioTransportTest {
     }
 
     @Test
-    fun targetedUsbBridgeVendorsResolveToInternalDrivers() {
-        assertEquals(UsbSerialDriverKind.CP210X, usbSerialDriverForVendor(0x10C4))
-        assertEquals(UsbSerialDriverKind.FTDI, usbSerialDriverForVendor(0x0403))
-        assertEquals(UsbSerialDriverKind.CH34X, usbSerialDriverForVendor(0x1A86))
-        assertNull(usbSerialDriverForVendor(0xFFFF))
+    fun knownUsbBridgeProductsResolveWithoutGuessingFromVendorAlone() {
+        fun driver(vendor: Int, product: Int) =
+            com.rtbishop.look4sat.core.domain.control.serialUsbDriver(vendor, product)
+        assertEquals(UsbSerialDriverKind.CP210X, driver(0x10C4, 0xea60))
+        assertEquals(UsbSerialDriverKind.FTDI, driver(0x0403, 0x6011))
+        assertEquals(UsbSerialDriverKind.CH34X, driver(0x1A86, 0x7523))
+        assertNull(driver(0x1A86, 0x55d4))
+        assertNull(driver(0xFFFF, 0xFFFF))
     }
 
     @Test

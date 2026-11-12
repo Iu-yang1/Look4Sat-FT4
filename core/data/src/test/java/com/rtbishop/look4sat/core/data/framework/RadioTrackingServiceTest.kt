@@ -65,6 +65,20 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class RadioTrackingServiceTest {
+    @Test fun oneRadioCleanupFailureDoesNotLeaveTheOtherConnectionOpen() = runTest {
+        val tx = FakeRadioController()
+        val rx = FakeRadioController()
+        val fixture = Fixture(backgroundScope, tx, rx)
+        fixture.service.connectRadios()
+        tx.beforeDisconnect = { throw java.io.IOException("TX cleanup failed") }
+        fixture.service.disconnectRadios()
+        assertFalse(tx.isConnected)
+        assertFalse(rx.isConnected)
+        assertTrue(rx.operations.contains("disconnect"))
+        assertEquals(0, fixture.service.state.value.physicalConnectionCount)
+        fixture.close()
+    }
+
     @Test fun l4sUnsavedHandsetUsbSurvivesPollingTrackingRestartAndSameTransponderSelection()=runTest {
         for(model in listOf(RadioControlSettings.MODEL_QUANSHENG_UVK1,RadioControlSettings.MODEL_QUANSHENG_UVK5V3)) {
             val remote=remoteFixtureState()
@@ -1952,6 +1966,7 @@ private class FakeRadioController(
     var beforeSetFrequency: (suspend () -> Unit)? = null
     override var isConnected: Boolean = false
     var beforeConnect: (suspend () -> Unit)? = null
+    var beforeDisconnect: (suspend () -> Unit)? = null
 
     override suspend fun connect(): Boolean {
         operations += "connect"
@@ -1962,7 +1977,8 @@ private class FakeRadioController(
 
     override suspend fun disconnect() {
         operations += "disconnect"
-        isConnected = false
+        try { beforeDisconnect?.invoke() }
+        finally { isConnected = false }
     }
 
     override suspend fun setFrequency(frequencyHz: Long): Boolean {

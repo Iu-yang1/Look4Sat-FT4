@@ -22,7 +22,7 @@ internal data class PendingUsbSelection(
     // A permission belongs to this attachment, not another radio with the same VID/PID.
     fun matches(device: UsbDevice): Boolean {
         val parts = address.split(':')
-        return parts.size == 5 && parts[0].toIntOrNull() == device.deviceId &&
+        return parts.size in 5..6 && parts[0].toIntOrNull() == device.deviceId &&
             parts[3].toIntOrNull() == device.vendorId && parts[4].toIntOrNull() == device.productId
     }
 

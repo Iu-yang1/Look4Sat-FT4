@@ -3,6 +3,9 @@ package com.rtbishop.look4sat.core.data.framework
 import com.rtbishop.look4sat.core.domain.repository.FrequencyPairResult
 import com.rtbishop.look4sat.core.domain.control.ControlDiagnosticsBuffer
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
@@ -12,6 +15,51 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class L4sControllerTest {
+    @Test fun cancelledHandshakeClosesUsbEvenWhenCallerIsCancelled() = runTest {
+        val writing = kotlinx.coroutines.CompletableDeferred<Unit>()
+        var closed = false
+        val link = object : RadioTransport {
+            override var isConnected = false
+            override suspend fun connect(): Boolean { isConnected = true; return true }
+            override suspend fun disconnect() {
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                closed = true
+                isConnected = false
+            }
+            override suspend fun write(bytes: ByteArray): Boolean {
+                writing.complete(Unit)
+                kotlinx.coroutines.awaitCancellation()
+            }
+            override suspend fun readAvailable(maxBytes: Int) = byteArrayOf()
+        }
+        val radio = L4sController(link, backgroundScope, StandardTestDispatcher(testScheduler))
+        val connecting = backgroundScope.launch { radio.connect() }
+        writing.await()
+        connecting.cancelAndJoin()
+        assertTrue(closed)
+        assertFalse(radio.isConnected)
+        assertFalse(radio.remoteState.value.connected)
+    }
+
+    @Test fun teardownFailureStillClosesUsbAndClearsConnectedState() = runTest {
+        val base = ScriptedL4sTransport()
+        var failWrite = false
+        val link = object : RadioTransport by base {
+            override suspend fun write(bytes: ByteArray): Boolean {
+                if (failWrite) throw java.io.IOException("USB failed during stop")
+                return base.write(bytes)
+            }
+        }
+        val radio = L4sController(link, backgroundScope, StandardTestDispatcher(testScheduler))
+        assertTrue(radio.connect())
+        failWrite = true
+        assertTrue(runCatching { radio.disconnect() }.isFailure)
+        assertFalse(base.isConnected)
+        assertFalse(radio.isConnected)
+        assertFalse(radio.remoteState.value.connected)
+        assertFalse(radio.remoteState.value.transmitStateKnown)
+    }
+
     @Test fun sharedFirmwareVectorsAndCrcMatchKotlinCodec() {
         val text=checkNotNull(javaClass.getResourceAsStream("/l4s-v1-vectors.json")).bufferedReader().use { it.readText() }
         Regex("\"body\":\"([0-9a-f]+)\",\"frame\":\"([0-9a-f]+)\"").findAll(text).forEach { match ->

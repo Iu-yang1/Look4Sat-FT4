@@ -60,6 +60,18 @@ class UsbPermissionRequestTest {
         assertEquals(device, authorizedUsbDevice(manager, selection))
     }
 
+    @Test fun firstGrantPreservesExplicitDriverMappingForAnOemDevice() {
+        val selection = selection().let { it.copy(address = "${it.address}:FTDI") }
+        shadowOf(manager).addOrUpdateUsbDevice(device, false)
+        assertNull(authorizedUsbDevice(manager, selection))
+        shadowOf(manager).addOrUpdateUsbDevice(device, true)
+        assertTrue(selection.matches(device))
+        assertEquals(device, authorizedUsbDevice(manager, selection))
+        val scope = SaverScope { true }
+        val saved = with(pendingUsbSelectionSaver) { scope.save(mutableStateOf(selection)) }!!
+        assertEquals(selection, pendingUsbSelectionSaver.restore(saved)?.value)
+    }
+
     @Test fun denialAndDetachmentNeverApplyASelection() {
         val selection = selection()
         shadowOf(manager).addOrUpdateUsbDevice(device, false)

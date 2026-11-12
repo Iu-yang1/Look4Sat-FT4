@@ -74,6 +74,7 @@ class Ic705Controller(
     /** Time budget (ms) to wait for a response amid broadcast noise. */
     private var handshaking = false
     private var responseRejected = false
+    private var legacyResyncRequired = false
     private val responseTimeoutMs get() = when {
         handshaking -> 2_000L
         variant == IcomCivVariant.IC910 || variant == IcomCivVariant.IC820 -> 1_000L
@@ -96,8 +97,10 @@ class Ic705Controller(
     private val IC820_VERIFY_EVERY_CYCLES = 16
     private val IC820_AUDIT_INTERVAL_NANOS = 20_000_000_000L
 
-    @Volatile override var isConnected: Boolean = false
-        private set
+    @Volatile private var connected = false
+    override var isConnected: Boolean
+        get() = connected && transport.isConnected
+        private set(value) { connected = value }
     override val commandTimeoutMillis get() = when (variant) {
         IcomCivVariant.IC705 -> 15_000L
         // Full initial 1200-baud MAIN/SUB verification exceeds the generic 3 s actor budget.
@@ -110,6 +113,7 @@ class Ic705Controller(
 
     override suspend fun connect(): Boolean = withContext(Dispatchers.IO) {
         if (isConnected) return@withContext true
+        legacyResyncRequired = false
         ic820PairReady = false
         ic820LastRxHz = null
         ic820LastTxHz = null
@@ -455,6 +459,8 @@ class Ic705Controller(
      */
     private suspend fun tuneIc820FastLocked(rxHz: Long, txHz: Long?): FrequencyPairResult? {
         if (!ic820PairReady) return null
+        // Restore readiness only after both tuning and access restoration complete.
+        ic820PairReady = false
         val startedNanos = System.nanoTime()
         if (ic820FastCycles >= IC820_VERIFY_EVERY_CYCLES ||
             (ic820FastSubAccess && System.nanoTime() - ic820LastAuditNanos >= IC820_AUDIT_INTERVAL_NANOS)) {
@@ -488,7 +494,10 @@ class Ic705Controller(
         val updateTx = txHz?.let { target ->
             ic820LastTxHz?.let { kotlin.math.abs(it - target) >= IC820_TUNE_THRESHOLD_HZ } ?: true
         } ?: false
-        if (!updateRx && !updateTx) return FrequencyPairResult.APPLIED
+        if (!updateRx && !updateTx) {
+            ic820PairReady = true
+            return FrequencyPairResult.APPLIED
+        }
 
         val main = IcomCivProtocol.buildIc820BandAccessCommand(main = true)
         val sub = IcomCivProtocol.buildIc820BandAccessCommand(main = false)
@@ -535,6 +544,7 @@ class Ic705Controller(
         if (updateRx) ic820LastRxHz = rxHz
         if (updateTx) ic820LastTxHz = txHz
         ic820FastCycles++
+        ic820PairReady = true
         diagnose("pair/ready",
             "mode=${if (ic820FastSubAccess) "fast-sub-access" else "fast-exchange"} " +
                 "rxUpdated=$updateRx txUpdated=$updateTx targetMainTx=$txHz targetSubRx=$rxHz " +
@@ -872,7 +882,9 @@ class Ic705Controller(
      */
     override suspend fun readWorkingFrequency(): Long? = withContext(Dispatchers.IO) {
         if (variant == IcomCivVariant.IC820) return@withContext ioMutex.withLock {
+            val readyBeforeRead = ic820PairReady
             val (restored, frequency) = ic820WithSubAsMainLocked { readFrequencyLocked() }
+            ic820PairReady = readyBeforeRead && restored && frequency != null && frequency == ic820LastRxHz
             frequency.takeIf { restored }
         }
         if (usesManualVfoSelection) {
@@ -903,7 +915,7 @@ class Ic705Controller(
     override suspend fun readTxVfoFrequency(): Long? = withContext(Dispatchers.IO) {
         if (variant == IcomCivVariant.IC820) return@withContext ioMutex.withLock {
             if (!sendAndWaitAck(IcomCivProtocol.buildIc820BandAccessCommand(main = true)))
-                null else readFrequencyLocked()
+                null else readFrequencyLocked().also { if (it != ic820LastTxHz) ic820PairReady = false }
         }
         if (usesManualVfoSelection) {
             return@withContext ioMutex.withLock {
@@ -946,20 +958,65 @@ class Ic705Controller(
             return session.request(addressCommand(cmd), IcomCivProtocol.ACK_OK,
                 timeoutMillis = commandReplyTimeout(cmd), trace = handshaking)?.cmd == IcomCivProtocol.ACK_OK
         }
-        if (!write(cmd)) return false
-        if (WRITE_SETTLE_MS > 0L) delay(WRITE_SETTLE_MS)
         val echoed = addressCommand(cmd)
-        fun ackStatus(buf: ByteArray): Boolean? =
-            if (variant == IcomCivVariant.IC820)
-                IcomCivProtocol.ackStatusAfterEcho(buf, civAddress, echoed)
-            else IcomCivProtocol.ackStatus(buf, civAddress)
-        val buf = drainWithTimeout(responseTimeoutMs) { ackStatus(it) != null }
-        val standardAck = IcomCivProtocol.ackStatus(buf, civAddress)
-        val status = ackStatus(buf)
-        if (standardAck == null && status != null)
-            diagnose("reply/echo-recovered", "command=${commandHex(cmd)} status=${if (status) "FB" else "FA"} one-FE preamble after exact echo", ControlDiagnosticSeverity.WARNING)
-        if (status != true) reportReplyFailure(cmd, buf, status)
-        return status == true
+        val emergencyStop = echoed.contentEquals(addressCommand(IcomCivProtocol.buildPttCommand(false)))
+        val wasUnsynchronized = legacyResyncRequired
+        if (wasUnsynchronized && !emergencyStop && !resyncLegacyLocked()) return false
+        val exchange = variant == IcomCivVariant.IC820 &&
+            echoed.contentEquals(addressCommand(IcomCivProtocol.buildIc820MainSubExchangeCommand()))
+        if (variant == IcomCivVariant.IC820 &&
+            (echoed.getOrNull(4) in listOf(0x05.toByte(), 0x06.toByte()) ||
+                echoed.getOrNull(4) == 0x07.toByte() &&
+                echoed.getOrNull(5) !in listOf(0xD0.toByte(), 0xD1.toByte()))) ic820PairReady = false
+        var status: Boolean? = null
+        legacyResyncRequired = true
+        try {
+            if (!write(cmd)) return false
+            if (WRITE_SETTLE_MS > 0L) delay(WRITE_SETTLE_MS)
+            fun ackStatus(buf: ByteArray): Boolean? =
+                if (variant == IcomCivVariant.IC820)
+                    IcomCivProtocol.ackStatusAfterEcho(buf, civAddress, echoed)
+                else IcomCivProtocol.ackStatus(buf, civAddress)
+            val buf = drainWithTimeout(responseTimeoutMs) { ackStatus(it) != null }
+            val standardAck = IcomCivProtocol.ackStatus(buf, civAddress)
+            status = ackStatus(buf)
+            if (status != null) legacyResyncRequired = wasUnsynchronized && emergencyStop
+            if (standardAck == null && status != null)
+                diagnose("reply/echo-recovered", "command=${commandHex(cmd)} status=${if (status == true) "FB" else "FA"} one-FE preamble after exact echo", ControlDiagnosticSeverity.WARNING)
+            if (status != true) reportReplyFailure(cmd, buf, status)
+            return status == true
+        } finally {
+            if (exchange && status == null) {
+                // B0 is a toggle. A lost ACK cannot tell us whether it executed;
+                // another B0 in a restoration block could exchange the wrong roles.
+                withContext(NonCancellable) { dropLegacyConnection("MAIN/SUB exchange result unknown; reconnect to inspect bands") }
+            }
+        }
+    }
+
+    /** CI-V ACKs have no transaction ID. Fence a timed-out transaction with a distinct read reply. */
+    private suspend fun resyncLegacyLocked(): Boolean {
+        diagnose("reply/resync", "Draining late replies before read-only frequency barrier")
+        drainWithTimeout(200L) { false }
+        if (!write(IcomCivProtocol.buildReadFreqCommand())) return false
+        val buf = drainWithTimeout(responseTimeoutMs) {
+            IcomCivProtocol.parseResponse(it, IcomCivProtocol.CMD_READ_FREQ, civAddress) != null
+        }
+        val frequency = IcomCivProtocol.parseResponse(buf, IcomCivProtocol.CMD_READ_FREQ, civAddress)
+            ?.payload?.let(::parseModelFrequency)
+        if (frequency == null) {
+            dropLegacyConnection("Read-only reply barrier failed")
+            return false
+        }
+        legacyResyncRequired = false
+        return true
+    }
+
+    private suspend fun dropLegacyConnection(reason: String) {
+        isConnected = false
+        ic820PairReady = false
+        diagnose("disconnect", reason, ControlDiagnosticSeverity.ERROR)
+        withContext(NonCancellable) { runCatching { transport.disconnect() } }
     }
 
     /**
@@ -983,6 +1040,8 @@ class Ic705Controller(
             responseRejected = response?.cmd == IcomCivProtocol.ACK_NG
             return response?.takeIf { it.cmd == expectCmd }?.payload
         }
+        if (legacyResyncRequired && !resyncLegacyLocked()) return null
+        legacyResyncRequired = true
         if (!write(cmd)) return null
         if (WRITE_SETTLE_MS > 0L) delay(WRITE_SETTLE_MS)
         val buf      = drainWithTimeout(responseTimeoutMs) {
@@ -990,8 +1049,11 @@ class Ic705Controller(
                 IcomCivProtocol.ackStatus(it, civAddress) == false
         }
         val response = IcomCivProtocol.parseResponse(buf, expectCmd, civAddress, payloadMatches)
+        if (response != null || IcomCivProtocol.ackStatus(buf, civAddress) == false)
+            legacyResyncRequired = false
         if (response == null) {
             responseRejected = IcomCivProtocol.ackStatus(buf, civAddress) == false
+            if (!responseRejected) legacyResyncRequired = true
             reportReplyFailure(cmd, buf)
         } else if (handshaking) {
             diagnose("reply/received", "command=${commandHex(cmd)} bytes=${IcomCivProtocol.toHex(buf.take(96).toByteArray())}")

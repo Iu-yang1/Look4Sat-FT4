@@ -23,6 +23,31 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class N76ControllerTest {
+    @Test fun audioCleanupFailureStillClosesCatAndClearsConnectionState() = runBlocking {
+        val wire = SimulatedN76()
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        var failClose = false
+        val audio = object : FakeAudio(wire) {
+            override suspend fun disconnect() {
+                if (failClose) throw java.io.IOException("Audio cleanup failed")
+                super.disconnect()
+            }
+        }
+        val radio = N76Controller(wire, scope, replyTimeoutMillis = 100, audio = audio)
+        try {
+            assertTrue(radio.connect())
+            failClose = true
+            assertTrue(runCatching { radio.disconnect() }.isFailure)
+            assertFalse(wire.isConnected)
+            assertFalse(radio.isConnected)
+            assertFalse(radio.remoteState.value.connected)
+        } finally {
+            failClose = false
+            runCatching { radio.disconnect() }
+            scope.cancel()
+        }
+    }
+
     @Test fun framesMatchGaiaAndDecoderHandlesSplitCoalescedNoiseEchoAndChecksums() {
         assertArrayEquals(byteArrayOf(-1, 1, 0, 1, 0, 2, 0, 4, 3), N76Protocol.frame(4, byteArrayOf(3)))
         val wire = N76Protocol.frame(35, byteArrayOf(0), reply = true)

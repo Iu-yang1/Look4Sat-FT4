@@ -46,8 +46,10 @@ class Ft817Controller(
     private val pttRetries = if (variant == YaesuCatVariant.FT817) 5 else 0
     private var readCommandAcks = true
 
-    override var isConnected: Boolean = false
-        private set
+    @Volatile private var connected = false
+    override var isConnected: Boolean
+        get() = connected && transport.isConnected
+        private set(value) { connected = value }
 
     override suspend fun connect(): Boolean = withContext(Dispatchers.IO) {
         if (isConnected) return@withContext true
@@ -63,8 +65,8 @@ class Ft817Controller(
             Log.i(tag, "Connected to $deviceAddress")
             isConnected
         } catch (cancelled: CancellationException) {
-            runCatching { transport.disconnect() }
             isConnected = false
+            withContext(NonCancellable) { runCatching { transport.disconnect() } }
             throw cancelled
         } catch (e: Exception) {
             Log.e(tag, "Connect error: ${e.message}")
@@ -208,12 +210,13 @@ class Ft817Controller(
             return sent
         }
 
-        repeat(pttRetries + 1) { attempt ->
+        val attempts = if (enabled) 1 else pttRetries + 1
+        repeat(attempts) { attempt ->
             if (!sendCommandWithAck(command)) return false
             if (!sendCommand(Ft817CatProtocol.buildReadTxStatusCommand())) return false
             val status = readExact(1, PTT_STATUS_TIMEOUT_MS)?.singleOrNull()
             if (status != null && Ft817CatProtocol.parsePttState(status, variant) == enabled) return true
-            if (attempt < pttRetries) delay(FT817_PTT_RETRY_DELAY_MS)
+            if (attempt + 1 < attempts) delay(FT817_PTT_RETRY_DELAY_MS)
         }
         Log.e(tag, "PTT ${if (enabled) "ON" else "OFF"} was not confirmed by TX status")
         return false
@@ -226,6 +229,10 @@ class Ft817Controller(
                 var read = 0
                 val deadline = System.nanoTime() + timeoutMs * NANOS_PER_MILLISECOND
                 while (read < size) {
+                    if (!transport.isConnected) {
+                        isConnected = false
+                        return@withContext null
+                    }
                     val chunk = transport.readAvailable(size - read)
                     if (chunk.isEmpty()) {
                         if (System.nanoTime() >= deadline) return@withContext null
@@ -250,6 +257,10 @@ class Ft817Controller(
         val deadline = System.nanoTime() + timeoutMs * NANOS_PER_MILLISECOND
         try {
             while (System.nanoTime() < deadline) {
+                if (!transport.isConnected) {
+                    isConnected = false
+                    return@withContext null
+                }
                 val value = transport.readAvailable(1).firstOrNull()
                 if (value != null) return@withContext value.toInt() and 0xFF
                 delay(POLL_INTERVAL_MS.milliseconds)

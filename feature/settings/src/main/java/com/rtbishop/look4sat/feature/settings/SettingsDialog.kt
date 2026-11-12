@@ -26,7 +26,6 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
-import android.hardware.usb.UsbConstants
 import android.hardware.usb.UsbDevice
 import android.hardware.usb.UsbManager
 import android.os.Build
@@ -1214,6 +1213,14 @@ fun RadioControlDialog(
     val splitMode  = rememberSaveable { mutableStateOf(initialSettings.splitMode) }
     val catRts = rememberSaveable { mutableStateOf(initialSettings.catRts) }
     val catDtr = rememberSaveable { mutableStateOf(initialSettings.catDtr) }
+    val usbFlow = rememberSaveable { mutableStateOf(initialSettings.usbFlowControl.name) }
+    val usbDriver = rememberSaveable {
+        mutableStateOf(listOf(initialSettings.txRadioAddress, initialSettings.rxRadioAddress)
+            .mapNotNull { address -> address.split(':').takeIf { it.size == 6 }?.last() }
+            .firstOrNull { name ->
+                com.rtbishop.look4sat.core.domain.control.SerialUsbDriver.entries.any { it.name == name }
+            }.orEmpty())
+    }
     val duplexMode = rememberSaveable { mutableStateOf(initialSettings.duplexMode) }
     val catTransport = rememberSaveable { mutableStateOf(initialSettings.catTransport) }
     val tcpProtocol = rememberSaveable { mutableStateOf(initialSettings.tcpProtocol) }
@@ -1289,7 +1296,23 @@ fun RadioControlDialog(
         bluetoothDevicesRevision.intValue++
     }
 
-    val applyUsbSelection: (PendingUsbSelection) -> Unit = { selection ->
+    val applyUsbSelection: (PendingUsbSelection) -> Unit = applySelection@{ pending ->
+        val attached = authorizedUsbDevice(usbManager, pending) ?: return@applySelection
+        val parsed = parseUsbSerialUiSelector(pending.address) ?: return@applySelection
+        val ports = attached.usbSerialPorts(usbManager, parsed.driver)
+        val port = ports.firstOrNull {
+            it.controlInterfaceId == parsed.controlInterfaceId && it.dataInterfaceId == parsed.dataInterfaceId
+        } ?: ports.singleOrNull()
+        if (port == null) {
+            // Permission can reveal several non-adjacent CDC ports. Show their actual
+            // descriptors instead of silently picking one of them.
+            usbDevicesRevision.intValue++
+            return@applySelection
+        }
+        val address = (listOf(attached.deviceId, port.controlInterfaceId, port.dataInterfaceId,
+            attached.vendorId, attached.productId).map { it.toString() } +
+            listOfNotNull(parsed.driver?.name)).joinToString(":")
+        val selection = pending.copy(address = address)
         if (selection.target == "tx") {
             txAddress.value = selection.address
             txName.value = selection.name
@@ -1412,13 +1435,27 @@ fun RadioControlDialog(
         radioModel.value,
         usbSerialDeviceFormat,
         bluetoothDevicesRevision.intValue,
-        usbDevicesRevision.intValue
+        usbDevicesRevision.intValue,
+        usbDriver.value
     ) {
         buildList {
             try {
                 if (catTransport.value == RadioControlSettings.TRANSPORT_USB) {
                     usbManager.deviceList.values.forEach { device ->
-                        device.usbSerialPorts().forEach { port ->
+                        val override = if (isL4s) null else
+                            com.rtbishop.look4sat.core.domain.control.SerialUsbDriver.entries
+                                .firstOrNull { it.name == usbDriver.value }
+                        val ports = device.usbSerialPorts(usbManager, override)
+                        if (ports.isEmpty() && !usbManager.hasPermission(device) &&
+                            (0 until device.interfaceCount).any {
+                                device.getInterface(it).interfaceClass == 2
+                            }) {
+                            add(RadioDeviceUiEntry(
+                                name = "USB · %04X:%04X".format(device.vendorId, device.productId),
+                                address = "${device.deviceId}:0:0:${device.vendorId}:${device.productId}",
+                                usbDeviceId = device.deviceId, hasUsbPermission = false))
+                        }
+                        ports.forEach { port ->
                             val product = runCatching { device.productName }.getOrNull() ?: "USB"
                             val identity = "%04X:%04X".format(device.vendorId, device.productId)
                             val name = usbSerialDeviceFormat.format(
@@ -1427,13 +1464,15 @@ fun RadioControlDialog(
                                 port.dataInterfaceId,
                                 identity
                             )
-                            val selector = listOf(
+                            val selectorParts = listOf(
                                 device.deviceId,
                                 port.controlInterfaceId,
                                 port.dataInterfaceId,
                                 device.vendorId,
                                 device.productId
-                            ).joinToString(":")
+                            )
+                            val selector = (selectorParts.map { it.toString() } +
+                                listOfNotNull(override?.name)).joinToString(":")
                             add(
                                 RadioDeviceUiEntry(
                                     name = name,
@@ -1546,6 +1585,7 @@ fun RadioControlDialog(
                 baudRate       = baudRate.intValue,
                 catRts         = catRts.value,
                 catDtr         = catDtr.value,
+                usbFlowControl = com.rtbishop.look4sat.core.domain.control.SerialUsbFlow.valueOf(usbFlow.value),
                 splitMode      = splitMode.value,
                 catTransport   = catTransport.value,
                 duplexMode     = if (supportsSatelliteMode) {
@@ -2056,19 +2096,42 @@ fun RadioControlDialog(
                 Spacer(modifier = Modifier.height(6.dp))
             }
             if (catTransport.value == RadioControlSettings.TRANSPORT_USB && !isL4s && !isN76) {
+                Text(stringResource(R.string.usb_driver), fontWeight = FontWeight.Medium)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(selected = usbDriver.value.isEmpty(), onClick = { usbDriver.value = "" },
+                        label = { Text(stringResource(R.string.usb_driver_auto)) })
+                    com.rtbishop.look4sat.core.domain.control.SerialUsbDriver.entries.forEach { driver ->
+                        FilterChip(selected = usbDriver.value == driver.name,
+                            onClick = { usbDriver.value = driver.name },
+                            label = { Text(driver.displayName) })
+                    }
+                }
+                Text(stringResource(R.string.usb_flow_control), fontWeight = FontWeight.Medium)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    com.rtbishop.look4sat.core.domain.control.SerialUsbFlow.entries.forEach { flow ->
+                        FilterChip(selected = usbFlow.value == flow.name,
+                            onClick = { usbFlow.value = flow.name },
+                            label = { Text(when (flow) {
+                                com.rtbishop.look4sat.core.domain.control.SerialUsbFlow.NONE ->
+                                    stringResource(R.string.usb_flow_none)
+                                com.rtbishop.look4sat.core.domain.control.SerialUsbFlow.RTS_CTS -> "RTS / CTS"
+                                com.rtbishop.look4sat.core.domain.control.SerialUsbFlow.DTR_DSR -> "DTR / DSR"
+                            }) })
+                    }
+                }
                 Text("USB CAT RTS / DTR", fontWeight = FontWeight.Medium)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     FilterChip(
                         selected = catRts.value,
                         onClick = { catRts.value = !catRts.value },
                         label = { Text("RTS") },
-                        enabled = enabled.value
+                        enabled = enabled.value && usbFlow.value != "RTS_CTS"
                     )
                     FilterChip(
                         selected = catDtr.value,
                         onClick = { catDtr.value = !catDtr.value },
                         label = { Text("DTR") },
-                        enabled = enabled.value
+                        enabled = enabled.value && usbFlow.value != "DTR_DSR"
                     )
                 }
                 Spacer(modifier = Modifier.height(6.dp))
@@ -2168,7 +2231,8 @@ private data class UsbSerialUiSelector(
     val controlInterfaceId: Int,
     val dataInterfaceId: Int,
     val vendorId: Int?,
-    val productId: Int?
+    val productId: Int?,
+    val driver: com.rtbishop.look4sat.core.domain.control.SerialUsbDriver? = null
 )
 
 private fun validateUsbSelection(
@@ -2179,7 +2243,7 @@ private fun validateUsbSelection(
     val selector = parseUsbSerialUiSelector(value) ?: return UsbSelectionError.DEVICE_MISSING
     val device = resolveUsbSerialUiDevice(manager.deviceList.values, selector)
         ?: return UsbSelectionError.DEVICE_MISSING
-    val port = device.usbSerialPorts().firstOrNull {
+    val port = device.usbSerialPorts(manager, selector.driver).firstOrNull {
         it.controlInterfaceId == selector.controlInterfaceId &&
             it.dataInterfaceId == selector.dataInterfaceId
     } ?: return UsbSelectionError.DEVICE_MISSING
@@ -2191,14 +2255,16 @@ private fun validateUsbSelection(
 
 private fun parseUsbSerialUiSelector(value: String): UsbSerialUiSelector? {
     val parts = value.split(':')
-    if (parts.size != 3 && parts.size != 5) return null
+    if (parts.size !in setOf(3, 5, 6)) return null
     val deviceId = parts[0].toIntOrNull() ?: return null
     val controlId = parts[1].toIntOrNull()?.takeIf { it >= 0 } ?: return null
     val dataId = parts[2].toIntOrNull()?.takeIf { it >= 0 } ?: return null
     val vendorId = parts.getOrNull(3)?.toIntOrNull()?.takeIf { it in 0..0xFFFF }
     val productId = parts.getOrNull(4)?.toIntOrNull()?.takeIf { it in 0..0xFFFF }
-    if (parts.size == 5 && (vendorId == null || productId == null)) return null
-    return UsbSerialUiSelector(deviceId, controlId, dataId, vendorId, productId)
+    if (parts.size >= 5 && (vendorId == null || productId == null)) return null
+    val driver = if (parts.size == 6) com.rtbishop.look4sat.core.domain.control.SerialUsbDriver.entries
+        .firstOrNull { it.name == parts[5] } ?: return null else null
+    return UsbSerialUiSelector(deviceId, controlId, dataId, vendorId, productId, driver)
 }
 
 private fun resolveUsbSerialUiDevice(
@@ -2214,50 +2280,10 @@ private fun resolveUsbSerialUiDevice(
     return devices.filter(matchesIdentity).singleOrNull()
 }
 
-internal fun UsbDevice.usbSerialPorts(): List<UsbSerialUiPort> {
-    val interfaces = (0 until interfaceCount).map(::getInterface)
-    val controls = interfaces.filter {
-        it.interfaceClass == UsbConstants.USB_CLASS_COMM && it.interfaceSubclass == 0x02
+internal fun UsbDevice.usbSerialPorts(
+    manager: UsbManager? = null,
+    driver: com.rtbishop.look4sat.core.domain.control.SerialUsbDriver? = null
+): List<UsbSerialUiPort> =
+    com.rtbishop.look4sat.core.presentation.discoverAndroidSerialPorts(this, manager, driver).map {
+        UsbSerialUiPort(it.driver.displayName, it.controlId, it.dataId, it.portIndex)
     }
-    val dataInterfaces = interfaces.filter { intf ->
-        intf.interfaceClass == UsbConstants.USB_CLASS_CDC_DATA &&
-            (0 until intf.endpointCount).map(intf::getEndpoint).any {
-                it.type == UsbConstants.USB_ENDPOINT_XFER_BULK && it.direction == UsbConstants.USB_DIR_IN
-            } &&
-            (0 until intf.endpointCount).map(intf::getEndpoint).any {
-                it.type == UsbConstants.USB_ENDPOINT_XFER_BULK && it.direction == UsbConstants.USB_DIR_OUT
-            }
-    }
-    val cdcPorts = controls.mapNotNull { control ->
-        dataInterfaces.firstOrNull { it.id == control.id + 1 }?.let {
-            UsbSerialUiPort("CDC-ACM", control.id, it.id, interfaces.indexOf(it))
-        }
-    }.ifEmpty {
-        if (controls.size == 1 && dataInterfaces.size == 1) {
-            val data = dataInterfaces.single()
-            listOf(UsbSerialUiPort("CDC-ACM", controls.single().id, data.id, interfaces.indexOf(data)))
-        } else {
-            emptyList()
-        }
-    }
-    if (cdcPorts.isNotEmpty()) return cdcPorts
-
-    val driverName = when (vendorId) {
-        0x10C4 -> "CP210x"
-        0x0403 -> "FTDI"
-        0x1A86, 0x4348 -> "CH34x"
-        0x067B -> if (com.rtbishop.look4sat.core.domain.control.isProlificSerialAdapter(vendorId, productId)) "PL2303" else return emptyList()
-        else -> return emptyList()
-    }
-    val serialInterfaces = interfaces.mapIndexedNotNull { index, intf ->
-        val endpoints = (0 until intf.endpointCount).map(intf::getEndpoint)
-        val hasBulkPair = endpoints.any {
-            it.type == UsbConstants.USB_ENDPOINT_XFER_BULK && it.direction == UsbConstants.USB_DIR_IN
-        } && endpoints.any {
-            it.type == UsbConstants.USB_ENDPOINT_XFER_BULK && it.direction == UsbConstants.USB_DIR_OUT
-        }
-        if (hasBulkPair) intf to index else null
-    }
-    val ports = if (driverName == "CH34x") serialInterfaces.takeLast(1) else serialInterfaces
-    return ports.map { (intf, index) -> UsbSerialUiPort(driverName, intf.id, intf.id, index) }
-}

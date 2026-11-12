@@ -10,12 +10,59 @@
 package com.rtbishop.look4sat.core.data.framework
 
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.launch
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Assert.assertFalse
 import org.junit.Test
 
 class YaesuControllerTest {
+    @Test fun disconnectedTransportIsReflectedBeforeAnotherCommandIsSent() = runTest {
+        val link = ScriptedYaesuTransport()
+        val radio = Ft817Controller(null, "USB", link)
+        assertTrue(radio.connect())
+        link.disconnect()
+        assertFalse(radio.isConnected)
+    }
+
+    @Test fun cancelledYaesuHandshakeStillClosesSuspendingTransport() = runTest {
+        val opened = kotlinx.coroutines.CompletableDeferred<Unit>()
+        var closed = false
+        val link = object : RadioTransport {
+            override var isConnected = false
+            override suspend fun connect(): Boolean { isConnected = true; return true }
+            override suspend fun disconnect() {
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                closed = true
+                isConnected = false
+            }
+            override suspend fun write(bytes: ByteArray) = true
+            override suspend fun readAvailable(maxBytes: Int): ByteArray {
+                opened.complete(Unit)
+                kotlinx.coroutines.awaitCancellation()
+            }
+        }
+        val radio = Ft817Controller(null, "USB", link)
+        val connecting = kotlinx.coroutines.CoroutineScope(backgroundScope.coroutineContext)
+            .launch { radio.connect() }
+        opened.await()
+        connecting.cancelAndJoin()
+        assertTrue(closed)
+        assertFalse(radio.isConnected)
+    }
+
+    @Test fun unconfirmedPttOnIsNotRepeatedAndStopRemainsAvailable() = runTest {
+        val link = ScriptedYaesuTransport(ignorePtt = true)
+        val radio = Ft817Controller(null, "USB", link)
+        assertTrue(radio.connect())
+        assertFalse(radio.pttOn())
+        assertEquals(1, link.commands.count { it == 0x08 })
+        assertTrue(radio.pttOff())
+        assertEquals(1, link.commands.count { it == 0x88 })
+        radio.disconnect()
+    }
     @Test fun txStatusReadbackHandlesBothLegacyVariants()=runTest {
         for(variant in YaesuCatVariant.entries) {
             val transport=ScriptedYaesuTransport()
@@ -86,7 +133,7 @@ class YaesuControllerTest {
     }
 }
 
-private class ScriptedYaesuTransport(private val ack: Int? = 0x00) : RadioTransport {
+private class ScriptedYaesuTransport(private val ack: Int? = 0x00, private val ignorePtt: Boolean = false) : RadioTransport {
     private val replies = ArrayDeque<Byte>()
     val commands = mutableListOf<Int>()
     private var transmitting = false
@@ -111,8 +158,8 @@ private class ScriptedYaesuTransport(private val ack: Int? = 0x00) : RadioTransp
             0x03 -> enqueue(0x14, 0x55, 0x00, 0x00, 0x01)
             0xF7 -> enqueue(if (transmitting) 0x00 else 0xFF)
             else -> {
-                if (command == 0x08) transmitting = true
-                if (command == 0x88) transmitting = false
+                if (!ignorePtt && command == 0x08) transmitting = true
+                if (!ignorePtt && command == 0x88) transmitting = false
                 ack?.let { enqueue(it) }
             }
         }

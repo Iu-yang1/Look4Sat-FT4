@@ -32,8 +32,10 @@ class HamlibRigctldController(
     private val ioMutex = Mutex()
     private var pendingInput = ByteArray(0)
 
-    override var isConnected: Boolean = false
-        private set
+    @Volatile private var connected = false
+    override var isConnected: Boolean
+        get() = connected && transport.isConnected
+        private set(value) { connected = value }
 
     override suspend fun connect(): Boolean = withContext(Dispatchers.IO) {
         if (isConnected) return@withContext true
@@ -51,7 +53,7 @@ class HamlibRigctldController(
             }
             ready
         } catch (cancelled: CancellationException) {
-            runCatching { transport.disconnect() }
+            withContext(NonCancellable) { runCatching { transport.disconnect() } }
             pendingInput = ByteArray(0)
             isConnected = false
             throw cancelled
@@ -249,7 +251,15 @@ class HamlibRigctldController(
     private suspend fun setCommandLocked(command: String): Boolean =
         commandLocked(command, expectedLines = 1)?.singleOrNull() == "RPRT 0"
 
-    private suspend fun commandLocked(command: String, expectedLines: Int): List<String>? {
+    private suspend fun commandLocked(command: String, expectedLines: Int): List<String>? = try {
+        exchangeLocked(command, expectedLines)
+    } catch (cancelled: CancellationException) {
+        // A cancelled stream read can leave a partial response for the next command.
+        dropConnection()
+        throw cancelled
+    }
+
+    private suspend fun exchangeLocked(command: String, expectedLines: Int): List<String>? {
         if (!isConnected || expectedLines <= 0) return null
         val bytes = "$command\n".toByteArray(Charsets.US_ASCII)
         val written=try { transport.write(bytes) }
@@ -262,6 +272,10 @@ class HamlibRigctldController(
         val lines = mutableListOf<String>()
         val deadline = System.nanoTime() + RESPONSE_TIMEOUT_MS * NANOS_PER_MILLISECOND
         while (lines.size < expectedLines) {
+            if (!transport.isConnected) {
+                dropConnection()
+                return null
+            }
             val newline = pendingInput.indexOf(NEWLINE)
             if (newline >= 0) {
                 val line = pendingInput.copyOfRange(0, newline).toString(Charsets.US_ASCII).trimEnd('\r')

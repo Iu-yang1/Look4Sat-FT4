@@ -680,7 +680,7 @@ private fun availableRotatorDevices(
                 }
             }
             RotatorTransport.USB_SERIAL -> usbManager.deviceList.values.forEach { device ->
-                device.usbSerialPorts().forEach { port ->
+                device.usbSerialPorts(usbManager).forEach { port ->
                     val product = runCatching { device.productName }.getOrNull() ?: "USB"
                     val identity = "%04X:%04X".format(device.vendorId, device.productId)
                     val selector = listOf(

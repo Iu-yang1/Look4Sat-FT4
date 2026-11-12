@@ -141,10 +141,12 @@ class RadioCommandActor(
                 return
             }
             stateChanged(true, null)
-            val result = runCatching {
+            val result = try {
                 withContext(command.result) {
-                    withTimeout(command.timeoutMillis) { command.operation() }
+                    withTimeout(command.timeoutMillis) { runCatching { command.operation() } }
                 }
+            } catch (error: Throwable) {
+                Result.failure(error)
             }
             val error = result.exceptionOrNull()
             val reportableFailure = when (error) {

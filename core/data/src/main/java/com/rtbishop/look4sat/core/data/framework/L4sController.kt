@@ -110,20 +110,31 @@ class L4sController(
         catch(error: Exception) { state.update { it.copy(error=error.message) };failedConnect() }
     }
 
-    private suspend fun failedConnect(): Boolean {
-        transport.disconnect();isConnected=false
-        state.update { it.copy(connected=false,error=it.error ?: "No compatible L4S v1 firmware") }
-        return false
+    private suspend fun failedConnect(): Boolean = withContext(NonCancellable) {
+        try {
+            transport.disconnect()
+        } finally {
+            isConnected=false;armed=false;requestedPair=null
+            state.update { it.copy(connected=false,error=it.error ?: "No compatible L4S v1 firmware") }
+        }
+        false
     }
 
     override suspend fun disconnect() = withContext(dispatcher+NonCancellable) {
         heartbeat?.cancelAndJoin();heartbeat=null
-        if(transport.isConnected) {
-            request(L4sProtocol.STOP)
-            request(L4sProtocol.CLOSE)
+        try {
+            if(transport.isConnected) {
+                request(L4sProtocol.STOP)
+                request(L4sProtocol.CLOSE)
+            }
+        } finally {
+            try {
+                transport.disconnect()
+            } finally {
+                isConnected=false;armed=false;requestedPair=null;rawTargets=null
+                state.update { it.copy(connected=false,transmitStateKnown=false) }
+            }
         }
-        transport.disconnect();isConnected=false;armed=false;requestedPair=null;rawTargets=null
-        state.update { it.copy(connected=false) }
     }
 
     private suspend fun request(command: Int, data: ByteArray=byteArrayOf(), wireSession: Long=session): L4sProtocol.Reply? =

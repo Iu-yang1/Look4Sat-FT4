@@ -1,5 +1,7 @@
 package com.rtbishop.look4sat.feature.settings
 
+import com.rtbishop.look4sat.core.presentation.RadioAudioDialog
+
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import com.rtbishop.look4sat.core.domain.audio.*
@@ -30,7 +32,7 @@ class RadioAudioDialogTest {
         compose.onNodeWithText("External audio (USB / wired / compatible Bluetooth)").performClick()
         compose.onNodeWithText("USB RX").performScrollTo().performClick()
         compose.onNodeWithText("USB TX").performScrollTo().performClick()
-        compose.onNodeWithText("Accept").performClick()
+        compose.onNodeWithText("Save").performScrollTo().performClick()
         compose.runOnIdle {
             assertEquals(RadioAudioBackend.ANDROID_DEVICE,saved?.backend)
             assertEquals("usb:rx",saved?.rxDeviceKey)
@@ -43,7 +45,7 @@ class RadioAudioDialogTest {
         compose.onNodeWithText("Radio LAN address").performScrollTo().performTextInput("192.168.59.1")
         compose.onNodeWithText("Network username (blank to keep)").performScrollTo().performTextInput("user")
         compose.onNodeWithText("Network password (blank to keep)").performScrollTo().performTextInput("secret")
-        compose.onNodeWithText("Accept").performClick()
+        compose.onNodeWithText("Save").performScrollTo().performClick()
         compose.runOnIdle {
             assertEquals(RadioAudioBackend.ICOM_WLAN,saved?.backend)
             assertEquals("192.168.59.1",saved?.host)

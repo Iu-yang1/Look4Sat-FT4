@@ -164,14 +164,19 @@ internal class N76Controller(
                 // Do not retune an externally keyed transmitter even during teardown.
                 if (isConnected && pair != null && readStatus() == false) stopFrequencyMode()
             } finally {
-                stopRecordingSafely()
-                audio?.disconnect()
-                if (isConnected) restoreAudioRelay()
-                if (isConnected && radioMonitor) setMonitorLocked(false)
-                transport.disconnect()
-                reset()
-                state.update { it.copy(connected = false, transmitStateKnown = false) }
-                diagnose("disconnect", "origin=app")
+                try {
+                    stopRecordingSafely()
+                    audio?.disconnect()
+                    if (isConnected) restoreAudioRelay()
+                    if (isConnected && radioMonitor) setMonitorLocked(false)
+                } finally {
+                    try { transport.disconnect() }
+                    finally {
+                        reset()
+                        state.update { it.copy(connected = false, transmitStateKnown = false) }
+                        diagnose("disconnect", "origin=app")
+                    }
+                }
             }
         }
     }
@@ -558,12 +563,17 @@ internal class N76Controller(
         if (ownsPtt && controlPtt && transport.isConnected) {
             runCatching { transport.write(N76Protocol.frame(N76Protocol.DO_PROG_FUNC, N76Protocol.ptt(false))) }
         }
-        audio?.disconnect(); ownsPtt = false
-        stopRecordingSafely()
-        controlPtt = false
-        transport.disconnect()
-        reset()
-        state.update { it.copy(connected = false, transmitStateKnown = false, error = message) }
+        try {
+            stopRecordingSafely()
+            audio?.disconnect()
+        } finally {
+            ownsPtt = false; controlPtt = false
+            try { transport.disconnect() }
+            finally {
+                reset()
+                state.update { it.copy(connected = false, transmitStateKnown = false, error = message) }
+            }
+        }
     }
     private suspend fun <T> io(fallback: T, operation: suspend () -> T): T = withContext(Dispatchers.IO) {
         mutex.withLock {

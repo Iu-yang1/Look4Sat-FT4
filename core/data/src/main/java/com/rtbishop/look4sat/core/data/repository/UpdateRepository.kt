@@ -55,6 +55,14 @@ class UpdateRepository(
             onSourceChanged(candidate)
             val prefix = sourcePrefix(candidate)
             coroutineContext.ensureActive()
+            val manifest = readPage(prefix + LATEST_RELEASE_MANIFEST_URL)
+                ?.let { parseReleaseManifest(it, prefix, Build.SUPPORTED_ABIS.toList()) }
+            if (manifest != null) {
+                metadata = metadata ?: manifest
+                if (manifest.apkUrl != null) return@withContext manifest
+            }
+            // Download proxies support release files, not GitHub HTML or API pages.
+            if (candidate != UpdateSource.GITHUB) continue
             val url = prefix + LATEST_RELEASE_URL
             val html = readPage(url) ?: continue
             val release = parseReleasePage(html, prefix, Build.SUPPORTED_ABIS.toList()) ?: continue

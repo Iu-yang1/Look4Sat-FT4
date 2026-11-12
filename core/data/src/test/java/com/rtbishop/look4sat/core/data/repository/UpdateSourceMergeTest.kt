@@ -24,7 +24,7 @@ class UpdateSourceMergeTest {
 
     @Test fun automaticCheckFallsBackWithoutChangingRepositoryOrGuessingAssetNames() = runBlocking {
         val remote = Remote { url ->
-            if (url.startsWith(UPDATE_MIRRORS[0])) NetworkResult(200, page().byteInputStream())
+            if (url.startsWith(UPDATE_MIRRORS[0])) NetworkResult(200, manifest().byteInputStream())
             else NetworkResult(503, null)
         }
         val seen = mutableListOf<UpdateSource>()
@@ -39,8 +39,42 @@ class UpdateSourceMergeTest {
         val remote = Remote { NetworkResult(503, null) }
         val release = UpdateRepository(remote, context).getLatestRelease(UpdateSource.LLKK) {}
         assertNull(release)
-        assertEquals(listOf(UPDATE_MIRRORS[1] + "$RELEASE_REPOSITORY/releases/latest"),
+        assertEquals(listOf(UPDATE_MIRRORS[1] + "$RELEASE_REPOSITORY/releases/latest/download/update.json"),
             remote.requests.map { it.first })
+    }
+
+    @Test fun everyMirrorQueriesAReleaseAssetInsteadOfHtmlOrGithubApi() = runBlocking {
+        for ((source, prefix) in listOf(
+            UpdateSource.GHFAST to "https://ghfast.top/",
+            UpdateSource.LLKK to "https://gh.llkk.cc/",
+            UpdateSource.MOEYY to "https://github.moeyy.xyz/"
+        )) {
+            val remote = Remote { NetworkResult(200, manifest().byteInputStream()) }
+            val release = UpdateRepository(remote, context).getLatestRelease(source) {}
+            assertEquals(prefix + asset, release?.apkUrl)
+            assertEquals(listOf(prefix + "https://github.com/Iu-yang1/Look4Sat-FT4/releases/latest/download/update.json"),
+                remote.requests.map { it.first })
+        }
+    }
+
+    @Test fun directSourceCanReadOlderReleasesWithoutAManifest() = runBlocking {
+        val remote = Remote { url ->
+            if (url == "$RELEASE_REPOSITORY/releases/latest") NetworkResult(200, page().byteInputStream())
+            else NetworkResult(404, null)
+        }
+        assertEquals(asset, UpdateRepository(remote, context).getLatestRelease(UpdateSource.GITHUB) {}?.apkUrl)
+        assertEquals(listOf(LATEST_RELEASE_MANIFEST_URL, LATEST_RELEASE_URL), remote.requests.map { it.first })
+    }
+
+    @Test fun mirrorManifestRejectsOtherRepositoriesAndReleaseTags() {
+        val prefix = UPDATE_MIRRORS.first()
+        assertNull(parseReleaseManifest(manifest().replace(RELEASE_REPOSITORY,
+            "https://github.com/atsunatsu/Look4Sat"), prefix, listOf("arm64-v8a")))
+        assertNull(parseReleaseManifest(manifest().replace("\"tag_name\":\"$tag\"",
+            "\"tag_name\":\"4.4.8-ba7opf.13.19\""), prefix, listOf("arm64-v8a")))
+        assertNull(parseReleaseManifest(manifest().replace("\"draft\":false", "\"draft\":true"),
+            prefix, listOf("arm64-v8a")))
+        assertNull(parseReleaseManifest("<html>Invalid input</html>", prefix, listOf("arm64-v8a")))
     }
 
     @Test fun mismatchedTagIsRejectedBeforeDownloading() = runBlocking {
@@ -56,6 +90,13 @@ class UpdateSourceMergeTest {
         <meta property="og:url" content="$RELEASE_REPOSITORY/releases/tag/$tag">
         <title>Release $tag</title>
         <a href="$asset">APK</a>
+    """.trimIndent()
+
+    private fun manifest() = """
+        {"tag_name":"$tag","html_url":"$RELEASE_REPOSITORY/releases/tag/$tag",
+        "name":"$tag","body":"Release notes","draft":false,"prerelease":false,
+        "assets":[{"name":"Look4Sat-FT4-$tag-release.apk","browser_download_url":"$asset",
+        "content_type":"application/vnd.android.package-archive","state":"uploaded","size":20000000}]}
     """.trimIndent()
 
     private class Remote(private val respond: (String) -> NetworkResult) : IRemoteSource {

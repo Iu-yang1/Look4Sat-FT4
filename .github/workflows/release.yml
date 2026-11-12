@@ -240,6 +240,19 @@ jobs:
           }
           if ($LASTEXITCODE -ne 0) { throw 'GitHub release publication failed' }
 
+      - name: Publish mirror-readable update manifest
+        shell: pwsh
+        run: |
+          $releaseJson = gh api "repos/$env:GH_REPO/releases/tags/$env:TAG_NAME"
+          if ($LASTEXITCODE -ne 0) { throw 'Unable to read published release metadata' }
+          $metadataPath = Join-Path $env:RUNNER_TEMP 'release-metadata.json'
+          [IO.File]::WriteAllText($metadataPath, ($releaseJson -join "`n"), [Text.UTF8Encoding]::new($false))
+          $manifestPath = Join-Path $PWD 'dist/update.json'
+          python tools/build-update-manifest.py --release-json $metadataPath --output $manifestPath
+          if ($LASTEXITCODE -ne 0) { throw 'Unable to build update manifest' }
+          gh release upload $env:TAG_NAME $manifestPath --clobber
+          if ($LASTEXITCODE -ne 0) { throw 'Unable to publish update manifest' }
+
       - name: Remove temporary credentials
         if: always()
         shell: pwsh

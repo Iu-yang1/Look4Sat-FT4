@@ -18,6 +18,9 @@
 package com.rtbishop.look4sat.feature.settings
 
 import android.content.Context
+import android.content.pm.PackageInfo
+import android.content.pm.PackageManager
+import android.os.Build
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
@@ -94,7 +97,8 @@ class SettingsViewModel(
     private val controlDiagnostics: IControlDiagnostics,
     private val sensorsRepo: ISensorsRepo,
     private val apkFile: File,
-    private val showToast: IShowToast
+    private val showToast: IShowToast,
+    private val apkVerificationContext: Context? = null
 ) : ViewModel() {
 
     private val defaultPosSettings = PositionSettings(false, settingsRepo.stationPosition.value, 0)
@@ -127,7 +131,8 @@ class SettingsViewModel(
             workedGridsCount = settingsRepo.getWorkedGrids().size,
             compassAccuracy = sensorsRepo.compassAccuracy.value,
             compassHeadingDegrees = correctedCompassHeading(),
-            lotwLastSyncEpochMs = lotwCursorEpochMs(settingsRepo.getLastLotwSyncDate())
+            lotwLastSyncEpochMs = lotwCursorEpochMs(settingsRepo.getLastLotwSyncDate()),
+            updateChecker = UpdateCheckerState(selectedSource = settingsRepo.otherSettings.value.updateSource)
         )
     )
 
@@ -178,7 +183,11 @@ class SettingsViewModel(
         viewModelScope.launch {
             settingsRepo.otherSettings.collect { settings ->
                 _uiState.update {
-                    it.copy(otherSettings = settings, compassHeadingDegrees = correctedCompassHeading())
+                    it.copy(
+                        otherSettings = settings,
+                        compassHeadingDegrees = correctedCompassHeading(),
+                        updateChecker = it.updateChecker.copy(selectedSource = settings.updateSource)
+                    )
                 }
             }
         }
@@ -423,6 +432,7 @@ class SettingsViewModel(
             SettingsAction.RemoveLoTWCertificate -> removeLoTWCertificate()
             is SettingsAction.SaveLoTWStation -> saveLoTWStation(action.station)
             // Update checker
+            is SettingsAction.SetUpdateSource -> setUpdateSource(action.source)
             SettingsAction.CheckForUpdate -> checkForUpdate()
             SettingsAction.DownloadUpdate -> downloadUpdate()
             SettingsAction.ConsumeDownloadedApk -> consumeDownloadedApk()
@@ -1076,10 +1086,29 @@ class SettingsViewModel(
 
     // region Update checker
 
+    private fun setUpdateSource(source: com.rtbishop.look4sat.core.domain.model.UpdateSource) {
+        val current = _uiState.value.updateChecker
+        if (current.isChecking || current.isDownloading || current.selectedSource == source) return
+        settingsRepo.updateOtherSettings { it.copy(updateSource = source) }
+        // A previously checked release is not necessarily visible through the new source.
+        _uiState.update { it.copy(updateChecker = UpdateCheckerState(selectedSource = source)) }
+    }
+
     private fun checkForUpdate() {
-        _uiState.update { it.copy(updateChecker = it.updateChecker.copy(isChecking = true, errorResId = null)) }
+        val state = _uiState.value.updateChecker
+        if (state.isChecking || state.isDownloading) return
+        _uiState.update {
+            it.copy(updateChecker = it.updateChecker.copy(
+                isChecking = true, activeSource = null, releaseSource = null,
+                release = null, hasUpdate = false, errorResId = null
+            ))
+        }
         viewModelScope.launch {
-            val release = updateRepo.getLatestRelease()
+            var resolvedSource: com.rtbishop.look4sat.core.domain.model.UpdateSource? = null
+            val release = updateRepo.getLatestRelease(state.selectedSource) { candidate ->
+                resolvedSource = candidate
+                _uiState.update { it.copy(updateChecker = it.updateChecker.copy(activeSource = candidate)) }
+            }
             val hasUpdate = release != null &&
                 VersionComparator.isNewer(release.versionTag, settingsRepo.appVersionName)
             _uiState.update {
@@ -1087,6 +1116,7 @@ class SettingsViewModel(
                     updateChecker = it.updateChecker.copy(
                         isChecking = false,
                         release = release,
+                        releaseSource = if (release != null) resolvedSource else null,
                         hasUpdate = hasUpdate,
                         errorResId = if (release == null) R.string.update_check_error else null
                     )
@@ -1096,10 +1126,25 @@ class SettingsViewModel(
     }
 
     private fun downloadUpdate() {
-        val url = _uiState.value.updateChecker.release?.apkUrl ?: return
-        _uiState.update { it.copy(updateChecker = it.updateChecker.copy(isDownloading = true, errorResId = null)) }
+        val state = _uiState.value.updateChecker
+        val release = state.release ?: return
+        if (state.isChecking || state.isDownloading || !state.hasUpdate) return
+        _uiState.update {
+            it.copy(updateChecker = it.updateChecker.copy(
+                isDownloading = true, activeSource = null, apkFile = null, errorResId = null
+            ))
+        }
         viewModelScope.launch {
-            val success = updateRepo.downloadApk(url, apkFile)
+            val success = updateRepo.downloadApk(
+                release = release,
+                dest = apkFile,
+                source = state.selectedSource,
+                preferred = state.releaseSource,
+                onSourceChanged = { candidate ->
+                    _uiState.update { it.copy(updateChecker = it.updateChecker.copy(activeSource = candidate)) }
+                },
+                validate = { candidate -> isTrustedUpdateApk(candidate, release.versionTag) }
+            )
             _uiState.update {
                 it.copy(
                     updateChecker = it.updateChecker.copy(
@@ -1109,6 +1154,35 @@ class SettingsViewModel(
                     )
                 )
             }
+        }
+    }
+
+    /**
+     * Reject a proxy's substituted APK even when it looks like a valid ZIP.
+     * Android's installer checks signatures again, but reject untrusted bytes
+     * before giving them to FileProvider in the first place.
+     */
+    @Suppress("DEPRECATION")
+    private fun isTrustedUpdateApk(file: File, expectedTag: String): Boolean {
+        val context = apkVerificationContext ?: return false
+        return try {
+            val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P)
+                PackageManager.GET_SIGNING_CERTIFICATES else PackageManager.GET_SIGNATURES
+            val pm = context.packageManager
+            val installed = pm.getPackageInfo(context.packageName, flags)
+            val candidate = pm.getPackageArchiveInfo(file.absolutePath, flags) ?: return false
+            if (candidate.packageName != context.packageName ||
+                candidate.versionName != expectedTag.removePrefix("v")) return false
+            fun signers(info: PackageInfo): Set<String> {
+                val signatures = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P)
+                    info.signingInfo?.apkContentsSigners else info.signatures
+                return signatures.orEmpty().map { it.toCharsString() }.toSet()
+            }
+            val expected = signers(installed)
+            expected.isNotEmpty() && expected == signers(candidate)
+        } catch (e: Exception) {
+            println("Update signature/package check failed: $e")
+            false
         }
     }
 
@@ -1220,7 +1294,8 @@ class SettingsViewModel(
                     controlDiagnostics = container.controlDiagnostics,
                     sensorsRepo = container.provideSensorsRepo(),
                     apkFile = File(context.cacheDir, "look4sat-update.apk"),
-                    showToast = container.provideShowToast()
+                    showToast = container.provideShowToast(),
+                    apkVerificationContext = context.applicationContext
                 )
             }
         }

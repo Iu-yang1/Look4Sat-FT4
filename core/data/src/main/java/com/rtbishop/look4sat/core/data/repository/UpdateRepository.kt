@@ -23,6 +23,7 @@ import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
 import android.os.Build
 import com.rtbishop.look4sat.core.domain.model.LatestRelease
+import com.rtbishop.look4sat.core.domain.model.UpdateSource
 import com.rtbishop.look4sat.core.domain.repository.IUpdateRepository
 import com.rtbishop.look4sat.core.domain.source.IRemoteSource
 import kotlinx.coroutines.Dispatchers
@@ -42,12 +43,20 @@ class UpdateRepository(
 ) : IUpdateRepository {
     private val context = context.applicationContext
 
-    override suspend fun getLatestRelease(): LatestRelease? = withContext(Dispatchers.IO) {
+    override suspend fun getLatestRelease(): LatestRelease? =
+        getLatestRelease(UpdateSource.AUTO) {}
+
+    override suspend fun getLatestRelease(
+        source: UpdateSource,
+        onSourceChanged: (UpdateSource) -> Unit
+    ): LatestRelease? = withContext(Dispatchers.IO) {
         var metadata: LatestRelease? = null
-        for (prefix in listOf("") + UPDATE_MIRRORS) {
+        for (candidate in orderedSources(source)) {
+            onSourceChanged(candidate)
+            val prefix = sourcePrefix(candidate)
             coroutineContext.ensureActive()
-            val source = "$prefix$RELEASE_REPOSITORY/releases/latest"
-            val html = readPage(source) ?: continue
+            val url = "$prefix$RELEASE_REPOSITORY/releases/latest"
+            val html = readPage(url) ?: continue
             val release = parseReleasePage(html, prefix, Build.SUPPORTED_ABIS.toList()) ?: continue
             metadata = metadata ?: release
             if (release.apkUrl != null) return@withContext release
@@ -60,7 +69,11 @@ class UpdateRepository(
     }
 
     private suspend fun readPage(url: String): String? = try {
-        remoteSource.getNetworkStream(url).stream?.bufferedReader()?.use { reader ->
+        val network = remoteSource.getNetworkStream(url, CHECK_TIMEOUT_MS)
+        if (network.code !in 200..299) {
+            network.stream?.close()
+            null
+        } else network.stream?.bufferedReader()?.use { reader ->
             val text = StringBuilder()
             val buffer = CharArray(8192)
             var read = reader.read(buffer)
@@ -78,15 +91,58 @@ class UpdateRepository(
         null
     }
 
-    override suspend fun downloadApk(url: String, dest: File): Boolean = withContext(Dispatchers.IO) {
+    override suspend fun downloadApk(url: String, dest: File): Boolean =
+        downloadCandidates(url, dest, listOf(url) + listOfNotNull(canonicalDownloadUrl(url)) +
+            UPDATE_MIRRORS.mapNotNull { prefix -> canonicalDownloadUrl(url)?.let { prefix + it } }) { true }
+
+    override suspend fun downloadApk(
+        release: LatestRelease,
+        dest: File,
+        source: UpdateSource,
+        preferred: UpdateSource?,
+        onSourceChanged: (UpdateSource) -> Unit,
+        validate: (File) -> Boolean
+    ): Boolean {
+        val canonical = release.apkUrl?.let(::canonicalDownloadUrl) ?: return false
+        val path = URI(canonical).path
+        if (path.substringBeforeLast('/').substringAfterLast('/') != release.versionTag) return false
+        for (candidate in orderedSources(source, preferred)) {
+            onSourceChanged(candidate)
+            if (downloadCandidates(canonical, dest, listOf(sourcePrefix(candidate) + canonical), validate)) return true
+        }
+        return false
+    }
+
+    private fun orderedSources(source: UpdateSource, preferred: UpdateSource? = null): List<UpdateSource> =
+        if (source != UpdateSource.AUTO) listOf(source)
+        else (listOfNotNull(preferred?.takeUnless { it == UpdateSource.AUTO }) +
+            listOf(UpdateSource.GITHUB, UpdateSource.GHFAST, UpdateSource.LLKK, UpdateSource.MOEYY)).distinct()
+
+    private fun sourcePrefix(source: UpdateSource): String = when (source) {
+        UpdateSource.AUTO, UpdateSource.GITHUB -> ""
+        UpdateSource.GHFAST -> UPDATE_MIRRORS[0]
+        UpdateSource.LLKK -> UPDATE_MIRRORS[1]
+        UpdateSource.MOEYY -> UPDATE_MIRRORS[2]
+    }
+
+    private suspend fun downloadCandidates(
+        url: String,
+        dest: File,
+        candidates: List<String>,
+        validate: (File) -> Boolean
+    ): Boolean = withContext(Dispatchers.IO) {
         if (!isTrustedDownloadUrl(url)) return@withContext false
-        val partial = File(dest.parentFile, "${dest.name}.part")
+        dest.parentFile?.mkdirs()
+        val partial = File(dest.parentFile, "${dest.nameWithoutExtension}.download.apk")
         try {
-            val canonical = canonicalDownloadUrl(url) ?: return@withContext false
-            val candidates = (listOf(url, canonical) + UPDATE_MIRRORS.map { it + canonical }).distinct()
-            for (candidate in candidates) {
+            for (candidate in candidates.distinct()) {
                 coroutineContext.ensureActive()
-                val stream = remoteSource.getNetworkStream(candidate).stream ?: continue
+                val network = remoteSource.getNetworkStream(candidate, DOWNLOAD_TIMEOUT_MS)
+                val stream = network.stream ?: continue
+                if (network.code !in 200..299) {
+                    stream.close()
+                    continue
+                }
                 val downloaded = try {
                     stream.use { input ->
                         partial.outputStream().use { out ->
@@ -102,7 +158,7 @@ class UpdateRepository(
                             }
                         }
                     }
-                    validateApk(partial)
+                    validateApk(partial) && validate(partial)
                 } catch (cancelled: CancellationException) {
                     throw cancelled
                 } catch (_: Exception) {
@@ -119,7 +175,7 @@ class UpdateRepository(
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (e: Exception) {
-            println("UpdateRepository download failure: $e")
+            println("UpdateRepository download failed: $e")
             false
         } finally {
             partial.delete()
@@ -203,6 +259,8 @@ class UpdateRepository(
     private companion object {
         const val MIN_APK_BYTES = 100_000L
         const val MAX_APK_BYTES = 250_000_000L
+        const val CHECK_TIMEOUT_MS = 9_000L
+        const val DOWNLOAD_TIMEOUT_MS = 180_000L
     }
 }
 

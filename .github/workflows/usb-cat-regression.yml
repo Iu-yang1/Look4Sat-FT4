@@ -4,6 +4,7 @@ on:
     branches:
       - 'fix/uvk1-usb-reconnect-*'
       - 'fix/ic820-auto-align-main-sub-bands-*'
+      - 'contrib/cat-l4s-firmware-cw-*'
   pull_request:
     branches: [main]
   workflow_dispatch:

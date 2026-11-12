@@ -79,7 +79,9 @@ data class OtherSettings(
     val tiandituKey: String = "",
     /** Which tool occupies the fourth slot in the app's bottom navigation. */
     val bottomBarTool: String = BottomBarTool.FT4,
-    val passListFontScale: Float = 1f
+    val passListFontScale: Float = 1f,
+    /** Persisted APK update source, independent from ephemeris data sources. */
+    val updateSource: UpdateSource = UpdateSource.AUTO
 )
 
 /** Persisted identifiers for the configurable fourth bottom-navigation slot. */

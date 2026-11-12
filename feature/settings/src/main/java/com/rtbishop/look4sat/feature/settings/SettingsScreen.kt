@@ -221,6 +221,7 @@ private fun SettingsScreen(
             onBack = { showUpdateChecker = false },
             onCheck = { onAction(SettingsAction.CheckForUpdate) },
             onDownload = { onAction(SettingsAction.DownloadUpdate) },
+            onSourceChange = { onAction(SettingsAction.SetUpdateSource(it)) },
             onConsumeApk = { onAction(SettingsAction.ConsumeDownloadedApk) }
         )
     }

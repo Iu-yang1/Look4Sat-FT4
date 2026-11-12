@@ -1,5 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="sunlight_conditions">පුරෝකථන කොන්දේසි</string>
+    <string name="sunlight_edit_conditions">කොන්දේසි වෙනස් කරන්න</string>
+    <string name="sunlight_condition_summary">%1$s සිට %2$s දක්වා</string>
+    <string name="sunlight_start_prediction">පුරෝකථනය අරඹන්න</string>
+    <string name="sunlight_longest_title">දිගම අඛණ්ඩ හිරු එළිය</string>
+    <string name="sunlight_no_sunlight">වලංගු පුරෝකථන පරාසය තුළ පූර්ණ හිරු එළිය නොමැත.</string>
+    <string name="sunlight_at_least">අවම වශයෙන් %1$s</string>
+    <string name="sunlight_sunlight_share">හිරු එළිය %1$s</string>
+    <string name="sunlight_expand_statistics">සංඛ්‍යාලේඛන පෙන්වන්න</string>
+    <string name="sunlight_collapse_statistics">සංඛ්‍යාලේඛන සඟවන්න</string>
+    <string name="sunlight_sunlight_intervals">අඛණ්ඩ හිරු එළිය කාල පරාස</string>
+    <string name="sunlight_interval_details">කාල පරාස විස්තර</string>
+    <string name="sunlight_duration">කාලය: %1$s</string>
+    <string name="sunlight_close">වසන්න</string>
     <string name="sunlight_title">හිරු එළිය පුරෝකථනය</string>
     <string name="sunlight_back">ආපසු</string>
     <string name="sunlight_satellite">චන්ද්‍රිකාව</string>

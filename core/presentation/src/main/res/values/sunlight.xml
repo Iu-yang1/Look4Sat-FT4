@@ -1,5 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="sunlight_conditions">Prediction conditions</string>
+    <string name="sunlight_edit_conditions">Adjust conditions</string>
+    <string name="sunlight_condition_summary">%1$s to %2$s</string>
+    <string name="sunlight_start_prediction">Start prediction</string>
+    <string name="sunlight_longest_title">Longest continuous sunlight</string>
+    <string name="sunlight_no_sunlight">No full sunlight in the valid prediction range.</string>
+    <string name="sunlight_at_least">At least %1$s</string>
+    <string name="sunlight_sunlight_share">Sunlight %1$s</string>
+    <string name="sunlight_expand_statistics">Show statistics</string>
+    <string name="sunlight_collapse_statistics">Hide statistics</string>
+    <string name="sunlight_sunlight_intervals">Continuous sunlight intervals</string>
+    <string name="sunlight_interval_details">Interval details</string>
+    <string name="sunlight_duration">Duration: %1$s</string>
+    <string name="sunlight_close">Close</string>
     <string name="sunlight_title">Sunlight prediction</string>
     <string name="sunlight_back">Back</string>
     <string name="sunlight_satellite">Satellite</string>

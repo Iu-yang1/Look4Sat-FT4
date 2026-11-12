@@ -1,5 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="sunlight_conditions">Condiciones de predicción</string>
+    <string name="sunlight_edit_conditions">Ajustar condiciones</string>
+    <string name="sunlight_condition_summary">Del %1$s al %2$s</string>
+    <string name="sunlight_start_prediction">Iniciar predicción</string>
+    <string name="sunlight_longest_title">Mayor intervalo de luz solar continua</string>
+    <string name="sunlight_no_sunlight">No hay luz solar plena en el rango de predicción válido.</string>
+    <string name="sunlight_at_least">Al menos %1$s</string>
+    <string name="sunlight_sunlight_share">Luz solar %1$s</string>
+    <string name="sunlight_expand_statistics">Mostrar estadísticas</string>
+    <string name="sunlight_collapse_statistics">Ocultar estadísticas</string>
+    <string name="sunlight_sunlight_intervals">Intervalos de luz solar continua</string>
+    <string name="sunlight_interval_details">Detalles del intervalo</string>
+    <string name="sunlight_duration">Duración: %1$s</string>
+    <string name="sunlight_close">Cerrar</string>
     <string name="sunlight_title">Predicción de luz solar</string>
     <string name="sunlight_back">Volver</string>
     <string name="sunlight_satellite">Satélite</string>

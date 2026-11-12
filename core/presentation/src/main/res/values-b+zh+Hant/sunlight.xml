@@ -1,5 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="sunlight_conditions">預測條件</string>
+    <string name="sunlight_edit_conditions">調整條件</string>
+    <string name="sunlight_condition_summary">%1$s到%2$s</string>
+    <string name="sunlight_start_prediction">開始預測</string>
+    <string name="sunlight_longest_title">最長連續日照</string>
+    <string name="sunlight_no_sunlight">有效預測範圍內沒有完整日照時段。</string>
+    <string name="sunlight_at_least">至少 %1$s</string>
+    <string name="sunlight_sunlight_share">日照占比 %1$s</string>
+    <string name="sunlight_expand_statistics">展開統計</string>
+    <string name="sunlight_collapse_statistics">收起統計</string>
+    <string name="sunlight_sunlight_intervals">連續日照時段</string>
+    <string name="sunlight_interval_details">時段詳情</string>
+    <string name="sunlight_duration">持續時間：%1$s</string>
+    <string name="sunlight_close">關閉</string>
     <string name="sunlight_title">日照預測</string>
     <string name="sunlight_back">返回</string>
     <string name="sunlight_satellite">衛星</string>

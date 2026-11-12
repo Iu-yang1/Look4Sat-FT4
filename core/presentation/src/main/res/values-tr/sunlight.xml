@@ -1,5 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="sunlight_conditions">Tahmin koşulları</string>
+    <string name="sunlight_edit_conditions">Koşulları düzenle</string>
+    <string name="sunlight_condition_summary">%1$s - %2$s</string>
+    <string name="sunlight_start_prediction">Tahmini başlat</string>
+    <string name="sunlight_longest_title">En uzun kesintisiz güneş ışığı</string>
+    <string name="sunlight_no_sunlight">Geçerli tahmin aralığında tam güneş ışığı yok.</string>
+    <string name="sunlight_at_least">En az %1$s</string>
+    <string name="sunlight_sunlight_share">Güneş ışığı %1$s</string>
+    <string name="sunlight_expand_statistics">İstatistikleri göster</string>
+    <string name="sunlight_collapse_statistics">İstatistikleri gizle</string>
+    <string name="sunlight_sunlight_intervals">Kesintisiz güneş ışığı aralıkları</string>
+    <string name="sunlight_interval_details">Aralık ayrıntıları</string>
+    <string name="sunlight_duration">Süre: %1$s</string>
+    <string name="sunlight_close">Kapat</string>
     <string name="sunlight_title">Güneş ışığı tahmini</string>
     <string name="sunlight_back">Geri</string>
     <string name="sunlight_satellite">Uydu</string>

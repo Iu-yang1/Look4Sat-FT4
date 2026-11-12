@@ -1,13 +1,16 @@
 # Look4Sat-BA7OPF-FT4
 
-[![Release](https://img.shields.io/github/v/release/atsunatsu/Look4Sat)](https://github.com/atsunatsu/Look4Sat/releases)
+[![Release](https://img.shields.io/github/v/release/Iu-yang1/Look4Sat-FT4)](https://github.com/Iu-yang1/Look4Sat-FT4/releases/latest)
 
 **BA7OPF 定制版** — 基于 [rt-bishop/Look4Sat](https://github.com/rt-bishop/Look4Sat) 的业余无线电卫星追踪器，增加了线性卫星频率计算器等功能。
 
 非官方修改版（fork），独立维护；首次发布 2026-09，持续修改中。
 
+当前稳定版：**[4.4.8-ba7opf.14.03](https://github.com/Iu-yang1/Look4Sat-FT4/releases/tag/4.4.8-ba7opf.14.03)**。安装包与更新检查均使用本仓库的 Release。
+
 ## 本仓库特色功能
 
+- **日照预测** — 在“更多”选择卫星和 1–365 天范围，离线预测整条轨道的完整日照、半影和本影。主页优先展示最长连续日照与按时长排序的时段列表，支持精确详情、筛选和可展开统计；条件摘要显示起止日期，卫星搜索、UTC 日期和天数在同一个半高面板中编辑，确认后才重新计算。支持进度、取消、旋转保留结果及全部八种语言，复用 Orekit 13.1.4 与现有 SGP4/SDP4 传播器。
 - **网格地图模式（Grid Mode）** — 地图页内置 VUCC 网格覆盖图：已通联网格绿色填充、漫游网格蓝色 45° 斜纹（疏朗半透明样式）、当前所在方格淡黄加粗框；点击已通联网格弹出该网格内通联明细弹窗；进入网格模式默认 VUCC 视图
 - **奖状边界模式（Award Boundaries）** — 在网格地图上叠加 DXCC / WAPC / WAJA / WAZ / WAS 国界·省界·分区边界，已确认区域绿色填充
 - **LoTW 网格同步** — 直连 ARRL Logbook（账号密码验证）下载确认报告，worked / roamed 网格自动更新（兼容任意字段顺序的 ADIF 解析）；同步失败按凭据错误/限流/超时分类提示

@@ -1,5 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="sunlight_conditions">Условия прогноза</string>
+    <string name="sunlight_edit_conditions">Изменить условия</string>
+    <string name="sunlight_condition_summary">С %1$s по %2$s</string>
+    <string name="sunlight_start_prediction">Начать прогноз</string>
+    <string name="sunlight_longest_title">Самый долгий период непрерывного освещения</string>
+    <string name="sunlight_no_sunlight">В достоверном диапазоне прогноза нет полного освещения.</string>
+    <string name="sunlight_at_least">Не менее %1$s</string>
+    <string name="sunlight_sunlight_share">Освещение %1$s</string>
+    <string name="sunlight_expand_statistics">Показать статистику</string>
+    <string name="sunlight_collapse_statistics">Скрыть статистику</string>
+    <string name="sunlight_sunlight_intervals">Периоды непрерывного освещения</string>
+    <string name="sunlight_interval_details">Сведения о периоде</string>
+    <string name="sunlight_duration">Длительность: %1$s</string>
+    <string name="sunlight_close">Закрыть</string>
     <string name="sunlight_title">Прогноз освещённости</string>
     <string name="sunlight_back">Назад</string>
     <string name="sunlight_satellite">Спутник</string>

@@ -26,8 +26,19 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.util.Calendar
 import java.util.TimeZone
+import java.util.UUID
 
 enum class SunlightSort { START, DURATION }
+enum class SunlightPanelPage { NONE, CONDITIONS, SATELLITES, DATE, FILTER, DETAIL }
+
+data class SunlightPageState(
+    val panel: SunlightPanelPage = SunlightPanelPage.NONE,
+    val draftCatalog: Int? = null,
+    val draftStart: Long = 0,
+    val draftDays: String = "30",
+    val detailStart: Long? = null,
+    val statisticsExpanded: Boolean = false
+)
 
 data class SunlightState(
     val satellites: List<SatItem> = emptyList(),
@@ -43,17 +54,25 @@ data class SunlightState(
     val displayUtc: Boolean = false,
     val filter: Illumination? = Illumination.SUNLIGHT,
     val minimumMinutes: Long = 0,
-    val sort: SunlightSort = SunlightSort.START,
-    val visibleIntervals: List<IlluminationInterval> = emptyList()
+    val sort: SunlightSort = SunlightSort.DURATION,
+    val visibleIntervals: List<IlluminationInterval> = emptyList(),
+    val page: SunlightPageState = SunlightPageState(),
+    // Retained with this ViewModel, never restored from the previous process.
+    val panelStateKey: String = UUID.randomUUID().toString()
 ) {
     val daysValid: Boolean get() = days.toIntOrNull()?.let { it in 1..365 } == true
     val selectedSatellite: SatItem? get() = satellites.firstOrNull { it.catnum == catalogNumber }
 }
 
 sealed interface SunlightAction {
-    data class SelectSatellite(val catalogNumber: Int) : SunlightAction
-    data class SetStart(val utcMillis: Long) : SunlightAction
-    data class SetDays(val text: String) : SunlightAction
+    data object OpenConditions : SunlightAction
+    data class ChangePanel(val page: SunlightPanelPage) : SunlightAction
+    data class DraftCatalog(val catalogNumber: Int) : SunlightAction
+    data class DraftStart(val utcMillis: Long) : SunlightAction
+    data class DraftDays(val text: String) : SunlightAction
+    data class OpenDetails(val startMillis: Long) : SunlightAction
+    data object ToggleStatistics : SunlightAction
+    data class SubmitConditions(val catalogNumber: Int, val startUtcMillis: Long, val days: Int) : SunlightAction
     data class Filter(val state: Illumination?, val minimumMinutes: Long, val sort: SunlightSort) : SunlightAction
     data object Predict : SunlightAction
     data object Cancel : SunlightAction
@@ -69,12 +88,7 @@ class SunlightViewModel(
     private val mutableState = MutableStateFlow(SunlightState(
         catalogNumber = saved["catalog"],
         startUtcMillis = saved["start"] ?: utcDayStart(System.currentTimeMillis()),
-        days = saved["days"] ?: "30",
-        filter = saved.get<String>("filter")?.let { name ->
-            Illumination.entries.firstOrNull { it.name == name }
-        } ?: if (saved.get<Boolean>("all") == true) null else Illumination.SUNLIGHT,
-        minimumMinutes = saved["minimum"] ?: 0L,
-        sort = SunlightSort.entries.firstOrNull { it.name == saved.get<String>("sort") } ?: SunlightSort.START
+        days = saved["days"] ?: "30"
     ))
     val uiState = mutableState.asStateFlow()
     private var calculation: Job? = null
@@ -95,28 +109,44 @@ class SunlightViewModel(
 
     fun onAction(action: SunlightAction) {
         when (action) {
-            is SunlightAction.SelectSatellite -> if (uiState.value.satellites.any { it.catnum == action.catalogNumber }) {
-                invalidate()
-                saved["catalog"] = action.catalogNumber
-                mutableState.update { it.copy(catalogNumber = action.catalogNumber) }
+            SunlightAction.OpenConditions -> mutableState.update {
+                it.copy(page = it.page.copy(panel = SunlightPanelPage.CONDITIONS,
+                    draftCatalog = it.catalogNumber, draftStart = it.startUtcMillis, draftDays = it.days))
             }
-            is SunlightAction.SetStart -> {
-                invalidate()
-                val day = utcDayStart(action.utcMillis)
-                saved["start"] = day
-                mutableState.update { it.copy(startUtcMillis = day) }
+            is SunlightAction.ChangePanel -> mutableState.update {
+                val page = if (action.page == SunlightPanelPage.NONE) {
+                    SunlightPageState(statisticsExpanded = it.page.statisticsExpanded)
+                } else it.page.copy(panel = action.page)
+                it.copy(page = page)
             }
-            is SunlightAction.SetDays -> {
-                invalidate()
-                saved["days"] = action.text
-                mutableState.update { it.copy(days = action.text) }
+            is SunlightAction.DraftCatalog -> mutableState.update {
+                it.copy(page = it.page.copy(draftCatalog = action.catalogNumber))
+            }
+            is SunlightAction.DraftStart -> mutableState.update {
+                it.copy(page = it.page.copy(draftStart = utcDayStart(action.utcMillis)))
+            }
+            is SunlightAction.DraftDays -> mutableState.update {
+                it.copy(page = it.page.copy(draftDays = action.text))
+            }
+            is SunlightAction.OpenDetails -> mutableState.update {
+                if (it.prediction?.intervals?.any { interval -> interval.startMillis == action.startMillis } == true) {
+                    it.copy(page = it.page.copy(panel = SunlightPanelPage.DETAIL, detailStart = action.startMillis))
+                } else it
+            }
+            SunlightAction.ToggleStatistics -> mutableState.update {
+                it.copy(page = it.page.copy(statisticsExpanded = !it.page.statisticsExpanded))
+            }
+            is SunlightAction.SubmitConditions -> {
+                if (action.days !in 1..365 ||
+                    uiState.value.satellites.none { it.catnum == action.catalogNumber }) return
+                val request = SunlightRequest(action.catalogNumber, utcDayStart(action.startUtcMillis), action.days)
+                saved["catalog"] = request.catalogNumber
+                saved["start"] = request.startUtcMillis
+                saved["days"] = request.days.toString()
+                startPrediction(request)
             }
             is SunlightAction.Filter -> {
                 require(action.minimumMinutes >= 0)
-                saved["filter"] = action.state?.name
-                saved["all"] = action.state == null
-                saved["minimum"] = action.minimumMinutes
-                saved["sort"] = action.sort.name
                 mutableState.update { state ->
                     val updated = state.copy(
                         filter = action.state, minimumMinutes = action.minimumMinutes, sort = action.sort
@@ -138,7 +168,9 @@ class SunlightViewModel(
         generation++
         calculation?.cancel()
         mutableState.update {
-            it.copy(calculating = false, cancelled = false, problem = null, prediction = null, visibleIntervals = emptyList())
+            it.copy(calculating = false, cancelled = false, problem = null, prediction = null,
+                visibleIntervals = emptyList(), page = SunlightPageState(
+                    statisticsExpanded = it.page.statisticsExpanded))
         }
     }
 
@@ -167,13 +199,18 @@ class SunlightViewModel(
         val input = uiState.value
         val id = input.catalogNumber ?: return
         if (!input.daysValid) return
-        val request = SunlightRequest(id, input.startUtcMillis, input.days.toInt())
+        startPrediction(SunlightRequest(id, input.startUtcMillis, input.days.toInt()))
+    }
+
+    private fun startPrediction(request: SunlightRequest) {
         val previous = calculation
         previous?.cancel()
         val token = ++generation
         mutableState.update {
-            it.copy(calculating = true, cancelled = false, progress = 0.0, problem = null,
-                prediction = null, visibleIntervals = emptyList())
+            it.copy(catalogNumber = request.catalogNumber, startUtcMillis = request.startUtcMillis,
+                days = request.days.toString(), calculating = true, cancelled = false, progress = 0.0, problem = null,
+                prediction = null, visibleIntervals = emptyList(),
+                page = SunlightPageState(statisticsExpanded = it.page.statisticsExpanded))
         }
         calculation = viewModelScope.launch {
             previous?.join()

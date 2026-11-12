@@ -21,6 +21,7 @@ import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -110,21 +111,31 @@ class SunlightViewModelTest {
         assertEquals(2, result.sunlightCount)
     }
 
-    @Test fun inputEditCancelsAndInvalidatesOldResultsAndInvalidDaysNeverStart() = runTest {
+    @Test fun draftEditsAndInvalidSubmissionsDoNotCancelOrReplaceAnActivePrediction() = runTest {
         val predictor = Predictor()
-        val vm = model(predictor)
+        val saved = SavedStateHandle()
+        val vm = model(predictor, saved)
         advanceUntilIdle()
         vm.onAction(SunlightAction.Predict)
         advanceUntilIdle()
-        vm.onAction(SunlightAction.SetDays("366"))
+        vm.onAction(SunlightAction.OpenConditions)
+        vm.onAction(SunlightAction.DraftDays("366"))
+        vm.onAction(SunlightAction.DraftCatalog(1))
+        vm.onAction(SunlightAction.DraftStart(86_400_000L))
+        vm.onAction(SunlightAction.SubmitConditions(1, 86_400_000L, 366))
+        vm.onAction(SunlightAction.SubmitConditions(999, 86_400_000L, 30))
         predictor.callbacks.single()(0.8)
         advanceUntilIdle()
-        assertFalse(vm.uiState.value.calculating)
-        assertNull(vm.uiState.value.prediction)
-        vm.onAction(SunlightAction.Predict)
-        advanceUntilIdle()
+        assertTrue(vm.uiState.value.calculating)
+        assertEquals(0.8, vm.uiState.value.progress, 0.0)
+        assertEquals("30", vm.uiState.value.days)
+        assertNull(saved.get<String>("days"))
+        assertEquals(2, vm.uiState.value.catalogNumber)
         assertEquals(1, predictor.requests.size)
-        assertFalse(vm.uiState.value.daysValid)
+        vm.onAction(SunlightAction.ChangePanel(SunlightPanelPage.NONE))
+        vm.onAction(SunlightAction.OpenConditions)
+        assertEquals("30", vm.uiState.value.page.draftDays)
+        assertEquals(2, vm.uiState.value.page.draftCatalog)
     }
 
     @Test fun cancellationIsVisibleAndSavedInputsRestoreWithoutRestoringAWorker() = runTest {
@@ -132,12 +143,14 @@ class SunlightViewModelTest {
         val saved = SavedStateHandle()
         val vm = model(predictor, saved)
         advanceUntilIdle()
-        vm.onAction(SunlightAction.SetDays("365"))
-        vm.onAction(SunlightAction.SelectSatellite(1))
+        vm.onAction(SunlightAction.SubmitConditions(1, 86_400_001L, 365))
         vm.onAction(SunlightAction.Filter(null, 12, SunlightSort.DURATION))
-        vm.onAction(SunlightAction.Predict)
         advanceUntilIdle()
         vm.onAction(SunlightAction.Cancel)
+        vm.onAction(SunlightAction.ToggleStatistics)
+        vm.onAction(SunlightAction.OpenConditions)
+        vm.onAction(SunlightAction.DraftDays("7"))
+        vm.onAction(SunlightAction.ChangePanel(SunlightPanelPage.SATELLITES))
         advanceUntilIdle()
         assertTrue(vm.uiState.value.cancelled)
         assertFalse(vm.uiState.value.calculating)
@@ -145,11 +158,68 @@ class SunlightViewModelTest {
         advanceUntilIdle()
         assertEquals("365", restored.uiState.value.days)
         assertEquals(1, restored.uiState.value.catalogNumber)
-        assertEquals(12L, restored.uiState.value.minimumMinutes)
-        assertNull(restored.uiState.value.filter)
+        assertEquals(86_400_000L, restored.uiState.value.startUtcMillis)
+        assertEquals(0L, restored.uiState.value.minimumMinutes)
+        assertEquals(Illumination.SUNLIGHT, restored.uiState.value.filter)
+        assertEquals(SunlightSort.DURATION, restored.uiState.value.sort)
         assertFalse(restored.uiState.value.calculating)
         assertNull(restored.uiState.value.prediction)
+        assertEquals(SunlightPanelPage.NONE, restored.uiState.value.page.panel)
+        assertFalse(restored.uiState.value.page.statisticsExpanded)
+        assertNotEquals(vm.uiState.value.panelStateKey, restored.uiState.value.panelStateKey)
         assertEquals(1, predictor.requests.size)
+    }
+
+    @Test fun submittingConditionsIsAtomicAndDraftNavigationDoesNotInvalidateCompletedResults() = runTest {
+        val predictor = Predictor()
+        val saved = SavedStateHandle()
+        val vm = model(predictor, saved)
+        advanceUntilIdle()
+        vm.onAction(SunlightAction.Predict)
+        advanceUntilIdle()
+        val result = result(predictor.requests.single())
+        predictor.completions.single().complete(result)
+        advanceUntilIdle()
+        vm.onAction(SunlightAction.OpenConditions)
+        vm.onAction(SunlightAction.DraftDays("90"))
+        vm.onAction(SunlightAction.ChangePanel(SunlightPanelPage.DATE))
+        vm.onAction(SunlightAction.DraftStart(123_456_789L))
+        vm.onAction(SunlightAction.ChangePanel(SunlightPanelPage.CONDITIONS))
+        vm.onAction(SunlightAction.ToggleStatistics)
+        assertEquals("90", vm.uiState.value.page.draftDays)
+        assertEquals(result, vm.uiState.value.prediction)
+        assertEquals(1, predictor.requests.size)
+        vm.onAction(SunlightAction.SubmitConditions(1, 123_456_789L, 90))
+        assertEquals(1, vm.uiState.value.catalogNumber)
+        assertEquals(86_400_000L, vm.uiState.value.startUtcMillis)
+        assertEquals("90", vm.uiState.value.days)
+        assertEquals("90", saved.get<String>("days"))
+        assertTrue(vm.uiState.value.calculating)
+        assertNull(vm.uiState.value.prediction)
+        assertEquals(SunlightPanelPage.NONE, vm.uiState.value.page.panel)
+        assertTrue(vm.uiState.value.page.statisticsExpanded)
+        advanceUntilIdle()
+        assertEquals(SunlightRequest(1, 86_400_000L, 90), predictor.requests.last())
+        assertEquals(2, predictor.requests.size)
+    }
+
+    @Test fun longestFirstUsesStartTimeForTiesAndFilteringDoesNotModifyPartialTotals() {
+        val request = SunlightRequest(1, 0, 1)
+        val intervals = listOf(
+            IlluminationInterval(Illumination.SUNLIGHT, 0, 60_000, startClipped = true),
+            IlluminationInterval(Illumination.UMBRA, 60_000, 180_000),
+            IlluminationInterval(Illumination.SUNLIGHT, 180_000, 300_000),
+            IlluminationInterval(Illumination.PENUMBRA, 300_000, 360_000),
+            IlluminationInterval(Illumination.SUNLIGHT, 360_000, 480_000, endClipped = true)
+        )
+        val prediction = result(request).copy(intervals = intervals, validUntilMillis = 480_000)
+        val state = SunlightState(prediction = prediction)
+        assertEquals(SunlightSort.DURATION, state.sort)
+        assertEquals(listOf(180_000L, 360_000L, 0L), filterIntervals(state).map { it.startMillis })
+        assertEquals(listOf(180_000L, 360_000L),
+            filterIntervals(state.copy(minimumMinutes = 2)).map { it.startMillis })
+        assertEquals(480_000L, prediction.validDurationMillis)
+        assertEquals(300_000L, prediction.durationMillis(Illumination.SUNLIGHT))
     }
 
     @Test fun utcDateAnchorsAndLocalDstFormattingRemainUnambiguous() {

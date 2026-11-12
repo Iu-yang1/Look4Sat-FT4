@@ -162,13 +162,14 @@ class SatelliteRepo(
 
     override suspend fun getTrack(sat: OrbitalObject, pos: GeoPos, start: Long, end: Long): List<OrbitalPos> =
         withContext(dispatcher) {
+            val context = coroutineContext
             calculate(sat) {
                 val session = orbit.openSession(sat)
                 val step = ((end - start) / 1200 + 1).coerceAtLeast(15000)
                 buildList {
                     var time = start
                     while (time < end) {
-                        coroutineContext.ensureActive()
+                        context.ensureActive()
                         add(session.position(pos, time))
                         time += step
                     }

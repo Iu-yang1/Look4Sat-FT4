@@ -125,6 +125,7 @@ import com.rtbishop.look4sat.feature.satellites.SatellitesDestination
 import com.rtbishop.look4sat.feature.settings.SettingsDestination
 import com.rtbishop.look4sat.feature.settings.LoTWUploadDestination
 import com.rtbishop.look4sat.feature.status.SatStatusDestination
+import com.rtbishop.look4sat.feature.sunlight.SunlightDestination
 import kotlinx.coroutines.delay
 
 @Composable
@@ -388,6 +389,7 @@ private fun Look4SatNavigationScaffold(
         add(Screen.Mutual)
         add(Screen.AMSAT)
         add(Screen.PassSchedule)
+        add(Screen.Sunlight)
         add(Screen.Jtty)
         if (primaryTool != Screen.Ft4) add(Screen.Ft4)
     }
@@ -624,6 +626,12 @@ fun MainScreen(
                             )
                         }
                         entry<Screen.AMSAT> { SatStatusDestination() }
+                        entry<Screen.Sunlight> {
+                            SunlightDestination(
+                                navigateUp = { navigateBackFrom(Screen.Sunlight) },
+                                navigateToSettings = { navigateToScreen(Screen.Settings) }
+                            )
+                        }
                         entry<Screen.PassSchedule> {
                             PassScheduleDestination(
                                 navigateUp = { navigateBackFrom(Screen.PassSchedule) },

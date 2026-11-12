@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="sunlight_title">Predicción de luz solar</string>
+    <string name="sunlight_back">Volver</string>
+    <string name="sunlight_satellite">Satélite</string>
+    <string name="sunlight_choose_satellite">Elegir satélite</string>
+    <string name="sunlight_start_label">Fecha inicial (UTC)</string>
+    <string name="sunlight_start_date">Fecha inicial (UTC): %1$s</string>
+    <string name="sunlight_days">Días de predicción</string>
+    <string name="sunlight_days_error">Introduce entre 1 y 365 días.</string>
+    <string name="sunlight_predict">Predecir</string>
+    <string name="sunlight_restart">Reiniciar predicción</string>
+    <string name="sunlight_progress">Calculando… %1$d%%</string>
+    <string name="sunlight_loading">Cargando satélites…</string>
+    <string name="sunlight_no_satellites">No hay datos orbitales locales. Actualízalos en Ajustes.</string>
+    <string name="sunlight_update_data">Abrir ajustes de datos</string>
+    <string name="sunlight_reload">Recargar satélites</string>
+    <string name="sunlight_cancelled">Predicción cancelada.</string>
+    <string name="sunlight_initial">Elige un satélite y un intervalo de fechas para predecir la iluminación de toda su órbita.</string>
+    <string name="sunlight_epoch">Época de los elementos orbitales: %1$s</string>
+    <string name="sunlight_full">Luz solar completa</string>
+    <string name="sunlight_penumbra">Penumbra</string>
+    <string name="sunlight_umbra">Umbra</string>
+    <string name="sunlight_state_summary">%1$s: %2$s (%3$s)</string>
+    <string name="sunlight_longest">Mayor duración de luz: %1$s</string>
+    <string name="sunlight_longest_clipped">Duración limitada al intervalo de predicción.</string>
+    <string name="sunlight_range">%1$s – %2$s</string>
+    <string name="sunlight_timezone">Hora de los resultados: %1$s</string>
+    <string name="sunlight_filter">Filtrar y ordenar</string>
+    <string name="sunlight_all_states">Todos los estados</string>
+    <string name="sunlight_minimum">Duración mínima (minutos)</string>
+    <string name="sunlight_minimum_error">Introduce cero o un número entero positivo.</string>
+    <string name="sunlight_sort_time">Hora inicial</string>
+    <string name="sunlight_sort_duration">Más largos primero</string>
+    <string name="sunlight_no_intervals">Ningún intervalo coincide con los filtros.</string>
+    <string name="sunlight_begin">Inicio: %1$s</string>
+    <string name="sunlight_end">Fin: %1$s</string>
+    <string name="sunlight_started_before">Ya había comenzado al inicio del intervalo</string>
+    <string name="sunlight_continues_after">Continúa después del intervalo</string>
+    <string name="sunlight_partial">Resultado parcial. Válido hasta %1$s; el tiempo restante es desconocido.</string>
+    <string name="sunlight_error_elements">Datos orbitales no disponibles. Actualízalos y vuelve a intentarlo.</string>
+    <string name="sunlight_error_orbit">No se pudo propagar la órbita. Actualiza los datos o reduce el intervalo.</string>
+    <string name="sunlight_error_computation">La predicción falló. Reinténtalo; consulta el diagnóstico para más detalles.</string>
+    <plurals name="sunlight_intervals"><item quantity="one">%d intervalo</item><item quantity="other">%d intervalos</item></plurals>
+    <plurals name="sunlight_continuous_count"><item quantity="one">%d intervalo de luz continua</item><item quantity="other">%d intervalos de luz continua</item></plurals>
+</resources>

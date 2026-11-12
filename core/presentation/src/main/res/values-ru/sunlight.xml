@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="sunlight_title">Прогноз освещённости</string>
+    <string name="sunlight_back">Назад</string>
+    <string name="sunlight_satellite">Спутник</string>
+    <string name="sunlight_choose_satellite">Выбрать спутник</string>
+    <string name="sunlight_start_label">Дата начала (UTC)</string>
+    <string name="sunlight_start_date">Дата начала (UTC): %1$s</string>
+    <string name="sunlight_days">Дней прогноза</string>
+    <string name="sunlight_days_error">Введите от 1 до 365 дней.</string>
+    <string name="sunlight_predict">Рассчитать</string>
+    <string name="sunlight_restart">Пересчитать</string>
+    <string name="sunlight_progress">Расчёт… %1$d%%</string>
+    <string name="sunlight_loading">Загрузка спутников…</string>
+    <string name="sunlight_no_satellites">Нет локальных элементов орбит. Обновите данные в настройках.</string>
+    <string name="sunlight_update_data">Настройки данных</string>
+    <string name="sunlight_reload">Обновить список спутников</string>
+    <string name="sunlight_cancelled">Расчёт отменён.</string>
+    <string name="sunlight_initial">Выберите спутник и диапазон дат для прогноза освещённости всей орбиты.</string>
+    <string name="sunlight_epoch">Эпоха элементов орбиты: %1$s</string>
+    <string name="sunlight_full">Полное освещение</string>
+    <string name="sunlight_penumbra">Полутень</string>
+    <string name="sunlight_umbra">Тень</string>
+    <string name="sunlight_state_summary">%1$s: %2$s (%3$s)</string>
+    <string name="sunlight_longest">Самое долгое освещение: %1$s</string>
+    <string name="sunlight_longest_clipped">Длительность ограничена диапазоном прогноза.</string>
+    <string name="sunlight_range">%1$s – %2$s</string>
+    <string name="sunlight_timezone">Время результатов: %1$s</string>
+    <string name="sunlight_filter">Фильтр и сортировка</string>
+    <string name="sunlight_all_states">Все состояния</string>
+    <string name="sunlight_minimum">Минимальная длительность (минуты)</string>
+    <string name="sunlight_minimum_error">Введите ноль или положительное целое число.</string>
+    <string name="sunlight_sort_time">По времени начала</string>
+    <string name="sunlight_sort_duration">Сначала долгие</string>
+    <string name="sunlight_no_intervals">Нет интервалов по выбранным фильтрам.</string>
+    <string name="sunlight_begin">Начало: %1$s</string>
+    <string name="sunlight_end">Конец: %1$s</string>
+    <string name="sunlight_started_before">Началось до начала диапазона</string>
+    <string name="sunlight_continues_after">Продолжается после конца диапазона</string>
+    <string name="sunlight_partial">Частичный результат до %1$s; оставшееся время неизвестно.</string>
+    <string name="sunlight_error_elements">Нет элементов орбиты. Обновите данные спутников и повторите.</string>
+    <string name="sunlight_error_orbit">Не удалось продолжить расчёт орбиты. Обновите данные или сократите диапазон.</string>
+    <string name="sunlight_error_computation">Ошибка прогноза. Повторите; подробности в диагностике.</string>
+    <plurals name="sunlight_intervals">
+        <item quantity="one">%d интервал</item><item quantity="few">%d интервала</item><item quantity="many">%d интервалов</item><item quantity="other">%d интервала</item>
+    </plurals>
+    <plurals name="sunlight_continuous_count">
+        <item quantity="one">%d интервал непрерывного освещения</item><item quantity="few">%d интервала непрерывного освещения</item><item quantity="many">%d интервалов непрерывного освещения</item><item quantity="other">%d интервала непрерывного освещения</item>
+    </plurals>
+</resources>

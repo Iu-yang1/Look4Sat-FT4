@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="sunlight_title">Güneş ışığı tahmini</string>
+    <string name="sunlight_back">Geri</string>
+    <string name="sunlight_satellite">Uydu</string>
+    <string name="sunlight_choose_satellite">Uydu seç</string>
+    <string name="sunlight_start_label">Başlangıç tarihi (UTC)</string>
+    <string name="sunlight_start_date">Başlangıç tarihi (UTC): %1$s</string>
+    <string name="sunlight_days">Tahmin süresi (gün)</string>
+    <string name="sunlight_days_error">1–365 gün girin.</string>
+    <string name="sunlight_predict">Hesapla</string>
+    <string name="sunlight_restart">Yeniden hesapla</string>
+    <string name="sunlight_progress">Hesaplanıyor… %1$d%%</string>
+    <string name="sunlight_loading">Uydular yükleniyor…</string>
+    <string name="sunlight_no_satellites">Yerel yörünge verisi yok. Ayarlardan uydu verilerini güncelleyin.</string>
+    <string name="sunlight_update_data">Veri ayarlarını aç</string>
+    <string name="sunlight_reload">Uyduları yeniden yükle</string>
+    <string name="sunlight_cancelled">Tahmin iptal edildi.</string>
+    <string name="sunlight_initial">Tüm yörüngedeki aydınlanmayı tahmin etmek için uydu ve tarih aralığı seçin.</string>
+    <string name="sunlight_epoch">Yörünge elemanlarının zamanı: %1$s</string>
+    <string name="sunlight_full">Tam güneş ışığı</string>
+    <string name="sunlight_penumbra">Yarı gölge</string>
+    <string name="sunlight_umbra">Tam gölge</string>
+    <string name="sunlight_state_summary">%1$s: %2$s (%3$s)</string>
+    <string name="sunlight_longest">En uzun aydınlanma: %1$s</string>
+    <string name="sunlight_longest_clipped">Süre yalnızca tahmin aralığını kapsar.</string>
+    <string name="sunlight_range">%1$s – %2$s</string>
+    <string name="sunlight_timezone">Sonuçların saati: %1$s</string>
+    <string name="sunlight_filter">Filtrele ve sırala</string>
+    <string name="sunlight_all_states">Tüm durumlar</string>
+    <string name="sunlight_minimum">En kısa süre (dakika)</string>
+    <string name="sunlight_minimum_error">Sıfır veya pozitif bir tam sayı girin.</string>
+    <string name="sunlight_sort_time">Başlangıç zamanına göre</string>
+    <string name="sunlight_sort_duration">Önce en uzun</string>
+    <string name="sunlight_no_intervals">Filtrelerle eşleşen aralık yok.</string>
+    <string name="sunlight_begin">Başlangıç: %1$s</string>
+    <string name="sunlight_end">Bitiş: %1$s</string>
+    <string name="sunlight_started_before">Aralık başlamadan önce sürüyordu</string>
+    <string name="sunlight_continues_after">Aralık bittikten sonra da sürer</string>
+    <string name="sunlight_partial">Kısmi sonuç. %1$s zamanına kadar geçerli; kalan süre bilinmiyor.</string>
+    <string name="sunlight_error_elements">Yörünge verisi yok. Uydu verilerini güncelleyip yeniden deneyin.</string>
+    <string name="sunlight_error_orbit">Yörünge ilerletilemedi. Verileri güncelleyin veya aralığı kısaltın.</string>
+    <string name="sunlight_error_computation">Tahmin başarısız. Yeniden deneyin; ayrıntılar tanı kayıtlarında.</string>
+    <plurals name="sunlight_intervals"><item quantity="one">%d aralık</item><item quantity="other">%d aralık</item></plurals>
+    <plurals name="sunlight_continuous_count"><item quantity="one">%d kesintisiz güneş ışığı aralığı</item><item quantity="other">%d kesintisiz güneş ışığı aralığı</item></plurals>
+</resources>

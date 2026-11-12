@@ -122,6 +122,9 @@ class MainContainer(private val context: Context) : IMainContainer {
     override val selectionRepo = provideSelectionRepo()
     override val satelliteRepo = provideSatelliteRepo()
     override val databaseRepo = provideDatabaseRepo()
+    override val sunlightPredictor by lazy {
+        com.rtbishop.look4sat.core.data.sunlight.OrekitSunlightPredictor(localSource, controlDiagnostics)
+    }
     override val wavelogUploadRepository: IWavelogUploadRepository by lazy { WavelogUploadRepository() }
     override val wavelogSyncRepository: IWavelogSyncRepository by lazy { WavelogSyncRepository() }
     override val qsoRepository: IQsoRepository by lazy {

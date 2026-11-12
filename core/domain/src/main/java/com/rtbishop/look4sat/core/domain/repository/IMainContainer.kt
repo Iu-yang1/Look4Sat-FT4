@@ -37,6 +37,8 @@ interface IMainContainer {
     val selectionRepo: ISelectionRepo
     val satelliteRepo: ISatelliteRepo
     val databaseRepo: IDatabaseRepo
+    val sunlightPredictor: com.rtbishop.look4sat.core.domain.sunlight.ISunlightPredictor
+        get() = error("Sunlight prediction is unavailable")
     val wavelogUploadRepository: IWavelogUploadRepository
     val wavelogSyncRepository: IWavelogSyncRepository
     val qsoRepository: IQsoRepository

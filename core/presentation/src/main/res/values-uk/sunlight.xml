@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="sunlight_title">Прогноз освітленості</string>
+    <string name="sunlight_back">Назад</string>
+    <string name="sunlight_satellite">Супутник</string>
+    <string name="sunlight_choose_satellite">Вибрати супутник</string>
+    <string name="sunlight_start_label">Дата початку (UTC)</string>
+    <string name="sunlight_start_date">Дата початку (UTC): %1$s</string>
+    <string name="sunlight_days">Днів прогнозу</string>
+    <string name="sunlight_days_error">Введіть від 1 до 365 днів.</string>
+    <string name="sunlight_predict">Розрахувати</string>
+    <string name="sunlight_restart">Перерахувати</string>
+    <string name="sunlight_progress">Розрахунок… %1$d%%</string>
+    <string name="sunlight_loading">Завантаження супутників…</string>
+    <string name="sunlight_no_satellites">Немає локальних елементів орбіт. Оновіть дані в налаштуваннях.</string>
+    <string name="sunlight_update_data">Налаштування даних</string>
+    <string name="sunlight_reload">Оновити список супутників</string>
+    <string name="sunlight_cancelled">Розрахунок скасовано.</string>
+    <string name="sunlight_initial">Виберіть супутник і діапазон дат для прогнозу освітленості всієї орбіти.</string>
+    <string name="sunlight_epoch">Епоха елементів орбіти: %1$s</string>
+    <string name="sunlight_full">Повне освітлення</string>
+    <string name="sunlight_penumbra">Півтінь</string>
+    <string name="sunlight_umbra">Тінь</string>
+    <string name="sunlight_state_summary">%1$s: %2$s (%3$s)</string>
+    <string name="sunlight_longest">Найдовше освітлення: %1$s</string>
+    <string name="sunlight_longest_clipped">Тривалість обмежена діапазоном прогнозу.</string>
+    <string name="sunlight_range">%1$s – %2$s</string>
+    <string name="sunlight_timezone">Час результатів: %1$s</string>
+    <string name="sunlight_filter">Фільтр і сортування</string>
+    <string name="sunlight_all_states">Усі стани</string>
+    <string name="sunlight_minimum">Мінімальна тривалість (хвилини)</string>
+    <string name="sunlight_minimum_error">Введіть нуль або додатне ціле число.</string>
+    <string name="sunlight_sort_time">За часом початку</string>
+    <string name="sunlight_sort_duration">Спочатку довгі</string>
+    <string name="sunlight_no_intervals">Немає інтервалів за вибраними фільтрами.</string>
+    <string name="sunlight_begin">Початок: %1$s</string>
+    <string name="sunlight_end">Кінець: %1$s</string>
+    <string name="sunlight_started_before">Почалося до початку діапазону</string>
+    <string name="sunlight_continues_after">Триває після кінця діапазону</string>
+    <string name="sunlight_partial">Частковий результат до %1$s; решта часу невідома.</string>
+    <string name="sunlight_error_elements">Немає елементів орбіти. Оновіть дані супутників і повторіть.</string>
+    <string name="sunlight_error_orbit">Не вдалося продовжити розрахунок орбіти. Оновіть дані або скоротіть діапазон.</string>
+    <string name="sunlight_error_computation">Помилка прогнозу. Повторіть; подробиці в діагностиці.</string>
+    <plurals name="sunlight_intervals">
+        <item quantity="one">%d інтервал</item><item quantity="few">%d інтервали</item><item quantity="many">%d інтервалів</item><item quantity="other">%d інтервалу</item>
+    </plurals>
+    <plurals name="sunlight_continuous_count">
+        <item quantity="one">%d інтервал безперервного освітлення</item><item quantity="few">%d інтервали безперервного освітлення</item><item quantity="many">%d інтервалів безперервного освітлення</item><item quantity="other">%d інтервалу безперервного освітлення</item>
+    </plurals>
+</resources>

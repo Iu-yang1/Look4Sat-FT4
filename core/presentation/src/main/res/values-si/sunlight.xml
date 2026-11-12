@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="sunlight_title">හිරු එළිය පුරෝකථනය</string>
+    <string name="sunlight_back">ආපසු</string>
+    <string name="sunlight_satellite">චන්ද්‍රිකාව</string>
+    <string name="sunlight_choose_satellite">චන්ද්‍රිකාවක් තෝරන්න</string>
+    <string name="sunlight_start_label">ආරම්භක දිනය (UTC)</string>
+    <string name="sunlight_start_date">ආරම්භක දිනය (UTC): %1$s</string>
+    <string name="sunlight_days">පුරෝකථන දින ගණන</string>
+    <string name="sunlight_days_error">දින 1–365 අතර අගයක් ඇතුළත් කරන්න.</string>
+    <string name="sunlight_predict">ගණනය කරන්න</string>
+    <string name="sunlight_restart">නැවත ගණනය කරන්න</string>
+    <string name="sunlight_progress">ගණනය කරමින්… %1$d%%</string>
+    <string name="sunlight_loading">චන්ද්‍රිකා පූරණය කරමින්…</string>
+    <string name="sunlight_no_satellites">දේශීය කක්ෂීය දත්ත නැත. සැකසුම් තුළින් චන්ද්‍රිකා දත්ත යාවත්කාලීන කරන්න.</string>
+    <string name="sunlight_update_data">දත්ත සැකසුම් විවෘත කරන්න</string>
+    <string name="sunlight_reload">චන්ද්‍රිකා නැවත පූරණය කරන්න</string>
+    <string name="sunlight_cancelled">පුරෝකථනය අවලංගු කරන ලදී.</string>
+    <string name="sunlight_initial">සම්පූර්ණ කක්ෂයේ හිරු එළිය පුරෝකථනය කිරීමට චන්ද්‍රිකාවක් සහ දින පරාසයක් තෝරන්න.</string>
+    <string name="sunlight_epoch">කක්ෂීය දත්ත යුගය: %1$s</string>
+    <string name="sunlight_full">පූර්ණ හිරු එළිය</string>
+    <string name="sunlight_penumbra">අර්ධ සෙවණ</string>
+    <string name="sunlight_umbra">පූර්ණ සෙවණ</string>
+    <string name="sunlight_state_summary">%1$s: %2$s (%3$s)</string>
+    <string name="sunlight_longest">දිගම හිරු එළිය කාලය: %1$s</string>
+    <string name="sunlight_longest_clipped">කාලය පුරෝකථන පරාසයට සීමා වේ.</string>
+    <string name="sunlight_range">%1$s – %2$s</string>
+    <string name="sunlight_timezone">ප්‍රතිඵල වේලාව: %1$s</string>
+    <string name="sunlight_filter">පෙරහන් සහ අනුපිළිවෙළ</string>
+    <string name="sunlight_all_states">සියලු තත්ත්ව</string>
+    <string name="sunlight_minimum">අවම කාලය (මිනිත්තු)</string>
+    <string name="sunlight_minimum_error">බිංදුව හෝ ධන පූර්ණ සංඛ්‍යාවක් ඇතුළත් කරන්න.</string>
+    <string name="sunlight_sort_time">ආරම්භක වේලාව අනුව</string>
+    <string name="sunlight_sort_duration">දිගම කාලය මුලින්</string>
+    <string name="sunlight_no_intervals">මෙම පෙරහන්වලට ගැළපෙන කාල පරාස නැත.</string>
+    <string name="sunlight_begin">ආරම්භය: %1$s</string>
+    <string name="sunlight_end">අවසානය: %1$s</string>
+    <string name="sunlight_started_before">පරාසය ආරම්භයට පෙර සිට පැවතුණි</string>
+    <string name="sunlight_continues_after">පරාසය අවසානයෙන් පසුත් පවතී</string>
+    <string name="sunlight_partial">අර්ධ ප්‍රතිඵලයකි. %1$s දක්වා වලංගුය; ඉතිරි කාලය නොදනී.</string>
+    <string name="sunlight_error_elements">කක්ෂීය දත්ත නොමැත. චන්ද්‍රිකා දත්ත යාවත්කාලීන කර නැවත උත්සාහ කරන්න.</string>
+    <string name="sunlight_error_orbit">කක්ෂය ඉදිරියට ගණනය කළ නොහැකි විය. දත්ත යාවත්කාලීන කරන්න හෝ පරාසය අඩු කරන්න.</string>
+    <string name="sunlight_error_computation">පුරෝකථනය අසාර්ථකයි. නැවත උත්සාහ කරන්න; විස්තර රෝග විනිශ්චය සටහන් තුළ ඇත.</string>
+    <plurals name="sunlight_intervals"><item quantity="one">කාල පරාස %d</item><item quantity="other">කාල පරාස %d</item></plurals>
+    <plurals name="sunlight_continuous_count"><item quantity="one">අඛණ්ඩ හිරු එළිය කාල පරාස %d</item><item quantity="other">අඛණ්ඩ හිරු එළිය කාල පරාස %d</item></plurals>
+</resources>

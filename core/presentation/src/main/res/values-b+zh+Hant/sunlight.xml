@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="sunlight_title">日照預測</string>
+    <string name="sunlight_back">返回</string>
+    <string name="sunlight_satellite">衛星</string>
+    <string name="sunlight_choose_satellite">選擇衛星</string>
+    <string name="sunlight_start_label">開始日期（UTC）</string>
+    <string name="sunlight_start_date">開始日期（UTC）：%1$s</string>
+    <string name="sunlight_days">預測天數</string>
+    <string name="sunlight_days_error">請輸入 1–365 天。</string>
+    <string name="sunlight_predict">預測</string>
+    <string name="sunlight_restart">重新預測</string>
+    <string name="sunlight_progress">正在計算… %1$d%%</string>
+    <string name="sunlight_loading">正在載入衛星…</string>
+    <string name="sunlight_no_satellites">本機沒有星曆，請在設定中更新衛星資料。</string>
+    <string name="sunlight_update_data">開啟資料設定</string>
+    <string name="sunlight_reload">重新載入衛星</string>
+    <string name="sunlight_cancelled">已取消預測。</string>
+    <string name="sunlight_initial">選擇衛星與日期範圍，預測整個軌道上的日照狀態。</string>
+    <string name="sunlight_epoch">星曆曆元：%1$s</string>
+    <string name="sunlight_full">完整日照</string>
+    <string name="sunlight_penumbra">半影</string>
+    <string name="sunlight_umbra">本影</string>
+    <string name="sunlight_state_summary">%1$s：%2$s（%3$s）</string>
+    <string name="sunlight_longest">最長連續日照：%1$s</string>
+    <string name="sunlight_longest_clipped">時長僅統計預測範圍內的部分。</string>
+    <string name="sunlight_range">%1$s – %2$s</string>
+    <string name="sunlight_timezone">結果時間：%1$s</string>
+    <string name="sunlight_filter">篩選與排序</string>
+    <string name="sunlight_all_states">全部狀態</string>
+    <string name="sunlight_minimum">最短時長（分鐘）</string>
+    <string name="sunlight_minimum_error">請輸入 0 或正整數。</string>
+    <string name="sunlight_sort_time">依開始時間</string>
+    <string name="sunlight_sort_duration">依時長由長至短</string>
+    <string name="sunlight_no_intervals">沒有符合篩選條件的時段。</string>
+    <string name="sunlight_begin">開始：%1$s</string>
+    <string name="sunlight_end">結束：%1$s</string>
+    <string name="sunlight_started_before">開始前已持續</string>
+    <string name="sunlight_continues_after">結束後仍持續</string>
+    <string name="sunlight_partial">部分結果：僅計算至 %1$s，其餘時間狀態未知。</string>
+    <string name="sunlight_error_elements">無法取得星曆，請更新衛星資料後重試。</string>
+    <string name="sunlight_error_orbit">無法繼續傳播軌道，請更新星曆或縮短預測範圍。</string>
+    <string name="sunlight_error_computation">預測失敗，請重試；詳細原因可查看診斷。</string>
+    <plurals name="sunlight_intervals"><item quantity="other">%d 個時段</item></plurals>
+    <plurals name="sunlight_continuous_count"><item quantity="other">%d 個連續日照時段</item></plurals>
+</resources>

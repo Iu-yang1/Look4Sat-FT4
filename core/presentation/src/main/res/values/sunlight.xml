@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="sunlight_title">Sunlight prediction</string>
+    <string name="sunlight_back">Back</string>
+    <string name="sunlight_satellite">Satellite</string>
+    <string name="sunlight_choose_satellite">Choose a satellite</string>
+    <string name="sunlight_start_label">Start date (UTC)</string>
+    <string name="sunlight_start_date">Start date (UTC): %1$s</string>
+    <string name="sunlight_days">Prediction days</string>
+    <string name="sunlight_days_error">Enter 1–365 days.</string>
+    <string name="sunlight_predict">Predict</string>
+    <string name="sunlight_restart">Restart prediction</string>
+    <string name="sunlight_progress">Calculating… %1$d%%</string>
+    <string name="sunlight_loading">Loading satellites…</string>
+    <string name="sunlight_no_satellites">No local orbital data. Update satellite data in Settings.</string>
+    <string name="sunlight_update_data">Open data settings</string>
+    <string name="sunlight_reload">Reload satellites</string>
+    <string name="sunlight_cancelled">Prediction cancelled.</string>
+    <string name="sunlight_initial">Choose a satellite and date range to predict sunlight around its entire orbit.</string>
+    <string name="sunlight_epoch">Orbital elements epoch: %1$s</string>
+    <string name="sunlight_full">Full sunlight</string>
+    <string name="sunlight_penumbra">Penumbra</string>
+    <string name="sunlight_umbra">Umbra</string>
+    <string name="sunlight_state_summary">%1$s: %2$s (%3$s)</string>
+    <string name="sunlight_longest">Longest sunlight: %1$s</string>
+    <string name="sunlight_longest_clipped">Duration is limited to the prediction range.</string>
+    <string name="sunlight_range">%1$s – %2$s</string>
+    <string name="sunlight_timezone">Results: %1$s</string>
+    <string name="sunlight_filter">Filter and sort</string>
+    <string name="sunlight_all_states">All states</string>
+    <string name="sunlight_minimum">Minimum duration (minutes)</string>
+    <string name="sunlight_minimum_error">Enter zero or a positive whole number.</string>
+    <string name="sunlight_sort_time">Start time</string>
+    <string name="sunlight_sort_duration">Longest first</string>
+    <string name="sunlight_no_intervals">No intervals match these filters.</string>
+    <string name="sunlight_begin">Start: %1$s</string>
+    <string name="sunlight_end">End: %1$s</string>
+    <string name="sunlight_started_before">Already in progress at the start of the range</string>
+    <string name="sunlight_continues_after">Continues beyond the end of the range</string>
+    <string name="sunlight_partial">Partial result. Valid through %1$s; the remaining time is unknown.</string>
+    <string name="sunlight_error_elements">Orbital data unavailable. Update satellite data and try again.</string>
+    <string name="sunlight_error_orbit">The orbit could not be propagated. Update orbital data and try a shorter range.</string>
+    <string name="sunlight_error_computation">Prediction failed. Try again; details are in diagnostics.</string>
+    <plurals name="sunlight_intervals">
+        <item quantity="one">%d interval</item>
+        <item quantity="other">%d intervals</item>
+    </plurals>
+    <plurals name="sunlight_continuous_count">
+        <item quantity="one">%d continuous sunlight interval</item>
+        <item quantity="other">%d continuous sunlight intervals</item>
+    </plurals>
+</resources>

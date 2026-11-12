@@ -33,5 +33,6 @@ include(
     ":feature:radar",
     ":feature:satellites",
     ":feature:settings",
-    ":feature:status"
+    ":feature:status",
+    ":feature:sunlight"
 )

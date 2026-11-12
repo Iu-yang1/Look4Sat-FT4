@@ -139,6 +139,19 @@ abstract class OrbitalObject(val data: OrbitalData) {
         return orbitalPos.copy()
     }
 
+    /** Observer-independent SGP4/SDP4 state in TEME, in km and km/s. No mutable vectors escape. */
+    @Synchronized
+    fun getTemeState(timeMillis: Long): TemeState {
+        julUTC = calcCurrentDaynum(timeMillis) + 2444238.5
+        calculateSDP4orSGP4((julUTC - julEpoch) * MIN_PER_DAY)
+        convertSatState(position, velocity)
+        return TemeState(
+            timeMillis,
+            position.x, position.y, position.z,
+            velocity.x, velocity.y, velocity.z
+        )
+    }
+
     private fun calcCurrentDaynum(now: Long): Double {
         val then = 315446400000 // time in millis on 31Dec79 00:00:00 UTC (daynum 0)
         return (now - then) / 1000.0 / 60.0 / 60.0 / 24.0

@@ -1,0 +1,82 @@
+Sunlight prediction uses Orekit 13.1.4 and its Hipparchus dependencies.
+Orekit research baseline: 70439f1957f851ad131b9fb50d9e94db432d92ec
+Source: https://github.com/CS-SI/Orekit
+Hipparchus source: https://github.com/Hipparchus-Math/hipparchus
+
+Licensed under the Apache License, Version 2.0.
+The full Apache-2.0 license is included in HTCommander-Apache-2.0.txt in this directory.
+The upstream NOTICE texts are reproduced below.
+
+The bundled orekit/UTC-TAI.history is from the Orekit 13.1.4 regular-data reference
+set; UTC-TAI relationships originate from IERS. No future leap seconds are assumed.
+Update the bundled history when a new leap second becomes effective.
+
+This feature uses the existing Look4Sat SGP4/SDP4 propagators, Orekit's
+AnalyticalSolarPositionProvider and EclipseDetector/OccultationEngine.
+It models geometric occultation by a WGS84 ellipsoid without atmosphere or polar
+motion. Analytical Sun positions and extrapolated orbital elements are estimates;
+the event solver's numerical tolerance is not a real-world forecast guarantee.
+
+----- Orekit NOTICE.txt -----
+OREKIT
+Copyright 2002-2025 CS GROUP
+
+This product includes software developed by
+CS GROUP (https://www.cs-soprasteria.com/en/)
+
+This product includes software developed by
+Bruce R. Bowman (HQ AFSPC, Space Analysis Division)
+
+This product includes software developed by
+Luc Maisonobe (Thales Alenia Space)
+
+This product includes software translated from original work developed by
+David A. Vallado, Paul Crawford, Richard Hujsak, T.S. Kelso
+
+This product includes software translated from original work developed by
+Felix R. Hoots, Ronald L. Roehrich
+
+This product includes software translated from original work developed by
+R. Biancale, S. Bruinsma (CNES)
+
+This product includes data computed by
+P. Gégout (CNRS / UMR5563 - GET)
+
+This product includes software translated from original work developed by
+R. Biancale, S. Bruinsma (CNES)
+
+This product includes software translated from original work developed by
+Mickaël Gastineau (CNRS - Observatoire de Paris - IMCCE)
+
+This product includes software translated from original work developed by
+The Apache Software Foundation (https://www.apache.org/)
+
+This product depends on software developed by
+The Apache Software Foundation (https://www.apache.org/)
+
+This product depends on software developed by
+The Hipparchus project (https://hipparchus.org/)
+
+This product includes software translated from original work developed by
+M. Picone, A.E. Hedin, D. Drob (Naval Research Laboratory)
+
+This product includes software translated from original work developed by
+Dominik Brodowski
+
+This product includes software translated from original work developed by
+Duncan Agnew and copyright 2008 IERS Conventions center
+
+----- Hipparchus NOTICE.txt -----
+Hipparchus
+Copyright 2016-2021 The Hipparchus project
+
+This product includes software developed at
+The Apache Software Foundation (https://www.apache.org/)
+Copyright 2001-2016 The Apache Software Foundation
+
+This product includes software developed for Orekit by
+CS GROUP (https://www.csgroup.eu/en/)
+Copyright 2010-2012 CS GROUP
+
+This product includes software developed for by Ulf Adams
+Copyright 2018 Ulf Adams

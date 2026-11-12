@@ -55,7 +55,7 @@ class UpdateRepository(
             onSourceChanged(candidate)
             val prefix = sourcePrefix(candidate)
             coroutineContext.ensureActive()
-            val url = "$prefix$RELEASE_REPOSITORY/releases/latest"
+            val url = prefix + LATEST_RELEASE_URL
             val html = readPage(url) ?: continue
             val release = parseReleasePage(html, prefix, Build.SUPPORTED_ABIS.toList()) ?: continue
             metadata = metadata ?: release
@@ -325,7 +325,7 @@ internal fun canonicalDownloadUrl(url: String): String? = runCatching {
     val prefix = UPDATE_MIRRORS.firstOrNull { url.startsWith(it) }.orEmpty()
     val canonical = url.removePrefix(prefix)
     val uri = URI(canonical)
-    val pathPrefix = "/Iu-yang1/Look4Sat-FT4/releases/download/"
+    val pathPrefix = "${URI(RELEASE_REPOSITORY).path}/releases/download/"
     val segments = uri.path.orEmpty().takeIf { it.startsWith(pathPrefix, true) }?.substring(pathPrefix.length)?.split('/')
     canonical.takeIf {
         uri.scheme == "https" && uri.host.equals("github.com", ignoreCase = true) &&

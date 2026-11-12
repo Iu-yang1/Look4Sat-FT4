@@ -4,6 +4,7 @@ import com.rtbishop.look4sat.core.domain.model.LatestRelease
 import java.net.URI
 
 internal const val RELEASE_REPOSITORY = "https://github.com/Iu-yang1/Look4Sat-FT4"
+internal const val LATEST_RELEASE_URL = "$RELEASE_REPOSITORY/releases/latest"
 internal val UPDATE_MIRRORS = listOf(
     "https://ghfast.top/",
     "https://gh.llkk.cc/",

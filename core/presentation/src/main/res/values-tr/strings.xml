@@ -109,9 +109,9 @@
 
     <!-- Settings screen -->
     <string name="prefs_app_title" translatable="false">Look4Sat-BA7OPF v%s</string>
-    <string name="prefs_app_url" translatable="false">https://github.com/atsunatsu/Look4Sat/releases</string>
+    <string name="prefs_app_url" translatable="false">https://github.com/Iu-yang1/Look4Sat-FT4/releases/latest</string>
     <string name="prefs_github_title" translatable="false">GitHub</string>
-    <string name="prefs_github_url" translatable="false">https://github.com/atsunatsu/Look4Sat</string>
+    <string name="prefs_github_url" translatable="false">https://github.com/Iu-yang1/Look4Sat-FT4</string>
     <string name="prefs_license_title" translatable="false">GPLv3</string>
     <string name="prefs_license_url" translatable="false">https://www.gnu.org/licenses/gpl-3.0.html</string>
     <string name="prefs_privacy_title">Gizlilik Politikası</string>

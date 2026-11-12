@@ -617,7 +617,7 @@
     <string name="mutual_station_b">站点B</string>
     <string name="update_source_selection">更新源</string>
     <string name="update_source_auto">自动选择（依次尝试）</string>
-    <string name="update_source_github">GitHub 官方</string>
+    <string name="update_source_github">GitHub · Look4Sat-FT4</string>
     <string name="update_source_ghfast">ghfast.top（代理）</string>
     <string name="update_source_llkk">gh.llkk.cc（代理）</string>
     <string name="update_source_moeyy">github.moeyy.xyz（代理）</string>

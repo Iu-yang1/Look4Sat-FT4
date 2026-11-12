@@ -84,7 +84,7 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.rtbishop.look4sat.core.domain.predict.CelestialComputer
+import com.rtbishop.look4sat.core.domain.predict.CelestialState
 import com.rtbishop.look4sat.core.domain.predict.OrbitalPass
 import com.rtbishop.look4sat.core.domain.predict.GeoPos
 import com.rtbishop.look4sat.core.domain.repository.IContainerProvider
@@ -94,6 +94,7 @@ import com.rtbishop.look4sat.core.presentation.PassDateDivider
 import com.rtbishop.look4sat.core.presentation.elevationColor
 import com.rtbishop.look4sat.core.presentation.infiniteMarquee
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
@@ -507,8 +508,11 @@ fun PassScheduleDestination(
     val visiblePasses by remember(passCalculationKey) {
         derivedStateOf { passes.filter { it.losTime > currentTime } }
     }
-    val scheduleDays = remember(visiblePasses, isUtc, stationPosition) {
-        groupPassScheduleByDate(visiblePasses, isUtc, stationPosition)
+    var scheduleDays by remember { mutableStateOf<List<PassScheduleDay>>(emptyList()) }
+    LaunchedEffect(visiblePasses, isUtc, stationPosition) {
+        scheduleDays = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+            groupPassScheduleByDate(visiblePasses, isUtc, stationPosition, container.satelliteRepo.celestial)
+        }
     }
 
     val permissionLauncher = rememberLauncherForActivityResult(
@@ -790,10 +794,11 @@ private data class PassScheduleDay(
     val passes: List<OrbitalPass>
 )
 
-private fun groupPassScheduleByDate(
+private suspend fun groupPassScheduleByDate(
     passes: List<OrbitalPass>,
     isUtc: Boolean,
-    stationPosition: GeoPos
+    stationPosition: GeoPos,
+    celestial: com.rtbishop.look4sat.core.domain.astro.ICelestialService
 ): List<PassScheduleDay> {
     if (passes.isEmpty()) return emptyList()
     val displayTimeZone = if (isUtc) TimeZone.getTimeZone("UTC") else TimeZone.getDefault()
@@ -809,24 +814,15 @@ private fun groupPassScheduleByDate(
         it.timeZone = displayTimeZone
     }
     val grouped = LinkedHashMap<String, List<OrbitalPass>>()
-    val deepSpacePasses = passes.filter { it.isDeepSpace }
-    if (deepSpacePasses.isNotEmpty()) {
-        grouped[DEEP_SPACE_PASS_GROUP] = deepSpacePasses
-    }
-    passes.filterNot { it.isDeepSpace }
-        .groupByTo(LinkedHashMap()) { dateFormatter.format(Date(it.aosTime)) }
+    passes.groupByTo(LinkedHashMap()) { dateFormatter.format(Date(it.aosTime)) }
         .forEach { (label, dayPasses) -> grouped[label] = dayPasses }
 
     return grouped.map { (label, dayPasses) ->
-        // Match the main pass prediction page: sunrise/sunset are calculated from local midnight,
-        // then formatted using the active UTC/local display preference.
-        val dateAnchor = if (label == DEEP_SPACE_PASS_GROUP) {
-            System.currentTimeMillis()
-        } else {
-            dayPasses.first().aosTime
-        }
-        val localMidnight = startOfDayMillis(dateAnchor, TimeZone.getDefault())
-        val riseSet = findSunRiseSetForDisplayDay(stationPosition, localMidnight)
+        // Use a calendar day in the same time zone as the date grouping.
+        val dateAnchor = dayPasses.first().aosTime
+        val localMidnight = startOfDayMillis(dateAnchor, displayTimeZone)
+        val riseSet = findSunRiseSetForDisplayDay(stationPosition, localMidnight, celestial,
+            displayTimeZone, dayPasses.first().orbitalObject.snapshot)
         PassScheduleDay(
             label = label,
             sunriseTime = if (riseSet.riseTimeMillis > 0L) timeFormatter.format(Date(riseSet.riseTimeMillis)) else "--:--",
@@ -835,8 +831,6 @@ private fun groupPassScheduleByDate(
         )
     }
 }
-
-private const val DEEP_SPACE_PASS_GROUP = "DeepSpace (period >225min)"
 
 private fun startOfDayMillis(timeMillis: Long, timeZone: TimeZone): Long =
     Calendar.getInstance(timeZone, Locale.getDefault()).apply {
@@ -847,23 +841,20 @@ private fun startOfDayMillis(timeMillis: Long, timeZone: TimeZone): Long =
         set(Calendar.MILLISECOND, 0)
     }.timeInMillis
 
-private fun findSunRiseSetForDisplayDay(
+private suspend fun findSunRiseSetForDisplayDay(
     observer: GeoPos,
-    localMidnightMillis: Long
-): CelestialComputer.RiseSetTimes {
-    val threshold = 0.8333
-    val dayEnd = localMidnightMillis + 86_400_000L
-    if (CelestialComputer.getSunPosition(observer, localMidnightMillis).elevation > -threshold) {
-        // Polar day / white-night handling matching the main pass list's calculation.
-        for (offset in 1..3) {
-            val result = CelestialComputer.findSunRiseSet(observer, localMidnightMillis - offset * 86_400_000L)
-            if (result.riseTimeMillis in localMidnightMillis..dayEnd &&
-                result.setTimeMillis in localMidnightMillis..dayEnd
-            ) return result
-        }
-        return CelestialComputer.RiseSetTimes(0L, 0L)
-    }
-    return CelestialComputer.findSunRiseSet(observer, localMidnightMillis)
+    localMidnightMillis: Long,
+    celestial: com.rtbishop.look4sat.core.domain.astro.ICelestialService,
+    timezone: TimeZone,
+    snapshot: com.rtbishop.look4sat.core.domain.astro.AstroDataSnapshot?
+): CelestialState.RiseSetTimes {
+    val end = Calendar.getInstance(timezone).apply {
+        timeInMillis = localMidnightMillis
+        add(Calendar.DAY_OF_MONTH, 1)
+    }.timeInMillis
+    val context = kotlin.coroutines.coroutineContext
+    return celestial.riseSet(observer, localMidnightMillis, end, snapshot = snapshot,
+        checkCancelled = { context.ensureActive() })
 }
 
 @Composable
@@ -892,7 +883,7 @@ private fun PassScheduleItem(
     // second. Derive progress from the ticking wall clock so the active pass bar
     // advances continuously from AOS to LOS instead of remaining at its stale value.
     val passProgress = when {
-        pass.isDeepSpace -> 1f
+        pass.continuousVisibility -> 1f
         pass.losTime <= pass.aosTime -> 0f
         else -> ((now - pass.aosTime).toFloat() / (pass.losTime - pass.aosTime).toFloat())
             .coerceIn(0f, 1f)
@@ -957,7 +948,7 @@ private fun PassScheduleItem(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = if (pass.isDeepSpace) stringResource(R.string.pass_deep_space) else durationStr,
+                            text = if (pass.continuousVisibility) stringResource(R.string.astro_continuous) else durationStr,
                             modifier = Modifier.weight(1f),
                             fontSize = 18.sp,
                             lineHeight = 19.sp,
@@ -999,7 +990,7 @@ private fun PassScheduleItem(
                     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                         val defaultTime = "--:--:--"
                         Text(
-                            text = if (pass.isDeepSpace) defaultTime else aosTimeStr,
+                            text = if (pass.continuousVisibility) defaultTime else aosTimeStr,
                             fontSize = 16.sp,
                             lineHeight = 17.sp,
                             color = MaterialTheme.colorScheme.onSurface,
@@ -1011,13 +1002,14 @@ private fun PassScheduleItem(
                             modifier = Modifier.weight(1f).padding(horizontal = 4.dp)
                         )
                         Text(
-                            text = if (pass.isDeepSpace) defaultTime else losTimeStr,
+                            text = if (pass.continuousVisibility) defaultTime else losTimeStr,
                             fontSize = 16.sp,
                             lineHeight = 17.sp,
                             color = MaterialTheme.colorScheme.onSurface,
                             maxLines = 1
                         )
                     }
+                    com.rtbishop.look4sat.core.presentation.PassBoundaryNote(pass)
                 }
                 Spacer(modifier = Modifier.width(8.dp))
                 PassRadarPreview(

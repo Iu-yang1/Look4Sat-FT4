@@ -395,4 +395,5 @@ private fun problemLabel(problem: SunlightProblem): Int = when (problem) {
     SunlightProblem.ELEMENTS_UNAVAILABLE -> R.string.sunlight_error_elements
     SunlightProblem.INVALID_ORBIT -> R.string.sunlight_error_orbit
     SunlightProblem.COMPUTATION_FAILED -> R.string.sunlight_error_computation
+    SunlightProblem.DATA_OUTSIDE_COVERAGE -> R.string.astro_outside_coverage
 }

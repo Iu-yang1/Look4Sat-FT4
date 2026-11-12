@@ -1,0 +1,21 @@
+<resources>
+    <string name="astro_title">Орбитальные и астрономические данные</string>
+    <string name="astro_invalid_orbits">Некоторые орбиты не удалось рассчитать. Обновите данные спутников в настройках.</string>
+    <string name="astro_coverage">Период: %1$s – %2$s</string>
+    <string name="astro_outside_coverage">Эта дата вне периода астрономических данных</string>
+    <string name="astro_loading">Проверка данных</string>
+    <string name="astro_missing">Загрузите данные для расчёта орбит и положения небесных тел</string>
+    <string name="astro_downloading">Загрузка</string>
+    <string name="astro_verifying">Проверка целостности данных</string>
+    <string name="astro_ready">Готово к работе без сети</string>
+    <string name="astro_failed">Не удалось загрузить. Проверьте ссылку и свободное место, затем повторите.</string>
+    <string name="astro_update_failed">Обновление не удалось. Прежние данные доступны.</string>
+    <string name="astro_download">Загрузить / обновить</string>
+    <string name="astro_url">Ссылка на ZIP с данными</string>
+    <string name="astro_url_invalid">Введите корректную ссылку HTTP или HTTPS</string>
+    <string name="astro_edit_url">Изменить ссылку</string>
+    <string name="astro_reset">Восстановить стандартную ссылку</string>
+    <string name="astro_continuous">Виден во всём интервале</string>
+    <string name="astro_start_clipped">Уже виден в начале интервала</string>
+    <string name="astro_end_clipped">Ещё виден в конце интервала</string>
+</resources>

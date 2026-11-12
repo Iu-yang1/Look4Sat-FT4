@@ -12,6 +12,7 @@ android {
 }
 
 dependencies {
+    testImplementation(testFixtures(project(":core:domain")))
     implementation(libs.orekit)
     implementation(project(":core:ft4-native"))
     testImplementation(libs.robolectric)

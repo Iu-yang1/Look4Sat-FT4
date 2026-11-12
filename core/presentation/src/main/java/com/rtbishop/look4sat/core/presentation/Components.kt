@@ -103,7 +103,7 @@ import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.rtbishop.look4sat.core.domain.predict.NearEarthObject
+import com.rtbishop.look4sat.core.domain.predict.OrbitalObject
 import com.rtbishop.look4sat.core.domain.predict.OrbitalData
 import com.rtbishop.look4sat.core.domain.predict.OrbitalPass
 import java.text.SimpleDateFormat
@@ -329,7 +329,7 @@ private val defaultOrbitalData = OrbitalData(
 
 fun getDefaultPass(): OrbitalPass = OrbitalPass(
     aosTime = 0L, aosAzimuth = 0.0, losTime = Long.MAX_VALUE, losAzimuth = 0.0,
-    altitude = 0, maxElevation = 0.0, orbitalObject = NearEarthObject(defaultOrbitalData), progress = 0f
+    altitude = 0, maxElevation = 0.0, orbitalObject = OrbitalObject(defaultOrbitalData), progress = 0f
 )
 
 @Composable

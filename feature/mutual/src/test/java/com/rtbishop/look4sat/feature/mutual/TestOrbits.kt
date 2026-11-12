@@ -19,11 +19,14 @@
 package com.rtbishop.look4sat.feature.mutual
 
 import com.rtbishop.look4sat.core.domain.predict.GeoPos
-import com.rtbishop.look4sat.core.domain.predict.NearEarthObject
+import com.rtbishop.look4sat.core.domain.predict.legacy.LegacyOrbitEngine
 import com.rtbishop.look4sat.core.domain.predict.OrbitalData
 import com.rtbishop.look4sat.core.domain.predict.OrbitalObject
 import com.rtbishop.look4sat.core.domain.predict.OrbitalPass
 import kotlin.math.PI
+
+fun OrbitalObject.getElevation(observer: GeoPos, time: Long): Double =
+    LegacyOrbitEngine().openSession(this).elevation(observer, time)
 
 /**
  * Deterministic orbital test fixtures: real ISS TLE elements (2024-03-09,
@@ -33,7 +36,7 @@ import kotlin.math.PI
 object TestOrbits {
 
     /** ISS (ZARYA) from the 2024-03-09 TLE used in DataParserTest. */
-    val ISS: OrbitalObject = NearEarthObject(
+    val ISS: OrbitalObject = OrbitalObject(
         OrbitalData(
             name = "ISS (ZARYA)",
             epoch = 24069.23963816,
@@ -71,7 +74,7 @@ object TestOrbits {
      * perigee, so its visibility windows land at different times. Gives tests
      * two distinct passes to exercise ordering/aggregation logic.
      */
-    val ISS_VARIANT: OrbitalObject = NearEarthObject(
+    val ISS_VARIANT: OrbitalObject = OrbitalObject(
         OrbitalData(
             name = "ISS-V2",
             epoch = 24069.23963816,
@@ -97,7 +100,7 @@ object TestOrbits {
         time: Long = FIXTURE_BASE,
         hoursAhead: Int = 12
     ): List<OrbitalPass> {
-        if (!sat.willBeSeen(pos)) return emptyList()
+
         val passes = mutableListOf<OrbitalPass>()
         val step = 30_000L
         val end = time + hoursAhead * 3600_000L

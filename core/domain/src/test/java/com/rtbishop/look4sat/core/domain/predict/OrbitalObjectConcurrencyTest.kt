@@ -15,7 +15,9 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
-package com.rtbishop.look4sat.core.domain.predict
+package com.rtbishop.look4sat.core.domain.predict.legacy
+
+import com.rtbishop.look4sat.core.domain.predict.*
 
 import java.util.concurrent.Callable
 import java.util.concurrent.CountDownLatch
@@ -39,7 +41,7 @@ class OrbitalObjectConcurrencyTest {
             meanan = 180.0,
             catnum = 25_544,
             bstar = 0.0001
-        ).getObject()
+        ).legacyObject()
         val inputs = listOf(
             GeoPos(0.0, 0.0) to 1_712_404_800_000L,
             GeoPos(51.5, -0.1) to 1_712_405_321_000L,

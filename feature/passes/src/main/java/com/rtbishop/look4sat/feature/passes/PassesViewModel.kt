@@ -22,7 +22,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.rtbishop.look4sat.core.domain.model.PassesSettings
-import com.rtbishop.look4sat.core.domain.predict.CelestialComputer
+import com.rtbishop.look4sat.core.domain.predict.CelestialState
 import com.rtbishop.look4sat.core.domain.predict.GeoPos
 import com.rtbishop.look4sat.core.domain.predict.OrbitalPass
 import com.rtbishop.look4sat.core.domain.repository.IMainContainer
@@ -32,6 +32,9 @@ import com.rtbishop.look4sat.core.domain.utility.round
 import com.rtbishop.look4sat.core.domain.utility.toTimerString
 import com.rtbishop.look4sat.core.presentation.getDefaultPass
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.collectLatest
@@ -49,6 +52,8 @@ class PassesViewModel(
     private val satelliteRepo: ISatelliteRepo,
     private val settingsRepo: ISettingsRepo
 ) : ViewModel() {
+    private var sunTimesKey: List<Any?>? = null
+    private var sunTimesCache: Map<String, Pair<String, String>> = emptyMap()
 
     private val defaultPass = getDefaultPass()
     private val _uiState = MutableStateFlow(
@@ -111,10 +116,10 @@ class PassesViewModel(
                 val historyCutoff = timeNow - current.hoursBefore * 3_600_000L
                 val filtered = allPasses
                     .let { if (showDeepSpace) it else it.filter { pass -> !pass.isDeepSpace } }
-                    .filter { pass -> pass.isDeepSpace || pass.losTime >= historyCutoff }
+                    .filter { pass -> pass.losTime >= historyCutoff }
                 val processed = computePassProgress(filtered, timeNow)
                 val (nextPass, nextTime, isAos) = resolveNextPass(processed, timeNow)
-                val sunTimes = computeSunTimes(processed, isUtc)
+                val sunTimes = withContext(Dispatchers.Default) { computeSunTimes(processed, isUtc) }
                 val grouped = groupPasses(processed, isUtc)
                 _uiState.update {
                     it.copy(
@@ -182,64 +187,44 @@ class PassesViewModel(
         return SimpleDateFormat(pattern, Locale.getDefault()).also { it.timeZone = tz }
     }
 
-    // Computes sunrise/sunset strings for each unique calendar day in the pass list, plus today for DeepSpace.
-    // CelestialComputer.findSunRiseSet() returns the next rise/set after the supplied time, so pass
-    // the calendar day's 00:00 in the same timezone used by the visible date group. Passing a pass's
-    // AOS time can jump to the following day's sunrise/sunset when that AOS is after the local event.
-    // For white nights / polar day edge cases, we fall back to searching from the previous day.
-    private fun computeSunTimes(passes: List<OrbitalPass>, isUtc: Boolean): Map<String, Pair<String, String>> {
+    // Cache per display day; never scan celestial events on each clock tick.
+    private suspend fun computeSunTimes(passes: List<OrbitalPass>, isUtc: Boolean): Map<String, Pair<String, String>> {
+        if (passes.isEmpty()) return emptyMap()
+        val snapshot = passes.first().orbitalObject.snapshot ?: satelliteRepo.astroData.snapshot()
         val stationPos = settingsRepo.stationPosition.value
         val tz = if (isUtc) TimeZone.getTimeZone("UTC") else TimeZone.getDefault()
         val sdfDate = dateFormat(tz)
         val sdfTime = SimpleDateFormat("HH:mm", Locale.getDefault()).also { it.timeZone = tz }
+        val key = listOf(stationPos, tz.id, Locale.getDefault(),
+            passes.map { sdfDate.format(Date(it.aosTime)) }.distinct(),
+            sdfDate.format(Date()), snapshot)
+        if (sunTimesKey == key) return sunTimesCache
         val result = LinkedHashMap<String, Pair<String, String>>()
-        // DeepSpace group always shows today's sun times.
-        // The natural-day anchor is the DEVICE timezone, not the display timezone:
-        // UTC midnight is 08:00 local for UTC+8 stations, when the sun is already
-        // up — that would trip the white-night guard and render "--:--".
-        if (passes.any { it.isDeepSpace }) {
-            val riseSet = findTodaySunRiseSet(stationPos, startOfDayMillis(System.currentTimeMillis(), TimeZone.getDefault()))
-            val rise = if (riseSet.riseTimeMillis > 0) sdfTime.format(Date(riseSet.riseTimeMillis)) else "--:--"
-            val set = if (riseSet.setTimeMillis > 0) sdfTime.format(Date(riseSet.setTimeMillis)) else "--:--"
-            result["DeepSpace (period >225min)"] = rise to set
-        }
         for (pass in passes) {
-            if (pass.isDeepSpace) continue
             val label = sdfDate.format(Date(pass.aosTime))
             if (label in result) continue
-            val riseSet = findTodaySunRiseSet(stationPos, startOfDayMillis(pass.aosTime, TimeZone.getDefault()))
+            val riseSet = findTodaySunRiseSet(stationPos, startOfDayMillis(pass.aosTime, tz), tz, snapshot)
             val rise = if (riseSet.riseTimeMillis > 0) sdfTime.format(Date(riseSet.riseTimeMillis)) else "--:--"
             val set = if (riseSet.setTimeMillis > 0) sdfTime.format(Date(riseSet.setTimeMillis)) else "--:--"
             result[label] = rise to set
         }
+        sunTimesKey = key
+        sunTimesCache = result
         return result
     }
 
-    /**
-     * Find today's sunrise and sunset by starting from local midnight.
-     * Handles the white nights / polar day edge case where the sun is still above
-     * the -0.8333° threshold at midnight: in that case we search from the previous
-     * day's midnight to find a valid sunrise/sunset pair within the target day.
-     */
-    private fun findTodaySunRiseSet(observer: GeoPos, localMidnightMillis: Long): CelestialComputer.RiseSetTimes {
-        val threshold = 0.8333
-        val sunPos = CelestialComputer.getSunPosition(observer, localMidnightMillis)
-        if (sunPos.elevation > -threshold) {
-            // White nights / polar day: the sun is too high at midnight.
-            // Search from earlier days so the algorithm goes through a full
-            // sunset → sunrise → sunset cycle, landing in the target day.
-            val dayEnd = localMidnightMillis + 86400000L
-            for (offset in 1..3) {
-                val result = CelestialComputer.findSunRiseSet(observer, localMidnightMillis - offset * 86400000L)
-                if (result.riseTimeMillis in localMidnightMillis..dayEnd &&
-                    result.setTimeMillis in localMidnightMillis..dayEnd) {
-                    return result
-                }
-            }
-            // No valid pair found (midnight sun / polar day)
-            return CelestialComputer.RiseSetTimes(0L, 0L)
-        }
-        return CelestialComputer.findSunRiseSet(observer, localMidnightMillis)
+    /** Calendar arithmetic preserves 23/25-hour days across daylight-saving changes. */
+    private suspend fun findTodaySunRiseSet(
+        observer: GeoPos, localMidnightMillis: Long, timezone: TimeZone,
+        snapshot: com.rtbishop.look4sat.core.domain.astro.AstroDataSnapshot
+    ): CelestialState.RiseSetTimes {
+        val end = Calendar.getInstance(timezone).apply {
+            timeInMillis = localMidnightMillis
+            add(Calendar.DAY_OF_MONTH, 1)
+        }.timeInMillis
+        val context = kotlin.coroutines.coroutineContext
+        return satelliteRepo.celestial.riseSet(observer, localMidnightMillis, end, snapshot = snapshot,
+            checkCancelled = { context.ensureActive() })
     }
 
     private fun startOfDayMillis(timeMillis: Long, tz: TimeZone): Long {
@@ -256,10 +241,7 @@ class PassesViewModel(
         val tz = if (isUtc) TimeZone.getTimeZone("UTC") else TimeZone.getDefault()
         val sdfDate = dateFormat(tz)
         val ordered = LinkedHashMap<String, List<OrbitalPass>>()
-        val deepSpace = passes.filter { it.isDeepSpace }
-        if (deepSpace.isNotEmpty()) ordered["DeepSpace (period >225min)"] = deepSpace
-        passes.filter { !it.isDeepSpace }
-            .groupByTo(LinkedHashMap()) { sdfDate.format(Date(it.aosTime)) }
+        passes.groupByTo(LinkedHashMap()) { sdfDate.format(Date(it.aosTime)) }
             .forEach { (k, v) -> ordered[k] = v }
         return ordered
     }
@@ -268,7 +250,7 @@ class PassesViewModel(
     private fun computePassProgress(passList: List<OrbitalPass>, time: Long): List<OrbitalPass> {
         val result = ArrayList<OrbitalPass>(passList.size)
         for (pass in passList) {
-            if (!pass.isDeepSpace && time > pass.aosTime) {
+            if (!pass.continuousVisibility && time > pass.aosTime) {
                 val deltaNow = time.minus(pass.aosTime).toFloat()
                 val deltaTotal = pass.losTime.minus(pass.aosTime).toFloat()
                 val newProgress = (deltaNow / deltaTotal).round(2)

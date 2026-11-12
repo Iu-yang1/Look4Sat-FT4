@@ -272,7 +272,7 @@ class Ft4ViewModel(
                 mutableState.update {
                     it.copy(selectedPass = pass, orbitalPosition = null, satelliteTrack = emptyList())
                 }
-                if (pass != null && !pass.isDeepSpace) {
+                if (pass != null && !pass.continuousVisibility) {
                     val track = runCatching {
                         container.satelliteRepo.getTrack(
                             pass.orbitalObject,
@@ -379,6 +379,9 @@ class Ft4ViewModel(
                         container.settingsRepo.stationPosition.value,
                         clock.nowMillis()
                     )
+                }.onFailure { error ->
+                    if (error is CancellationException) throw error
+                    mutableState.update { it.copy(orbitalPosition = null) }
                 }.onSuccess { position ->
                     mutableState.update { current ->
                         if (current.trackingPass?.catNum == pass.catNum) {

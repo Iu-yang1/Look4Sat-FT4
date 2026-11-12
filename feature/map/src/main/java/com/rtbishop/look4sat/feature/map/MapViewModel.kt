@@ -22,7 +22,6 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.rtbishop.look4sat.core.domain.model.workedGridsForStations
-import com.rtbishop.look4sat.core.domain.predict.CelestialComputer
 import com.rtbishop.look4sat.core.domain.predict.GeoPos
 import com.rtbishop.look4sat.core.domain.predict.OrbitalObject
 import com.rtbishop.look4sat.core.domain.predict.OrbitalPass
@@ -39,6 +38,8 @@ import com.rtbishop.look4sat.core.domain.utility.toDegrees
 import com.rtbishop.look4sat.core.domain.utility.toTimerString
 import com.rtbishop.look4sat.core.presentation.getDefaultPass
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -137,6 +138,12 @@ class MapViewModel(
     /** Gates the prediction loop so it doesn't burn CPU while the map isn't on screen */
     private val isScreenVisible = MutableStateFlow(true)
     val uiState: StateFlow<MapState> = _uiState
+    private val orbitErrors = CoroutineExceptionHandler { _, error ->
+        android.util.Log.e("Look4SatMap", "Orbit calculation failed", error)
+        _uiState.update {
+            it.copy(positions = emptyMap(), footprint = null, track = emptyList(), mapData = null)
+        }
+    }
 
     init {
         viewModelScope.launch {
@@ -161,7 +168,7 @@ class MapViewModel(
                 if (visible) refreshMapGridData()
             }
         }
-        viewModelScope.launch(Dispatchers.Default) {
+        viewModelScope.launch(Dispatchers.Default + orbitErrors) {
             // Serialised scrub pipeline (see scrubOffset): one prediction at a time, always the
             // newest offset, and "now" is read here so a step that arrives mid-prediction is not
             // dropped. Runs on Default for the same reason the tick loop does.
@@ -184,7 +191,7 @@ class MapViewModel(
                 }
             }
         }
-        viewModelScope.launch(Dispatchers.Default) {
+        viewModelScope.launch(Dispatchers.Default + orbitErrors) {
             fullRefreshRequest.collect {
                 if (passWindow != null) return@collect
                 val selected = selectedOrbitalObject ?: return@collect
@@ -215,7 +222,7 @@ class MapViewModel(
         if (passWindow == null) {
             selectDefaultSatellite(if (selectedCatNum != 0) selectedCatNum else -1)
         } else {
-            viewModelScope.launch(Dispatchers.Default) {
+            viewModelScope.launch(Dispatchers.Default + orbitErrors) {
                 passTimeRequest.collectLatest { at ->
                     val satellite = selectedOrbitalObject
                     if (at != null && satellite != null) {
@@ -354,7 +361,7 @@ class MapViewModel(
     private fun selectDefaultSatellite(catnum: Int) {
         if (allSatellites.isNotEmpty()) {
             if (catnum == -1) {
-                allPasses.find { pass -> pass.progress < 100 && !pass.isDeepSpace }
+                allPasses.find { pass -> pass.progress < 1f }
                     ?.let { pass -> selectSatellite(pass.orbitalObject) }
             } else {
                 allSatellites.find { it.data.catnum == catnum }?.let { selectSatellite(it) }
@@ -406,7 +413,7 @@ class MapViewModel(
     /** Build one selected pass, canceling any old prediction loop. */
     private fun openRadarPassMap(pass: RadarPassMapDestination) {
         passLoadJob?.cancel()
-        passLoadJob = viewModelScope.launch(Dispatchers.Default) {
+        passLoadJob = viewModelScope.launch(Dispatchers.Default + orbitErrors) {
             if (pass.losTime <= pass.aosTime) return@launch
             // Navigation can reach this page while the repository is still loading its selected
             // satellite catalogue. Reading .value once here could see an empty list and return
@@ -480,7 +487,7 @@ class MapViewModel(
             // satelliteRepo call internally hops to Default and resumes back on the caller's
             // dispatcher. On Main that posts one continuation per satellite per tick, which
             // floods the looper and ANRs for users tracking thousands of objects.
-            dataUpdateJob = launch(Dispatchers.Default) {
+            dataUpdateJob = viewModelScope.launch(Dispatchers.Default + orbitErrors) {
                 // Live wall-clock now: the track describes the pass the map is tracking live, and a
                 // scrub offset must not move it (see syncTrack and the refresh worker).
                 val dateNow = Date()
@@ -525,10 +532,10 @@ class MapViewModel(
 
         // 2. Derive footprint, info data, sun and moon position from already-computed state
         val satPos = predicted ?: satelliteRepo.getPosition(selected, pos, date.time)
-        val footprint = satPos
+        val footprint = satPos.copy(rangeBoundary = satelliteRepo.getCoverage(selected, date.time))
         val mapData = buildMapData(selected, satPos, date)
-        val sunPos = CelestialComputer.getSunPosition(stationPos, date.time)
-        val moonPos = CelestialComputer.getMoonPosition(stationPos, date.time)
+        val sunPos = satelliteRepo.celestial.sun(stationPos, date.time, selected.snapshot)
+        val moonPos = satelliteRepo.celestial.moon(stationPos, date.time, selected.snapshot)
 
         // 3. Single atomic state update — one recomposition per cycle
         snapshotOld = snapshotNew
@@ -561,6 +568,7 @@ class MapViewModel(
      */
     private suspend fun updateScrubbedState(selected: OrbitalObject, pos: GeoPos, date: Date) {
         val satPos = satelliteRepo.getPosition(selected, pos, date.time)
+        val footprint = satPos.copy(rangeBoundary = satelliteRepo.getCoverage(selected, date.time))
         val (predictedData, detectedPass) = buildMapData(selected, satPos, date)
         val chosenPass = radarPass ?: detectedPass
         val mapData = if (passWindow != null) {
@@ -569,13 +577,13 @@ class MapViewModel(
                 isTimeAos = false
             )
         } else predictedData
-        val sunPos = CelestialComputer.getSunPosition(stationPos, date.time)
-        val moonPos = CelestialComputer.getMoonPosition(stationPos, date.time)
+        val sunPos = satelliteRepo.celestial.sun(stationPos, date.time, selected.snapshot)
+        val moonPos = satelliteRepo.celestial.moon(stationPos, date.time, selected.snapshot)
         _uiState.update { state ->
             val positions = glidePositions(state.positions, selected, satPos.toMapGeoPos(), date.time)
             state.copy(
                 positions = positions ?: mapOf(selected to satPos.toMapGeoPos()),
-                footprint = satPos,
+                footprint = footprint,
                 mapData = mapData,
                 orbitalPass = chosenPass,
                 sunLatDeg = sunPos.latitude,
@@ -664,7 +672,13 @@ class MapViewModel(
                     val localPositions = ArrayList<Pair<OrbitalObject, GeoPos>>(chunk.size)
                     var localSelectedPos: OrbitalPos? = null
                     for (satellite in chunk) {
-                        val satPos = satelliteRepo.getPosition(satellite, pos, timeMs)
+                        val satPos = try {
+                            satelliteRepo.getPosition(satellite, pos, timeMs)
+                        } catch (cancelled: CancellationException) {
+                            throw cancelled
+                        } catch (_: Exception) {
+                            continue
+                        }
                         localPositions.add(satellite to satPos.toMapGeoPos())
                         if (satellite === selected) {
                             localSelectedPos = satPos
@@ -700,7 +714,7 @@ class MapViewModel(
         allPasses.find { pass -> pass.catNum == sat.data.catnum && pass.progress < 1 }
             ?.let { satPass ->
                 orbitalPass = satPass
-                if (!satPass.isDeepSpace) {
+                if (!satPass.continuousVisibility) {
                     when {
                         date.time < satPass.aosTime -> {
                             // Pass hasn't started yet — count down to AOS
@@ -744,12 +758,6 @@ class MapViewModel(
     }
 
     /**
-     * Sample step of the repository's track prediction (mirrors the 15 s loop in SatelliteRepo),
-     * used to timestamp the samples so the window can be slid instead of re-predicted.
-     */
-    private val TRACK_SAMPLE_MS = 15_000L
-
-    /**
      * Largest drift the drawn track is slid through. Anything longer (any real scrub, a page
      * reentry after minutes off-screen) is cheaper to re-predict from scratch than to extend.
      */
@@ -763,6 +771,7 @@ class MapViewModel(
 
     /** Length of the drawn track: 2.4 orbital periods from the map instant. */
     private fun trackWindowMs(sat: OrbitalObject) = (sat.data.orbitalPeriod * 2.4 * 60_000.0).toLong()
+    private fun trackSampleMs(sat: OrbitalObject) = (trackWindowMs(sat) / 1200 + 1).coerceAtLeast(15_000L)
 
     /** Predicts the whole ground-track window that starts at [date]. */
     private suspend fun getSatTrack(orbitalObject: OrbitalObject, pos: GeoPos, date: Date) {
@@ -770,8 +779,8 @@ class MapViewModel(
         val endMs = startMs + trackWindowMs(orbitalObject)
         val predicted = satelliteRepo.getTrack(orbitalObject, pos, startMs, endMs)
         val samples = ArrayList<Pair<Long, GeoPos>>(predicted.size + 1)
-        predicted.forEachIndexed { index, satPos ->
-            samples.add(startMs + index * TRACK_SAMPLE_MS to satPos.toMapGeoPos())
+        predicted.forEach { satPos ->
+            samples.add(satPos.time to satPos.toMapGeoPos())
         }
         trackSatellite = orbitalObject
         trackSamples = samples
@@ -802,10 +811,11 @@ class MapViewModel(
         while (head < samples.size && samples[head].first < timeMs) head++
         if (head > 0) samples.subList(0, head).clear()
         val tailMs = samples.lastOrNull()?.first ?: timeMs
-        if (tailMs + TRACK_SAMPLE_MS <= endMs) {
-            val from = tailMs + TRACK_SAMPLE_MS
-            satelliteRepo.getTrack(orbitalObject, pos, from, endMs).forEachIndexed { index, satPos ->
-                samples.add(from + index * TRACK_SAMPLE_MS to satPos.toMapGeoPos())
+        val step = trackSampleMs(orbitalObject)
+        if (tailMs + step <= endMs) {
+            val from = tailMs + step
+            satelliteRepo.getTrack(orbitalObject, pos, from, endMs).forEach { satPos ->
+                samples.add(satPos.time to satPos.toMapGeoPos())
             }
         }
         val exact = satelliteRepo.getPosition(orbitalObject, pos, timeMs).toMapGeoPos()

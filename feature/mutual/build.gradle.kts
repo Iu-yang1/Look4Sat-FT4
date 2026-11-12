@@ -13,6 +13,7 @@ android {
 }
 
 dependencies {
+    testImplementation(testFixtures(project(":core:domain")))
     testImplementation(libs.test.junit4)
     testImplementation(libs.test.coroutines)
     testImplementation(libs.robolectric)

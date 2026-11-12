@@ -21,6 +21,7 @@ import kotlin.math.roundToLong
 class OrekitSunlightPredictor(
     private val localSource: ILocalSource,
     private val diagnostics: IControlDiagnostics,
+    private val engine: com.rtbishop.look4sat.core.domain.astro.IOrbitEngine,
     private val dispatcher: CoroutineDispatcher = Dispatchers.Default
 ) : ISunlightPredictor {
     override suspend fun satellites(): List<SatItem> = withContext(Dispatchers.IO) {
@@ -41,12 +42,12 @@ class OrekitSunlightPredictor(
             throw SunlightException(SunlightProblem.INVALID_ORBIT)
         }
         val orbit = try {
-            elements.getObject()
+            engine.openSession(engine.bind(elements))
         } catch (error: Exception) {
             throw SunlightException(SunlightProblem.INVALID_ORBIT, error)
         }
         val model = try {
-            OrekitShadowModel()
+            OrekitShadowModel(orbit.target.snapshot as com.rtbishop.look4sat.core.data.astro.OrekitRuntime)
         } catch (error: Exception) {
             diagnostics.record(ControlDiagnosticSource.RADIO, "sunlight/initialization",
                 error.toString(), ControlDiagnosticSeverity.ERROR)
@@ -58,7 +59,7 @@ class OrekitSunlightPredictor(
             val search = ShadowEventSearch(
                 sample = { seconds ->
                     model.sample(
-                        orbit.getTemeState(request.startUtcMillis + (seconds * 1000).roundToLong()), period
+                        orbit.temeState(request.startUtcMillis + (seconds * 1000).roundToLong()), period
                     )
                 },
                 checkCancelled = { context.ensureActive() }
@@ -70,12 +71,17 @@ class OrekitSunlightPredictor(
                 }
             }
             val failure = search.failure?.let {
-                if (it is IllegalArgumentException) SunlightProblem.INVALID_ORBIT
-                else SunlightProblem.COMPUTATION_FAILED
+                when (it) {
+                    is com.rtbishop.look4sat.core.domain.astro.AstroDateOutsideCoverageException ->
+                        SunlightProblem.DATA_OUTSIDE_COVERAGE
+                    is IllegalArgumentException -> SunlightProblem.INVALID_ORBIT
+                    else -> SunlightProblem.COMPUTATION_FAILED
+                }
             }
             diagnostics.record(
                 ControlDiagnosticSource.RADIO, "sunlight/result",
                 "cat=${elements.catnum} epoch=${elements.epoch} days=${request.days} " +
+                    "data=${orbit.target.snapshot?.version} " +
                     "intervals=${search.intervals.size} validUntil=${search.validUntilMillis} " +
                     "elapsedMs=${(System.nanoTime() - started) / 1_000_000} " +
                     "heapBytes=${Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory()} " +

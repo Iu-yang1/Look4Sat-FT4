@@ -26,7 +26,7 @@ class OrekitShadowModelTest {
 
     @Test fun offlineInitializationDoesNotReplaceTheGlobalContext() {
         val original = org.orekit.data.DataContext.getDefault()
-        val model = OrekitShadowModel()
+        val model = OrekitShadowModel(com.rtbishop.look4sat.core.data.astro.AstroTestData.runtime)
         val sample = model.sample(TemeState(1_799_366_400_000L, 7000.0, 200.0, 100.0, 0.0, 7.5, 0.0), 6000.0)
         assertTrue(sample.penumbra.isFinite())
         assertTrue(original === org.orekit.data.DataContext.getDefault())
@@ -34,12 +34,12 @@ class OrekitShadowModelTest {
 
     @Test(expected = IllegalArgumentException::class)
     fun earthInteriorIsRejectedInsteadOfMarkedAsSunlight() {
-        OrekitShadowModel().sample(TemeState(1_799_366_400_000L, 100.0, 100.0, 100.0, 0.0, 7.5, 0.0), 6000.0)
+        OrekitShadowModel(com.rtbishop.look4sat.core.data.astro.AstroTestData.runtime).sample(TemeState(1_799_366_400_000L, 100.0, 100.0, 100.0, 0.0, 7.5, 0.0), 6000.0)
     }
 
     @Test(expected = IllegalArgumentException::class)
     fun nonFinitePropagationIsRejected() {
-        OrekitShadowModel().sample(TemeState(0L, Double.NaN, 1.0, 1.0, 1.0, 1.0, 1.0), 6000.0)
+        OrekitShadowModel(com.rtbishop.look4sat.core.data.astro.AstroTestData.runtime).sample(TemeState(0L, Double.NaN, 1.0, 1.0, 1.0, 1.0, 1.0), 6000.0)
     }
 
     @Test fun analyticSunIsComparedWithIndependentJplVectorsWithoutCallingItJplPrecision() {
@@ -72,17 +72,17 @@ class OrekitShadowModelTest {
             fo29.copy(name = "Synthetic HEO", meanmo = 2.0, eccn = 0.65, incl = 63.4, bstar = 0.0)
         )
         fixtures.forEach { elements ->
-            val data = context()
+            val data = com.rtbishop.look4sat.core.data.astro.AstroTestData.runtime.context
             val utc = data.getTimeScales().getUTC()
             val frame = data.getFrames().getTEME()
-            val earth = OneAxisEllipsoid(Constants.WGS84_EARTH_EQUATORIAL_RADIUS, Constants.WGS84_EARTH_FLATTENING, frame)
-            val umbra = EclipseDetector(AnalyticalSolarPositionProvider(data), Constants.SUN_RADIUS, earth).withUmbra()
+            val earth = com.rtbishop.look4sat.core.data.astro.AstroTestData.runtime.earth
+            val umbra = EclipseDetector(data.celestialBodies.sun, Constants.SUN_RADIUS, earth).withUmbra()
             val penumbra = umbra.withPenumbra()
             val start = AbsoluteDate("2026-11-12T00:00:00", utc).toDate(utc).time
-            val nativeOrbit = elements.getObject()
+            val nativeOrbit = com.rtbishop.look4sat.core.data.astro.AstroTestData.engine.openSession(elements.getObject())
             fun nativeState(seconds: Double): Illumination {
                 val t = start + (seconds * 1000).toLong()
-                val pv = nativeOrbit.getTemeState(t)
+                val pv = nativeOrbit.temeState(t)
                 val state = SpacecraftState(AbsolutePVCoordinates(frame, AbsoluteDate(Date(t), utc),
                     PVCoordinates(
                         Vector3D(pv.xKm * 1000, pv.yKm * 1000, pv.zKm * 1000),
@@ -94,11 +94,11 @@ class OrekitShadowModelTest {
                     else -> Illumination.SUNLIGHT
                 }
             }
-            val orbit = elements.getObject()
-            val model = OrekitShadowModel()
+            val orbit = com.rtbishop.look4sat.core.data.astro.AstroTestData.engine.openSession(elements.getObject())
+            val model = OrekitShadowModel(com.rtbishop.look4sat.core.data.astro.AstroTestData.runtime)
             val endSeconds = 10_800.0
             val result = ShadowEventSearch({
-                model.sample(orbit.getTemeState(start + (it * 1000).toLong()), elements.orbitalPeriod * 60)
+                model.sample(orbit.temeState(start + (it * 1000).toLong()), elements.orbitalPeriod * 60)
             }).search(start, start + (endSeconds * 1000).toLong()) {}
             assertEquals(null, result.failure)
             val expected = mutableListOf<Pair<Double, Illumination>>()

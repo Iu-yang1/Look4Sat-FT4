@@ -56,7 +56,7 @@ import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.rtbishop.look4sat.core.domain.predict.CelestialComputer
+import com.rtbishop.look4sat.core.domain.predict.CelestialState
 import com.rtbishop.look4sat.core.domain.predict.OrbitalPos
 import com.rtbishop.look4sat.core.domain.predict.PI_2
 import com.rtbishop.look4sat.core.domain.rotator.RotatorPosition
@@ -82,8 +82,8 @@ fun RadarViewCompose(
     shouldShowSweep: Boolean,
     shouldUseCompass: Boolean,
     modifier: Modifier = Modifier,
-    sunPosition: CelestialComputer.SunPosition? = null,
-    moonPosition: CelestialComputer.MoonPosition? = null,
+    sunPosition: CelestialState.SunPosition? = null,
+    moonPosition: CelestialState.MoonPosition? = null,
     rotatorPosition: RotatorPosition? = null,
     compactPassPreview: Boolean = false,
 ) {

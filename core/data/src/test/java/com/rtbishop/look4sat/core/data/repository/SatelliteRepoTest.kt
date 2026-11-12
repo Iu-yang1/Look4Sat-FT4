@@ -67,7 +67,8 @@ class SatelliteRepoTest {
         val repo = SatelliteRepo(
             UnconfinedTestDispatcher(testScheduler),
             local,
-            FakeSettingsRepo()
+            FakeSettingsRepo(), unusedService(com.rtbishop.look4sat.core.domain.astro.IOrbitEngine::class.java),
+            unusedService(com.rtbishop.look4sat.core.domain.astro.ICelestialService::class.java), readyData()
         )
         val first = async { repo.calculatePasses(0L, 1, 0.0, 0, 1439, false, listOf("USB")) }
         firstStarted.await()
@@ -91,7 +92,8 @@ class SatelliteRepoTest {
         val repo = SatelliteRepo(
             UnconfinedTestDispatcher(testScheduler),
             local,
-            FakeSettingsRepo()
+            FakeSettingsRepo(), unusedService(com.rtbishop.look4sat.core.domain.astro.IOrbitEngine::class.java),
+            unusedService(com.rtbishop.look4sat.core.domain.astro.ICelestialService::class.java), readyData()
         )
         val calculation = async {
             repo.calculatePasses(0L, 1, 0.0, 0, 1439, false, listOf("USB"))
@@ -115,6 +117,22 @@ class SatelliteRepoTest {
         catnum = catnum,
         bstar = 0.0
     )
+
+    @Suppress("UNCHECKED_CAST")
+    private fun <T> unusedService(type: Class<T>): T =
+        java.lang.reflect.Proxy.newProxyInstance(type.classLoader, arrayOf(type)) { _, method, _ ->
+            error("Unexpected ${method.name}")
+        } as T
+
+    private fun readyData() = object : com.rtbishop.look4sat.core.domain.astro.IAstroDataRepository {
+        override val state = kotlinx.coroutines.flow.MutableStateFlow(
+            com.rtbishop.look4sat.core.domain.astro.AstroDataState(
+                phase = com.rtbishop.look4sat.core.domain.astro.AstroDataPhase.READY, version = "test"))
+        override fun snapshot(): com.rtbishop.look4sat.core.domain.astro.AstroDataSnapshot = error("Not used")
+        override fun setDownloadUrl(url: String) = Unit
+        override fun download() = Unit
+        override fun cancel() = Unit
+    }
 }
 
 private class TestLocalSource(

@@ -50,9 +50,9 @@ fun PassRadarPreview(
 
     LaunchedEffect(
         pass.catNum, pass.aosTime, pass.losTime, pass.orbitalObject, stationPosition,
-        pass.isDeepSpace, satelliteRepo
+        pass.continuousVisibility, satelliteRepo
     ) {
-        positions = if (satelliteRepo == null || pass.isDeepSpace || pass.losTime <= pass.aosTime) {
+        positions = if (satelliteRepo == null || pass.continuousVisibility || pass.losTime <= pass.aosTime) {
             emptyList()
         } else {
             try {

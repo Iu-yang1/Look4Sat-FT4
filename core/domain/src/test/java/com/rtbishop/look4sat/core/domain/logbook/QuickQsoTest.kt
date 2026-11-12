@@ -1,7 +1,7 @@
 package com.rtbishop.look4sat.core.domain.logbook
 
 import com.rtbishop.look4sat.core.domain.model.SatRadio
-import com.rtbishop.look4sat.core.domain.predict.NearEarthObject
+import com.rtbishop.look4sat.core.domain.predict.OrbitalObject
 import com.rtbishop.look4sat.core.domain.predict.OrbitalData
 import com.rtbishop.look4sat.core.domain.predict.OrbitalPass
 import com.rtbishop.look4sat.core.domain.repository.RadioTrackingState
@@ -20,7 +20,7 @@ class QuickQsoTest {
     }
 
     @Test fun linearPassbandEdgesAreNotLoggedAsTunedFrequencies() {
-        val satellite = NearEarthObject(OrbitalData("RS-44", 0.0, 15.0, 0.0, 0.0, 0.0, 0.0, 0.0, 44909, 0.0))
+        val satellite = OrbitalObject(OrbitalData("RS-44", 0.0, 15.0, 0.0, 0.0, 0.0, 0.0, 0.0, 44909, 0.0))
         val pass = OrbitalPass(1L, 0.0, 100L, 0.0, 44909, 40.0, satellite, 0f)
         val channel = SatRadio("test", "Linear", true, 435_610_000, 435_640_000, "USB", 145_935_000, 145_965_000, "LSB", true, 44909)
         val record = quickQsoRecord(10L, pass, "K1ABC", "59", "57", "SSB", "BA7OPF", "OL62", RadioTrackingState(), channel)
@@ -35,7 +35,7 @@ class QuickQsoTest {
     }
 
     @Test fun manualDetailsOverrideDefaultsAndDigitalModeUsesAdifSubmode() {
-        val satellite = NearEarthObject(OrbitalData("RS-44", 0.0, 15.0, 0.0, 0.0, 0.0, 0.0, 0.0, 44909, 0.0))
+        val satellite = OrbitalObject(OrbitalData("RS-44", 0.0, 15.0, 0.0, 0.0, 0.0, 0.0, 0.0, 44909, 0.0))
         val pass = OrbitalPass(1L, 0.0, 100L, 0.0, 44909, 40.0, satellite, 0f)
         val channel = SatRadio("test", "Linear", true, 435_610_000, 435_640_000, "USB", 145_935_000, 145_965_000, "LSB", true, 44909)
 

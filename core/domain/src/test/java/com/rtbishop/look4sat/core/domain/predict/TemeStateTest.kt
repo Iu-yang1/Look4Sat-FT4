@@ -1,4 +1,6 @@
-package com.rtbishop.look4sat.core.domain.predict
+package com.rtbishop.look4sat.core.domain.predict.legacy
+
+import com.rtbishop.look4sat.core.domain.predict.*
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -11,7 +13,7 @@ class TemeStateTest {
     )
 
     @Test fun snapshotIsObserverIndependentAndIsNotRescaledByLaterCalls() {
-        val orbit = elements.getObject()
+        val orbit = elements.legacyObject()
         val time = 1_712_404_800_000L
         val before = orbit.getTemeState(time)
         orbit.getPosition(GeoPos(51.5, -0.1), time + 10_000)
@@ -27,8 +29,8 @@ class TemeStateTest {
 
     @Test fun dedicatedDeepSpaceInstancesRemainIndependentDuringNonSequentialSearches() {
         val geo = elements.copy(name = "Synthetic GEO", meanmo = 1.0027, eccn = 0.001, incl = 0.1, bstar = 0.0)
-        val first = geo.getObject()
-        val second = geo.getObject()
+        val first = geo.legacyObject()
+        val second = geo.legacyObject()
         val time = 1_712_404_800_000L
         val expected = second.getTemeState(time)
         first.getTemeState(time + 365L * 86_400_000)

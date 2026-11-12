@@ -45,11 +45,17 @@ class RadarCountdownTest {
     }
 
     @Test
-    fun deepSpaceDoesNotClaimAosOrEnded() {
-        val timer = radarCountdown(true, 0L, 100L, 10_000L)
-        assertEquals(RadarPassPhase.DEEP_SPACE, timer.phase)
+    fun continuousVisibilityDoesNotInventAnEventInsideTheComputedRange() {
+        val timer = radarCountdown(true, 0L, 100L, 50L)
+        assertEquals(RadarPassPhase.CONTINUOUS, timer.phase)
         assertFalse(timer.isAos)
         assertFalse(timer.isEnded)
         assertEquals("00:00:00", timer.time)
+    }
+
+    @Test
+    fun continuousVisibilityExpiresAtTheEndOfTheComputedRange() {
+        assertEquals(RadarPassPhase.UPCOMING, radarCountdown(true, 100L, 200L, 50L).phase)
+        assertEquals(RadarPassPhase.ENDED, radarCountdown(true, 100L, 200L, 200L).phase)
     }
 }

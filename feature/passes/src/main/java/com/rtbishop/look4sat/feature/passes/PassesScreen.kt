@@ -70,8 +70,7 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.rtbishop.look4sat.core.domain.predict.DeepSpaceObject
-import com.rtbishop.look4sat.core.domain.predict.NearEarthObject
+import com.rtbishop.look4sat.core.domain.predict.OrbitalObject
 import com.rtbishop.look4sat.core.domain.predict.OrbitalData
 import com.rtbishop.look4sat.core.domain.predict.OrbitalPass
 import com.rtbishop.look4sat.core.domain.predict.GeoPos
@@ -318,7 +317,7 @@ private fun PassesList(
 @Composable
 private fun DeepSpacePassPreview() {
     val data = OrbitalData("Satellite", 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 45000, 0.0)
-    val satellite = DeepSpaceObject(data)
+    val satellite = OrbitalObject(data)
     val pass = OrbitalPass(1L, 180.0, 10L, 360.0, 36650, 45.0, satellite, 0.5f)
     MainTheme { PassItem(pass = pass, { _, _ -> }) }
 }
@@ -327,7 +326,7 @@ private fun DeepSpacePassPreview() {
 @Composable
 private fun NearEarthPassPreview() {
     val data = OrbitalData("Satellite", 0.0, 15.0, 0.0, 0.0, 0.0, 0.0, 0.0, 45000, 0.0)
-    val satellite = NearEarthObject(data)
+    val satellite = OrbitalObject(data)
     val pass = OrbitalPass(1L, 180.0, 10L, 360.0, 36650, 45.0, satellite, 0.5f)
     MainTheme { PassItem(pass = pass, { _, _ -> }) }
 }
@@ -394,7 +393,7 @@ private fun PassItem(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = if (pass.isDeepSpace) stringResource(R.string.pass_deep_space) else durationStr,
+                        text = if (pass.continuousVisibility) stringResource(R.string.astro_continuous) else durationStr,
                         modifier = Modifier.weight(1f),
                         fontSize = 16.sp,
                         lineHeight = 17.sp,
@@ -430,25 +429,26 @@ private fun PassItem(
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                     val defaultTime = "--:--:--"
                     Text(
-                        text = if (pass.isDeepSpace) defaultTime else aosTimeStr,
+                        text = if (pass.continuousVisibility) defaultTime else aosTimeStr,
                         fontSize = 14.sp,
                         lineHeight = 15.sp,
                         color = MaterialTheme.colorScheme.onSurface,
                         maxLines = 1
                     )
                     LinearProgressIndicator(
-                        progress = { if (pass.isDeepSpace) 1f else pass.progress.coerceIn(0f, 1f) },
+                        progress = { if (pass.continuousVisibility) 1f else pass.progress.coerceIn(0f, 1f) },
                         drawStopIndicator = {},
                         modifier = Modifier.weight(1f).padding(horizontal = 4.dp)
                     )
                     Text(
-                        text = if (pass.isDeepSpace) defaultTime else losTimeStr,
+                        text = if (pass.continuousVisibility) defaultTime else losTimeStr,
                         fontSize = 14.sp,
                         lineHeight = 15.sp,
                         color = MaterialTheme.colorScheme.onSurface,
                         maxLines = 1
                     )
                 }
+                com.rtbishop.look4sat.core.presentation.PassBoundaryNote(pass)
             }
             androidx.compose.foundation.layout.Spacer(Modifier.width(8.dp))
             PassRadarPreview(

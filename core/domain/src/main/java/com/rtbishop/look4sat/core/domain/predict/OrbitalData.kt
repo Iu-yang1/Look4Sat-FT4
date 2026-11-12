@@ -41,12 +41,14 @@ data class OrbitalData(
     /** Absolute age of this element set, used to pick the freshest data among several sources. */
     val epochDaynum: Double = epochToDaynum(epoch)
 
-    fun getObject(): OrbitalObject = if (isDeepSpace) DeepSpaceObject(this) else NearEarthObject(this)
+    fun getObject(): OrbitalObject = OrbitalObject(this)
 
     /** Check if satellite has likely decayed by the given time. */
     fun hasDecayed(currentTimeMillis: Long): Boolean {
         if (ndot == 0.0) return false
-        return CelestialComputer.hasDecayed(meanmo, ndot, epochDaynum, timeToDaynum(currentTimeMillis))
+        // Historical, non-authoritative decay hint; not an orbit propagation model.
+        return epochDaynum + ((16.666666 - meanmo) / (10.0 * kotlin.math.abs(ndot))) <
+            timeToDaynum(currentTimeMillis)
     }
 
     companion object {

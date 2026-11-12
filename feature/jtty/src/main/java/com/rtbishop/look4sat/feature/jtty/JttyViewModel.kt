@@ -103,10 +103,16 @@ class JttyViewModel(private val container: IMainContainer): ViewModel() {
                 mutable.update { it.copy(pass=pass,theirCall="",draft="",frames=null,draftError=null,sentReport="599",receivedReport="599",position=null,track=emptyList()) }
                 if(pass!=null) {
                     val radios=container.satelliteRepo.getRadiosWithId(pass.catNum)
-                    val track=if(pass.isDeepSpace) emptyList() else container.satelliteRepo.getTrack(pass.orbitalObject,container.settingsRepo.stationPosition.value,pass.aosTime,pass.losTime)
+                    val track=if(pass.continuousVisibility) emptyList() else container.satelliteRepo.getTrack(pass.orbitalObject,container.settingsRepo.stationPosition.value,pass.aosTime,pass.losTime)
                     mutable.update { it.copy(transponders=radios,track=track) }
                     while(currentCoroutineContext().isActive) {
-                        val position=container.satelliteRepo.getPosition(pass.orbitalObject,container.settingsRepo.stationPosition.value,container.disciplinedClock.nowMillis())
+                        val position=try {
+                            container.satelliteRepo.getPosition(pass.orbitalObject,container.settingsRepo.stationPosition.value,container.disciplinedClock.nowMillis())
+                        } catch(cancelled: CancellationException) { throw cancelled }
+                        catch(error: Exception) {
+                            mutable.update { it.copy(position=null,track=emptyList()) }
+                            throw error
+                        }
                         mutable.update { it.copy(position=position) };delay(1000)
                     }
                 }

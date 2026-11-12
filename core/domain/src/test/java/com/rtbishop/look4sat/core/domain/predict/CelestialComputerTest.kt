@@ -15,7 +15,9 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
-package com.rtbishop.look4sat.core.domain.predict
+package com.rtbishop.look4sat.core.domain.predict.legacy
+
+import com.rtbishop.look4sat.core.domain.predict.*
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue

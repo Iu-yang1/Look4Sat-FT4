@@ -65,9 +65,9 @@ class JplSunlightReferenceTest {
         // Equatorial LEO has non-grazing eclipses here, making event matching well-defined.
         val elements = OrbitalData("Synthetic equatorial LEO", 26316.0, 15.5, 0.001,
             0.1, 0.0, 0.0, 0.0, 99999, 0.0)
-        val referenceOrbit = elements.getObject()
+        val referenceOrbit = com.rtbishop.look4sat.core.data.astro.AstroTestData.engine.openSession(elements.getObject())
         fun referenceState(time: Long): Illumination {
-            val pv = referenceOrbit.getTemeState(time)
+            val pv = referenceOrbit.temeState(time)
             val state = SpacecraftState(AbsolutePVCoordinates(teme, AbsoluteDate(Date(time), utc), PVCoordinates(
                 Vector3D(pv.xKm * 1000, pv.yKm * 1000, pv.zKm * 1000),
                 Vector3D(pv.vxKmPerSecond * 1000, pv.vyKmPerSecond * 1000, pv.vzKmPerSecond * 1000)
@@ -87,10 +87,10 @@ class JplSunlightReferenceTest {
             previous = state
             time += 1000
         }
-        val orbit = elements.getObject()
-        val model = OrekitShadowModel()
+        val orbit = com.rtbishop.look4sat.core.data.astro.AstroTestData.engine.openSession(elements.getObject())
+        val model = OrekitShadowModel(com.rtbishop.look4sat.core.data.astro.AstroTestData.runtime)
         val actual = ShadowEventSearch({
-            model.sample(orbit.getTemeState(start + (it * 1000).roundToLong()), elements.orbitalPeriod * 60)
+            model.sample(orbit.temeState(start + (it * 1000).roundToLong()), elements.orbitalPeriod * 60)
         }).search(start, end) {}
         assertEquals(null, actual.failure)
         assertTrue(reference.isNotEmpty())

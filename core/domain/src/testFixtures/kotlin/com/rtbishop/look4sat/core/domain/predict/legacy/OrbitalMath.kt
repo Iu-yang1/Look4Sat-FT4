@@ -15,7 +15,9 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
-package com.rtbishop.look4sat.core.domain.predict
+package com.rtbishop.look4sat.core.domain.predict.legacy
+
+import com.rtbishop.look4sat.core.domain.predict.*
 
 import kotlin.math.abs
 import kotlin.math.atan2
@@ -32,7 +34,7 @@ import kotlin.math.sqrt
  * Greenwich Mean Sidereal Time from Julian Date, in radians [0, 2π).
  * Identical algorithm used in PREDICT v2.2.5 for both solar and satellite calculations.
  */
-internal fun thetaGJD(jd: Double): Double {
+fun thetaGJD(jd: Double): Double {
     val ut = fraction(jd + 0.5)
     val aJD = jd - ut
     val tu = (aJD - 2451545.0) / 36525.0
@@ -42,10 +44,10 @@ internal fun thetaGJD(jd: Double): Double {
 }
 
 /** Fractional part of [arg]. */
-internal fun fraction(arg: Double): Double = arg - floor(arg)
+fun fraction(arg: Double): Double = arg - floor(arg)
 
 /** Modulo: returns [arg1] mod [arg2], result always in [0, arg2). */
-internal fun modulus(arg1: Double, arg2: Double): Double {
+fun modulus(arg1: Double, arg2: Double): Double {
     var r = arg1
     val i = floor(r / arg2).toInt()
     r -= i * arg2
@@ -54,7 +56,7 @@ internal fun modulus(arg1: Double, arg2: Double): Double {
 }
 
 /** Reduce [value] to [0, 2π). */
-internal fun mod2PI(value: Double): Double {
+fun mod2PI(value: Double): Double {
     var r = value
     val i = (r / TWO_PI).toInt()
     r -= i * TWO_PI
@@ -66,17 +68,17 @@ internal fun mod2PI(value: Double): Double {
  * Delta-ET: difference between Universal Time and Ephemeris Time (seconds).
  * Based on least-squares fit from 1950 to 1991 (PREDICT v2.2.5).
  */
-internal fun deltaET(year: Double): Double =
+fun deltaET(year: Double): Double =
     26.465 + 0.747622 * (year - 1950) + 1.886913 * sin(TWO_PI * (year - 1975) / 33)
 
 /**
  * Convert Unix epoch milliseconds to daynum (days since 31 Dec 1979 00:00:00 UTC).
  */
-internal fun millisToDaynum(timeMillis: Long): Double =
+fun millisToDaynum(timeMillis: Long): Double =
     (timeMillis - 315446400000L) / 86400000.0
 
 /** Convert daynum back to Unix epoch milliseconds. */
-internal fun daynumToMillis(daynum: Double): Long =
+fun daynumToMillis(daynum: Double): Long =
     ((daynum + 3651.0) * 86400000.0).toLong()
 
 /**
@@ -84,7 +86,7 @@ internal fun daynumToMillis(daynum: Double): Long =
  * Returns [x, y, z, magnitude] in km.
  * Based on Calculate_Solar_Position() / FindSun() from PREDICT v2.2.5.
  */
-internal fun solarPositionECI(julUtc: Double): DoubleArray {
+fun solarPositionECI(julUtc: Double): DoubleArray {
     val mjd = julUtc - 2415020.0
     val year = 1900 + mjd / 365.25
     val t = (mjd + deltaET(year) / SEC_PER_DAY) / 36525.0
@@ -111,7 +113,7 @@ internal fun solarPositionECI(julUtc: Double): DoubleArray {
  * Convert ECI position [eciPos] = [x, y, z] (km) to geodetic [lat_rad, lon_rad, alt_km].
  * Based on Calculate_LatLonAlt() from PREDICT v2.2.5.
  */
-internal fun eciToGeodetic(julUtc: Double, eciPos: DoubleArray): DoubleArray {
+fun eciToGeodetic(julUtc: Double, eciPos: DoubleArray): DoubleArray {
     val thetaPos = atan2(eciPos[1], eciPos[0])
     val lon = mod2PI(thetaPos - thetaGJD(julUtc))
     val r = sqrt(eciPos[0] * eciPos[0] + eciPos[1] * eciPos[1])

@@ -26,6 +26,13 @@ import com.rtbishop.look4sat.core.domain.predict.OrbitalPos
 import kotlinx.coroutines.flow.StateFlow
 
 interface ISatelliteRepo {
+    val orbitFailures: StateFlow<Map<Int, String>> get() = noOrbitFailures
+    val orbit: com.rtbishop.look4sat.core.domain.astro.IOrbitEngine
+        get() = error("Orbit engine is not configured")
+    val celestial: com.rtbishop.look4sat.core.domain.astro.ICelestialService
+        get() = error("Celestial service is not configured")
+    val astroData: com.rtbishop.look4sat.core.domain.astro.IAstroDataRepository
+        get() = error("Astronomy data repository is not configured")
     /** All selected OrbitalObjects, updated when the selection changes. */
     val satellites: StateFlow<List<OrbitalObject>>
 
@@ -65,6 +72,7 @@ interface ISatelliteRepo {
 
     /** Get the current position of a single satellite. */
     suspend fun getPosition(sat: OrbitalObject, pos: GeoPos, time: Long): OrbitalPos
+    suspend fun getCoverage(sat: OrbitalObject, time: Long): List<GeoPos> = emptyList()
 
     /** Get the ground track for a satellite over a time range. */
     suspend fun getTrack(sat: OrbitalObject, pos: GeoPos, start: Long, end: Long): List<OrbitalPos>
@@ -99,3 +107,5 @@ interface ISatelliteRepo {
      *  launcher debris or other non-amateur transmitters. */
     suspend fun getSatelliteIdsWithModesAndAmateur(modes: List<String>): List<Int>
 }
+
+private val noOrbitFailures: StateFlow<Map<Int, String>> = kotlinx.coroutines.flow.MutableStateFlow(emptyMap())

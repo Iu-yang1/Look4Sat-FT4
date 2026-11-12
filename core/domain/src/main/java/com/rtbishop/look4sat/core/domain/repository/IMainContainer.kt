@@ -32,6 +32,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.StateFlow
 
 interface IMainContainer {
+    val astroData: com.rtbishop.look4sat.core.domain.astro.IAstroDataRepository
+        get() = satelliteRepo.astroData
     val appScope: CoroutineScope
     val settingsRepo: ISettingsRepo
     val selectionRepo: ISelectionRepo

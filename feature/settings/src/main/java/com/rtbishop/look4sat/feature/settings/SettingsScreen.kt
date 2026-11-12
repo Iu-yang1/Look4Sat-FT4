@@ -125,7 +125,8 @@ fun SettingsDestination() {
         uiState = uiState,
         onAction = viewModel::onAction,
         radioAudioSession=container.radioAudioSession,
-        audioSettingsForModel=container.settingsRepo::getRadioAudioSettings
+        audioSettingsForModel=container.settingsRepo::getRadioAudioSettings,
+        astroData = container.astroData
     )
 }
 
@@ -134,10 +135,15 @@ private fun SettingsScreen(
     uiState: SettingsState,
     onAction: (SettingsAction) -> Unit,
     radioAudioSession: com.rtbishop.look4sat.core.domain.audio.IRadioAudioSession,
-    audioSettingsForModel: (String)->com.rtbishop.look4sat.core.domain.audio.RadioAudioSettings
+    audioSettingsForModel: (String)->com.rtbishop.look4sat.core.domain.audio.RadioAudioSettings,
+    astroData: com.rtbishop.look4sat.core.domain.astro.IAstroDataRepository
 ) {
     val context = LocalContext.current
     var showUpdateChecker by rememberSaveable { mutableStateOf(false) }
+    var showAstroData by rememberSaveable { mutableStateOf(false) }
+    if (showAstroData) {
+        com.rtbishop.look4sat.core.presentation.AstroDataPanel(astroData) { showAstroData = false }
+    }
     var showMapSettings by rememberSaveable { mutableStateOf(false) }
     var showProjectWiki by rememberSaveable { mutableStateOf(false) }
     var showDebugMenu by rememberSaveable { mutableStateOf(false) }
@@ -576,6 +582,13 @@ private fun SettingsScreen(
                         onMapSettings = { showMapSettings = true },
                         loTWEnabled = !wavelogMode,
                         onAction = onAction
+                    )
+                    val astroState by astroData.state.collectAsStateWithLifecycle()
+                    CardButton(
+                        onClick = { showAstroData = true },
+                        text = stringResource(R.string.astro_title) + ": " +
+                            com.rtbishop.look4sat.core.presentation.astroStatus(astroState),
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp)
                     )
                 }
             }

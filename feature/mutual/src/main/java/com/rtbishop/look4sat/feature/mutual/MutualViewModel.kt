@@ -33,6 +33,7 @@ import com.rtbishop.look4sat.core.domain.utility.positionToQth
 import com.rtbishop.look4sat.core.domain.utility.qthToPosition
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -115,6 +116,7 @@ class MutualViewModel(
 
     /** Bumped on every query so the list state rebuilds from the stored position. */
     var queryGeneration: Int = 0
+    private var queryJob: kotlinx.coroutines.Job? = null
 
     init {
         // Pre-fill station A with the user's current station position (as grid),
@@ -407,8 +409,10 @@ class MutualViewModel(
             listScrollOffset = 0
         }
         queryGeneration += 1
+        val generation = queryGeneration
+        queryJob?.cancel()
 
-        viewModelScope.launch {
+        queryJob = viewModelScope.launch {
             val now = nowMillis()
             // 转发器类型筛选: 使用硬编码 AMSAT Live 清单 (见 Sources):
             // FM = {SO-50, ISS ZARYA, AO-123}, Linear = {RS-44, FO-29,
@@ -438,13 +442,16 @@ class MutualViewModel(
                 withContext(computeDispatcher) {
                     findMutualPasses(filteredSatellites, posA, posB, minElevA, minElevB, time, hours, hoursBefore)
                 }
-            } catch (t: Throwable) {
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (t: Exception) {
                 // Never leave the query stuck in "calculating" (which would also
                 // block the pending map→match navigation forever).
                 android.util.Log.e(TAG, "findMutualPasses threw", t)
                 emptyList()
             }
 
+            if (generation != queryGeneration) return@launch
             val errorMsg = if (results.isEmpty()) {
                 when {
                     filteredSatellites.isEmpty() -> "No satellites match the selected transponder filters."
@@ -477,7 +484,7 @@ class MutualViewModel(
         return GeoPos(lat, lon)
     }
 
-    private fun findMutualPasses(
+    private suspend fun findMutualPasses(
         satellites: List<OrbitalObject>,
         posA: GeoPos, posB: GeoPos,
         minElevADeg: Double, minElevBDeg: Double,
@@ -497,40 +504,39 @@ class MutualViewModel(
     }
 
     /** Independent pass search, unaffected by the main Passes page's filters. */
-    private fun findMutualPassesIndependently(
+    private suspend fun findMutualPassesIndependently(
         satellites: List<OrbitalObject>,
         posA: GeoPos, posB: GeoPos,
         minElevADeg: Double, minElevBDeg: Double,
         time: Long, endTime: Long, sampleInterval: Long
     ): List<MutualPass> {
         val results = mutableListOf<MutualPass>()
+        val context = kotlin.coroutines.coroutineContext
         for (sat in satellites) {
-            if (sat.data.meanmo < 1e-8) continue
-            var searchStart = time
-            while (true) {
-                val t = findNextMutualPass(sat, posA, posB, searchStart, endTime)
-                if (t == null) break
-                val (aos, los) = t
-
-                val refinedAos = refineEdge(sat, posA, posB, aos, 1_000L, true)
-                val refinedLos = refineEdge(sat, posA, posB, los, 1_000L, false)
-                if (refinedAos == null || refinedLos == null || refinedLos <= refinedAos) {
-                    searchStart = los + 120_000L
-                    continue
+            val session = satelliteRepo.orbit.openSession(sat)
+            val windowsA = session.passes(posA, time, endTime) { context.ensureActive() }
+            val windowsB = session.passes(posB, time, endTime) { context.ensureActive() }
+            var indexA = 0
+            var indexB = 0
+            while (indexA < windowsA.size && indexB < windowsB.size) {
+                context.ensureActive()
+                val a = windowsA[indexA]
+                val b = windowsB[indexB]
+                val start = maxOf(a.aosTime, b.aosTime)
+                val end = minOf(a.losTime, b.losTime)
+                if (end > start) {
+                    sampleMutualPass(session, posA, posB, start, end,
+                        minElevADeg, minElevBDeg, sampleInterval)?.let(results::add)
                 }
-
-                val mutualPass = sampleMutualPass(sat, posA, posB, refinedAos, refinedLos,
-                    minElevADeg, minElevBDeg, sampleInterval)
-                if (mutualPass != null) results.add(mutualPass)
-                searchStart = refinedLos + 120_000L
+                if (a.losTime <= b.losTime) indexA++ else indexB++
             }
         }
         return results
     }
 
     /** Sample elevation/azimuth data for one mutual pass window. */
-    private fun sampleMutualPass(
-        sat: OrbitalObject, posA: GeoPos, posB: GeoPos,
+    private suspend fun sampleMutualPass(
+        session: com.rtbishop.look4sat.core.domain.astro.IOrbitSession, posA: GeoPos, posB: GeoPos,
         refinedAos: Long, refinedLos: Long,
         minElevADeg: Double, minElevBDeg: Double,
         sampleInterval: Long
@@ -542,12 +548,11 @@ class MutualViewModel(
 
         var tSample = refinedAos
         while (true) {
-            // Use getElevation for elevation, matching the main pass predictor; use
-            // getFullPosition only for azimuth needed by the radar plot.
-            val elevA = elevationDeg(sat, posA, tSample)
-            val elevB = elevationDeg(sat, posB, tSample)
-            val fullA = sat.getFullPosition(posA, tSample)
-            val fullB = sat.getFullPosition(posB, tSample)
+            kotlin.coroutines.coroutineContext.ensureActive()
+            val fullA = session.position(posA, tSample)
+            val fullB = session.position(posB, tSample)
+            val elevA = Math.toDegrees(fullA.elevation)
+            val elevB = Math.toDegrees(fullB.elevation)
             if (elevA > maxElevA) maxElevA = elevA
             if (elevB > maxElevB) maxElevB = elevB
             samples.add(tSample to (elevA to elevB))
@@ -568,8 +573,8 @@ class MutualViewModel(
 
         if (maxElevA > minElevADeg && maxElevB > minElevBDeg) {
             return MutualPass(
-                catNum = sat.data.catnum,
-                name = sat.data.name,
+                catNum = session.target.data.catnum,
+                name = session.target.data.name,
                 startTime = refinedAos,
                 endTime = refinedLos,
                 maxElevationA = (maxElevA * 10).roundToInt() / 10.0,
@@ -577,64 +582,6 @@ class MutualViewModel(
                 elevationSamples = samples,
                 trackSamples = tracks
             )
-        }
-        return null
-    }
-
-    /** Refine both AOS and LOS to the nearest above-horizon second. */
-    private fun refineEdge(
-        sat: OrbitalObject, posA: GeoPos, posB: GeoPos,
-        approxTime: Long, step: Long, goingUp: Boolean
-    ): Long? = refineMutualHorizonEdge(approxTime, step, goingUp) { time ->
-        elevationDeg(sat, posA, time) > 0.0 && elevationDeg(sat, posB, time) > 0.0
-    }
-
-    private fun elevationDeg(sat: OrbitalObject, pos: GeoPos, time: Long): Double {
-        return sat.getElevation(pos, time) * 180.0 / PI
-    }
-
-    private fun findNextMutualPass(
-        sat: OrbitalObject,
-        posA: GeoPos, posB: GeoPos,
-        startTime: Long, endTime: Long
-    ): Pair<Long, Long>? {
-        var t = startTime
-        val step = 60_000L
-
-        // If the search begins during a mutual pass, return that active window too.
-        // Its AOS may predate the query start, so look back far enough to recover it.
-        while (t < endTime) {
-            val elevA = elevationDeg(sat, posA, t)
-            val elevB = elevationDeg(sat, posB, t)
-
-            if (elevA > 0.0 && elevB > 0.0) {
-                var aos = t
-                var rew = t
-                while (rew > startTime - 30 * 60_000L) {
-                    val eA = elevationDeg(sat, posA, rew)
-                    val eB = elevationDeg(sat, posB, rew)
-                    if (eA <= 0.0 || eB <= 0.0) {
-                        aos = rew + step
-                        break
-                    }
-                    rew -= step
-                }
-
-                var los = t
-                var fwd = t
-                while (fwd < endTime + 600_000L) {
-                    val eA = elevationDeg(sat, posA, fwd)
-                    val eB = elevationDeg(sat, posB, fwd)
-                    if (eA <= 0.0 || eB <= 0.0) {
-                        los = fwd
-                        break
-                    }
-                    fwd += step
-                }
-
-                if (los > aos) return Pair(aos, los)
-            }
-            t += step
         }
         return null
     }

@@ -247,69 +247,77 @@ fun NavRoot(deeplink: String? = null) {
                     )
                 }
                 entry<RadarRoute> {
-                    Surface(
-                        modifier = Modifier.fillMaxSize(),
-                        color = MaterialTheme.colorScheme.background
-                    ) {
-                        RadarDestination(
-                            navigateUp = { navigateBackFrom(RadarRoute) },
-                            navigateToMap = navigateToMap,
-                            onOpenLoTWStation = navigateToLoTWStation,
-                            onOpenPassMap = navigateToRadarPassMap,
-                            onStartMatch = startRadarMatch,
-                            onOpenMatchGridPicker = openRadarGridPicker,
-                            gridPickResult = if (rootBackStack.lastOrNull() is RadarRoute) radarGridPickResult else null,
-                            onGridPickResultHandled = { radarGridPickResult = null }
-                        )
+                    com.rtbishop.look4sat.core.presentation.AstroDataGate(container.astroData, container.satelliteRepo.orbitFailures) {
+                        Surface(
+                            modifier = Modifier.fillMaxSize(),
+                            color = MaterialTheme.colorScheme.background
+                        ) {
+                            RadarDestination(
+                                navigateUp = { navigateBackFrom(RadarRoute) },
+                                navigateToMap = navigateToMap,
+                                onOpenLoTWStation = navigateToLoTWStation,
+                                onOpenPassMap = navigateToRadarPassMap,
+                                onStartMatch = startRadarMatch,
+                                onOpenMatchGridPicker = openRadarGridPicker,
+                                gridPickResult = if (rootBackStack.lastOrNull() is RadarRoute) radarGridPickResult else null,
+                                onGridPickResultHandled = { radarGridPickResult = null }
+                            )
+                        }
                     }
                 }
                 entry<RadarMatchDestination> { match ->
-                    Surface(
-                        modifier = Modifier.fillMaxSize(),
-                        color = MaterialTheme.colorScheme.background
-                    ) {
-                        RadarDestination(
-                            navigateUp = { navigateBackFrom(match) },
-                            navigateToMap = navigateToMap,
-                            onOpenLoTWStation = navigateToLoTWStation,
-                            onOpenPassMap = navigateToRadarPassMap,
-                            onStartMatch = startRadarMatch,
-                            onOpenMatchGridPicker = openRadarGridPicker,
-                            gridPickResult = if (rootBackStack.lastOrNull() == match) radarGridPickResult else null,
-                            onGridPickResultHandled = { radarGridPickResult = null }
-                        )
+                    com.rtbishop.look4sat.core.presentation.AstroDataGate(container.astroData, container.satelliteRepo.orbitFailures) {
+                        Surface(
+                            modifier = Modifier.fillMaxSize(),
+                            color = MaterialTheme.colorScheme.background
+                        ) {
+                            RadarDestination(
+                                navigateUp = { navigateBackFrom(match) },
+                                navigateToMap = navigateToMap,
+                                onOpenLoTWStation = navigateToLoTWStation,
+                                onOpenPassMap = navigateToRadarPassMap,
+                                onStartMatch = startRadarMatch,
+                                onOpenMatchGridPicker = openRadarGridPicker,
+                                gridPickResult = if (rootBackStack.lastOrNull() == match) radarGridPickResult else null,
+                                onGridPickResultHandled = { radarGridPickResult = null }
+                            )
+                        }
                     }
                 }
                 entry<RadarMatchGridPickerDestination> {
-                    Surface(
-                        modifier = Modifier.fillMaxSize(),
-                        color = MaterialTheme.colorScheme.background
-                    ) {
-                        MapDestination(
-                            mapFilterViewModel = mapFilterViewModel,
-                            gridPickerMode = true,
-                            onPickGrid = { grid -> finishRadarGridPicker(grid) },
-                            onNavigateBack = { finishRadarGridPicker(null) }
-                        )
+                    com.rtbishop.look4sat.core.presentation.AstroDataGate(container.astroData, container.satelliteRepo.orbitFailures) {
+                        Surface(
+                            modifier = Modifier.fillMaxSize(),
+                            color = MaterialTheme.colorScheme.background
+                        ) {
+                            MapDestination(
+                                mapFilterViewModel = mapFilterViewModel,
+                                gridPickerMode = true,
+                                onPickGrid = { grid -> finishRadarGridPicker(grid) },
+                                onNavigateBack = { finishRadarGridPicker(null) }
+                            )
+                        }
                     }
                 }
                 entry<RadarPassMapDestination> { pass ->
-                    Look4SatNavigationScaffold(
-                        selectedScreen = Screen.Map,
-                        onSelectScreen = { screen ->
-                            container.setMutualPassData(MutualPassData())
-                            requestedMainTab = screen
-                            while (rootBackStack.size > 1) rootBackStack.removeLastOrNull()
-                        },
-                        navigateToFt4 = navigateToFt4,
-                        navigateToJtty = navigateToJtty,
-                        allowReselect = true
-                    ) {
-                        Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                            RadarPassMapScreenDestination(
-                                pass = currentRadarMapPass ?: pass,
-                                onSwitchPass = switchRadarPassMap
-                            )
+                    com.rtbishop.look4sat.core.presentation.AstroDataGate(container.astroData, container.satelliteRepo.orbitFailures) {
+                        Look4SatNavigationScaffold(
+                            selectedScreen = Screen.Map,
+                            onSelectScreen = { screen ->
+                                container.setMutualPassData(MutualPassData())
+                                requestedMainTab = screen
+                                while (rootBackStack.size > 1) rootBackStack.removeLastOrNull()
+                            },
+                            navigateToFt4 = navigateToFt4,
+                            navigateToJtty = navigateToJtty,
+                            allowReselect = true
+                        ) {
+                            Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                                RadarPassMapScreenDestination(
+                                    pass = currentRadarMapPass ?: pass,
+                                    onSwitchPass = switchRadarPassMap
+                                )
+                            }
                         }
                     }
                 }
@@ -333,16 +341,20 @@ fun NavRoot(deeplink: String? = null) {
                     }
                 }
             entry<Screen.Jtty> {
-                Surface(Modifier.fillMaxSize(),color=MaterialTheme.colorScheme.background) {
-                    JttyDestination(navigateUp={navigateBackFrom(Screen.Jtty)},navigateToLogbook=navigateToLogbook)
+                com.rtbishop.look4sat.core.presentation.AstroDataGate(container.astroData, container.satelliteRepo.orbitFailures) {
+                    Surface(Modifier.fillMaxSize(),color=MaterialTheme.colorScheme.background) {
+                        JttyDestination(navigateUp={navigateBackFrom(Screen.Jtty)},navigateToLogbook=navigateToLogbook)
+                    }
                 }
             }
             entry<Screen.Ft4> {
-                Surface(
-                    modifier = Modifier.fillMaxSize(),
-                    color = MaterialTheme.colorScheme.background
-                ) {
-                    Ft4ShellDestination(navigateUp = { navigateBackFrom(Screen.Ft4) }, navigateToLogbook = navigateToLogbook)
+                com.rtbishop.look4sat.core.presentation.AstroDataGate(container.astroData, container.satelliteRepo.orbitFailures) {
+                    Surface(
+                        modifier = Modifier.fillMaxSize(),
+                        color = MaterialTheme.colorScheme.background
+                    ) {
+                        Ft4ShellDestination(navigateUp = { navigateBackFrom(Screen.Ft4) }, navigateToLogbook = navigateToLogbook)
+                    }
                 }
             }
             entry<LogbookDestination> {
@@ -569,28 +581,32 @@ fun MainScreen(
                             )
                         }
                         entry<Screen.Passes> {
-                            PassesDestination(
-                                navigateToRadar = { catNum, aosTime ->
-                                    container.setMutualPassData(MutualPassData())
-                                    container.satelliteRepo.selectPass(catNum, aosTime)
-                                    navigateToRadar()
-                                },
-                                navigateToMap = navigateToMap
-                            )
+                            com.rtbishop.look4sat.core.presentation.AstroDataGate(container.astroData, container.satelliteRepo.orbitFailures) {
+                                PassesDestination(
+                                    navigateToRadar = { catNum, aosTime ->
+                                        container.setMutualPassData(MutualPassData())
+                                        container.satelliteRepo.selectPass(catNum, aosTime)
+                                        navigateToRadar()
+                                    },
+                                    navigateToMap = navigateToMap
+                                )
+                            }
                         }
                         entry<Screen.Map> {
-                            MapDestination(
-                                mapFilterViewModel = mapFilterViewModel,
-                                matchCalculating = matchCalculating,
-                                onMatchGrid = { grid ->
-                                    // Grid-QSO dialog "Match" button: pre-fill
-                                    // the match page for that grid and start the
-                                    // query. Navigation to the match page is
-                                    // handled by the uiState collector above,
-                                    // once the query finishes.
-                                    mutualViewModel.prefillMatchFromGrid(grid)
-                                }
-                            )
+                            com.rtbishop.look4sat.core.presentation.AstroDataGate(container.astroData, container.satelliteRepo.orbitFailures) {
+                                MapDestination(
+                                    mapFilterViewModel = mapFilterViewModel,
+                                    matchCalculating = matchCalculating,
+                                    onMatchGrid = { grid ->
+                                        // Grid-QSO dialog "Match" button: pre-fill
+                                        // the match page for that grid and start the
+                                        // query. Navigation to the match page is
+                                        // handled by the uiState collector above,
+                                        // once the query finishes.
+                                        mutualViewModel.prefillMatchFromGrid(grid)
+                                    }
+                                )
+                            }
                         }
                         entry<Screen.GridFinder> {
                             GridFinderDestination(
@@ -599,48 +615,56 @@ fun MainScreen(
                             )
                         }
                         entry<MatchGridPickerDestination> { picker ->
-                            MapDestination(
-                                mapFilterViewModel = mapFilterViewModel,
-                                gridPickerMode = true,
-                                onPickGrid = { grid ->
-                                    if (backStack.lastOrNull() == picker) {
-                                        if (picker.stationA) mutualViewModel.onStationAGrid(grid)
-                                        else mutualViewModel.onStationBGrid(grid)
-                                        navigateBackFrom(picker)
-                                    }
-                                },
-                                onNavigateBack = { navigateBackFrom(picker) }
-                            )
+                            com.rtbishop.look4sat.core.presentation.AstroDataGate(container.astroData, container.satelliteRepo.orbitFailures) {
+                                MapDestination(
+                                    mapFilterViewModel = mapFilterViewModel,
+                                    gridPickerMode = true,
+                                    onPickGrid = { grid ->
+                                        if (backStack.lastOrNull() == picker) {
+                                            if (picker.stationA) mutualViewModel.onStationAGrid(grid)
+                                            else mutualViewModel.onStationBGrid(grid)
+                                            navigateBackFrom(picker)
+                                        }
+                                    },
+                                    onNavigateBack = { navigateBackFrom(picker) }
+                                )
+                            }
                         }
                         entry<Screen.Mutual> {
-                            MutualScreen(
-                                viewModel = mutualViewModel,
-                                navigateToRadar = { catNum, aosTime, pass ->
-                                    container.setMutualPassData(pass ?: MutualPassData())
-                                    container.satelliteRepo.selectPass(catNum, aosTime)
-                                    navigateToRadar()
-                                },
-                                onPickGrid = { stationA ->
-                                    backStack.add(MatchGridPickerDestination(stationA))
-                                }
-                            )
+                            com.rtbishop.look4sat.core.presentation.AstroDataGate(container.astroData, container.satelliteRepo.orbitFailures) {
+                                MutualScreen(
+                                    viewModel = mutualViewModel,
+                                    navigateToRadar = { catNum, aosTime, pass ->
+                                        container.setMutualPassData(pass ?: MutualPassData())
+                                        container.satelliteRepo.selectPass(catNum, aosTime)
+                                        navigateToRadar()
+                                    },
+                                    onPickGrid = { stationA ->
+                                        backStack.add(MatchGridPickerDestination(stationA))
+                                    }
+                                )
+                            }
                         }
                         entry<Screen.AMSAT> { SatStatusDestination() }
                         entry<Screen.Sunlight> {
-                            SunlightDestination(
-                                navigateUp = { navigateBackFrom(Screen.Sunlight) },
-                                navigateToSettings = { navigateToScreen(Screen.Settings) }
-                            )
+                            com.rtbishop.look4sat.core.presentation.AstroDataGate(container.astroData, container.satelliteRepo.orbitFailures) {
+                                SunlightDestination(
+                                    navigateUp = { navigateBackFrom(Screen.Sunlight) },
+                                    navigateToSettings = { navigateToScreen(Screen.Settings) }
+                                )
+                            }
                         }
                         entry<Screen.PassSchedule> {
-                            PassScheduleDestination(
-                                navigateUp = { navigateBackFrom(Screen.PassSchedule) },
-                                navigateToRadar = { catNum, aosTime ->
-                                    container.setMutualPassData(MutualPassData())
-                                    container.satelliteRepo.selectPass(catNum, aosTime)
-                                    navigateToRadar()
-                                }
-                            )
+                            com.rtbishop.look4sat.core.presentation.AstroDataGate(container.astroData, container.satelliteRepo.orbitFailures) {
+                                PassScheduleDestination(
+                                    navigateUp = { navigateBackFrom(Screen.PassSchedule) },
+                                    navigateToRadar = { catNum, aosTime ->
+                                        container.setMutualPassData(MutualPassData())
+                                        container.satelliteRepo.selectPass(catNum, aosTime)
+                                        navigateToRadar()
+                                    }
+                                )
+                            }
                         }
                         entry<Screen.Logbook> {
                             LogbookScreenDestination(navigateUp = { navigateBackFrom(Screen.Logbook) }, navigateToMap = navigateToMap)

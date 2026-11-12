@@ -48,6 +48,7 @@ class FakeSatelliteRepo(
     satellites: List<OrbitalObject> = emptyList(),
     passes: List<OrbitalPass> = emptyList()
 ) : ISatelliteRepo {
+    override val orbit = com.rtbishop.look4sat.core.domain.predict.legacy.LegacyOrbitEngine()
 
     override val satellites = MutableStateFlow(satellites)
     override val passes = MutableStateFlow(passes)

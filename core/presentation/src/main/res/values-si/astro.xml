@@ -1,0 +1,21 @@
+<resources>
+    <string name="astro_title">කක්ෂ සහ තාරකා විද්‍යා දත්ත</string>
+    <string name="astro_invalid_orbits">සමහර කක්ෂ ගණනය කළ නොහැකි විය. සැකසුම් තුළ චන්ද්‍රිකා දත්ත යාවත්කාලීන කරන්න.</string>
+    <string name="astro_coverage">ආවරණය: %1$s – %2$s</string>
+    <string name="astro_outside_coverage">මෙම දිනය තාරකා විද්‍යා දත්ත ආවරණයෙන් පිටතය</string>
+    <string name="astro_loading">දත්ත පරීක්ෂා කරමින්</string>
+    <string name="astro_missing">කක්ෂ සහ ආකාශ වස්තු පිහිටීම් ගණනය කිරීමට දත්ත බාගන්න</string>
+    <string name="astro_downloading">බාගනිමින්</string>
+    <string name="astro_verifying">දත්ත තහවුරු කරමින්</string>
+    <string name="astro_ready">නොබැඳි භාවිතයට සූදානම්</string>
+    <string name="astro_failed">බාගැනීම අසාර්ථකයි. සබැඳිය සහ නිදහස් ඉඩ පරීක්ෂා කර නැවත උත්සාහ කරන්න.</string>
+    <string name="astro_update_failed">යාවත්කාලීන කිරීම අසාර්ථකයි. පෙර දත්ත භාවිත කළ හැක.</string>
+    <string name="astro_download">බාගන්න / යාවත්කාලීන කරන්න</string>
+    <string name="astro_url">දත්ත ZIP පැකේජයේ සබැඳිය</string>
+    <string name="astro_url_invalid">වලංගු HTTP හෝ HTTPS සබැඳියක් ඇතුළත් කරන්න</string>
+    <string name="astro_edit_url">බාගැනීමේ සබැඳිය සංස්කරණය</string>
+    <string name="astro_reset">පෙරනිමි සබැඳිය යළි පිහිටුවන්න</string>
+    <string name="astro_continuous">මුළු කාල පරාසය තුළ දෘශ්‍යමානයි</string>
+    <string name="astro_start_clipped">කාල පරාසය ආරම්භයේදීත් දෘශ්‍යමානයි</string>
+    <string name="astro_end_clipped">කාල පරාසය අවසානයේදීත් දෘශ්‍යමානයි</string>
+</resources>

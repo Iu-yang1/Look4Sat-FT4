@@ -1,0 +1,21 @@
+<resources>
+    <string name="astro_title">轨道与天文数据</string>
+    <string name="astro_invalid_orbits">部分卫星轨道无法计算，请在设置中更新星历。</string>
+    <string name="astro_coverage">覆盖日期：%1$s 至 %2$s</string>
+    <string name="astro_outside_coverage">该日期超出天文数据覆盖范围</string>
+    <string name="astro_loading">正在检查数据</string>
+    <string name="astro_missing">下载数据后即可计算轨道及天体位置</string>
+    <string name="astro_downloading">正在下载</string>
+    <string name="astro_verifying">正在校验数据</string>
+    <string name="astro_ready">已就绪，可离线使用</string>
+    <string name="astro_failed">下载失败，请检查链接及可用空间后重试。</string>
+    <string name="astro_update_failed">更新失败，原有数据仍可使用。</string>
+    <string name="astro_download">下载/更新</string>
+    <string name="astro_url">数据包 ZIP 下载链接</string>
+    <string name="astro_url_invalid">请输入有效的 HTTP 或 HTTPS 链接</string>
+    <string name="astro_edit_url">编辑下载链接</string>
+    <string name="astro_reset">恢复默认链接</string>
+    <string name="astro_continuous">查询范围内持续可见</string>
+    <string name="astro_start_clipped">范围开始前已可见</string>
+    <string name="astro_end_clipped">范围结束后仍可见</string>
+</resources>

@@ -24,7 +24,7 @@ data class IlluminationInterval(
     val durationMillis: Long get() = endMillis - startMillis
 }
 
-enum class SunlightProblem { ELEMENTS_UNAVAILABLE, INVALID_ORBIT, COMPUTATION_FAILED }
+enum class SunlightProblem { ELEMENTS_UNAVAILABLE, INVALID_ORBIT, COMPUTATION_FAILED, DATA_OUTSIDE_COVERAGE }
 
 data class SunlightPrediction(
     val request: SunlightRequest,

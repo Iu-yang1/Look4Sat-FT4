@@ -1,0 +1,21 @@
+<resources>
+    <string name="astro_title">Yörünge ve gökbilim verileri</string>
+    <string name="astro_invalid_orbits">Bazı yörüngeler hesaplanamadı. Ayarlardan uydu verilerini güncelleyin.</string>
+    <string name="astro_coverage">Kapsam: %1$s – %2$s</string>
+    <string name="astro_outside_coverage">Bu tarih gökbilim verilerinin kapsamı dışında</string>
+    <string name="astro_loading">Veriler denetleniyor</string>
+    <string name="astro_missing">Yörünge ve gök cismi konumlarını hesaplamak için verileri indirin</string>
+    <string name="astro_downloading">İndiriliyor</string>
+    <string name="astro_verifying">Veriler doğrulanıyor</string>
+    <string name="astro_ready">Çevrimdışı kullanıma hazır</string>
+    <string name="astro_failed">İndirme başarısız. Bağlantıyı ve boş alanı denetleyip yeniden deneyin.</string>
+    <string name="astro_update_failed">Güncelleme başarısız. Önceki veriler kullanılabilir.</string>
+    <string name="astro_download">İndir / güncelle</string>
+    <string name="astro_url">Veri paketi ZIP bağlantısı</string>
+    <string name="astro_url_invalid">Geçerli bir HTTP veya HTTPS bağlantısı girin</string>
+    <string name="astro_edit_url">İndirme bağlantısını düzenle</string>
+    <string name="astro_reset">Varsayılan bağlantıyı geri yükle</string>
+    <string name="astro_continuous">Aralık boyunca görünür</string>
+    <string name="astro_start_clipped">Aralık başında zaten görünür</string>
+    <string name="astro_end_clipped">Aralık sonunda hâlâ görünür</string>
+</resources>

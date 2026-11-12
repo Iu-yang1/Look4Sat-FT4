@@ -120,10 +120,18 @@ class MainContainer(private val context: Context) : IMainContainer {
     override val controlDiagnostics: IControlDiagnostics = ControlDiagnosticsBuffer()
     override val settingsRepo = provideSettingsRepo()
     override val selectionRepo = provideSelectionRepo()
+    override val astroData = com.rtbishop.look4sat.core.data.astro.AstroDataRepository(
+        java.io.File(context.filesDir, "astronomy"),
+        context.getSharedPreferences("astronomy", Context.MODE_PRIVATE),
+        OkHttpClient.Builder().readTimeout(120, TimeUnit.SECONDS).build(),
+        appScope, controlDiagnostics, { com.rtbishop.look4sat.core.domain.model.UpdateSource.AUTO }
+    )
+    private val orbitEngine = com.rtbishop.look4sat.core.data.astro.OrekitOrbitEngine(astroData)
+    private val celestialService = com.rtbishop.look4sat.core.data.astro.OrekitCelestialService(astroData)
     override val satelliteRepo = provideSatelliteRepo()
     override val databaseRepo = provideDatabaseRepo()
     override val sunlightPredictor by lazy {
-        com.rtbishop.look4sat.core.data.sunlight.OrekitSunlightPredictor(localSource, controlDiagnostics)
+        com.rtbishop.look4sat.core.data.sunlight.OrekitSunlightPredictor(localSource, controlDiagnostics, orbitEngine)
     }
     override val wavelogUploadRepository: IWavelogUploadRepository by lazy { WavelogUploadRepository() }
     override val wavelogSyncRepository: IWavelogSyncRepository by lazy { WavelogSyncRepository() }
@@ -341,7 +349,8 @@ class MainContainer(private val context: Context) : IMainContainer {
     }
 
     private fun provideSatelliteRepo(): ISatelliteRepo {
-        return SatelliteRepo(Dispatchers.Default, localSource, settingsRepo)
+        return SatelliteRepo(Dispatchers.Default, localSource, settingsRepo, orbitEngine, celestialService, astroData,
+            controlDiagnostics)
     }
 
     private fun provideSelectionRepo(): ISelectionRepo {

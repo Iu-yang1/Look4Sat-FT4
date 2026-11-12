@@ -26,7 +26,11 @@ data class OrbitalPass(
     val maxElevation: Double = 75.0,
     val orbitalObject: OrbitalObject,
     val progress: Float = 0.0f,
-    val hasDecayed: Boolean = false
+    val hasDecayed: Boolean = false,
+    val startClipped: Boolean = false,
+    val endClipped: Boolean = false,
+    val continuousVisibility: Boolean = false,
+    val tcaTime: Long = aosTime + (losTime - aosTime) / 2
 ) {
     val catNum: Int = orbitalObject.data.catnum
     val name: String = if (hasDecayed) "${orbitalObject.data.name} (decayed?)" else orbitalObject.data.name

@@ -375,8 +375,7 @@ fun RadarPassMapScreenDestination(
     }
     val allPasses by container.satelliteRepo.passes.collectAsStateWithLifecycle()
     val passSettings by container.settingsRepo.passesSettings.collectAsStateWithLifecycle()
-    // Match the Passes page's visible sequence: deep-space group first (if enabled),
-    // followed by normal passes in chronological AOS order across ALL satellites.
+    // Match the chronological sequence on the Passes page, including deep-space windows.
     val visiblePasses = remember(allPasses, passSettings) {
         val cutoff = System.currentTimeMillis() - passSettings.hoursBefore * 3600_000L
         val compare = compareBy<com.rtbishop.look4sat.core.domain.predict.OrbitalPass> { it.aosTime }
@@ -384,10 +383,9 @@ fun RadarPassMapScreenDestination(
         val filtered = allPasses.filter { candidate ->
             candidate.losTime > candidate.aosTime &&
                 (passSettings.showDeepSpace || !candidate.isDeepSpace) &&
-                (candidate.isDeepSpace || candidate.losTime >= cutoff)
+                candidate.losTime >= cutoff
         }
-        (filtered.filter { it.isDeepSpace }.sortedWith(compare) +
-            filtered.filterNot { it.isDeepSpace }.sortedWith(compare))
+        filtered.sortedWith(compare)
             .map { RadarPassMapDestination(it.catNum, it.aosTime, it.losTime) }
             .distinctBy { it.catNum to it.aosTime }
     }

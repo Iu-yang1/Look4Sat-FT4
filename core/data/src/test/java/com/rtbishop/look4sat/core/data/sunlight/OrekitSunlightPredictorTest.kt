@@ -36,13 +36,13 @@ class OrekitSunlightPredictorTest {
         } as ILocalSource
 
     @Test fun listsAllLocalSatellitesWithoutChangingSelection() = runTest {
-        val predictor = OrekitSunlightPredictor(source { fo29 }, ControlDiagnosticsBuffer())
+        val predictor = OrekitSunlightPredictor(source { fo29 }, ControlDiagnosticsBuffer(), com.rtbishop.look4sat.core.data.astro.AstroTestData.engine)
         assertEquals(listOf(24278, 25544), predictor.satellites().map { it.catnum })
     }
 
     @Test fun elementSnapshotAndSummaryRemainConsistentAcrossADataRefresh() = runTest {
         var current: OrbitalData? = fo29
-        val predictor = OrekitSunlightPredictor(source { current }, ControlDiagnosticsBuffer())
+        val predictor = OrekitSunlightPredictor(source { current }, ControlDiagnosticsBuffer(), com.rtbishop.look4sat.core.data.astro.AstroTestData.engine)
         val request = SunlightRequest(24278, start, 1)
         val progress = mutableListOf<Double>()
         val result = predictor.predict(request) {
@@ -59,7 +59,7 @@ class OrekitSunlightPredictorTest {
     }
 
     @Test fun unavailableElementsAreAnActionableError() = runTest {
-        val predictor = OrekitSunlightPredictor(source { null }, ControlDiagnosticsBuffer())
+        val predictor = OrekitSunlightPredictor(source { null }, ControlDiagnosticsBuffer(), com.rtbishop.look4sat.core.data.astro.AstroTestData.engine)
         try {
             predictor.predict(SunlightRequest(24278, start, 1)) {}
             fail("Expected missing orbital data")
@@ -69,7 +69,7 @@ class OrekitSunlightPredictorTest {
     }
 
     @Test fun invalidElementsDoNotGenerateFullSunlight() = runTest {
-        val predictor = OrekitSunlightPredictor(source { fo29.copy(eccn = Double.NaN) }, ControlDiagnosticsBuffer())
+        val predictor = OrekitSunlightPredictor(source { fo29.copy(eccn = Double.NaN) }, ControlDiagnosticsBuffer(), com.rtbishop.look4sat.core.data.astro.AstroTestData.engine)
         try {
             predictor.predict(SunlightRequest(24278, start, 1)) {}
             fail("Expected invalid orbital data")
@@ -80,7 +80,7 @@ class OrekitSunlightPredictorTest {
 
     @Test(expected = CancellationException::class)
     fun cancellationInProgressCallbackIsPropagated() = runTest {
-        OrekitSunlightPredictor(source { fo29 }, ControlDiagnosticsBuffer())
+        OrekitSunlightPredictor(source { fo29 }, ControlDiagnosticsBuffer(), com.rtbishop.look4sat.core.data.astro.AstroTestData.engine)
             .predict(SunlightRequest(24278, start, 365)) { throw CancellationException("cancel") }
     }
 
@@ -91,7 +91,7 @@ class OrekitSunlightPredictorTest {
         assumeTrue(System.getenv("SUNLIGHT_BENCHMARK") == "1")
         for (days in listOf(30, 365)) {
             val diagnostics = ControlDiagnosticsBuffer()
-            val result = OrekitSunlightPredictor(source { fo29 }, diagnostics)
+            val result = OrekitSunlightPredictor(source { fo29 }, diagnostics, com.rtbishop.look4sat.core.data.astro.AstroTestData.engine)
                 .predict(SunlightRequest(24278, start, days)) {}
             assertEquals(null, result.problem)
             assertEquals(days * 86_400_000L, result.intervals.sumOf { it.durationMillis })
@@ -99,7 +99,7 @@ class OrekitSunlightPredictorTest {
         }
         val progressed = CompletableDeferred<Unit>()
         val worker = launch(Dispatchers.Default) {
-            OrekitSunlightPredictor(source { fo29 }, ControlDiagnosticsBuffer())
+            OrekitSunlightPredictor(source { fo29 }, ControlDiagnosticsBuffer(), com.rtbishop.look4sat.core.data.astro.AstroTestData.engine)
                 .predict(SunlightRequest(24278, start, 365)) {
                     if (it > 0.0) progressed.complete(Unit)
                 }

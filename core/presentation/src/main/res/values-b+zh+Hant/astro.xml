@@ -1,0 +1,21 @@
+<resources>
+    <string name="astro_title">軌道與天文資料</string>
+    <string name="astro_invalid_orbits">部分衛星軌道無法計算，請在設定中更新軌道資料。</string>
+    <string name="astro_coverage">涵蓋日期：%1$s 至 %2$s</string>
+    <string name="astro_outside_coverage">此日期超出天文資料涵蓋範圍</string>
+    <string name="astro_loading">正在檢查資料</string>
+    <string name="astro_missing">下載資料後即可計算軌道及天體位置</string>
+    <string name="astro_downloading">正在下載</string>
+    <string name="astro_verifying">正在驗證資料</string>
+    <string name="astro_ready">已就緒，可離線使用</string>
+    <string name="astro_failed">下載失敗，請檢查連結及可用空間後重試。</string>
+    <string name="astro_update_failed">更新失敗，原有資料仍可使用。</string>
+    <string name="astro_download">下載/更新</string>
+    <string name="astro_url">資料包 ZIP 下載連結</string>
+    <string name="astro_url_invalid">請輸入有效的 HTTP 或 HTTPS 連結</string>
+    <string name="astro_edit_url">編輯下載連結</string>
+    <string name="astro_reset">還原預設連結</string>
+    <string name="astro_continuous">查詢範圍內持續可見</string>
+    <string name="astro_start_clipped">範圍開始前已可見</string>
+    <string name="astro_end_clipped">範圍結束後仍可見</string>
+</resources>

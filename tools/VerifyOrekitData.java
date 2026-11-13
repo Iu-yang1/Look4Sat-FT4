@@ -12,6 +12,29 @@ import org.orekit.utils.IERSConventions;
 class VerifyOrekitData {
     public static void main(String[] args) throws Exception {
         var context = new LazyLoadedDataContext();
+        if (args.length > 3 && args[3].equals("--memory")) {
+            // Offline reference scans revisit centuries of data; cache only in this tool.
+            var coefficients = new HashMap<String, byte[]>();
+            try (var files = Files.list(Path.of(args[0]))) {
+                for (var file : files.filter(path -> path.getFileName().toString().endsWith(".440")).toList()) {
+                    coefficients.put(file.getFileName().toString(), Files.readAllBytes(file));
+                }
+            }
+            context.getDataProvidersManager().addProvider((supported, loader, manager) -> {
+                boolean loaded = false;
+                for (var entry : coefficients.entrySet()) {
+                    if (supported.matcher(entry.getKey()).matches() && loader.stillAcceptsData()) {
+                        try (var input = new java.io.ByteArrayInputStream(entry.getValue())) {
+                            loader.loadData(input, entry.getKey());
+                            loaded = true;
+                        } catch (java.io.IOException | java.text.ParseException error) {
+                            throw new IllegalStateException(error);
+                        }
+                    }
+                }
+                return loaded;
+            });
+        }
         context.getDataProvidersManager().addProvider(new DirectoryCrawler(Path.of(args[0]).toFile()));
         var bodies = context.getCelestialBodies();
         var utc = context.getTimeScales().getUTC();
@@ -66,6 +89,7 @@ class VerifyOrekitData {
             if (error > 2e-11) throw new IllegalStateException("JPL check failed: "+line+" error="+error);
             maxError = Math.max(maxError, error);
             checked++;
+            if (checked % 1000 == 0) System.err.println("JPL reference checks passed: "+checked);
         }
         if (checked < 100) throw new IllegalStateException("Insufficient JPL checks: "+checked);
         String report = "{\"jplTestpoChecks\":"+checked+",\"maxErrorAUorAUPerDay\":"+maxError

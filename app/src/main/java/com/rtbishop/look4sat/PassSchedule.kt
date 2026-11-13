@@ -948,7 +948,7 @@ private fun PassScheduleItem(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = if (pass.continuousVisibility) stringResource(R.string.astro_continuous) else durationStr,
+                            text = if (pass.isDeepSpace) stringResource(R.string.pass_deep_space) else durationStr,
                             modifier = Modifier.weight(1f),
                             fontSize = 18.sp,
                             lineHeight = 19.sp,
@@ -968,7 +968,7 @@ private fun PassScheduleItem(
                         )
                         val elevColor = elevationColor(pass.maxElevation)
                         Text(
-                            text = "${pass.maxElevation}°",
+                            text = stringResource(R.string.radar_el_value, pass.maxElevation),
                             modifier = Modifier.weight(0.7f),
                             fontSize = 18.sp,
                             lineHeight = 19.sp,
@@ -990,26 +990,25 @@ private fun PassScheduleItem(
                     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                         val defaultTime = "--:--:--"
                         Text(
-                            text = if (pass.continuousVisibility) defaultTime else aosTimeStr,
+                            text = if (pass.isDeepSpace || pass.startClipped) defaultTime else aosTimeStr,
                             fontSize = 16.sp,
                             lineHeight = 17.sp,
                             color = MaterialTheme.colorScheme.onSurface,
                             maxLines = 1
                         )
                         LinearProgressIndicator(
-                            progress = { passProgress },
+                            progress = { if (pass.isDeepSpace) 1f else passProgress },
                             drawStopIndicator = {},
                             modifier = Modifier.weight(1f).padding(horizontal = 4.dp)
                         )
                         Text(
-                            text = if (pass.continuousVisibility) defaultTime else losTimeStr,
+                            text = if (pass.isDeepSpace || pass.endClipped) defaultTime else losTimeStr,
                             fontSize = 16.sp,
                             lineHeight = 17.sp,
                             color = MaterialTheme.colorScheme.onSurface,
                             maxLines = 1
                         )
                     }
-                    com.rtbishop.look4sat.core.presentation.PassBoundaryNote(pass)
                 }
                 Spacer(modifier = Modifier.width(8.dp))
                 PassRadarPreview(

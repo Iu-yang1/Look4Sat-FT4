@@ -514,8 +514,12 @@ class MutualViewModel(
         val context = kotlin.coroutines.coroutineContext
         for (sat in satellites) {
             val session = satelliteRepo.orbit.openSession(sat)
-            val windowsA = session.passes(posA, time, endTime) { context.ensureActive() }
-            val windowsB = session.passes(posB, time, endTime) { context.ensureActive() }
+            // Recover real boundaries of a pass already underway at query start.
+            val margin = (sat.data.orbitalPeriod * 60000).toLong()
+            val searchStart = maxOf(time - margin, sat.snapshot?.coverageStartMillis ?: Long.MIN_VALUE)
+            val searchEnd = minOf(endTime + margin, sat.snapshot?.coverageEndMillis?.minus(1) ?: Long.MAX_VALUE)
+            val windowsA = session.passes(posA, searchStart, searchEnd) { context.ensureActive() }
+            val windowsB = session.passes(posB, searchStart, searchEnd) { context.ensureActive() }
             var indexA = 0
             var indexB = 0
             while (indexA < windowsA.size && indexB < windowsB.size) {
@@ -524,7 +528,7 @@ class MutualViewModel(
                 val b = windowsB[indexB]
                 val start = maxOf(a.aosTime, b.aosTime)
                 val end = minOf(a.losTime, b.losTime)
-                if (end > start) {
+                if (end > start && end > time && start < endTime) {
                     sampleMutualPass(session, posA, posB, start, end,
                         minElevADeg, minElevBDeg, sampleInterval)?.let(results::add)
                 }
@@ -547,6 +551,7 @@ class MutualViewModel(
         var maxElevB = 0.0
 
         var tSample = refinedAos
+        val displayStep = maxOf(sampleInterval, (refinedLos - refinedAos) / 2000 + 1)
         while (true) {
             kotlin.coroutines.coroutineContext.ensureActive()
             val fullA = session.position(posA, tSample)
@@ -568,7 +573,7 @@ class MutualViewModel(
             // Always include the refined LOS as the final chart/radar sample,
             // even when the 5-second sampling interval does not divide the pass.
             if (tSample == refinedLos) break
-            tSample = minOf(tSample + sampleInterval, refinedLos)
+            tSample = minOf(tSample + displayStep, refinedLos)
         }
 
         if (maxElevA > minElevADeg && maxElevB > minElevBDeg) {

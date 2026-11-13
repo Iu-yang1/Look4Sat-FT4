@@ -21,7 +21,12 @@ dependencies {
 
 tasks.withType<org.gradle.api.tasks.testing.Test>().configureEach {
     val simulatorPort = providers.environmentVariable("L4S_SIMULATOR_PORT")
+    val sunlightBenchmark = providers.environmentVariable("SUNLIGHT_BENCHMARK")
+    val astroArchive = providers.environmentVariable("ASTRO_TEST_DATA_ZIP").orNull
+        ?.let { file(it) } ?: rootProject.file("dist/orekit-data/orekit-data.zip")
     inputs.property("l4sSimulatorPort", simulatorPort.orElse(""))
+    inputs.property("sunlightBenchmark", sunlightBenchmark.orElse(""))
+    if (astroArchive.isFile) inputs.file(astroArchive).withPathSensitivity(PathSensitivity.NONE)
     // A running external C-core simulator must be exercised, not reused from a skipped/cached run.
-    outputs.upToDateWhen { simulatorPort.orNull.isNullOrBlank() }
+    outputs.upToDateWhen { simulatorPort.orNull.isNullOrBlank() && sunlightBenchmark.orNull != "1" }
 }

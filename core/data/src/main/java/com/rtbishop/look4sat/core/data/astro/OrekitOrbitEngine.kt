@@ -98,8 +98,8 @@ internal class OrekitOrbitSession(override val target: OrbitalObject) : IOrbitSe
             GeoPos(Math.toDegrees(point.latitude), Math.toDegrees(point.longitude))
         }
     }
-    private fun step(time: Long): Long {
-        val pv = state(time).pvCoordinates
+    private fun step(state: SpacecraftState): Long {
+        val pv = state.pvCoordinates
         val rate = Vector3D.crossProduct(pv.position, pv.velocity).norm / pv.position.normSq
         return (1000 * min(30.0, min(target.data.orbitalPeriod * 60 / 720, (PI / 180) / rate))).toLong()
     }
@@ -108,12 +108,25 @@ internal class OrekitOrbitSession(override val target: OrbitalObject) : IOrbitSe
         val topo = station(observer)
         val elevation = ElevationDetector(topo).withConstantElevation(0.0)
         val extrema = ElevationExtremumDetector(topo)
-        val value = { time: Long -> checkCancelled(); elevation.g(state(time)) }
+        // Bracketing revisits endpoints for elevation, slope and adaptive steps.
+        // Keep only this search's recent samples; never share propagators across jobs.
+        class Sample(val state: SpacecraftState) {
+            val value by lazy(LazyThreadSafetyMode.NONE) { elevation.g(state) }
+            val derivative by lazy(LazyThreadSafetyMode.NONE) { extrema.g(state) }
+        }
+        val samples = object : LinkedHashMap<Long, Sample>(16, 0.75f, true) {
+            override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Long, Sample>?) = size > 16
+        }
+        fun sample(time: Long): Sample {
+            checkCancelled()
+            return samples.getOrPut(time) { Sample(state(time)) }
+        }
+        val value = { time: Long -> sample(time).value }
         val maxima = mutableListOf<Long>()
         var failure: OrbitEventSearchException? = null
         val events = try {
             eventBoundaries(startMillis, endMillis, value,
-                { time -> checkCancelled(); extrema.g(state(time)) }, ::step, checkCancelled,
+                { time -> sample(time).derivative }, { time -> step(sample(time).state) }, checkCancelled,
                 { maxima.add(it) })
         } catch (error: OrbitEventSearchException) {
             failure = error

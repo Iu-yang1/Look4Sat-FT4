@@ -1,4 +1,4 @@
-Sunlight prediction uses Orekit 13.1.4 and its Hipparchus dependencies.
+Orbital and astronomical calculations use Orekit 13.1.4 and its Hipparchus dependencies.
 Orekit research baseline: 70439f1957f851ad131b9fb50d9e94db432d92ec
 Source: https://github.com/CS-SI/Orekit
 Hipparchus source: https://github.com/Hipparchus-Math/hipparchus
@@ -11,11 +11,13 @@ The bundled orekit/UTC-TAI.history is from the Orekit 13.1.4 regular-data refere
 set; UTC-TAI relationships originate from IERS. No future leap seconds are assumed.
 Update the bundled history when a new leap second becomes effective.
 
-This feature uses the existing Look4Sat SGP4/SDP4 propagators, Orekit's
-AnalyticalSolarPositionProvider and EclipseDetector/OccultationEngine.
-It models geometric occultation by a WGS84 ellipsoid without atmosphere or polar
-motion. Analytical Sun positions and extrapolated orbital elements are estimates;
-the event solver's numerical tolerance is not a real-world forecast guarantee.
+Production propagation uses Orekit's TLE SGP4/SDP4 implementation. Solar and lunar
+positions use a separately downloaded NASA/JPL DE440 subset, generated with JPL's
+ASC2EPH converter. Geometric occultation uses EclipseDetector/OccultationEngine
+and a WGS84 ellipsoid without atmospheric refraction or terrain. IERS Earth
+orientation records are used where available; approximations outside their
+coverage are reported separately. Numerical tolerances do not guarantee future
+orbital prediction accuracy.
 
 ----- Orekit NOTICE.txt -----
 OREKIT

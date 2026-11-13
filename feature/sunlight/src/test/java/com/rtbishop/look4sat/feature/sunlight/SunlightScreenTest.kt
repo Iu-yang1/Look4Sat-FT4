@@ -6,14 +6,15 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.test.assertDoesNotExist
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.unit.Density
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModelStore
@@ -103,11 +104,14 @@ class SunlightScreenTest {
         show()
         compose.onNodeWithTag("sunlight_predict").performClick()
         compose.waitUntil { model.uiState.value.prediction != null }
-        compose.onNodeWithTag("sunlight_statistics_toggle").performScrollTo().performClick()
-        compose.onNodeWithTag("sunlight_longest_details").performScrollTo().performClick()
+        compose.onNodeWithTag("sunlight_results").performScrollToNode(hasTestTag("sunlight_statistics_toggle"))
+        compose.onNodeWithTag("sunlight_statistics_toggle").performClick()
+        compose.onNodeWithTag("sunlight_results").performScrollToNode(hasTestTag("sunlight_longest_details"))
+        compose.onNodeWithTag("sunlight_longest_details").performClick()
         compose.onNodeWithTag("sunlight_panel_accept").assertDoesNotExist()
         compose.onNodeWithTag("sunlight_panel_back").performClick()
-        compose.onNodeWithTag("sunlight_filter").performScrollTo().performClick()
+        compose.onNodeWithTag("sunlight_results").performScrollToNode(hasTestTag("sunlight_filter"))
+        compose.onNodeWithTag("sunlight_filter").performClick()
         compose.onNodeWithText("All states").performScrollTo().performClick()
         compose.onNodeWithTag("sunlight_panel_accept").assertIsDisplayed().performClick()
         compose.runOnIdle {

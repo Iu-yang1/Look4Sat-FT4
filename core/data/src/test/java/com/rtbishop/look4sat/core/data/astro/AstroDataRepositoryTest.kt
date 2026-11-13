@@ -21,14 +21,16 @@ import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 import java.nio.file.Files
 import java.util.UUID
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
 @RunWith(RobolectricTestRunner::class)
+@Config(sdk = [24, 34])
 class AstroDataRepositoryTest {
-    @Test fun initialFailureStaysUnavailableAndUrlChangesOnlyAffectTheNextRequest() = runBlocking {
+    @Test fun initialFailureStaysUnavailableAndUrlChangesOnlyAffectTheNextRequest() = runBlocking<Unit> {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val preferences = context.getSharedPreferences(UUID.randomUUID().toString(), Context.MODE_PRIVATE)
         val root = Files.createTempDirectory("astro-download-").toFile()
@@ -54,7 +56,7 @@ class AstroDataRepositoryTest {
         } finally { scope.cancel(); root.deleteRecursively() }
     }
 
-    @Test fun failedUpdateAndUrlEditPreserveThePinnedPreviousGeneration() = runBlocking {
+    @Test fun failedUpdateAndUrlEditPreserveThePinnedPreviousGeneration() = runBlocking<Unit> {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val preferences = context.getSharedPreferences(UUID.randomUUID().toString(), Context.MODE_PRIVATE)
         val root = Files.createTempDirectory("astro-update-").toFile()
@@ -80,7 +82,7 @@ class AstroDataRepositoryTest {
         } finally { scope.cancel(); root.deleteRecursively() }
     }
 
-    @Test fun successfulSameVersionUpdateKeepsOldSessionsPinnedAndChangesNewGeneration() = runBlocking {
+    @Test fun successfulSameVersionUpdateKeepsOldSessionsPinnedAndChangesNewGeneration() = runBlocking<Unit> {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val preferences = context.getSharedPreferences(UUID.randomUUID().toString(), Context.MODE_PRIVATE)
         val root = Files.createTempDirectory("astro-generations-").toFile()

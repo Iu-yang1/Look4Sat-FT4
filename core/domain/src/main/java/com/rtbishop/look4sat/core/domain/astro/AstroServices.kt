@@ -61,6 +61,12 @@ interface IOrbitEngine {
     fun bind(elements: OrbitalData): OrbitalObject
 }
 
+/** Geometry at one fixed orbital instant; no propagation or data loading occurs here. */
+interface IOrbitSurfaceGeometry {
+    fun elevationDegrees(observer: GeoPos): Double
+    fun contour(elevationDegrees: Double, checkCancelled: () -> Unit = {}): List<GeoPos>
+}
+
 /** Owned by one calculation; propagation workspaces are not shared between consumers. */
 interface IOrbitSession {
     val target: OrbitalObject

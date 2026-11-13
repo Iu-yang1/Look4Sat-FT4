@@ -1,6 +1,5 @@
 package com.rtbishop.look4sat.feature.map
 
-import com.rtbishop.look4sat.core.domain.predict.OrbitalPos
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -13,11 +12,7 @@ class ElevationContourLabelTest {
         // OrbitalPos uses 0°..360°, while the map camera and GeoPos use −180°..180°.
         // Model the map centred on the satellite's canonical longitude.
         for (satelliteLon in listOf(181.0, 200.0, 240.0, 300.0, 350.0, 359.0)) {
-            val satellite = OrbitalPos(
-                latitude = Math.toRadians(10.0),
-                longitude = Math.toRadians(satelliteLon),
-                altitude = 550.0
-            )
+            val satellite = contourFixture(10.0, satelliteLon)
             val ring = elevationContour(satellite, 10.0)
             val anchor = ring[elevationContourLabelAnchorIndex(ring)!!]
             val mapCenterLongitude = if (satelliteLon > 180.0) satelliteLon - 360.0 else satelliteLon

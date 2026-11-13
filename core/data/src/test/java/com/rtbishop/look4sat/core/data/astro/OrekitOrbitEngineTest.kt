@@ -103,4 +103,23 @@ class OrekitOrbitEngineTest {
             }
         }
     }
+
+    @Test fun mapSurfaceContoursUseWgs84AndTheSameTopocentricElevationAsTracking() {
+        val runtime = AstroTestData.runtime
+        val date = runtime.date(time("2026-11-12T12:00:00Z"))
+        for (latitude in listOf(0.0, 65.0, 89.9, -89.9)) {
+            val bodyPosition = runtime.earth.transform(org.orekit.bodies.GeodeticPoint(
+                Math.toRadians(latitude), Math.toRadians(179.0), 550000.0))
+            val surface = OrekitSurfaceGeometry(runtime, bodyPosition, date)
+            assertEquals(90.0, surface.elevationDegrees(GeoPos(latitude, 179.0)), 1e-7)
+            for (elevation in listOf(0.0, 10.0, 45.0, 89.9)) {
+                val points = surface.contour(elevation)
+                assertEquals(361, points.size)
+                points.forEach { point ->
+                    val expected = runtime.station(point).getElevation(bodyPosition, runtime.terrestrial, date)
+                    assertEquals(elevation, Math.toDegrees(expected), 1e-6)
+                }
+            }
+        }
+    }
 }

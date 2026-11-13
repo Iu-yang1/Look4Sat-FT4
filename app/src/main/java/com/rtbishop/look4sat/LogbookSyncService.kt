@@ -428,7 +428,11 @@ class LogbookSyncService : Service() {
         lastNotificationRemainingSeconds = remainingSeconds
         lastNotificationPhase = phase
         lastNotificationStageMessage = stageMessage
-        runCatching { NotificationManagerCompat.from(this).notify(NOTIFICATION_ID, buildNotification(status)) }
+        try {
+            NotificationManagerCompat.from(this).notify(NOTIFICATION_ID, buildNotification(status))
+        } catch (error: SecurityException) {
+            android.util.Log.w("LogbookSync", "Notification permission is unavailable", error)
+        }
     }
 
     private fun createNotificationChannel() {

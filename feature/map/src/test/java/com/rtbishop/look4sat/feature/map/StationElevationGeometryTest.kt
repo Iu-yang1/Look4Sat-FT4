@@ -1,60 +1,28 @@
-/*
- * Look4Sat. Amateur radio satellite tracker and pass predictor.
- * Copyright (C) 2019-2026 Arty Bishop and contributors.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- */
 package com.rtbishop.look4sat.feature.map
 
+import com.rtbishop.look4sat.core.domain.astro.IOrbitSurfaceGeometry
 import com.rtbishop.look4sat.core.domain.predict.GeoPos
 import com.rtbishop.look4sat.core.domain.predict.OrbitalPos
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
-import org.junit.Assert.assertTrue
 import org.junit.Test
-import kotlin.math.acos
 
 class StationElevationGeometryTest {
-    @Test
-    fun stationDirectlyUnderSatelliteHasNinetyDegreeElevation() {
-        val satellite = OrbitalPos(
-            latitude = Math.toRadians(22.5),
-            longitude = Math.toRadians(113.6),
-            altitude = 550.0
-        )
-        assertEquals(90.0, elevationAtGroundStation(satellite, GeoPos(22.5, 113.6))!!, 1e-6)
+    @Test fun matchedStationUsesThePinnedBackendGeometryIncludingItsAltitude() {
+        val observer = GeoPos(22.5, 113.6, 750.0)
+        val geometry = object : IOrbitSurfaceGeometry {
+            override fun elevationDegrees(observer: GeoPos): Double {
+                assertEquals(GeoPos(22.5, 113.6, 750.0), observer)
+                return 18.75
+            }
+            override fun contour(elevationDegrees: Double, checkCancelled: () -> Unit) = emptyList<GeoPos>()
+        }
+        assertEquals(18.75, elevationAtGroundStation(OrbitalPos(surfaceGeometry = geometry), observer)!!, 0.0)
     }
 
-    @Test
-    fun horizonFootprintIsZeroElevation() {
-        val height = 550.0
-        val satellite = OrbitalPos(latitude = 0.0, longitude = 0.0, altitude = height)
-        val horizonAngle = Math.toDegrees(acos(6370.0 / (6370.0 + height)))
-        assertEquals(0.0, elevationAtGroundStation(satellite, GeoPos(0.0, horizonAngle))!!, 1e-6)
-    }
-
-    @Test
-    fun farStationFallsBelowHorizon() {
-        val satellite = OrbitalPos(latitude = 0.0, longitude = 0.0, altitude = 550.0)
-        assertTrue(elevationAtGroundStation(satellite, GeoPos(0.0, 90.0))!! < 0.0)
-    }
-
-    @Test
-    fun longitudesWrapAcrossTheDateLine() {
-        val satellite = OrbitalPos(latitude = 0.0, longitude = Math.toRadians(179.0), altitude = 550.0)
-        val west = elevationAtGroundStation(satellite, GeoPos(0.0, -179.0))
-        val east = elevationAtGroundStation(satellite, GeoPos(0.0, 181.0))
-        assertEquals(west!!, east!!, 1e-9)
-        assertTrue(west > 0.0)
-    }
-
-    @Test
-    fun missingMatchedStationDoesNotDrawAnElevation() {
-        val satellite = OrbitalPos(altitude = 550.0)
-        assertNull(elevationAtGroundStation(satellite, null))
+    @Test fun missingGeometryOrStationDoesNotProduceAnApproximateReading() {
+        assertNull(elevationAtGroundStation(OrbitalPos(altitude = 550.0), GeoPos(0.0, 0.0)))
+        assertNull(elevationAtGroundStation(OrbitalPos(), null))
         assertNull(elevationAtGroundStation(null, GeoPos(0.0, 0.0)))
     }
 }

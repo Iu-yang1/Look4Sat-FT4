@@ -50,6 +50,13 @@ class OrbitPerformanceTest {
                 assertTrue(windows.isNotEmpty())
             }
         }
+        val surface = requireNotNull(current.openSession(current.bind(elements))
+            .position(observer, time).surfaceGeometry)
+        measure("orekit-map-four-contours") {
+            for (angle in listOf(10.0, 20.0, 30.0, 45.0)) {
+                assertTrue(surface.contour(angle).size == 361)
+            }
+        }
     }
 
     private fun mapBatch(engine: IOrbitEngine) {

@@ -37,7 +37,8 @@ class OrekitCelestialService(private val data: IAstroDataRepository) : ICelestia
             (Math.toDegrees(pv.position.alpha) + 360) % 360, Math.toDegrees(pv.position.delta),
             (-Math.toDegrees(ground.longitude) + 360) % 360,
             Math.toDegrees(2 * asin(1737400.0 / direction.range)),
-            station.getRangeRate(pv, runtime.inertial, date)
+            station.getRangeRate(pv, runtime.inertial, date),
+            Math.toDegrees(ground.latitude), Math.toDegrees(ground.longitude)
         )
     }
 

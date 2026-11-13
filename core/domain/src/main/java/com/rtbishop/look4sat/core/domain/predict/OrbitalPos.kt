@@ -35,7 +35,9 @@ data class OrbitalPos(
     val rangeBoundary: List<GeoPos> = emptyList(),
     val dataVersion: String = "",
     val elementAgeDays: Double = 0.0,
-    val approximateEarthOrientation: Boolean = false
+    val approximateEarthOrientation: Boolean = false,
+    val surfaceGeometry: com.rtbishop.look4sat.core.domain.astro.IOrbitSurfaceGeometry? = null,
+    val elevationContours: Map<Double, List<GeoPos>> = emptyMap()
 ) {
 
     fun getDownlinkFreq(freq: Long): Long {

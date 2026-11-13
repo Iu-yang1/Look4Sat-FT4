@@ -82,7 +82,9 @@ internal class OrekitOrbitSession(override val target: OrbitalObject) : IOrbitSe
             velocityKmPerSecond = state.getPVCoordinates(runtime.inertial).velocity.norm / 1000,
             dataVersion = runtime.version,
             elementAgeDays = kotlin.math.abs(OrbitalData.timeToDaynum(timeMillis) - target.data.epochDaynum),
-            approximateEarthOrientation = timeMillis !in runtime.eopStartMillis..runtime.eopEndMillis
+            approximateEarthOrientation = timeMillis !in runtime.eopStartMillis..runtime.eopEndMillis,
+            surfaceGeometry = OrekitSurfaceGeometry(runtime,
+                state.getPVCoordinates(runtime.terrestrial).position, state.date)
         )
     }
     override fun coverage(timeMillis: Long): List<GeoPos> {

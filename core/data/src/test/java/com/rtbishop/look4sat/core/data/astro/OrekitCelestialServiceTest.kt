@@ -26,6 +26,9 @@ class OrekitCelestialServiceTest {
         assertEquals(Math.toDegrees(expectedSun.elevation), service.sun(observer, millis).elevation, 1e-9)
         assertEquals(Math.toDegrees(expectedMoon.azimuth), service.moon(observer, millis).azimuth, 1e-9)
         assertEquals(Math.toDegrees(expectedMoon.elevation), service.moon(observer, millis).elevation, 1e-9)
+        val moonGround = data.earth.transform(data.moon.getPosition(date, data.inertial), data.inertial, date)
+        assertEquals(Math.toDegrees(moonGround.latitude), service.moon(observer, millis).latitude, 1e-9)
+        assertEquals(Math.toDegrees(moonGround.longitude), service.moon(observer, millis).longitude, 1e-9)
     }
 
     @Test fun riseSetHonorsTheSolarCenterThresholdAndDaylightSavingDayLength() {

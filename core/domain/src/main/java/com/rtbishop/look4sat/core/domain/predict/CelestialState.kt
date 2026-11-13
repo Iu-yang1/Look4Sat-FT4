@@ -9,7 +9,8 @@ object CelestialState {
 
     data class MoonPosition(
         val azimuth: Double, val elevation: Double, val rightAscension: Double, val declination: Double,
-        val gha: Double, val angularDiameter: Double, val radialVelocity: Double
+        val gha: Double, val angularDiameter: Double, val radialVelocity: Double,
+        val latitude: Double, val longitude: Double
     )
 
     data class RiseSetTimes(

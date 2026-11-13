@@ -891,7 +891,7 @@ private fun PassScheduleItem(
     val countdownTarget = if (isInProgress) pass.losTime else pass.aosTime
     val remainingSeconds = ((countdownTarget - now) / 1000L).coerceAtLeast(0L)
     val countdown = String.format(
-        Locale.getDefault(),
+        androidx.compose.ui.platform.LocalConfiguration.current.locales[0],
         "%02d:%02d:%02d",
         remainingSeconds / 3600L,
         (remainingSeconds % 3600L) / 60L,

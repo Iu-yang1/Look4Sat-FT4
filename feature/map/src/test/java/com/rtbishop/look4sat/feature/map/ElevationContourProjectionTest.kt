@@ -2,7 +2,6 @@ package com.rtbishop.look4sat.feature.map
 
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
-import com.rtbishop.look4sat.core.domain.predict.OrbitalPos
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -29,11 +28,7 @@ class ElevationContourProjectionTest {
     fun eastSideLabelsRemainPast180WhenSatelliteIsJustWestOfDateLine() {
         val map = mapCenteredAt(179.0)
         try {
-            val satellite = OrbitalPos(
-                latitude = 0.0,
-                longitude = Math.toRadians(179.0),
-                altitude = 550.0
-            )
+            val satellite = contourFixture(0.0, 179.0)
             for (angle in listOf(10.0, 20.0)) {
                 val ring = elevationContour(satellite, angle)
                 val anchor = ring[elevationContourLabelAnchorIndex(ring)!!]

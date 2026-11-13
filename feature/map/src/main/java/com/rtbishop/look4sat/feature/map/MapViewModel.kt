@@ -46,6 +46,7 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.collectLatest
@@ -53,6 +54,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.util.Date
 import kotlin.math.abs
 
@@ -516,10 +518,21 @@ class MapViewModel(
         }
     }
 
+    private suspend fun prepareFootprint(
+        target: OrbitalObject, position: OrbitalPos, time: Long
+    ): OrbitalPos = withContext(Dispatchers.Default) {
+        val context = kotlin.coroutines.coroutineContext
+        val contours = if (settingsRepo.mapElevationContoursEnabled.value) {
+            settingsRepo.mapElevationAngles.value.associateWith { angle ->
+                position.surfaceGeometry?.contour(angle) { context.ensureActive() }.orEmpty()
+            }
+        } else emptyMap()
+        position.copy(rangeBoundary = satelliteRepo.getCoverage(target, time), elevationContours = contours)
+    }
+
     /**
-     * Combined update: computes all satellite positions in parallel, then derives
-     * the selected satellite's footprint and info panel data from the same batch,
-     * and emits a single state update to avoid redundant recompositions.
+     * Compute satellite positions and selected-satellite geometry together, then
+     * publish one state update for the map.
      */
     private suspend fun updateMapState(
         selected: OrbitalObject,
@@ -532,7 +545,7 @@ class MapViewModel(
 
         // 2. Derive footprint, info data, sun and moon position from already-computed state
         val satPos = predicted ?: satelliteRepo.getPosition(selected, pos, date.time)
-        val footprint = satPos.copy(rangeBoundary = satelliteRepo.getCoverage(selected, date.time))
+        val footprint = prepareFootprint(selected, satPos, date.time)
         val mapData = buildMapData(selected, satPos, date)
         val sunPos = satelliteRepo.celestial.sun(stationPos, date.time, selected.snapshot)
         val moonPos = satelliteRepo.celestial.moon(stationPos, date.time, selected.snapshot)
@@ -550,8 +563,8 @@ class MapViewModel(
                 orbitalPass = mapData.second,
                 sunLatDeg = sunPos.latitude,
                 sunLonDeg = sunPos.longitude,
-                moonLatDeg = moonPos.declination, // sub-lunar latitude = declination
-                moonLonDeg = if (moonPos.gha <= 180.0) -moonPos.gha else 360.0 - moonPos.gha,
+                moonLatDeg = moonPos.latitude,
+                moonLonDeg = moonPos.longitude,
                 mapTimeMs = date.time
             )
         }
@@ -568,7 +581,7 @@ class MapViewModel(
      */
     private suspend fun updateScrubbedState(selected: OrbitalObject, pos: GeoPos, date: Date) {
         val satPos = satelliteRepo.getPosition(selected, pos, date.time)
-        val footprint = satPos.copy(rangeBoundary = satelliteRepo.getCoverage(selected, date.time))
+        val footprint = prepareFootprint(selected, satPos, date.time)
         val (predictedData, detectedPass) = buildMapData(selected, satPos, date)
         val chosenPass = radarPass ?: detectedPass
         val mapData = if (passWindow != null) {
@@ -588,8 +601,8 @@ class MapViewModel(
                 orbitalPass = chosenPass,
                 sunLatDeg = sunPos.latitude,
                 sunLonDeg = sunPos.longitude,
-                moonLatDeg = moonPos.declination, // sub-lunar latitude = declination
-                moonLonDeg = if (moonPos.gha <= 180.0) -moonPos.gha else 360.0 - moonPos.gha,
+                moonLatDeg = moonPos.latitude,
+                moonLonDeg = moonPos.longitude,
                 mapTimeMs = date.time,
                 // Auto playback does not seize the camera from the user's panning.
                 // A manual seek still follows the satellite as the thumb moves.

@@ -15,41 +15,11 @@ import org.osmdroid.views.Projection
 import org.osmdroid.views.overlay.FolderOverlay
 import org.osmdroid.views.overlay.Overlay
 import org.osmdroid.views.overlay.Polyline
-import kotlin.math.acos
-import kotlin.math.asin
-import kotlin.math.atan2
-import kotlin.math.cos
-import kotlin.math.sin
-import kotlin.math.sqrt
 import kotlin.math.round
 
-/**
- * Equal-elevation contours: the observer's look angle to the satellite is constant at
- * each point of a contour. The sub-satellite point is the spherical-circle centre.
- * altitude and EARTH_RADIUS are in km, lat/lon in radians in OrbitalPos.
- */
-internal fun elevationContour(satellite: OrbitalPos, elevationDegrees: Double): List<GeoPoint> {
-    if (elevationDegrees !in 0.0..90.0 || satellite.altitude <= 0.0) return emptyList()
-    val earthRadiusKm = 6370.0
-    val ratio = earthRadiusKm / (earthRadiusKm + satellite.altitude)
-    val elevation = Math.toRadians(elevationDegrees)
-    // sin(elevation) = (cos(beta) - ratio) / sqrt(1 + ratio^2 - 2*ratio*cos(beta)).
-    // This closed form chooses the physical, near-side solution.
-    val cosBeta = ratio * cos(elevation).let { it * it } +
-        sin(elevation) * kotlin.math.sqrt(1.0 - ratio * ratio * cos(elevation) * cos(elevation))
-    val beta = acos(cosBeta.coerceIn(-1.0, 1.0))
-    val sinLat = sin(satellite.latitude)
-    val cosLat = cos(satellite.latitude)
-    return (0..360).map { step ->
-        val bearing = Math.toRadians(step.toDouble())
-        val lat = asin((sinLat * cos(beta) + cosLat * sin(beta) * cos(bearing)).coerceIn(-1.0, 1.0))
-        val lon = satellite.longitude + atan2(
-            sin(bearing) * sin(beta) * cosLat,
-            cos(beta) - sinLat * sin(lat)
-        )
-        GeoPoint(Math.toDegrees(lat), Math.toDegrees(lon))
-    }
-}
+/** Rendering consumes contours already computed by the orbital backend off the UI thread. */
+internal fun elevationContour(satellite: OrbitalPos, elevationDegrees: Double): List<GeoPoint> =
+    satellite.elevationContours[elevationDegrees].orEmpty().map { GeoPoint(it.latitude, it.longitude) }
 
 /**
  * Contours are sampled at one-degree bearings starting from north.
@@ -126,19 +96,8 @@ private val LOCAL_ELEVATION_YELLOW = 0xFFF5E6A6.toInt()
  * selected satellite and scrubbed instant (MapState.footprint).
  */
 internal fun elevationAtGroundStation(satellite: OrbitalPos?, station: GeoPos?): Double? {
-    if (satellite == null || station == null || !satellite.altitude.isFinite() ||
-        satellite.altitude <= 0.0
-    ) return null
-
-    val observerLat = Math.toRadians(station.latitude)
-    val observerLon = Math.toRadians(station.longitude)
-    val cosCentralAngle = (
-        sin(satellite.latitude) * sin(observerLat) +
-        cos(satellite.latitude) * cos(observerLat) * cos(satellite.longitude - observerLon)
-    ).coerceIn(-1.0, 1.0)
-    val earthToSatelliteRadius = 6370.0 / (6370.0 + satellite.altitude)
-    val sinCentralAngle = sqrt((1.0 - cosCentralAngle * cosCentralAngle).coerceAtLeast(0.0))
-    return Math.toDegrees(atan2(cosCentralAngle - earthToSatelliteRadius, sinCentralAngle))
+    if (station == null) return null
+    return satellite?.surfaceGeometry?.elevationDegrees(station)
 }
 
 internal class ElevationContourOverlay : FolderOverlay() {

@@ -257,6 +257,39 @@ class MutualViewModelTest {
     // --------------------------------------------------- query: happy path
 
     @Test
+    fun `match curves request paired directions without full eclipse positions`() =
+        runTest(mainDispatcherRule.dispatcher.scheduler) {
+            val reference = com.rtbishop.look4sat.core.domain.predict.legacy.LegacyOrbitEngine()
+            var pairedSamples = 0
+            val orbit = object : com.rtbishop.look4sat.core.domain.astro.IOrbitEngine by reference {
+                override fun openSession(target: OrbitalObject): com.rtbishop.look4sat.core.domain.astro.IOrbitSession {
+                    val session = reference.openSession(target)
+                    return object : com.rtbishop.look4sat.core.domain.astro.IOrbitSession by session {
+                        override fun position(observer: GeoPos, timeMillis: Long) =
+                            error("Matching must not calculate full eclipse/footprint positions")
+                        override fun directions(observers: List<GeoPos>, timeMillis: Long):
+                            List<com.rtbishop.look4sat.core.domain.astro.OrbitDirection> {
+                            assertEquals(2, observers.size)
+                            pairedSamples++
+                            return session.directions(observers, timeMillis)
+                        }
+                    }
+                }
+            }
+            val vm = MutualViewModel(
+                FakeSatelliteRepo(listOf(TestOrbits.ISS), orbit = orbit),
+                FakeSettingsRepo(TestOrbits.GUANGZHOU),
+                StandardTestDispatcher(mainDispatcherRule.dispatcher.scheduler),
+                nowMillis = { TestOrbits.FIXTURE_BASE }
+            )
+            vm.onStationBGrid("OL62")
+            queryAndSettle(vm)
+            assertTrue(vm.uiState.value.mutualPasses.isNotEmpty())
+            assertTrue(pairedSamples > 0)
+            assertFalse(vm.uiState.value.isCalculating)
+        }
+
+    @Test
     fun `query finds mutual passes with independent pass search`() = runTest(mainDispatcherRule.dispatcher.scheduler) {
         val windows = TestOrbits.findPassWindows(hoursAhead = 24)
         assertTrue("test fixture must produce ISS passes over Guangzhou", windows.isNotEmpty())

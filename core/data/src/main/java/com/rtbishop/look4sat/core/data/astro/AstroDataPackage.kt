@@ -49,6 +49,26 @@ internal data class AstroPackageMetadata(
 internal data class AstroPackageFile(val name: String, val bytes: Long, val sha256: String)
 
 internal object AstroDataPackage {
+    fun metadata(directory: File): AstroPackageMetadata =
+        AstroPackageMetadata.parse(File(directory, "manifest.json").readText())
+
+    /**
+     * Private installed generations are immutable. Rehash file contents only when their
+     * manifest, sizes or modification times change, or there is no accepted receipt yet.
+     */
+    fun fingerprint(directory: File, metadata: AstroPackageMetadata): String {
+        val digest = MessageDigest.getInstance("SHA-256")
+        digest.update(File(directory, "manifest.json").readBytes())
+        metadata.files.forEach { entry ->
+            val file = File(directory, entry.name)
+            require(file.isFile && file.length() == entry.bytes) {
+                "Package size mismatch: ${entry.name}"
+            }
+            digest.update("\n${entry.name}:${file.length()}:${file.lastModified()}".toByteArray(Charsets.UTF_8))
+        }
+        return digest.digest().joinToString("") { "%02x".format(it.toInt() and 255) }
+    }
+
     fun extract(archive: File, directory: File, checkCancelled: () -> Unit): AstroPackageMetadata {
         check(directory.mkdirs())
         ZipFile(archive).use { zip ->
@@ -85,7 +105,7 @@ internal object AstroDataPackage {
     }
 
     fun verify(directory: File, checkCancelled: () -> Unit): AstroPackageMetadata {
-        val metadata = AstroPackageMetadata.parse(File(directory, "manifest.json").readText())
+        val metadata = metadata(directory)
         metadata.files.forEach { file ->
             val source = File(directory, file.name)
             require(source.length() == file.bytes) { "Package size mismatch: ${file.name}" }

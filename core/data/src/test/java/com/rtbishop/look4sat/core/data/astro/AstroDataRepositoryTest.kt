@@ -50,15 +50,21 @@ class AstroDataRepositoryTest {
             assertEquals(0, requests)
             assertEquals(1, opens)
             assertTrue(repository.state.value.builtIn)
+            assertEquals(repository.state.value.generation, preferences.getString("verifiedGeneration", null))
+            assertFalse(preferences.getString("verifiedFingerprint", "").isNullOrBlank())
             val pinned = repository.snapshot()
             assertEquals(1577836800000L, pinned.coverageStartMillis)
             assertEquals(2556144000000L, pinned.coverageEndMillis)
+            val restoreDiagnostics = ControlDiagnosticsBuffer()
             val restored = AstroDataRepository(root, preferences, client, scope,
-                ControlDiagnosticsBuffer(), { UpdateSource.GITHUB },
+                restoreDiagnostics, { UpdateSource.GITHUB },
                 bundledArchive = { error("Existing valid data must be reused") })
             withTimeout(30000) { restored.state.first { it.phase == AstroDataPhase.READY } }
             assertTrue(restored.state.value.builtIn)
             assertEquals(repository.state.value.generation, restored.state.value.generation)
+            assertTrue(restoreDiagnostics.events.value.any {
+                it.stage == "astro/startup" && it.message.contains("cached=true")
+            })
 
             repository.download()
             withTimeout(10000) { repository.state.first { it.phase == AstroDataPhase.FAILED } }
@@ -84,6 +90,34 @@ class AstroDataRepositoryTest {
             assertTrue(repository.state.value.builtIn)
             assertNotEquals("generation-aabb", repository.state.value.generation)
             assertEquals(repository.state.value.generation, preferences.getString("activeDirectory", null))
+        } finally { scope.cancel(); root.deleteRecursively() }
+    }
+
+    @Test fun changedFileInvalidatesAcceptedReceiptAndRecoversBundledData() = runBlocking<Unit> {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val preferences = context.getSharedPreferences(UUID.randomUUID().toString(), Context.MODE_PRIVATE)
+        val root = Files.createTempDirectory("astro-receipt-recovery-").toFile()
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val client = OkHttpClient.Builder().addInterceptor { error("Restore must stay offline") }.build()
+        try {
+            fun repository() = AstroDataRepository(root, preferences, client, scope,
+                ControlDiagnosticsBuffer(), { UpdateSource.GITHUB },
+                bundledArchive = { context.assets.open("astronomy/orekit-data.zip") })
+            val original = repository()
+            withTimeout(30000) { original.state.first { it.phase == AstroDataPhase.READY } }
+            val generation = original.state.value.generation!!
+            val file = java.io.File(root, "$generation/UTC-TAI.history")
+            val modified = file.lastModified()
+            java.io.RandomAccessFile(file, "rw").use { stream ->
+                val first = stream.read()
+                stream.seek(0)
+                stream.write(first xor 1)
+            }
+            assertTrue(file.setLastModified(modified + 10_000))
+            val recovered = repository()
+            withTimeout(30000) { recovered.state.first { it.phase == AstroDataPhase.READY } }
+            assertNotEquals(generation, recovered.state.value.generation)
+            assertTrue(recovered.state.value.builtIn)
         } finally { scope.cancel(); root.deleteRecursively() }
     }
 

@@ -87,6 +87,7 @@ import com.rtbishop.look4sat.core.presentation.R
 import com.rtbishop.look4sat.core.presentation.LocalSpacing
 import com.rtbishop.look4sat.core.presentation.layoutPadding
 import com.rtbishop.look4sat.core.presentation.SharedDialog
+import com.rtbishop.look4sat.core.presentation.StartupLoadingStatus
 import com.rtbishop.look4sat.core.presentation.SwipeableItem
 import com.rtbishop.look4sat.core.presentation.TimerRow
 import com.rtbishop.look4sat.core.presentation.TopBar
@@ -107,6 +108,7 @@ fun PassesDestination(
     val container = (context.applicationContext as IContainerProvider).getMainContainer()
     val viewModel: PassesViewModel = viewModel(factory = PassesViewModel.factory(container))
     val uiState = viewModel.uiState.collectAsStateWithLifecycle().value
+    com.rtbishop.look4sat.core.presentation.ContentDrawTiming("passes", uiState.itemsList.isNotEmpty())
     val stationPosition = container.settingsRepo.stationPosition.collectAsStateWithLifecycle().value
     val passListFontScale = container.settingsRepo.otherSettings.collectAsStateWithLifecycle().value.passListFontScale
     PassesScreen(
@@ -261,16 +263,20 @@ private fun PassesList(
             state = refreshState,
             onRefresh = { onAction(PassesAction.RefreshPasses) },
             indicator = {
-                PullToRefreshDefaults.Indicator(
-                    state = refreshState,
-                    isRefreshing = isRefreshing,
-                    color = MaterialTheme.colorScheme.background,
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.align(Alignment.TopCenter),
-                )
+                if (passes.isNotEmpty()) {
+                    PullToRefreshDefaults.Indicator(
+                        state = refreshState,
+                        isRefreshing = isRefreshing,
+                        color = MaterialTheme.colorScheme.background,
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.align(Alignment.TopCenter),
+                    )
+                }
             }
         ) {
-            if (passes.isEmpty()) {
+            if (passes.isEmpty() && isRefreshing) {
+                StartupLoadingStatus(localDataReady = true)
+            } else if (passes.isEmpty()) {
                 EmptyListCard(message = stringResource(R.string.pass_empty_list_message))
             } else {
                 AnimatedContent(

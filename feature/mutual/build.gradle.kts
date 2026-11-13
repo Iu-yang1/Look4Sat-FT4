@@ -6,6 +6,7 @@ android {
     namespace = "com.rtbishop.look4sat.feature.mutual"
     testOptions {
         unitTests {
+            isReturnDefaultValues = true
             // Robolectric needs real Android resources for Compose UI tests.
             isIncludeAndroidResources = true
         }

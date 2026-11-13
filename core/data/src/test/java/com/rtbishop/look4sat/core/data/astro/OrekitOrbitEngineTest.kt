@@ -81,6 +81,21 @@ class OrekitOrbitEngineTest {
         assertTrue(kotlin.math.abs(high.elevation - low.elevation) > 1e-6)
     }
 
+    @Test fun lightweightMultiStationDirectionsMatchFullPositionResults() {
+        val session = AstroTestData.engine.openSession(AstroTestData.engine.bind(vallado))
+        val observers = listOf(GeoPos(23.13, 113.26), GeoPos(22.54, 114.06, 1500.0),
+            GeoPos(89.9, -179.9))
+        for (date in listOf(time("2000-06-27T19:00:00Z"), time("2000-06-28T12:00:00Z"))) {
+            val directions = session.directions(observers, date)
+            assertEquals(observers.size, directions.size)
+            observers.zip(directions).forEach { (observer, direction) ->
+                val reference = session.position(observer, date)
+                assertEquals(reference.azimuth, direction.azimuth, 1e-12)
+                assertEquals(reference.elevation, direction.elevation, 1e-12)
+            }
+        }
+    }
+
     @Test fun realWindowsRespectTheHorizonAndClipFlags() {
         val session = AstroTestData.engine.openSession(AstroTestData.engine.bind(vallado))
         val start = time("2000-06-28T00:00:00Z")
@@ -101,6 +116,41 @@ class OrekitOrbitEngineTest {
         val first = windows.first { it.losTime - it.aosTime > 30000 }
         val clipped = session.passes(observer, first.aosTime + 10000, first.losTime - 10000).single()
         assertTrue(clipped.startClipped && clipped.endClipped && clipped.continuousVisibility)
+    }
+
+    @Test fun sharedFrameEventSamplesMatchOrekitNativeDetectorsAcrossOrbitTypes() {
+        val runtime = AstroTestData.runtime
+        val observer = GeoPos(23.13, 113.26)
+        val start = time("2000-06-28T00:00:00Z")
+        val end = start + 86400000
+        val configurations = listOf(
+            vallado,
+            vallado.copy(meanmo = 13.5328, incl = 98.5, eccn = .035),
+            vallado.copy(meanmo = 2.006, incl = 63.4, eccn = .7, bstar = 0.0),
+            vallado.copy(meanmo = 1.0027, incl = .1, eccn = .001, bstar = 0.0)
+        )
+        for (elements in configurations) {
+            val logger = org.orekit.propagation.events.EventsLogger()
+            val propagator = org.orekit.propagation.analytical.tle.TLEPropagator.selectExtrapolator(
+                orekitTle(elements, runtime), runtime.teme)
+            val detector = org.orekit.propagation.events.ElevationDetector(runtime.station(observer))
+                .withConstantElevation(0.0).withMaxCheck(15.0).withThreshold(.001)
+                .withHandler(org.orekit.propagation.events.handlers.ContinueOnEvent())
+            propagator.addEventDetector(logger.monitorDetector(detector))
+            propagator.propagate(runtime.date(start), runtime.date(end))
+            val reference = logger.loggedEvents.map { it.state.date.toDate(runtime.utc).time }
+            val windows = AstroTestData.engine.openSession(AstroTestData.engine.bind(elements))
+                .passes(observer, start, end)
+            val actual = windows.flatMap { window -> buildList {
+                if (!window.startClipped) add(window.aosTime)
+                if (!window.endClipped) add(window.losTime)
+            } }
+            assertEquals(reference.size, actual.size)
+            reference.zip(actual).forEach { (expected, found) ->
+                assertTrue("Native event boundary differs by more than 1 s",
+                    kotlin.math.abs(expected - found) <= 1000)
+            }
+        }
     }
 
     @Test fun missingDataDoesNotFallBackToTheHistoricalPropagator() {

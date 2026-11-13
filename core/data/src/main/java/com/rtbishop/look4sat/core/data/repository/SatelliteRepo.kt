@@ -123,7 +123,9 @@ class SatelliteRepo(
             settingsRepo.selectedIds, settingsRepo.stationPosition, settingsRepo.databaseState,
             settingsRepo.otherSettings.map { it.stateOfUtc }.distinctUntilChanged(),
             astroData.state.map { it.generation }.distinctUntilChanged()
-        ) { ids, _, database, utc, generation -> listOf(ids, database.contentVersion, utc, generation) }
+        ) { ids, position, database, utc, generation ->
+            listOf(ids, position, database.contentVersion, utc, generation)
+        }.distinctUntilChanged()
             .collectLatest {
                 if (!astroData.state.value.ready) {
                     targets.value = emptyList()
@@ -194,6 +196,7 @@ class SatelliteRepo(
             coroutineContext.ensureActive()
             val generation = calculationGeneration.begin()
             val next = launch(start = CoroutineStart.LAZY) {
+                val started = System.nanoTime()
                 calculating.value = true
                 try {
                     if (!astroData.state.value.ready) {
@@ -202,14 +205,39 @@ class SatelliteRepo(
                     }
                     val activeModes = modes.map(String::trim).filter(String::isNotEmpty)
                     val ids = if (activeModes.isEmpty()) emptyList() else localStorage.getIdsWithModes(activeModes)
+                    fun matches(pass: OrbitalPass) = pass.maxElevation > minElevation &&
+                        (pass.startClipped || isAosInRange(pass.aosTime, aosStartMinute,
+                            aosEndMinute, invertAosTimeWindow))
+                    // Cold loads can show completed windows while the remaining satellites
+                    // are still being predicted. Keep the refresh indicator until all finish.
+                    val partial = mutableListOf<OrbitalPass>()
+                    val publishPartial = mutablePasses.value.isEmpty()
+                    var lastPublication = 0L
                     val result = predict(filterSatellitesByModes(targets.value, activeModes, ids),
-                        settingsRepo.stationPosition.value, time, time + hoursAhead * 3600000L)
-                        .filter { pass ->
-                            pass.maxElevation > minElevation &&
-                                (pass.startClipped || isAosInRange(pass.aosTime, aosStartMinute,
-                                    aosEndMinute, invertAosTimeWindow))
+                        settingsRepo.stationPosition.value, time, time + hoursAhead * 3600000L,
+                        onProgress = if (!publishPartial) null else { windows ->
+                            synchronized(partial) {
+                                partial.addAll(windows.filter(::matches))
+                                val now = System.nanoTime()
+                                if (partial.isNotEmpty() && now - lastPublication >= 250_000_000 &&
+                                    calculationGeneration.isLatest(generation)) {
+                                    mutablePasses.value = partial.sortedBy { it.aosTime }
+                                    lastPublication = now
+                                }
+                            }
                         }
-                    if (calculationGeneration.isLatest(generation)) mutablePasses.value = result
+                    ).filter(::matches)
+                    if (calculationGeneration.isLatest(generation)) {
+                        mutablePasses.value = result
+                        diagnostics?.record(
+                            com.rtbishop.look4sat.core.domain.control.ControlDiagnosticSource.RADIO,
+                            "orbit/loading",
+                            "page=passes targets=${targets.value.size} windows=${result.size} " +
+                                "hours=$hoursAhead elapsedMs=${(System.nanoTime() - started) / 1_000_000}")
+                        android.util.Log.i("Look4SatStartup",
+                            "page=passes predictionComplete targets=${targets.value.size} windows=${result.size} " +
+                                "elapsedMs=${(System.nanoTime() - started) / 1_000_000}")
+                    }
                 } finally {
                     if (calculationGeneration.isLatest(generation)) calculating.value = false
                 }
@@ -225,13 +253,16 @@ class SatelliteRepo(
         }
     }
 
-    private suspend fun predict(satellites: List<OrbitalObject>, observer: GeoPos, start: Long, end: Long) =
+    private suspend fun predict(
+        satellites: List<OrbitalObject>, observer: GeoPos, start: Long, end: Long,
+        onProgress: ((List<OrbitalPass>) -> Unit)? = null
+    ) =
         withContext(dispatcher) {
             if (end <= start) return@withContext emptyList<OrbitalPass>()
             satellites.orbitParallelMap { satellite ->
                 workers.withPermit {
                     val context = coroutineContext
-                    try {
+                    val windows = try {
                         orbit.openSession(satellite).passes(observer, start, end) { context.ensureActive() }
                             .also { synchronized(failures) {
                                 failures.value = failures.value - satellite.data.catnum
@@ -245,6 +276,8 @@ class SatelliteRepo(
                         recordFailure(satellite, error)
                         emptyList()
                     }
+                    onProgress?.invoke(windows)
+                    windows
                 }
             }.flatten().sortedBy { it.aosTime }
         }
@@ -253,9 +286,15 @@ class SatelliteRepo(
         minElevation: Double
     ): List<OrbitalPass> {
         if (!astroData.state.value.ready) return emptyList()
-        return predict(targets.value.filter { it.data.catnum in catNums },
+        val started = System.nanoTime()
+        val result = predict(targets.value.filter { it.data.catnum in catNums },
             settingsRepo.stationPosition.value, startTime, startTime + hoursAhead * 3600000L)
             .filter { it.maxElevation >= minElevation }
+        diagnostics?.record(
+            com.rtbishop.look4sat.core.domain.control.ControlDiagnosticSource.RADIO, "orbit/loading",
+            "page=schedule targets=${catNums.size} windows=${result.size} hours=$hoursAhead " +
+                "elapsedMs=${(System.nanoTime() - started) / 1_000_000}")
+        return result
     }
 
     private fun isAosInRange(time: Long, start: Int, end: Int, invert: Boolean): Boolean {

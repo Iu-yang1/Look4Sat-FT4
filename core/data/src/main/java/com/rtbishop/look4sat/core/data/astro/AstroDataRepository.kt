@@ -73,14 +73,26 @@ class AstroDataRepository(
 
     init {
         downloadJob = scope.launch(Dispatchers.IO) {
+            val started = System.nanoTime()
             val saved = preferences.getString("activeDirectory", null)
             if (saved != null) {
                 try {
                     require(saved.matches(Regex("generation-[a-f0-9-]+")))
                     val directory = File(root, saved)
                     val job = currentCoroutineContext()
-                    val metadata = AstroDataPackage.verify(directory) { job.ensureActive() }
-                    activate(OrekitRuntime(directory, metadata))
+                    val metadata = AstroDataPackage.metadata(directory)
+                    val fingerprint = AstroDataPackage.fingerprint(directory, metadata)
+                    val accepted = preferences.getString("verifiedGeneration", null) == saved &&
+                        preferences.getString("verifiedFingerprint", null) == fingerprint
+                    if (!accepted) AstroDataPackage.verify(directory) { job.ensureActive() }
+                    recordStartup("restore-files", started, "cached=$accepted")
+                    val runtime = OrekitRuntime(directory, metadata)
+                    if (!accepted) {
+                        runtime.validateCoverage { job.ensureActive() }
+                        rememberVerified(runtime, fingerprint)
+                    }
+                    activate(runtime)
+                    recordStartup("restore-ready", started)
                     return@launch
                 } catch (cancelled: CancellationException) {
                     throw cancelled
@@ -99,6 +111,7 @@ class AstroDataRepository(
             } else {
                 try {
                     installBundled()
+                    recordStartup("bundled-ready", started)
                 } catch (cancelled: CancellationException) {
                     throw cancelled
                 } catch (error: Exception) {
@@ -130,8 +143,9 @@ class AstroDataRepository(
             val metadata = AstroDataPackage.extract(temporary, directory) { job.ensureActive() }
             require(metadata.builtIn) { "Bundled data package is not marked as bundled" }
             val runtime = OrekitRuntime(directory, metadata)
+            runtime.validateCoverage { job.ensureActive() }
             job.ensureActive()
-            check(preferences.edit().putString("activeDirectory", generation).commit())
+            rememberVerified(runtime, AstroDataPackage.fingerprint(directory, metadata))
             activate(runtime)
         } finally {
             temporary.delete()
@@ -184,8 +198,9 @@ class AstroDataRepository(
                 mutableState.update { it.copy(phase = AstroDataPhase.VERIFYING) }
                 val metadata = AstroDataPackage.extract(temporary, directory) { context.ensureActive() }
                 val runtime = OrekitRuntime(directory, metadata)
+                runtime.validateCoverage { context.ensureActive() }
                 context.ensureActive()
-                check(preferences.edit().putString("activeDirectory", generation).commit())
+                rememberVerified(runtime, AstroDataPackage.fingerprint(directory, metadata))
                 activate(runtime)
             } catch (cancelled: CancellationException) {
                 mutableState.update { it.copy(
@@ -268,6 +283,20 @@ class AstroDataRepository(
                 "Unable to clean retired data generations: $error",
                 ControlDiagnosticSeverity.WARNING)
         }
+    }
+
+    private fun rememberVerified(runtime: OrekitRuntime, fingerprint: String) {
+        check(preferences.edit()
+            .putString("activeDirectory", runtime.directory.name)
+            .putString("verifiedGeneration", runtime.directory.name)
+            .putString("verifiedFingerprint", fingerprint).commit())
+    }
+
+    private fun recordStartup(stage: String, started: Long, details: String = "") {
+        val message = "stage=$stage elapsedMs=${(System.nanoTime() - started) / 1_000_000} $details"
+        diagnostics.record(ControlDiagnosticSource.RADIO, "astro/startup",
+            message)
+        android.util.Log.i("Look4SatStartup", message)
     }
 
     private fun retireUnusedGenerations() {

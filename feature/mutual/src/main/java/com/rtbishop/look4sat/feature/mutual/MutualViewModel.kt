@@ -33,6 +33,9 @@ import com.rtbishop.look4sat.core.domain.utility.positionToQth
 import com.rtbishop.look4sat.core.domain.utility.qthToPosition
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -40,6 +43,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import java.util.Locale
 import kotlin.math.PI
@@ -413,6 +418,7 @@ class MutualViewModel(
         queryJob?.cancel()
 
         queryJob = viewModelScope.launch {
+            val started = System.nanoTime()
             val now = nowMillis()
             // 转发器类型筛选: 使用硬编码 AMSAT Live 清单 (见 Sources):
             // FM = {SO-50, ISS ZARYA, AO-123}, Linear = {RS-44, FO-29,
@@ -468,6 +474,9 @@ class MutualViewModel(
                     errorMessage = errorMsg
                 )
             }
+            android.util.Log.i("Look4SatStartup",
+                "page=mutual predictionComplete targets=${filteredSatellites.size} " +
+                    "windows=${sortedResults.size} elapsedMs=${(System.nanoTime() - started) / 1_000_000}")
             onCompleted?.invoke(sortedResults)
         }
     }
@@ -509,31 +518,45 @@ class MutualViewModel(
         posA: GeoPos, posB: GeoPos,
         minElevADeg: Double, minElevBDeg: Double,
         time: Long, endTime: Long, sampleInterval: Long
+    ): List<MutualPass> = coroutineScope {
+        val permits = Semaphore((Runtime.getRuntime().availableProcessors() - 1).coerceIn(1, 4))
+        satellites.map { sat ->
+            async {
+                permits.withPermit {
+                    findSatelliteMutualPasses(sat, posA, posB, minElevADeg, minElevBDeg,
+                        time, endTime, sampleInterval)
+                }
+            }
+        }.awaitAll().flatten()
+    }
+
+    private suspend fun findSatelliteMutualPasses(
+        sat: OrbitalObject, posA: GeoPos, posB: GeoPos,
+        minElevADeg: Double, minElevBDeg: Double,
+        time: Long, endTime: Long, sampleInterval: Long
     ): List<MutualPass> {
         val results = mutableListOf<MutualPass>()
         val context = kotlin.coroutines.coroutineContext
-        for (sat in satellites) {
-            val session = satelliteRepo.orbit.openSession(sat)
-            // Recover real boundaries of a pass already underway at query start.
-            val margin = (sat.data.orbitalPeriod * 60000).toLong()
-            val searchStart = maxOf(time - margin, sat.snapshot?.coverageStartMillis ?: Long.MIN_VALUE)
-            val searchEnd = minOf(endTime + margin, sat.snapshot?.coverageEndMillis?.minus(1) ?: Long.MAX_VALUE)
-            val windowsA = session.passes(posA, searchStart, searchEnd) { context.ensureActive() }
-            val windowsB = session.passes(posB, searchStart, searchEnd) { context.ensureActive() }
-            var indexA = 0
-            var indexB = 0
-            while (indexA < windowsA.size && indexB < windowsB.size) {
-                context.ensureActive()
-                val a = windowsA[indexA]
-                val b = windowsB[indexB]
-                val start = maxOf(a.aosTime, b.aosTime)
-                val end = minOf(a.losTime, b.losTime)
-                if (end > start && end > time && start < endTime) {
-                    sampleMutualPass(session, posA, posB, start, end,
-                        minElevADeg, minElevBDeg, sampleInterval)?.let(results::add)
-                }
-                if (a.losTime <= b.losTime) indexA++ else indexB++
+        val session = satelliteRepo.orbit.openSession(sat)
+        // Recover real boundaries of a pass already underway at query start.
+        val margin = (sat.data.orbitalPeriod * 60000).toLong()
+        val searchStart = maxOf(time - margin, sat.snapshot?.coverageStartMillis ?: Long.MIN_VALUE)
+        val searchEnd = minOf(endTime + margin, sat.snapshot?.coverageEndMillis?.minus(1) ?: Long.MAX_VALUE)
+        val windowsA = session.passes(posA, searchStart, searchEnd) { context.ensureActive() }
+        val windowsB = session.passes(posB, searchStart, searchEnd) { context.ensureActive() }
+        var indexA = 0
+        var indexB = 0
+        while (indexA < windowsA.size && indexB < windowsB.size) {
+            context.ensureActive()
+            val a = windowsA[indexA]
+            val b = windowsB[indexB]
+            val start = maxOf(a.aosTime, b.aosTime)
+            val end = minOf(a.losTime, b.losTime)
+            if (end > start && end > time && start < endTime) {
+                sampleMutualPass(session, posA, posB, start, end,
+                    minElevADeg, minElevBDeg, sampleInterval)?.let(results::add)
             }
+            if (a.losTime <= b.losTime) indexA++ else indexB++
         }
         return results
     }
@@ -549,13 +572,15 @@ class MutualViewModel(
         val tracks = mutableListOf<TrackSample>()
         var maxElevA = 0.0
         var maxElevB = 0.0
+        val observers = listOf(posA, posB)
 
         var tSample = refinedAos
         val displayStep = maxOf(sampleInterval, (refinedLos - refinedAos) / 2000 + 1)
         while (true) {
             kotlin.coroutines.coroutineContext.ensureActive()
-            val fullA = session.position(posA, tSample)
-            val fullB = session.position(posB, tSample)
+            // Curves only need station directions, not eclipse, ground footprint,
+            // velocity or solar ephemerides. Propagate once for both stations.
+            val (fullA, fullB) = session.directions(observers, tSample)
             val elevA = Math.toDegrees(fullA.elevation)
             val elevB = Math.toDegrees(fullB.elevation)
             if (elevA > maxElevA) maxElevA = elevA

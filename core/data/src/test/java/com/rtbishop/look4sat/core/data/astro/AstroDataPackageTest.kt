@@ -88,4 +88,27 @@ class AstroDataPackageTest {
             }
         } finally { root.deleteRecursively() }
     }
+
+    @Test fun restoreReceiptChangesWithManifestOrInstalledFileMetadata() {
+        val root = Files.createTempDirectory("astro-receipt-").toFile()
+        try {
+            val metadata = AstroPackageMetadata.parse(manifest().toString())
+            val manifestFile = java.io.File(root, "manifest.json").apply {
+                writeText(manifest().toString())
+            }
+            metadata.files.forEach { java.io.File(root, it.name).writeBytes(byteArrayOf(1)) }
+            val original = AstroDataPackage.fingerprint(root, metadata)
+            assertEquals(original, AstroDataPackage.fingerprint(root, metadata))
+            val source = java.io.File(root, metadata.files.first().name)
+            assertTrue(source.setLastModified(source.lastModified() + 10_000))
+            val changed = AstroDataPackage.fingerprint(root, metadata)
+            assertNotEquals(original, changed)
+            manifestFile.appendText("\n")
+            assertNotEquals(changed, AstroDataPackage.fingerprint(root, metadata))
+            source.writeBytes(byteArrayOf(1, 2))
+            assertThrows(IllegalArgumentException::class.java) {
+                AstroDataPackage.fingerprint(root, metadata)
+            }
+        } finally { root.deleteRecursively() }
+    }
 }

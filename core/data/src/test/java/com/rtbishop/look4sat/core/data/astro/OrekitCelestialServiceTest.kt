@@ -11,6 +11,25 @@ import java.time.ZoneId
 class OrekitCelestialServiceTest {
     private fun time(iso: String) = Instant.parse(iso).toEpochMilli()
 
+    @Test fun sharedSolarHeadersReuseCompletedDayButStillHonorCancellation() {
+        val service = OrekitCelestialService(AstroTestData.repository)
+        val observer = GeoPos(51.5, -.1)
+        val start = time("2026-11-12T00:00:00Z")
+        var checks = 0
+        val first = service.riseSet(observer, start, start + 86400000, checkCancelled = { checks++ })
+        assertTrue(checks > 1)
+        checks = 0
+        val cached = service.riseSet(observer, start, start + 86400000, checkCancelled = { checks++ })
+        assertSame(first, cached)
+        assertEquals(1, checks)
+        assertThrows(kotlinx.coroutines.CancellationException::class.java) {
+            service.riseSet(observer, start, start + 86400000,
+                checkCancelled = { throw kotlinx.coroutines.CancellationException() })
+        }
+        val moved = service.riseSet(GeoPos(0.0, 0.0), start, start + 86400000)
+        assertNotEquals(first.riseTimeMillis, moved.riseTimeMillis)
+    }
+
     @Test fun geometricSunAndMoonUseThePinnedJplVectorsAndWgs84Station() {
         val data = AstroTestData.runtime
         val service = OrekitCelestialService(AstroTestData.repository)

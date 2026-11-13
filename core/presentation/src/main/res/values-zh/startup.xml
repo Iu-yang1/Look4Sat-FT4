@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="startup_loading_local">载入本地数据</string>
+    <string name="startup_local_ready">本地数据已载入</string>
+    <string name="startup_calculating_passes">计算卫星过境</string>
+</resources>

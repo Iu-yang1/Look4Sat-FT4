@@ -509,7 +509,12 @@ fun PassScheduleDestination(
         derivedStateOf { passes.filter { it.losTime > currentTime } }
     }
     var scheduleDays by remember { mutableStateOf<List<PassScheduleDay>>(emptyList()) }
+    com.rtbishop.look4sat.core.presentation.ContentDrawTiming("schedule", scheduleDays.isNotEmpty())
     LaunchedEffect(visiblePasses, isUtc, stationPosition) {
+        // Show satellite windows before computing the auxiliary solar headers.
+        scheduleDays = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+            groupPassScheduleByDate(visiblePasses, isUtc, stationPosition)
+        }
         scheduleDays = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
             groupPassScheduleByDate(visiblePasses, isUtc, stationPosition, container.satelliteRepo.celestial)
         }
@@ -798,7 +803,7 @@ private suspend fun groupPassScheduleByDate(
     passes: List<OrbitalPass>,
     isUtc: Boolean,
     stationPosition: GeoPos,
-    celestial: com.rtbishop.look4sat.core.domain.astro.ICelestialService
+    celestial: com.rtbishop.look4sat.core.domain.astro.ICelestialService? = null
 ): List<PassScheduleDay> {
     if (passes.isEmpty()) return emptyList()
     val displayTimeZone = if (isUtc) TimeZone.getTimeZone("UTC") else TimeZone.getDefault()
@@ -821,12 +826,14 @@ private suspend fun groupPassScheduleByDate(
         // Use a calendar day in the same time zone as the date grouping.
         val dateAnchor = dayPasses.first().aosTime
         val localMidnight = startOfDayMillis(dateAnchor, displayTimeZone)
-        val riseSet = findSunRiseSetForDisplayDay(stationPosition, localMidnight, celestial,
-            displayTimeZone, dayPasses.first().orbitalObject.snapshot)
+        val riseSet = celestial?.let {
+            findSunRiseSetForDisplayDay(stationPosition, localMidnight, it,
+                displayTimeZone, dayPasses.first().orbitalObject.snapshot)
+        }
         PassScheduleDay(
             label = label,
-            sunriseTime = if (riseSet.riseTimeMillis > 0L) timeFormatter.format(Date(riseSet.riseTimeMillis)) else "--:--",
-            sunsetTime = if (riseSet.setTimeMillis > 0L) timeFormatter.format(Date(riseSet.setTimeMillis)) else "--:--",
+            sunriseTime = riseSet?.riseTimeMillis?.takeIf { it > 0L }?.let { timeFormatter.format(Date(it)) } ?: "--:--",
+            sunsetTime = riseSet?.setTimeMillis?.takeIf { it > 0L }?.let { timeFormatter.format(Date(it)) } ?: "--:--",
             passes = dayPasses
         )
     }

@@ -68,10 +68,19 @@ interface IOrbitSurfaceGeometry {
     fun contour(elevationDegrees: Double, checkCancelled: () -> Unit = {}): List<GeoPos>
 }
 
+/** Geometric station direction in radians. */
+data class OrbitDirection(val azimuth: Double, val elevation: Double)
+
 /** Owned by one calculation; propagation workspaces are not shared between consumers. */
 interface IOrbitSession {
     val target: OrbitalObject
     fun position(observer: GeoPos, timeMillis: Long): OrbitalPos
+    /** Geometric directions in radians, sharing one propagated instant across observers. */
+    fun directions(observers: List<GeoPos>, timeMillis: Long): List<OrbitDirection> =
+        observers.map { observer ->
+            val position = position(observer, timeMillis)
+            OrbitDirection(position.azimuth, position.elevation)
+        }
     fun elevation(observer: GeoPos, timeMillis: Long): Double
     fun temeState(timeMillis: Long): TemeState
     fun coverage(timeMillis: Long): List<GeoPos>

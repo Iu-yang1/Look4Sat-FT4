@@ -8,6 +8,16 @@ import com.rtbishop.look4sat.core.domain.predict.GeoPos
 import kotlin.math.asin
 
 class OrekitCelestialService(private val data: IAstroDataRepository) : ICelestialService {
+    private data class RiseSetKey(
+        val generation: String, val observer: GeoPos,
+        val start: Long, val end: Long, val moon: Boolean
+    )
+    private val riseSetCache = object : LinkedHashMap<RiseSetKey, CelestialState.RiseSetTimes>(16, .75f, true) {
+        override fun removeEldestEntry(
+            eldest: MutableMap.MutableEntry<RiseSetKey, CelestialState.RiseSetTimes>?
+        ) = size > 64
+    }
+
     private fun runtime(snapshot: AstroDataSnapshot?) = (snapshot ?: data.snapshot()) as OrekitRuntime
 
     override fun sun(observer: GeoPos, timeMillis: Long, snapshot: AstroDataSnapshot?): CelestialState.SunPosition {
@@ -45,6 +55,9 @@ class OrekitCelestialService(private val data: IAstroDataRepository) : ICelestia
     override fun riseSet(observer: GeoPos, startMillis: Long, endMillis: Long, moon: Boolean,
                          snapshot: AstroDataSnapshot?, checkCancelled: () -> Unit): CelestialState.RiseSetTimes {
         val runtime = runtime(snapshot)
+        checkCancelled()
+        val key = RiseSetKey(runtime.cacheIdentity, observer, startMillis, endMillis, moon)
+        synchronized(riseSetCache) { riseSetCache[key] }?.let { return it }
         val station = runtime.station(observer)
         val body = if (moon) runtime.moon else runtime.sun
         val threshold = if (moon) 0.0 else Math.toRadians(-0.8333)
@@ -59,8 +72,11 @@ class OrekitCelestialService(private val data: IAstroDataRepository) : ICelestia
         val events = eventBoundaries(startMillis, endMillis, value, derivative, { 30_000 }, checkCancelled)
         val rise = events.firstOrNull { value((it + 1000).coerceAtMost(endMillis)) > 0 } ?: 0L
         val set = events.firstOrNull { value((it + 1000).coerceAtMost(endMillis)) < 0 } ?: 0L
-        return CelestialState.RiseSetTimes(rise, set,
+        val result = CelestialState.RiseSetTimes(rise, set,
             alwaysAbove = events.isEmpty() && value(startMillis) > 0,
             alwaysBelow = events.isEmpty() && value(startMillis) <= 0)
+        checkCancelled()
+        synchronized(riseSetCache) { riseSetCache[key] = result }
+        return result
     }
 }

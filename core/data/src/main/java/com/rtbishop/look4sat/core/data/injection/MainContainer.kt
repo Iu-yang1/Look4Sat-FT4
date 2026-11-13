@@ -127,7 +127,8 @@ class MainContainer(private val context: Context) : IMainContainer {
         appScope, controlDiagnostics, { com.rtbishop.look4sat.core.domain.model.UpdateSource.AUTO },
         bundledArchive = { context.assets.open("astronomy/orekit-data.zip") }
     )
-    private val orbitEngine = com.rtbishop.look4sat.core.data.astro.OrekitOrbitEngine(astroData)
+    private val orbitEngine = com.rtbishop.look4sat.core.data.astro.OrekitOrbitEngine(
+        astroData, java.io.File(context.cacheDir, "orbit-passes"))
     private val celestialService = com.rtbishop.look4sat.core.data.astro.OrekitCelestialService(astroData)
     override val satelliteRepo = provideSatelliteRepo()
     override val databaseRepo = provideDatabaseRepo()

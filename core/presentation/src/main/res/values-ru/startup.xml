@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="startup_loading_local">Загрузка локальных данных</string>
+    <string name="startup_local_ready">Локальные данные загружены</string>
+    <string name="startup_calculating_passes">Расчёт пролётов спутников</string>
+</resources>

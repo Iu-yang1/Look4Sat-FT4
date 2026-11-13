@@ -39,7 +39,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
@@ -119,13 +121,11 @@ class PassesViewModel(
                     .filter { pass -> pass.losTime >= historyCutoff }
                 val processed = computePassProgress(filtered, timeNow)
                 val (nextPass, nextTime, isAos) = resolveNextPass(processed, timeNow)
-                val sunTimes = withContext(Dispatchers.Default) { computeSunTimes(processed, isUtc) }
                 val grouped = groupPasses(processed, isUtc)
                 _uiState.update {
                     it.copy(
                         itemsList = processed,
                         groupedPasses = grouped,
-                        sunTimes = sunTimes,
                         nextPass = nextPass,
                         nextTime = nextTime,
                         isNextTimeAos = isAos,
@@ -135,6 +135,25 @@ class PassesViewModel(
                     )
                 }
             }
+        }
+        // Solar headers must not hold back ready satellite rows or their countdown.
+        viewModelScope.launch {
+            val calendarTicks = flow {
+                while (true) {
+                    emit(Unit)
+                    delay(60_000L)
+                }
+            }
+            combine(satelliteRepo.passes, settingsRepo.stationPosition,
+                settingsRepo.otherSettings.map { it.stateOfUtc }.distinctUntilChanged(), calendarTicks,
+                satelliteRepo.isCalculating
+            ) { passes, _, isUtc, _, calculating ->
+                (if (calculating) emptyList() else passes) to isUtc
+            }
+                .collectLatest { (passes, isUtc) ->
+                    val sunTimes = withContext(Dispatchers.Default) { computeSunTimes(passes, isUtc) }
+                    _uiState.update { it.copy(sunTimes = sunTimes) }
+                }
         }
     }
 

@@ -124,6 +124,8 @@ fun AstroDataGate(
                 modifier = Modifier.padding(12.dp), style = MaterialTheme.typography.bodySmall)
             Box(Modifier.weight(1f)) { content() }
         }
+    } else if (state.phase == AstroDataPhase.LOADING) {
+        StartupLoadingStatus()
     } else {
         Column(Modifier.fillMaxWidth().padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             Text(stringResource(R.string.astro_title), style = MaterialTheme.typography.titleLarge)

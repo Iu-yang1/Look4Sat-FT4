@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="startup_loading_local">Cargando datos locales</string>
+    <string name="startup_local_ready">Datos locales cargados</string>
+    <string name="startup_calculating_passes">Calculando pasos de satélites</string>
+</resources>

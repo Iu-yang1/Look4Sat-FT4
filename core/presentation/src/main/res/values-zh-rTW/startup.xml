@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="startup_loading_local">載入本機資料</string>
+    <string name="startup_local_ready">本機資料已載入</string>
+    <string name="startup_calculating_passes">計算衛星過境</string>
+</resources>

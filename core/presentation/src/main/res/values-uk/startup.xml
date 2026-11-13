@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="startup_loading_local">Завантаження локальних даних</string>
+    <string name="startup_local_ready">Локальні дані завантажено</string>
+    <string name="startup_calculating_passes">Обчислення прольотів супутників</string>
+</resources>

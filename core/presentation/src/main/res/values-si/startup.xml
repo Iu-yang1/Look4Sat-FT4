@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="startup_loading_local">දේශීය දත්ත පූරණය වෙමින්</string>
+    <string name="startup_local_ready">දේශීය දත්ත පූරණය විය</string>
+    <string name="startup_calculating_passes">චන්ද්‍රිකා ගමන් ගණනය වෙමින්</string>
+</resources>

@@ -4,6 +4,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.yield
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.coroutines.coroutineContext
 
@@ -25,6 +26,7 @@ internal suspend fun <T, R> List<T>.orbitParallelMap(
                 val index = next.getAndIncrement()
                 if (index >= size) break
                 results[index] = transform(this@orbitParallelMap[index])
+                yield()
             }
         }
     }.awaitAll()

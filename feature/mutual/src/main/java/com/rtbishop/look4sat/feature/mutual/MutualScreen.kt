@@ -91,6 +91,11 @@ fun MutualScreen(
     modifier: Modifier = Modifier
 ) {
     val state by viewModel.uiState.collectAsState()
+    androidx.compose.runtime.key(viewModel.queryGeneration) {
+        com.rtbishop.look4sat.core.presentation.ContentDrawTiming(
+            "mutual", state.hasSearched && !state.isCalculating && state.errorMessage == null
+        )
+    }
 
     ScreenColumn(
         removeLightThemePanelBackground = true,

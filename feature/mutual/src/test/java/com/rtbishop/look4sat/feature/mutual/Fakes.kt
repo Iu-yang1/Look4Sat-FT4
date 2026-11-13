@@ -46,9 +46,10 @@ import kotlinx.coroutines.flow.StateFlow
  */
 class FakeSatelliteRepo(
     satellites: List<OrbitalObject> = emptyList(),
-    passes: List<OrbitalPass> = emptyList()
+    passes: List<OrbitalPass> = emptyList(),
+    override val orbit: com.rtbishop.look4sat.core.domain.astro.IOrbitEngine =
+        com.rtbishop.look4sat.core.domain.predict.legacy.LegacyOrbitEngine()
 ) : ISatelliteRepo {
-    override val orbit = com.rtbishop.look4sat.core.domain.predict.legacy.LegacyOrbitEngine()
 
     override val satellites = MutableStateFlow(satellites)
     override val passes = MutableStateFlow(passes)

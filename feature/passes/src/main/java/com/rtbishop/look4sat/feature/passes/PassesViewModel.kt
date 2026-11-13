@@ -259,10 +259,7 @@ class PassesViewModel(
     private fun groupPasses(passes: List<OrbitalPass>, isUtc: Boolean): Map<String, List<OrbitalPass>> {
         val tz = if (isUtc) TimeZone.getTimeZone("UTC") else TimeZone.getDefault()
         val sdfDate = dateFormat(tz)
-        val ordered = LinkedHashMap<String, List<OrbitalPass>>()
-        passes.groupByTo(LinkedHashMap()) { sdfDate.format(Date(it.aosTime)) }
-            .forEach { (k, v) -> ordered[k] = v }
-        return ordered
+        return groupPassSections(passes) { sdfDate.format(Date(it.aosTime)) }
     }
 
     /** Computes live progress while retaining completed passes in the requested history window. */

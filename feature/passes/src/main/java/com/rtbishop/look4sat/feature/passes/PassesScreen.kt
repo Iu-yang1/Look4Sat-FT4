@@ -289,8 +289,19 @@ private fun PassesList(
                             val headerVisible = targetFocus == null || dayPasses.any { it.catNum == targetFocus }
                             if (headerVisible) {
                                 stickyHeader(key = "header_$dateLabel") {
-                                    val (rise, set) = sunTimes[dateLabel] ?: ("--:--" to "--:--")
-                                    PassDateDivider(label = dateLabel, sunriseTime = rise, sunsetTime = set)
+                                    if (dateLabel == DEEP_SPACE_SECTION) {
+                                        Text(
+                                            text = stringResource(R.string.pass_deep_space),
+                                            color = MaterialTheme.colorScheme.primary,
+                                            fontSize = 14.sp,
+                                            modifier = Modifier.fillMaxWidth()
+                                                .background(MaterialTheme.colorScheme.surfaceContainerHighest)
+                                                .padding(horizontal = 12.dp, vertical = 4.dp)
+                                        )
+                                    } else {
+                                        val (rise, set) = sunTimes[dateLabel] ?: ("--:--" to "--:--")
+                                        PassDateDivider(label = dateLabel, sunriseTime = rise, sunsetTime = set)
+                                    }
                                 }
                             }
                             val visiblePasses = if (targetFocus == null) dayPasses
@@ -436,19 +447,19 @@ private fun PassItem(
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                     val defaultTime = "--:--:--"
                     Text(
-                        text = if (pass.isDeepSpace || pass.startClipped) defaultTime else aosTimeStr,
+                        text = if (pass.startClipped) defaultTime else aosTimeStr,
                         fontSize = 14.sp,
                         lineHeight = 15.sp,
                         color = MaterialTheme.colorScheme.onSurface,
                         maxLines = 1
                     )
                     LinearProgressIndicator(
-                        progress = { if (pass.isDeepSpace || pass.continuousVisibility) 1f else pass.progress.coerceIn(0f, 1f) },
+                        progress = { if (pass.continuousVisibility) 1f else pass.progress.coerceIn(0f, 1f) },
                         drawStopIndicator = {},
                         modifier = Modifier.weight(1f).padding(horizontal = 4.dp)
                     )
                     Text(
-                        text = if (pass.isDeepSpace || pass.endClipped) defaultTime else losTimeStr,
+                        text = if (pass.endClipped) defaultTime else losTimeStr,
                         fontSize = 14.sp,
                         lineHeight = 15.sp,
                         color = MaterialTheme.colorScheme.onSurface,

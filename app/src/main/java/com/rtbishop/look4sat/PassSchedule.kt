@@ -239,13 +239,21 @@ private object PassScheduleNotificationScheduler {
     const val KIND_START = "start"
     const val KIND_BEFORE = "before"
 
-    fun replacePasses(context: Context, config: PassScheduleConfig, passes: List<OrbitalPass>) {
+    fun replacePasses(
+        context: Context, config: PassScheduleConfig, passes: List<OrbitalPass>,
+        checkCancelled: () -> Unit = {}
+    ) {
         replaceEvents(context, config, passes.map { pass ->
             ScheduledPass(pass.catNum, pass.name, pass.aosTime, pass.losTime, pass.maxElevation)
-        })
+        }, checkCancelled)
     }
 
-    fun replaceEvents(context: Context, config: PassScheduleConfig, events: List<ScheduledPass>) {
+    @Synchronized
+    fun replaceEvents(
+        context: Context, config: PassScheduleConfig, events: List<ScheduledPass>,
+        checkCancelled: () -> Unit = {}
+    ) {
+        checkCancelled()
         val alarmManager = context.getSystemService(AlarmManager::class.java) ?: return
         val oldEvents = PassScheduleStore.readEvents(context)
         oldEvents.forEach { event ->
@@ -579,9 +587,14 @@ fun PassScheduleDestination(
             }
         }
         passes = calculatedPasses
-        PassScheduleStore.saveConfig(context, config)
-        // Refresh alarms when reminders change, reusing cached predictions when possible.
-        PassScheduleNotificationScheduler.replacePasses(context, config, calculatedPasses)
+        // Alarm IPC must not hold back the first frame containing calculated rows.
+        val selectedConfig = config
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            val job = kotlinx.coroutines.currentCoroutineContext()
+            PassScheduleNotificationScheduler.replacePasses(context, selectedConfig, calculatedPasses) {
+                job.ensureActive()
+            }
+        }
     }
 
     Scaffold(

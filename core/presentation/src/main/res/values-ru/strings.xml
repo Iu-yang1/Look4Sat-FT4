@@ -38,7 +38,7 @@
     <string name="pass_filter_history_hours">Прошедший период</string>
     <string name="pass_filter_aos_time">Окно AOS</string>
     <string name="pass_filter_invert_time">Инвертировать окно AOS</string>
-    <string name="pass_filter_deep_space">DeepSpace (период &gt;225мин)</string>
+    <string name="pass_filter_deep_space">Дальний космос (период &gt;225мин)</string>
     <string name="pass_modes_title">Выберите тип модуляции</string>
     <string name="pass_elevation">Элевация: %.1f°</string>
     <string name="pass_altitude">Высота: %d км</string>

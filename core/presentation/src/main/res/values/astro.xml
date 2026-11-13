@@ -16,7 +16,4 @@
     <string name="astro_url_invalid">Enter a valid HTTP or HTTPS URL</string>
     <string name="astro_edit_url">Edit download link</string>
     <string name="astro_reset">Restore default link</string>
-    <string name="astro_continuous">Visible throughout this range</string>
-    <string name="astro_start_clipped">Already visible at range start</string>
-    <string name="astro_end_clipped">Still visible at range end</string>
 </resources>

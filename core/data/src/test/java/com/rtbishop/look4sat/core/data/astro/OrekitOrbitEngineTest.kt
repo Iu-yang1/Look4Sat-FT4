@@ -63,6 +63,24 @@ class OrekitOrbitEngineTest {
         assertTrue(actual.velocityKmPerSecond > 0)
     }
 
+    @Test fun observerHeightChangesRangeAndElevationUsingWgs84Meters() {
+        val session = AstroTestData.engine.openSession(AstroTestData.engine.bind(vallado))
+        val date = time("2000-06-27T19:00:00Z")
+        val seaLevel = GeoPos(51.5, -.1, 0.0)
+        val elevated = seaLevel.copy(altitude = 1500.0)
+        val low = session.position(seaLevel, date)
+        val high = session.position(elevated, date)
+        val state = session.temeState(date)
+        val runtime = AstroTestData.runtime
+        val reference = runtime.station(elevated).getTrackingCoordinates(
+            org.hipparchus.geometry.euclidean.threed.Vector3D(state.xKm * 1000,
+                state.yKm * 1000, state.zKm * 1000), runtime.teme, runtime.date(date))
+        assertEquals(reference.elevation, high.elevation, 1e-12)
+        assertEquals(reference.range / 1000, high.distance, 1e-9)
+        assertTrue(kotlin.math.abs(high.distance - low.distance) > .1)
+        assertTrue(kotlin.math.abs(high.elevation - low.elevation) > 1e-6)
+    }
+
     @Test fun realWindowsRespectTheHorizonAndClipFlags() {
         val session = AstroTestData.engine.openSession(AstroTestData.engine.bind(vallado))
         val start = time("2000-06-28T00:00:00Z")

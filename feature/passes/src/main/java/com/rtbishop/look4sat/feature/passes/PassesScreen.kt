@@ -394,7 +394,7 @@ private fun PassItem(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = if (pass.continuousVisibility) stringResource(R.string.astro_continuous) else durationStr,
+                        text = if (pass.isDeepSpace) stringResource(R.string.pass_deep_space) else durationStr,
                         modifier = Modifier.weight(1f),
                         fontSize = 16.sp,
                         lineHeight = 17.sp,
@@ -430,26 +430,25 @@ private fun PassItem(
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                     val defaultTime = "--:--:--"
                     Text(
-                        text = if (pass.continuousVisibility) defaultTime else aosTimeStr,
+                        text = if (pass.isDeepSpace || pass.startClipped) defaultTime else aosTimeStr,
                         fontSize = 14.sp,
                         lineHeight = 15.sp,
                         color = MaterialTheme.colorScheme.onSurface,
                         maxLines = 1
                     )
                     LinearProgressIndicator(
-                        progress = { if (pass.continuousVisibility) 1f else pass.progress.coerceIn(0f, 1f) },
+                        progress = { if (pass.isDeepSpace || pass.continuousVisibility) 1f else pass.progress.coerceIn(0f, 1f) },
                         drawStopIndicator = {},
                         modifier = Modifier.weight(1f).padding(horizontal = 4.dp)
                     )
                     Text(
-                        text = if (pass.continuousVisibility) defaultTime else losTimeStr,
+                        text = if (pass.isDeepSpace || pass.endClipped) defaultTime else losTimeStr,
                         fontSize = 14.sp,
                         lineHeight = 15.sp,
                         color = MaterialTheme.colorScheme.onSurface,
                         maxLines = 1
                     )
                 }
-                com.rtbishop.look4sat.core.presentation.PassBoundaryNote(pass)
             }
             androidx.compose.foundation.layout.Spacer(Modifier.width(8.dp))
             PassRadarPreview(

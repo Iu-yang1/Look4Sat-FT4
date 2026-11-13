@@ -41,7 +41,7 @@
     <string name="pass_filter_history_hours">历史过境时间</string>
     <string name="pass_filter_aos_time">AOS 时间段</string>
     <string name="pass_filter_invert_time">反选 AOS 时间段</string>
-    <string name="pass_filter_deep_space">DeepSpace（周期 &gt;225分钟）</string>
+    <string name="pass_filter_deep_space">深空(周期 &gt;225分钟)</string>
     <string name="pass_modes_title">选择调制类型</string>
     <string name="pass_elevation">仰角：%.1f°</string>
     <string name="pass_altitude">高度：%d km</string>

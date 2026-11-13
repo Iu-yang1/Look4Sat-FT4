@@ -64,7 +64,7 @@ class MapViewModel(
     private var passWindow: RadarPassMapDestination? = null
 ) : ViewModel() {
 
-    private val stationPos = settingsRepo.stationPosition.value
+    private val stationPos get() = settingsRepo.stationPosition.value
     private val defaultPass = getDefaultPass()
     private val _uiState = MutableStateFlow(
         MapState(

@@ -51,7 +51,7 @@
     <string name="pass_modes_title">Select modulation type</string>
     <string name="pass_satId" translatable="false">%05d</string>
     <string name="pass_elevation">Elevation: %.1f°</string>
-    <string name="pass_deep_space" translatable="false">DeepSpace</string>
+    <string name="pass_deep_space">DeepSpace</string>
     <string name="pass_altitude">Altitude: %d km</string>
     <string name="pass_aosLos" translatable="false">%03d° - %03d°</string>
     <string name="pass_empty_list_message">

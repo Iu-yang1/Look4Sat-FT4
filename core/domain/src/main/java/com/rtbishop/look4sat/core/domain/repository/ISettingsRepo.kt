@@ -52,6 +52,7 @@ interface ISettingsRepo {
 
     //region # Station position settings
     val stationPosition: StateFlow<GeoPos>
+    /** Manual coordinates use zero altitude; the legacy altitude parameter is ignored. */
     fun setStationPosition(latitude: Double, longitude: Double, altitude: Double): Boolean
     fun setStationPosition(): Boolean
     fun setStationPosition(locator: String): Boolean

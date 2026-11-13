@@ -143,13 +143,17 @@ internal class OrekitOrbitSession(override val target: OrbitalObject) : IOrbitSe
             if (value(a + (b - a) / 2) <= 0) return@mapNotNull null
             val candidates = listOf(a, b) + maxima.filter { it in a..b }
             val tca = candidates.maxBy { value(it) }
-            val first = position(observer, a)
-            val last = position(observer, b)
-            val peak = position(observer, tca)
+            fun coordinates(time: Long) = sample(time).state.let {
+                topo.getTrackingCoordinates(it.position, it.frame, it.date)
+            }
+            val first = coordinates(a)
+            val last = coordinates(b)
+            val peak = sample(tca).state
+            val peakAltitude = runtime.earth.transform(peak.position, peak.frame, peak.date).altitude / 1000
             val clippedStart = a == startMillis && value(a) > 0
             val clippedEnd = b == validEnd && value(b) > 0
             OrbitalPass(a, Math.toDegrees(first.azimuth).round(1), b, Math.toDegrees(last.azimuth).round(1),
-                peak.altitude.toInt(), Math.toDegrees(peak.elevation).round(1), target,
+                peakAltitude.toInt(), Math.toDegrees(value(tca)).round(1), target,
                 hasDecayed = target.data.hasDecayed(a), startClipped = clippedStart,
                 endClipped = clippedEnd, continuousVisibility = clippedStart && clippedEnd, tcaTime = tca)
         }

@@ -41,13 +41,13 @@ class OrekitSunlightPredictor(
         if (!period.isFinite() || period <= 0 || elements.eccn !in 0.0..<1.0) {
             throw SunlightException(SunlightProblem.INVALID_ORBIT)
         }
-        val orbit = try {
-            engine.openSession(engine.bind(elements))
+        val target = try {
+            engine.bind(elements)
         } catch (error: Exception) {
             throw SunlightException(SunlightProblem.INVALID_ORBIT, error)
         }
         val model = try {
-            OrekitShadowModel(orbit.target.snapshot as com.rtbishop.look4sat.core.data.astro.OrekitRuntime)
+            OrekitShadowModel(target.snapshot as com.rtbishop.look4sat.core.data.astro.OrekitRuntime)
         } catch (error: Exception) {
             diagnostics.record(ControlDiagnosticSource.RADIO, "sunlight/initialization",
                 error.toString(), ControlDiagnosticSeverity.ERROR)
@@ -55,20 +55,20 @@ class OrekitSunlightPredictor(
         }
         try {
             onProgress(0.0)
-            var lastProgress = -1
-            val search = ShadowEventSearch(
-                sample = { seconds ->
-                    model.sample(
-                        orbit.temeState(request.startUtcMillis + (seconds * 1000).roundToLong()), period
-                    )
-                },
-                checkCancelled = { context.ensureActive() }
-            ).search(request.startUtcMillis, request.endUtcMillis) { progress ->
-                val percent = (progress * 100).toInt()
-                if (percent != lastProgress) {
-                    lastProgress = percent
-                    onProgress(progress)
+            val search = parallelShadowSearch(request.startUtcMillis, request.endUtcMillis, onProgress) { start, end, progress ->
+                val orbit = try {
+                    engine.openSession(target)
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (error: Exception) {
+                    return@parallelShadowSearch ShadowSearchResult(emptyList(), start, error)
                 }
+                ShadowEventSearch(
+                    sample = { seconds ->
+                        model.sample(orbit.temeState(start + (seconds * 1000).roundToLong()), period)
+                    },
+                    checkCancelled = { context.ensureActive() }
+                ).search(start, end, progress)
             }
             val failure = search.failure?.let {
                 when (it) {
@@ -81,7 +81,7 @@ class OrekitSunlightPredictor(
             diagnostics.record(
                 ControlDiagnosticSource.RADIO, "sunlight/result",
                 "cat=${elements.catnum} epoch=${elements.epoch} days=${request.days} " +
-                    "data=${orbit.target.snapshot?.version} " +
+                    "data=${target.snapshot?.version} " +
                     "intervals=${search.intervals.size} validUntil=${search.validUntilMillis} " +
                     "elapsedMs=${(System.nanoTime() - started) / 1_000_000} " +
                     "heapBytes=${Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory()} " +

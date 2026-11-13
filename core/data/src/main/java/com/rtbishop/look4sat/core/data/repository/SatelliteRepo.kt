@@ -4,6 +4,8 @@
  */
 package com.rtbishop.look4sat.core.data.repository
 
+import com.rtbishop.look4sat.core.data.astro.orbitParallelMap
+import com.rtbishop.look4sat.core.data.astro.orbitWorkerCount
 import com.rtbishop.look4sat.core.domain.astro.IAstroDataRepository
 import com.rtbishop.look4sat.core.domain.astro.ICelestialService
 import com.rtbishop.look4sat.core.domain.astro.IOrbitEngine
@@ -23,8 +25,6 @@ import com.rtbishop.look4sat.core.domain.utility.uplinkHz
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -69,7 +69,7 @@ class SatelliteRepo(
     override val selectedPass: StateFlow<Pair<Int, Long>> = selection
     private val calculationLock = Any()
     private var calculationJob: Job? = null
-    private val workers = Semaphore(2)
+    private val workers = Semaphore(orbitWorkerCount())
     private val realtimeSessions = java.util.WeakHashMap<Job,
         LinkedHashMap<OrbitalObject, com.rtbishop.look4sat.core.domain.astro.IOrbitSession>>()
 
@@ -228,27 +228,25 @@ class SatelliteRepo(
     private suspend fun predict(satellites: List<OrbitalObject>, observer: GeoPos, start: Long, end: Long) =
         withContext(dispatcher) {
             if (end <= start) return@withContext emptyList<OrbitalPass>()
-            coroutineScope {
-                satellites.map { satellite -> async {
-                    workers.withPermit {
-                        val context = coroutineContext
-                        try {
-                            orbit.openSession(satellite).passes(observer, start, end) { context.ensureActive() }
-                                .also { synchronized(failures) {
-                                    failures.value = failures.value - satellite.data.catnum
-                                } }
-                        } catch (cancelled: kotlinx.coroutines.CancellationException) {
-                            throw cancelled
-                        } catch (partial: com.rtbishop.look4sat.core.domain.astro.OrbitPredictionException) {
-                            recordFailure(satellite, partial)
-                            partial.validPasses
-                        } catch (error: Exception) {
-                            recordFailure(satellite, error)
-                            emptyList()
-                        }
+            satellites.orbitParallelMap { satellite ->
+                workers.withPermit {
+                    val context = coroutineContext
+                    try {
+                        orbit.openSession(satellite).passes(observer, start, end) { context.ensureActive() }
+                            .also { synchronized(failures) {
+                                failures.value = failures.value - satellite.data.catnum
+                            } }
+                    } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                        throw cancelled
+                    } catch (partial: com.rtbishop.look4sat.core.domain.astro.OrbitPredictionException) {
+                        recordFailure(satellite, partial)
+                        partial.validPasses
+                    } catch (error: Exception) {
+                        recordFailure(satellite, error)
+                        emptyList()
                     }
-                } }.awaitAll().flatten().sortedBy { it.aosTime }
-            }
+                }
+            }.flatten().sortedBy { it.aosTime }
         }
 
     override suspend fun getSchedulePasses(catNums: Set<Int>, startTime: Long, hoursAhead: Int,

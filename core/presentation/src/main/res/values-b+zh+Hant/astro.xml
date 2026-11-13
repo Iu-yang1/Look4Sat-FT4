@@ -16,7 +16,5 @@
     <string name="astro_url_invalid">請輸入有效的 HTTP 或 HTTPS 連結</string>
     <string name="astro_edit_url">編輯下載連結</string>
     <string name="astro_reset">還原預設連結</string>
-    <string name="astro_continuous">查詢範圍內持續可見</string>
-    <string name="astro_start_clipped">範圍開始前已可見</string>
-    <string name="astro_end_clipped">範圍結束後仍可見</string>
+    <string name="pass_deep_space">深空</string>
 </resources>

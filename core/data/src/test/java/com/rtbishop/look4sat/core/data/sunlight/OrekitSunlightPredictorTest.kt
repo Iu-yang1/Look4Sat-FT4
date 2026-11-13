@@ -95,6 +95,9 @@ class OrekitSunlightPredictorTest {
                 .predict(SunlightRequest(24278, start, days)) {}
             assertEquals(null, result.problem)
             assertEquals(days * 86_400_000L, result.intervals.sumOf { it.durationMillis })
+            com.rtbishop.look4sat.core.data.astro.benchmarkLines("sunlight-$days.tsv", result.intervals.map {
+                "${it.state}\t${it.startMillis}\t${it.endMillis}\t${it.startClipped}\t${it.endClipped}"
+            })
             println(diagnostics.exportText())
         }
         val progressed = CompletableDeferred<Unit>()

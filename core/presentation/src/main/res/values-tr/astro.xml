@@ -16,7 +16,4 @@
     <string name="astro_url_invalid">Geçerli bir HTTP veya HTTPS bağlantısı girin</string>
     <string name="astro_edit_url">İndirme bağlantısını düzenle</string>
     <string name="astro_reset">Varsayılan bağlantıyı geri yükle</string>
-    <string name="astro_continuous">Aralık boyunca görünür</string>
-    <string name="astro_start_clipped">Aralık başında zaten görünür</string>
-    <string name="astro_end_clipped">Aralık sonunda hâlâ görünür</string>
 </resources>

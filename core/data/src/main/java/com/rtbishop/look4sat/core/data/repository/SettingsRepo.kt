@@ -61,7 +61,7 @@ class SettingsRepo(
     private val locationManager: LocationManager,
     private val preferences: SharedPreferences,
     override val appVersionName: String
-) : ISettingsRepo, LocationListenerCompat {
+) : ISettingsRepo {
 
     private val keyBluetoothRotatorAddress = "bluetoothAddress"
     private val keyBluetoothRotatorName = "bluetoothName"
@@ -133,6 +133,7 @@ class SettingsRepo(
     private val keyMapElevationAngles = "mapElevationAngles"
     private val keyMapElevationContoursEnabled = "mapElevationContoursEnabled"
     private val keyStationAltitude = "stationAltitude"
+    private val keyStationGnssAltitude = "stationGnssAltitude"
     private val keyStationLatitude = "stationLatitude"
     private val keyStationLongitude = "stationLongitude"
     private val keyStationQth = "stationQth"
@@ -765,38 +766,70 @@ class SettingsRepo(
     private val providerNet = LocationManager.NETWORK_PROVIDER
     override val stationPosition: StateFlow<GeoPos> = _stationPosition
 
-    override fun onLocationChanged(location: Location) {
-        setStationPosition(location.latitude, location.longitude, location.altitude)
-    }
+    private var stationLocationListener: LocationListenerCompat? = null
 
+    @Synchronized
     override fun setStationPosition(latitude: Double, longitude: Double, altitude: Double): Boolean {
         val newLongitude = if (longitude > 180.0) longitude - 180 else longitude
         val locator = positionToQth(latitude, newLongitude) ?: return false
-        setStationPosition(latitude, newLongitude, altitude, locator)
+        cancelStationLocation()
+        setStationPosition(latitude, newLongitude, 0.0, locator)
         return true
     }
 
+    @Synchronized
     override fun setStationPosition(): Boolean {
         if (!LocationManagerCompat.isLocationEnabled(locationManager)) return false
+        cancelStationLocation()
         try {
-            val hasGps = LocationManagerCompat.hasProvider(locationManager, providerGps)
-            val hasNet = LocationManagerCompat.hasProvider(locationManager, providerNet)
-            val provider = if (hasGps) providerGps else if (hasNet) providerNet else providerDef
-            val location = locationManager.getLastKnownLocation(providerDef)
+            val provider = listOf(providerGps, providerNet, providerDef).firstOrNull {
+                LocationManagerCompat.hasProvider(locationManager, it) && locationManager.isProviderEnabled(it)
+            } ?: return false
+            val listener = object : LocationListenerCompat {
+                override fun onLocationChanged(location: Location) = acceptStationFix(this, location)
+            }
+            stationLocationListener = listener
+            val location = locationManager.getLastKnownLocation(provider)
             if (location == null || System.currentTimeMillis() - location.time > 600_000L) {
-                println("Requesting location for $provider provider")
-                locationManager.requestLocationUpdates(provider, 0L, 0f, this)
+                locationManager.requestLocationUpdates(provider, 0L, 0f, listener)
             } else {
-                setStationPosition(location.latitude, location.longitude, location.altitude)
+                acceptStationFix(listener, location)
             }
         } catch (exception: SecurityException) {
-            println("No permissions were given - $exception")
+            cancelStationLocation()
+            return false
+        } catch (exception: IllegalArgumentException) {
+            cancelStationLocation()
+            return false
         }
         return true
     }
 
+    @Synchronized
+    private fun acceptStationFix(listener: LocationListenerCompat, location: Location) {
+        if (stationLocationListener !== listener) return
+        val locator = positionToQth(location.latitude, location.longitude) ?: return
+        val hasGnssAltitude = location.provider == providerGps &&
+            location.hasAltitude() && location.altitude.isFinite()
+        val altitude = if (hasGnssAltitude) location.altitude else 0.0
+        cancelStationLocation()
+        setStationPosition(location.latitude, location.longitude, altitude, locator, hasGnssAltitude)
+    }
+
+    private fun cancelStationLocation() {
+        val listener = stationLocationListener ?: return
+        stationLocationListener = null
+        try {
+            locationManager.removeUpdates(listener)
+        } catch (_: SecurityException) {
+            // Permission can be revoked between requesting and removing a location update.
+        }
+    }
+
+    @Synchronized
     override fun setStationPosition(locator: String): Boolean {
         val position = qthToPosition(locator) ?: return false
+        cancelStationLocation()
         setStationPosition(position.latitude, position.longitude, 0.0, locator)
         return true
     }
@@ -832,22 +865,27 @@ class SettingsRepo(
     private fun getStationPosition(): GeoPos {
         val latitude = (preferences.getString(keyStationLatitude, null) ?: "0.0").toDouble()
         val longitude = (preferences.getString(keyStationLongitude, null) ?: "0.0").toDouble()
-        val altitude = (preferences.getString(keyStationAltitude, null) ?: "0.0").toDouble()
+        val altitude = if (preferences.getBoolean(keyStationGnssAltitude, false)) {
+            preferences.getString(keyStationAltitude, null)?.toDoubleOrNull()?.takeIf(Double::isFinite) ?: 0.0
+        } else 0.0
         val qthLocator = preferences.getString(keyStationQth, null) ?: "JJ00aa"
         val timestamp = preferences.getLong(keyStationTimestamp, 0L)
         return GeoPos(latitude, longitude, altitude, qthLocator, timestamp)
     }
 
-    private fun setStationPosition(latitude: Double, longitude: Double, altitude: Double, locator: String) {
+    private fun setStationPosition(latitude: Double, longitude: Double, altitude: Double, locator: String,
+        gnssAltitude: Boolean = false
+    ) {
         val newLat = latitude.round(4)
         val newLon = longitude.round(4)
         val newAlt = altitude.round(1)
         val timestamp = System.currentTimeMillis()
         println("Received new Position($newLat, $newLon, $newAlt) & Locator $locator")
-        setStationPosition(GeoPos(newLat, newLon, newAlt, locator, timestamp))
+        setStationPosition(GeoPos(newLat, newLon, newAlt, locator, timestamp), gnssAltitude)
     }
 
-    private fun setStationPosition(stationPos: GeoPos) = preferences.edit {
+    private fun setStationPosition(stationPos: GeoPos, gnssAltitude: Boolean) = preferences.edit {
+        putBoolean(keyStationGnssAltitude, gnssAltitude)
         putString(keyStationLatitude, stationPos.latitude.toString())
         putString(keyStationLongitude, stationPos.longitude.toString())
         putString(keyStationAltitude, stationPos.altitude.toString())

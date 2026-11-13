@@ -10,6 +10,7 @@ import com.rtbishop.look4sat.core.domain.predict.OrbitalObject
 import com.rtbishop.look4sat.core.domain.predict.OrbitalPass
 import com.rtbishop.look4sat.core.domain.predict.OrbitalPos
 import com.rtbishop.look4sat.core.domain.predict.TemeState
+import com.rtbishop.look4sat.core.domain.utility.round
 import org.hipparchus.geometry.euclidean.threed.Vector3D
 import org.orekit.propagation.SpacecraftState
 import org.orekit.propagation.analytical.tle.TLE
@@ -147,8 +148,8 @@ internal class OrekitOrbitSession(override val target: OrbitalObject) : IOrbitSe
             val peak = position(observer, tca)
             val clippedStart = a == startMillis && value(a) > 0
             val clippedEnd = b == validEnd && value(b) > 0
-            OrbitalPass(a, Math.toDegrees(first.azimuth), b, Math.toDegrees(last.azimuth),
-                peak.altitude.toInt(), Math.toDegrees(peak.elevation), target,
+            OrbitalPass(a, Math.toDegrees(first.azimuth).round(1), b, Math.toDegrees(last.azimuth).round(1),
+                peak.altitude.toInt(), Math.toDegrees(peak.elevation).round(1), target,
                 hasDecayed = target.data.hasDecayed(a), startClipped = clippedStart,
                 endClipped = clippedEnd, continuousVisibility = clippedStart && clippedEnd, tcaTime = tca)
         }

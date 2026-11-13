@@ -8,9 +8,10 @@
     <string name="astro_downloading">İndiriliyor</string>
     <string name="astro_verifying">Veriler doğrulanıyor</string>
     <string name="astro_ready">Çevrimdışı kullanıma hazır</string>
+    <string name="astro_ready_bundled">Dahili veriler çevrimdışı kullanıma hazır</string>
     <string name="astro_failed">İndirme başarısız. Bağlantıyı ve boş alanı denetleyip yeniden deneyin.</string>
     <string name="astro_update_failed">Güncelleme başarısız. Önceki veriler kullanılabilir.</string>
-    <string name="astro_download">İndir / güncelle</string>
+    <string name="astro_download">Tam DE440 indir / güncelle</string>
     <string name="astro_url">Veri paketi ZIP bağlantısı</string>
     <string name="astro_url_invalid">Geçerli bir HTTP veya HTTPS bağlantısı girin</string>
     <string name="astro_edit_url">İndirme bağlantısını düzenle</string>

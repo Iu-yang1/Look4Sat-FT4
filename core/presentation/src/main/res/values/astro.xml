@@ -8,9 +8,10 @@
     <string name="astro_downloading">Downloading</string>
     <string name="astro_verifying">Verifying data</string>
     <string name="astro_ready">Ready for offline use</string>
+    <string name="astro_ready_bundled">Built-in data ready for offline use</string>
     <string name="astro_failed">Download failed. Check the link and available storage, then retry.</string>
     <string name="astro_update_failed">Update failed. Previous data remains available.</string>
-    <string name="astro_download">Download / update</string>
+    <string name="astro_download">Download / update full DE440</string>
     <string name="astro_url">Data package ZIP URL</string>
     <string name="astro_url_invalid">Enter a valid HTTP or HTTPS URL</string>
     <string name="astro_edit_url">Edit download link</string>

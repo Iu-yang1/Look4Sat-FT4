@@ -27,6 +27,7 @@ import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
+import java.io.InputStream
 import java.util.UUID
 
 internal fun astroDownloadCandidates(url: String, source: UpdateSource): List<String> {
@@ -43,16 +44,26 @@ internal fun astroDownloadCandidates(url: String, source: UpdateSource): List<St
     return (listOfNotNull(prefix) + prefixes).distinct().map { it + canonical }
 }
 
+internal fun migrateAstroDownloadUrl(url: String): String {
+    val oldDefault =
+        "https://github.com/Iu-yang1/Look4Sat-FT4/releases/download/orekit-data/orekit-data.zip"
+    val prefix = UPDATE_MIRRORS.firstOrNull { url.startsWith(it) }.orEmpty()
+    return if (url.removePrefix(prefix) == oldDefault) prefix + DEFAULT_ASTRO_DATA_URL else url
+}
+
 class AstroDataRepository(
     private val root: File,
     private val preferences: SharedPreferences,
     private val client: OkHttpClient,
     private val scope: CoroutineScope,
     private val diagnostics: IControlDiagnostics,
-    private val source: () -> UpdateSource
+    private val source: () -> UpdateSource,
+    private val bundledArchive: (() -> InputStream)? = null
 ) : IAstroDataRepository {
     private val mutableState = MutableStateFlow(AstroDataState(
-        downloadUrl = preferences.getString("downloadUrl", DEFAULT_ASTRO_DATA_URL) ?: DEFAULT_ASTRO_DATA_URL
+        downloadUrl = migrateAstroDownloadUrl(
+            preferences.getString("downloadUrl", DEFAULT_ASTRO_DATA_URL) ?: DEFAULT_ASTRO_DATA_URL
+        )
     ))
     override val state = mutableState.asStateFlow()
     @Volatile private var active: OrekitRuntime? = null
@@ -63,26 +74,75 @@ class AstroDataRepository(
     init {
         downloadJob = scope.launch(Dispatchers.IO) {
             val saved = preferences.getString("activeDirectory", null)
-            if (saved == null) {
-                mutableState.update { it.copy(phase = AstroDataPhase.MISSING) }
-            } else try {
-                require(saved.matches(Regex("generation-[a-f0-9-]+")))
-                val directory = File(root, saved)
-                val job = currentCoroutineContext()
-                val metadata = AstroDataPackage.verify(directory) { job.ensureActive() }
-                activate(OrekitRuntime(directory, metadata))
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (error: Exception) {
-                failure(error)
+            if (saved != null) {
+                try {
+                    require(saved.matches(Regex("generation-[a-f0-9-]+")))
+                    val directory = File(root, saved)
+                    val job = currentCoroutineContext()
+                    val metadata = AstroDataPackage.verify(directory) { job.ensureActive() }
+                    activate(OrekitRuntime(directory, metadata))
+                    return@launch
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (error: Exception) {
+                    if (bundledArchive == null) {
+                        failure(error)
+                        return@launch
+                    }
+                    diagnostics.record(ControlDiagnosticSource.RADIO, "astro/restore",
+                        "Unable to restore downloaded data, preparing bundled data: $error",
+                        ControlDiagnosticSeverity.WARNING)
+                }
             }
+            if (bundledArchive == null) {
+                mutableState.update { it.copy(phase = AstroDataPhase.MISSING) }
+            } else {
+                try {
+                    installBundled()
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (error: Exception) {
+                    failure(error)
+                }
+            }
+        }
+    }
+
+    private suspend fun installBundled() {
+        val open = requireNotNull(bundledArchive)
+        val job = currentCoroutineContext()
+        check(root.isDirectory || root.mkdirs())
+        val generation = "generation-${UUID.randomUUID()}"
+        val temporary = File(root, "$generation.zip.part")
+        val directory = File(root, generation)
+        try {
+            open().use { input ->
+                temporary.outputStream().use { output ->
+                    val buffer = ByteArray(128 * 1024)
+                    while (true) {
+                        job.ensureActive()
+                        val count = input.read(buffer)
+                        if (count < 0) break
+                        output.write(buffer, 0, count)
+                    }
+                }
+            }
+            val metadata = AstroDataPackage.extract(temporary, directory) { job.ensureActive() }
+            require(metadata.builtIn) { "Bundled data package is not marked as bundled" }
+            val runtime = OrekitRuntime(directory, metadata)
+            job.ensureActive()
+            check(preferences.edit().putString("activeDirectory", generation).commit())
+            activate(runtime)
+        } finally {
+            temporary.delete()
+            if (preferences.getString("activeDirectory", null) != generation) directory.deleteRecursively()
         }
     }
 
     override fun snapshot(): AstroDataSnapshot = active ?: throw AstroDataUnavailableException()
 
     override fun setDownloadUrl(url: String) {
-        val value = url.trim()
+        val value = migrateAstroDownloadUrl(url.trim())
         value.toHttpUrl()
         check(preferences.edit().putString("downloadUrl", value).commit())
         mutableState.update { it.copy(downloadUrl = value) }
@@ -196,7 +256,7 @@ class AstroDataRepository(
         mutableState.update { it.copy(
             phase = AstroDataPhase.READY, version = runtime.version, generation = runtime.directory.name,
             coverageStartMillis = runtime.coverageStartMillis, coverageEndMillis = runtime.coverageEndMillis,
-            eopEndMillis = runtime.eopEndMillis, error = null
+            eopEndMillis = runtime.eopEndMillis, error = null, builtIn = runtime.builtIn
         ) }
         diagnostics.record(ControlDiagnosticSource.RADIO, "astro/data",
             "version=${runtime.version} start=${runtime.coverageStartMillis} end=${runtime.coverageEndMillis} " +

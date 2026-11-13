@@ -386,7 +386,8 @@ private fun PassItem(
                         modifier = Modifier.size(17.dp)
                     )
                     Spacer(modifier = Modifier.width(3.dp))
-                    Text(text = "${pass.maxElevation}°", color = elevColor, fontSize = 17.sp, lineHeight = 18.sp)
+                    Text(text = stringResource(R.string.radar_el_value, pass.maxElevation),
+                        color = elevColor, fontSize = 17.sp, lineHeight = 18.sp)
                 }
                 Row(
                     modifier = Modifier.fillMaxWidth(),

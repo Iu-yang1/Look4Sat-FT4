@@ -124,7 +124,8 @@ class MainContainer(private val context: Context) : IMainContainer {
         java.io.File(context.filesDir, "astronomy"),
         context.getSharedPreferences("astronomy", Context.MODE_PRIVATE),
         OkHttpClient.Builder().readTimeout(120, TimeUnit.SECONDS).build(),
-        appScope, controlDiagnostics, { com.rtbishop.look4sat.core.domain.model.UpdateSource.AUTO }
+        appScope, controlDiagnostics, { com.rtbishop.look4sat.core.domain.model.UpdateSource.AUTO },
+        bundledArchive = { context.assets.open("astronomy/orekit-data.zip") }
     )
     private val orbitEngine = com.rtbishop.look4sat.core.data.astro.OrekitOrbitEngine(astroData)
     private val celestialService = com.rtbishop.look4sat.core.data.astro.OrekitCelestialService(astroData)

@@ -5,6 +5,7 @@ import com.rtbishop.look4sat.core.domain.astro.AstroDataUnavailableException
 import com.rtbishop.look4sat.core.domain.astro.IAstroDataRepository
 import com.rtbishop.look4sat.core.domain.predict.GeoPos
 import com.rtbishop.look4sat.core.domain.predict.OrbitalData
+import com.rtbishop.look4sat.core.domain.utility.round
 import kotlinx.coroutines.flow.MutableStateFlow
 import org.junit.Assert.*
 import org.junit.Test
@@ -71,6 +72,11 @@ class OrekitOrbitEngineTest {
         windows.forEach { window ->
             assertTrue(window.aosTime < window.losTime)
             assertTrue(window.tcaTime in window.aosTime..window.losTime)
+            assertEquals(window.maxElevation.round(1), window.maxElevation, 0.0)
+            assertEquals(window.aosAzimuth.round(1), window.aosAzimuth, 0.0)
+            assertEquals(window.losAzimuth.round(1), window.losAzimuth, 0.0)
+            assertEquals(Math.toDegrees(session.elevation(observer, window.tcaTime)).round(1),
+                window.maxElevation, 0.0)
             if (!window.startClipped) assertEquals(0.0, session.elevation(observer, window.aosTime), .0005)
             if (!window.endClipped) assertEquals(0.0, session.elevation(observer, window.losTime), .0005)
         }

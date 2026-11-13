@@ -18,6 +18,8 @@ class VerifyOrekitData {
         var tdb = context.getTimeScales().getTDB();
         var reference = context.getFrames().getICRF();
         var manifest = Files.readString(Path.of(args[0], "manifest.json"));
+        long coverageStart = manifestLong(manifest, "coverageStartMillis");
+        long coverageEnd = manifestLong(manifest, "coverageEndMillis");
         var endMatcher = java.util.regex.Pattern.compile("\"eopEndMillis\"\\s*:\\s*(\\d+)").matcher(manifest);
         if (!endMatcher.find()) throw new IllegalStateException("Missing EOP coverage");
         long declaredEopEnd = Long.parseLong(endMatcher.group(1));
@@ -34,11 +36,11 @@ class VerifyOrekitData {
         targets.put(9, bodies.getPluto()); targets.put(10, bodies.getMoon());
         targets.put(11, bodies.getSun()); targets.put(12, bodies.getSolarSystemBarycenter());
         targets.put(13, bodies.getEarthMoonBarycenter());
-        for (String day : new String[]{"2000-01-01T00:00:00", "2050-01-01T00:00:00", "2100-12-31T23:59:59"}) {
-            var date = new AbsoluteDate(day, utc);
+        for (long time : new long[]{coverageStart, coverageStart + (coverageEnd - coverageStart) / 2, coverageEnd - 1}) {
+            var date = new AbsoluteDate(new java.util.Date(time), utc);
             for (var body : targets.values()) {
                 var norm = body.getPosition(date, reference).getNorm();
-                if (!Double.isFinite(norm)) throw new IllegalStateException(day);
+                if (!Double.isFinite(norm)) throw new IllegalStateException("Invalid position at "+time);
             }
             context.getFrames().getITRF(IERSConventions.IERS_2010, false).getTransformTo(reference, date);
         }
@@ -48,12 +50,13 @@ class VerifyOrekitData {
             String[] cells = line.trim().split("\\s+");
             if (cells.length != 7 || !cells[0].equals("440")) continue;
             double jd = Double.parseDouble(cells[2]);
-            if (jd < 2451544.5 || jd >= 2488434.5) continue;
             int target = Integer.parseInt(cells[3]), center = Integer.parseInt(cells[4]);
             int component = Integer.parseInt(cells[5]);
             if (!targets.containsKey(target) || !targets.containsKey(center) || component < 1 || component > 6) continue;
             int integer = (int)Math.floor(jd);
             var date = AbsoluteDate.createJDDate(integer, (jd-integer)*86400, tdb);
+            long time = date.toDate(utc).getTime();
+            if (time < coverageStart || time >= coverageEnd) continue;
             var delta = new org.orekit.utils.PVCoordinates(
                 targets.get(center).getPVCoordinates(date, reference),
                 targets.get(target).getPVCoordinates(date, reference));
@@ -64,7 +67,16 @@ class VerifyOrekitData {
             maxError = Math.max(maxError, error);
             checked++;
         }
-        if (checked < 500) throw new IllegalStateException("Insufficient JPL checks: "+checked);
-        System.out.println("JPL TESTPO checks="+checked+" maxErrorAUorAUPerDay="+maxError+" coverage=2000-2100");
+        if (checked < 100) throw new IllegalStateException("Insufficient JPL checks: "+checked);
+        String report = "{\"jplTestpoChecks\":"+checked+",\"maxErrorAUorAUPerDay\":"+maxError
+            +",\"coverageStartMillis\":"+coverageStart+",\"coverageEndMillis\":"+coverageEnd+"}";
+        System.out.println(report);
+        if (args.length > 2) Files.writeString(Path.of(args[2]), report+"\n");
+    }
+
+    private static long manifestLong(String manifest, String field) {
+        var matcher = java.util.regex.Pattern.compile("\""+field+"\"\\s*:\\s*(-?\\d+)").matcher(manifest);
+        if (!matcher.find()) throw new IllegalStateException("Missing "+field);
+        return Long.parseLong(matcher.group(1));
     }
 }

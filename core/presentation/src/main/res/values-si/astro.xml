@@ -8,9 +8,10 @@
     <string name="astro_downloading">බාගනිමින්</string>
     <string name="astro_verifying">දත්ත තහවුරු කරමින්</string>
     <string name="astro_ready">නොබැඳි භාවිතයට සූදානම්</string>
+    <string name="astro_ready_bundled">ඇතුළත් දත්ත නොබැඳි භාවිතයට සූදානම්</string>
     <string name="astro_failed">බාගැනීම අසාර්ථකයි. සබැඳිය සහ නිදහස් ඉඩ පරීක්ෂා කර නැවත උත්සාහ කරන්න.</string>
     <string name="astro_update_failed">යාවත්කාලීන කිරීම අසාර්ථකයි. පෙර දත්ත භාවිත කළ හැක.</string>
-    <string name="astro_download">බාගන්න / යාවත්කාලීන කරන්න</string>
+    <string name="astro_download">සම්පූර්ණ DE440 බාගන්න / යාවත්කාලීන කරන්න</string>
     <string name="astro_url">දත්ත ZIP පැකේජයේ සබැඳිය</string>
     <string name="astro_url_invalid">වලංගු HTTP හෝ HTTPS සබැඳියක් ඇතුළත් කරන්න</string>
     <string name="astro_edit_url">බාගැනීමේ සබැඳිය සංස්කරණය</string>

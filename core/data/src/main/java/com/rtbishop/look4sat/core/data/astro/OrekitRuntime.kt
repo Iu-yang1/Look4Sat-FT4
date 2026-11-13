@@ -21,6 +21,7 @@ internal class OrekitRuntime(val directory: File, metadata: AstroPackageMetadata
     override val coverageStartMillis = metadata.start
     override val coverageEndMillis = metadata.end
     override val eopEndMillis = metadata.eopEnd
+    val builtIn = metadata.builtIn
     val context = LazyLoadedDataContext().apply {
         dataProvidersManager.addProvider(DirectoryCrawler(directory))
     }
@@ -39,8 +40,8 @@ internal class OrekitRuntime(val directory: File, metadata: AstroPackageMetadata
     override val eopStartMillis = eopHistory.startDate.toDate(utc).time
 
     init {
-        require(coverageStartMillis <= 946684800000L && coverageEndMillis >= 4133980800000L) {
-            "Astronomy package must cover 2000–2100"
+        require(coverageStartMillis <= 1577836800000L && coverageEndMillis >= 2556144000000L) {
+            "Astronomy package must cover 2020–2050"
         }
         require(kotlin.math.abs(eopHistory.endDate.toDate(utc).time - eopEndMillis) <= 86400000L) {
             "Earth orientation coverage does not match the package manifest"

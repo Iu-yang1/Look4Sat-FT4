@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
-"""Build the offline astronomy ZIP with JPL's original ASC2EPH converter.
+"""Build bundled (2020-2050) or complete DE440 astronomy packages.
 
-NASA/JPL coefficients are copied without modifying the ephemeris algorithm.
-The converter's documented NRECL and T1/T2 settings select byte-sized records
-and the 2000-2100 interval, with padding for time-scale/interpolation boundaries.
+The bundled subset uses JPL's original ASC2EPH converter. The complete package
+contains JPL's unmodified Linux binary. Neither profile changes coefficients.
 """
 
 import argparse
@@ -19,16 +18,21 @@ import urllib.error
 import zipfile
 
 JPL = "https://ssd.jpl.nasa.gov/ftp/eph/planets"
-SOURCES = {
+COMMON_SOURCES = {
+    "testpo.440": f"{JPL}/ascii/de440/testpo.440",
+    "finals2000A.all": "https://datacenter.iers.org/data/9/finals2000A.all",
+}
+SUBSET_SOURCES = {
     "asc2eph.f": f"{JPL}/fortran/asc2eph.f",
     "header.440": f"{JPL}/ascii/de440/header.440",
     "ascp01950.440": f"{JPL}/ascii/de440/ascp01950.440",
     "ascp02050.440": f"{JPL}/ascii/de440/ascp02050.440",
-    "testpo.440": f"{JPL}/ascii/de440/testpo.440",
-    "finals2000A.all": "https://datacenter.iers.org/data/9/finals2000A.all",
+    **COMMON_SOURCES,
 }
-START = dt.datetime(2000, 1, 1, tzinfo=dt.timezone.utc)
-END = dt.datetime(2101, 1, 1, tzinfo=dt.timezone.utc)
+FULL_SOURCES = {
+    "linux_p1550p2650.440": f"{JPL}/Linux/de440/linux_p1550p2650.440",
+    **COMMON_SOURCES,
+}
 
 
 def download(url, path):
@@ -64,14 +68,14 @@ def digest(path):
         return hashlib.file_digest(stream, "sha256").hexdigest()
 
 
-def convert_ephemeris(cache, compiler):
+def convert_ephemeris(cache, compiler, start, end):
     source = (cache / "asc2eph.f").read_text(encoding="ascii")
     source = source.replace(
         "C      PARAMETER ( NRECL = 4 )", "       PARAMETER ( NRECL = 4 )"
     )
     # Select records beyond both ends, then advertise the narrower supported range.
-    start_jd = START.timestamp() / 86400 + 2440587.5 - 64
-    end_jd = END.timestamp() / 86400 + 2440587.5 + 64
+    start_jd = start.timestamp() / 86400 + 2440587.5 - 64
+    end_jd = end.timestamp() / 86400 + 2440587.5 + 64
     source = source.replace("T1   = -99999999.d0", f"T1   = {start_jd:.1f}d0")
     source = source.replace("T2   =  99999999.d0", f"T2   = {end_jd:.1f}d0")
     (cache / "asc2eph-configured.f").write_text(source, encoding="ascii")
@@ -124,7 +128,7 @@ def convert_ephemeris(cache, compiler):
     return native, start_jd, end_jd
 
 
-def package_files(cache, native):
+def package_files(cache, native, profile):
     eop_rows = [
         row
         for row in (cache / "finals2000A.all").read_text(encoding="ascii").splitlines()
@@ -136,17 +140,20 @@ def package_files(cache, native):
     # Blank future placeholder rows are not Earth-orientation measurements or predictions.
     filtered_eop = cache / "finals2000A.valid.all"
     filtered_eop.write_text("\n".join(eop_rows) + "\n", encoding="ascii")
-    return {
-        "lnxp2000.440": native,
+    files = {
+        ("lnxp2020.440" if profile == "bundled" else "lnxp1550.440"): native,
         "finals2000A.all": filtered_eop,
         "UTC-TAI.history": Path(
             "core/data/src/main/resources/orekit/UTC-TAI.history"
         ).resolve(),
-        "NASA-JPL-ASC2EPH.txt": cache / "asc2eph.f",
     }
+    if profile == "bundled":
+        files["NASA-JPL-ASC2EPH.txt"] = cache / "asc2eph.f"
+    return files
 
 
-def package_manifest(cache, files, start_jd, end_jd):
+def package_manifest(cache, files, profile, start, end, preparation):
+    sources = SUBSET_SOURCES if profile == "bundled" else FULL_SOURCES
     valid_eop = []
     for row in files["finals2000A.all"].read_text(encoding="ascii").splitlines():
         if len(row) >= 68 and row[58:68].strip():
@@ -155,20 +162,18 @@ def package_manifest(cache, files, start_jd, end_jd):
         raise RuntimeError("No valid Earth orientation records")
     return {
         "format": 1,
-        "version": "de440-2000-2100-"
+        "version": f"de440-{profile}-{start.year}-{end.year - 1}-"
         + dt.datetime.now(dt.timezone.utc).strftime("%Y%m%d"),
-        "coverageStartMillis": int(START.timestamp() * 1000),
-        "coverageEndMillis": int(END.timestamp() * 1000),
+        "distribution": profile,
+        "coverageStartMillis": int(start.timestamp() * 1000),
+        "coverageEndMillis": int(end.timestamp() * 1000),
         "eopStartMillis": int((min(valid_eop) - 40587) * 86400000),
         "eopEndMillis": int((max(valid_eop) - 40587) * 86400000),
-        "sources": SOURCES,
-        "sourceSha256": {name: digest(cache / name) for name in SOURCES},
-        "preparation": {
-            "converter": "NASA/JPL ASC2EPH",
-            "NRECL": 4,
-            "T1": start_jd,
-            "T2": end_jd,
-            "eopFiltering": "Remove date-only placeholder rows without polar motion or UT1",
+        "sources": sources,
+        "sourceSha256": {name: digest(cache / name) for name in sources},
+        "preparation": preparation
+        | {
+            "eopFiltering": "Remove date-only placeholder rows without polar motion or UT1"
         },
         "files": [
             {"name": name, "bytes": path.stat().st_size, "sha256": digest(path)}
@@ -203,19 +208,41 @@ def write_package(output, files, manifest):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--compiler", type=Path, required=True)
+    parser.add_argument("--profile", choices=("bundled", "full"), default="full")
+    parser.add_argument("--compiler", type=Path)
     parser.add_argument("--cache", type=Path, default=Path("build/astro-data-sources"))
     parser.add_argument("--output", type=Path, default=Path("dist/orekit-data"))
     args = parser.parse_args()
     cache, output = args.cache.resolve(), args.output.resolve()
     cache.mkdir(parents=True, exist_ok=True)
     output.mkdir(parents=True, exist_ok=True)
-    for name, url in SOURCES.items():
+    sources = SUBSET_SOURCES if args.profile == "bundled" else FULL_SOURCES
+    for name, url in sources.items():
         print(f"Preparing {name}", flush=True)
         download(url, cache / name)
-    native, start_jd, end_jd = convert_ephemeris(cache, args.compiler)
-    files = package_files(cache, native)
-    manifest = package_manifest(cache, files, start_jd, end_jd)
+    if args.profile == "bundled":
+        if args.compiler is None:
+            parser.error("--compiler is required for the bundled subset")
+        start = dt.datetime(2020, 1, 1, tzinfo=dt.timezone.utc)
+        end = dt.datetime(2051, 1, 1, tzinfo=dt.timezone.utc)
+        native, start_jd, end_jd = convert_ephemeris(cache, args.compiler, start, end)
+        preparation = {
+            "converter": "NASA/JPL ASC2EPH",
+            "NRECL": 4,
+            "T1": start_jd,
+            "T2": end_jd,
+        }
+    else:
+        start = dt.datetime(1550, 1, 1, tzinfo=dt.timezone.utc)
+        end = dt.datetime(2650, 1, 1, tzinfo=dt.timezone.utc)
+        native = cache / "linux_p1550p2650.440"
+        preparation = {
+            "converter": "None; unmodified NASA/JPL Linux DE440 binary",
+            "ephemerisRenamedTo": "lnxp1550.440",
+            "coverage": "Conservative UTC bounds inside the original TDB record range",
+        }
+    files = package_files(cache, native, args.profile)
+    manifest = package_manifest(cache, files, args.profile, start, end, preparation)
     write_package(output, files, manifest)
 
 

@@ -1,6 +1,7 @@
 package com.rtbishop.look4sat.core.data.astro
 
 import com.rtbishop.look4sat.core.domain.model.UpdateSource
+import com.rtbishop.look4sat.core.domain.astro.DEFAULT_ASTRO_DATA_URL
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.*
@@ -15,7 +16,7 @@ import java.util.zip.ZipOutputStream
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [24, 34])
 class AstroDataPackageTest {
-    private val github = "https://github.com/Iu-yang1/Look4Sat-FT4/releases/download/orekit-data/orekit-data.zip"
+    private val github = DEFAULT_ASTRO_DATA_URL
 
     @Test fun mirrorsPrefixTheCompleteGithubUrlExactlyOnce() {
         for ((source, mirror) in listOf(
@@ -41,12 +42,32 @@ class AstroDataPackageTest {
 
     @Test fun requiredCoverageAndFlatPathsAreValidatedBeforeExtraction() {
         assertEquals("fixture", AstroPackageMetadata.parse(manifest().toString()).version)
+        val bundled = manifest().put("coverageStartMillis", 1577836800000L)
+            .put("coverageEndMillis", 2556144000000L).put("distribution", "bundled")
+        assertTrue(AstroPackageMetadata.parse(bundled.toString()).builtIn)
+        assertFalse(AstroPackageMetadata.parse(manifest().toString()).builtIn)
+        assertThrows(IllegalArgumentException::class.java) {
+            AstroPackageMetadata.parse(bundled.put("coverageStartMillis", 1609459200000L).toString())
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            AstroPackageMetadata.parse(manifest().put("coverageEndMillis", 2524608000000L).toString())
+        }
         assertThrows(IllegalArgumentException::class.java) {
             AstroPackageMetadata.parse(manifest().put("coverageEndMillis", 1794000000000L).toString())
         }
         val malicious = manifest()
         malicious.getJSONArray("files").getJSONObject(0).put("name", "../lnxp2000.440")
         assertThrows(IllegalArgumentException::class.java) { AstroPackageMetadata.parse(malicious.toString()) }
+    }
+
+    @Test fun officialSubsetLinksMigrateToFullDataWithoutChangingCustomLinks() {
+        val old = "https://github.com/Iu-yang1/Look4Sat-FT4/releases/download/orekit-data/orekit-data.zip"
+        assertEquals(github, migrateAstroDownloadUrl(old))
+        for (prefix in listOf("https://ghfast.top/", "https://gh.llkk.cc/", "https://github.moeyy.xyz/")) {
+            assertEquals(prefix + github, migrateAstroDownloadUrl(prefix + old))
+        }
+        assertEquals("https://example.org/data.zip", migrateAstroDownloadUrl("https://example.org/data.zip"))
+        assertEquals(github, migrateAstroDownloadUrl(github))
     }
 
     @Test fun corruptFileHashesNeverPassVerification() {

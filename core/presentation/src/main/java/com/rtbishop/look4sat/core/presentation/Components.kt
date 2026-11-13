@@ -223,7 +223,7 @@ fun RowScope.NextPassRow(pass: OrbitalPass, modifier: Modifier = Modifier, isUtc
                 )
                 Spacer(modifier = Modifier.width(4.dp))
                 Text(
-                    text = "${pass.maxElevation}°",
+                    text = stringResource(R.string.radar_el_value, pass.maxElevation),
                     color = elevColor
                 )
             }

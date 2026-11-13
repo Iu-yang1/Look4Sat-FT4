@@ -8,9 +8,10 @@
     <string name="astro_downloading">Загрузка</string>
     <string name="astro_verifying">Проверка целостности данных</string>
     <string name="astro_ready">Готово к работе без сети</string>
+    <string name="astro_ready_bundled">Встроенные данные готовы к работе без сети</string>
     <string name="astro_failed">Не удалось загрузить. Проверьте ссылку и свободное место, затем повторите.</string>
     <string name="astro_update_failed">Обновление не удалось. Прежние данные доступны.</string>
-    <string name="astro_download">Загрузить / обновить</string>
+    <string name="astro_download">Загрузить / обновить полный DE440</string>
     <string name="astro_url">Ссылка на ZIP с данными</string>
     <string name="astro_url_invalid">Введите корректную ссылку HTTP или HTTPS</string>
     <string name="astro_edit_url">Изменить ссылку</string>

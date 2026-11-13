@@ -13,6 +13,7 @@ import java.util.zip.ZipFile
 internal object AstroTestData {
     val runtime: OrekitRuntime by lazy {
         val candidates = listOfNotNull(System.getenv("ASTRO_TEST_DATA_ZIP")?.let(::File),
+            File("../../dist/orekit-full/orekit-data.zip"), File("dist/orekit-full/orekit-data.zip"),
             File("../../dist/orekit-data/orekit-data.zip"), File("dist/orekit-data/orekit-data.zip"))
         val archive = candidates.firstOrNull(File::isFile)
         assumeTrue("Prepare orekit-data.zip or set ASTRO_TEST_DATA_ZIP", archive != null)
@@ -28,7 +29,7 @@ internal object AstroTestData {
         }
         // No Android JSON API is needed by plain JVM orbital reference tests.
         val text = File(directory, "manifest.json").readText()
-        fun number(key: String) = Regex("\"$key\"\\s*:\\s*(\\d+)").find(text)!!.groupValues[1].toLong()
+        fun number(key: String) = Regex("\"$key\"\\s*:\\s*(-?\\d+)").find(text)!!.groupValues[1].toLong()
         OrekitRuntime(directory, AstroPackageMetadata("test-DE440", number("coverageStartMillis"),
             number("coverageEndMillis"), number("eopEndMillis"), emptyList()))
     }

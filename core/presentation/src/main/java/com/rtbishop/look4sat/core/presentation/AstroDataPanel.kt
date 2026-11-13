@@ -33,7 +33,7 @@ fun astroStatus(state: AstroDataState): String = stringResource(when (state.phas
     AstroDataPhase.MISSING -> R.string.astro_missing
     AstroDataPhase.DOWNLOADING -> R.string.astro_downloading
     AstroDataPhase.VERIFYING -> R.string.astro_verifying
-    AstroDataPhase.READY -> R.string.astro_ready
+    AstroDataPhase.READY -> if (state.builtIn) R.string.astro_ready_bundled else R.string.astro_ready
     AstroDataPhase.FAILED -> if (state.ready) R.string.astro_update_failed else R.string.astro_failed
 })
 
@@ -82,6 +82,9 @@ fun AstroDataPanel(repository: IAstroDataRepository, onDismiss: () -> Unit) {
                 val end = state.coverageEndMillis
                 if (start != null && end != null) {
                     val format = java.text.DateFormat.getDateInstance(java.text.DateFormat.MEDIUM).apply {
+                        calendar = java.util.GregorianCalendar().apply {
+                            gregorianChange = java.util.Date(Long.MIN_VALUE)
+                        }
                         timeZone = java.util.TimeZone.getTimeZone("UTC")
                     }
                     Text(stringResource(R.string.astro_coverage, format.format(java.util.Date(start)),

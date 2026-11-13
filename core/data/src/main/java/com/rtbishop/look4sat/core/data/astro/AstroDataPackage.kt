@@ -11,7 +11,8 @@ internal data class AstroPackageMetadata(
     val end: Long,
     val eopEnd: Long,
     val files: List<AstroPackageFile>,
-    val eopStart: Long? = null
+    val eopStart: Long? = null,
+    val builtIn: Boolean = false
 ) {
     companion object {
         fun parse(text: String): AstroPackageMetadata {
@@ -35,10 +36,12 @@ internal data class AstroPackageMetadata(
             require(files.any { it.name == "finals2000A.all" })
             val start = json.getLong("coverageStartMillis")
             val end = json.getLong("coverageEndMillis")
-            require(start <= 946684800000L && end >= 4133980800000L)
+            require(start <= 1577836800000L && end >= 2556144000000L) {
+                "Astronomy package must cover 2020–2050"
+            }
             require(json.getLong("eopStartMillis") < json.getLong("eopEndMillis"))
             return AstroPackageMetadata(version, start, end, json.getLong("eopEndMillis"), files,
-                json.getLong("eopStartMillis"))
+                json.getLong("eopStartMillis"), json.optString("distribution") == "bundled")
         }
     }
 }

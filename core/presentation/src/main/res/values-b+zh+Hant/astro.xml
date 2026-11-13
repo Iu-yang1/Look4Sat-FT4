@@ -8,9 +8,10 @@
     <string name="astro_downloading">正在下載</string>
     <string name="astro_verifying">正在驗證資料</string>
     <string name="astro_ready">已就緒，可離線使用</string>
+    <string name="astro_ready_bundled">內建資料已就緒，可離線使用</string>
     <string name="astro_failed">下載失敗，請檢查連結及可用空間後重試。</string>
     <string name="astro_update_failed">更新失敗，原有資料仍可使用。</string>
-    <string name="astro_download">下載/更新</string>
+    <string name="astro_download">下載/更新完整 DE440</string>
     <string name="astro_url">資料包 ZIP 下載連結</string>
     <string name="astro_url_invalid">請輸入有效的 HTTP 或 HTTPS 連結</string>
     <string name="astro_edit_url">編輯下載連結</string>

@@ -10,7 +10,7 @@ import com.rtbishop.look4sat.core.domain.predict.TemeState
 import kotlinx.coroutines.flow.StateFlow
 
 const val DEFAULT_ASTRO_DATA_URL =
-    "https://github.com/Iu-yang1/Look4Sat-FT4/releases/download/orekit-data/orekit-data.zip"
+    "https://github.com/Iu-yang1/Look4Sat-FT4/releases/download/orekit-data-full/orekit-data.zip"
 
 enum class AstroDataPhase { LOADING, MISSING, DOWNLOADING, VERIFYING, READY, FAILED }
 
@@ -24,7 +24,8 @@ data class AstroDataState(
     val coverageStartMillis: Long? = null,
     val coverageEndMillis: Long? = null,
     val eopEndMillis: Long? = null,
-    val error: String? = null
+    val error: String? = null,
+    val builtIn: Boolean = false
 ) {
     val ready: Boolean get() = version != null
     val busy: Boolean get() = phase == AstroDataPhase.LOADING ||

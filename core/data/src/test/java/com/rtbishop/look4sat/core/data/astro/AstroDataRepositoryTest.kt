@@ -30,6 +30,63 @@ import java.util.zip.ZipOutputStream
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [24, 34])
 class AstroDataRepositoryTest {
+    @Test fun bundledDataStartsOfflineAndRemainsAvailableAfterFailedFullDownload() = runBlocking<Unit> {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val preferences = context.getSharedPreferences(UUID.randomUUID().toString(), Context.MODE_PRIVATE)
+        val root = Files.createTempDirectory("astro-bundled-").toFile()
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        var requests = 0
+        val client = OkHttpClient.Builder().addInterceptor { chain ->
+            requests++
+            Response.Builder().request(chain.request()).protocol(Protocol.HTTP_1_1).code(503)
+                .message("Unavailable").body("".toResponseBody()).build()
+        }.build()
+        try {
+            var opens = 0
+            val repository = AstroDataRepository(root, preferences, client, scope,
+                ControlDiagnosticsBuffer(), { UpdateSource.GITHUB },
+                bundledArchive = { opens++; context.assets.open("astronomy/orekit-data.zip") })
+            withTimeout(30000) { repository.state.first { it.phase == AstroDataPhase.READY } }
+            assertEquals(0, requests)
+            assertEquals(1, opens)
+            assertTrue(repository.state.value.builtIn)
+            val pinned = repository.snapshot()
+            assertEquals(1577836800000L, pinned.coverageStartMillis)
+            assertEquals(2556144000000L, pinned.coverageEndMillis)
+            val restored = AstroDataRepository(root, preferences, client, scope,
+                ControlDiagnosticsBuffer(), { UpdateSource.GITHUB },
+                bundledArchive = { error("Existing valid data must be reused") })
+            withTimeout(30000) { restored.state.first { it.phase == AstroDataPhase.READY } }
+            assertTrue(restored.state.value.builtIn)
+            assertEquals(repository.state.value.generation, restored.state.value.generation)
+
+            repository.download()
+            withTimeout(10000) { repository.state.first { it.phase == AstroDataPhase.FAILED } }
+            assertSame(pinned, repository.snapshot())
+            assertTrue(repository.state.value.builtIn)
+            assertTrue(repository.state.value.ready)
+            assertEquals(1, requests)
+        } finally { scope.cancel(); root.deleteRecursively() }
+    }
+
+    @Test fun damagedSavedGenerationRecoversUsingTheBundledArchiveWithoutNetwork() = runBlocking<Unit> {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val preferences = context.getSharedPreferences(UUID.randomUUID().toString(), Context.MODE_PRIVATE)
+        preferences.edit().putString("activeDirectory", "generation-aabb").commit()
+        val root = Files.createTempDirectory("astro-bundled-recovery-").toFile()
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val client = OkHttpClient.Builder().addInterceptor { error("No network during bundled restore") }.build()
+        try {
+            val repository = AstroDataRepository(root, preferences, client, scope,
+                ControlDiagnosticsBuffer(), { UpdateSource.GITHUB },
+                bundledArchive = { context.assets.open("astronomy/orekit-data.zip") })
+            withTimeout(30000) { repository.state.first { it.phase == AstroDataPhase.READY } }
+            assertTrue(repository.state.value.builtIn)
+            assertNotEquals("generation-aabb", repository.state.value.generation)
+            assertEquals(repository.state.value.generation, preferences.getString("activeDirectory", null))
+        } finally { scope.cancel(); root.deleteRecursively() }
+    }
+
     @Test fun initialFailureStaysUnavailableAndUrlChangesOnlyAffectTheNextRequest() = runBlocking<Unit> {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val preferences = context.getSharedPreferences(UUID.randomUUID().toString(), Context.MODE_PRIVATE)

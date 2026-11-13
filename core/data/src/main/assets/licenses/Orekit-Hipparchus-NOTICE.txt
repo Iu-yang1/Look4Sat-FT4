@@ -12,8 +12,9 @@ set; UTC-TAI relationships originate from IERS. No future leap seconds are assum
 Update the bundled history when a new leap second becomes effective.
 
 Production propagation uses Orekit's TLE SGP4/SDP4 implementation. Solar and lunar
-positions use a separately downloaded NASA/JPL DE440 subset, generated with JPL's
-ASC2EPH converter. Geometric occultation uses EclipseDetector/OccultationEngine
+positions use the bundled 2020-2050 NASA/JPL DE440 subset, generated with JPL's
+ASC2EPH converter, or an optional download containing JPL's complete, unmodified
+Linux DE440 binary (renamed for Orekit's loader). Geometric occultation uses EclipseDetector/OccultationEngine
 and a WGS84 ellipsoid without atmospheric refraction or terrain. IERS Earth
 orientation records are used where available; approximations outside their
 coverage are reported separately. Numerical tolerances do not guarantee future

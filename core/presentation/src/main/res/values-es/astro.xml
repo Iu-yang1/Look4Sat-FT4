@@ -8,9 +8,10 @@
     <string name="astro_downloading">Descargando</string>
     <string name="astro_verifying">Verificando datos</string>
     <string name="astro_ready">Listo para usar sin conexión</string>
+    <string name="astro_ready_bundled">Datos incluidos listos para usar sin conexión</string>
     <string name="astro_failed">Error de descarga. Comprueba el enlace y el espacio disponible e inténtalo de nuevo.</string>
     <string name="astro_update_failed">Error de actualización. Los datos anteriores siguen disponibles.</string>
-    <string name="astro_download">Descargar / actualizar</string>
+    <string name="astro_download">Descargar / actualizar DE440 completo</string>
     <string name="astro_url">URL del paquete ZIP</string>
     <string name="astro_url_invalid">Introduce una URL HTTP o HTTPS válida</string>
     <string name="astro_edit_url">Editar enlace de descarga</string>

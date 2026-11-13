@@ -127,16 +127,21 @@ internal class OrekitOrbitSession(
         if (cache == null || endMillis - startMillis > 14L * 86400000) {
             return searchPasses(observer, startMillis, endMillis, checkCancelled)
         }
-        val key = cache.key(target, observer, runtime.cacheIdentity)
-        val entry = cache.get(key, startMillis, endMillis) ?: run {
+        // Keep short tracking queries and multi-day schedules from evicting each
+        // other. A covering longer-range result can still serve a shorter query.
+        var horizon = 86400000L
+        while (horizon < endMillis - startMillis) horizon *= 2
+        fun key(span: Long) = cache.key(target, observer, "${runtime.cacheIdentity}:window-$span")
+        val ranges = generateSequence(horizon) { (it * 2).takeIf { next -> next <= 16L * 86400000 } }
+        val entry = ranges.firstNotNullOfOrNull { cache.get(key(it), startMillis, endMillis) } ?: run {
             val hour = 3600000L
             val start = maxOf(Math.floorDiv(startMillis, hour) * hour, runtime.coverageStartMillis)
             val end = minOf((Math.floorDiv(endMillis, hour) + 1) * hour, runtime.coverageEndMillis - 1)
             try {
                 val windows = searchPasses(observer, start, end, checkCancelled)
                 checkCancelled()
-                cache.put(key, start, end, windows)
-                cache.get(key, startMillis, endMillis)
+                cache.put(key(horizon), start, end, windows)
+                cache.get(key(horizon), startMillis, endMillis)
             } catch (error: OrbitPredictionException) {
                 // Padding must never turn a valid requested interval into a failure.
                 return searchPasses(observer, startMillis, endMillis, checkCancelled)

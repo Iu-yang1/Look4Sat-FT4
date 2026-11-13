@@ -62,11 +62,31 @@ class OrbitPassCacheTest {
             val key = cache.key(target, observer, "generation-1")
             assertNotEquals(key, cache.key(target.copy(data = elements.copy(ndot = .0001)), observer, "generation-1"))
             assertNotEquals(key, cache.key(target, observer.copy(altitude = 100.0), "generation-1"))
+            assertEquals(key, cache.key(target, observer.copy(timestamp = 123L, qthLocator = "OL63"), "generation-1"))
             assertNotEquals(key, cache.key(target, observer, "generation-2"))
             cache.put(key, start, start + 10000, emptyList())
             assertNotNull(OrbitPassCache(directory).get(key, start, start + 10000))
             assertNull(cache.get(key, start - 1, start + 10000))
             assertNull(cache.get(key, start, start + 10001))
+        } finally { directory.deleteRecursively() }
+    }
+
+    @Test fun differentQueryHorizonsSurviveAlternatingQueriesAndProcessRestarts() {
+        val directory = Files.createTempDirectory("passes-horizons-").toFile()
+        try {
+            val engine = OrekitOrbitEngine(AstroTestData.repository, directory)
+            val target = engine.bind(elements)
+            val session = engine.openSession(target)
+            val shortStart = start - 3600000
+            val shortEnd = start + 12 * 3600000
+            val longEnd = start + 72 * 3600000
+            val short = session.passes(observer, shortStart, shortEnd)
+            val long = session.passes(observer, start, longEnd)
+            val reopened = OrekitOrbitEngine(AstroTestData.repository, directory).openSession(target)
+            var work = 0
+            assertEquivalent(short, reopened.passes(observer, shortStart, shortEnd) { work++ })
+            assertEquivalent(long, reopened.passes(observer, start, longEnd) { work++ })
+            assertTrue("Both horizons must remain reusable", work < 150)
         } finally { directory.deleteRecursively() }
     }
 

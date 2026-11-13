@@ -51,6 +51,10 @@ class SatelliteRepoTest {
             runCurrent()
             val initial = lookups
             assertTrue(initial > 0)
+            (settings.stationPosition as MutableStateFlow).value =
+                settings.stationPosition.value.copy(timestamp = 123L, qthLocator = "JJ00")
+            runCurrent()
+            assertEquals(initial, lookups)
             settings.databaseState.value = settings.databaseState.value.copy(updateTimestamp = 123L)
             runCurrent()
             assertEquals(initial, lookups)

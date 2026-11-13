@@ -56,7 +56,8 @@ class OrekitCelestialService(private val data: IAstroDataRepository) : ICelestia
                          snapshot: AstroDataSnapshot?, checkCancelled: () -> Unit): CelestialState.RiseSetTimes {
         val runtime = runtime(snapshot)
         checkCancelled()
-        val key = RiseSetKey(runtime.cacheIdentity, observer, startMillis, endMillis, moon)
+        val key = RiseSetKey(runtime.cacheIdentity,
+            GeoPos(observer.latitude, observer.longitude, observer.altitude), startMillis, endMillis, moon)
         synchronized(riseSetCache) { riseSetCache[key] }?.let { return it }
         val station = runtime.station(observer)
         val body = if (moon) runtime.moon else runtime.sun

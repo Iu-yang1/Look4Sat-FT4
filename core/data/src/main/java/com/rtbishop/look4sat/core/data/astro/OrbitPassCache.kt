@@ -30,7 +30,9 @@ internal class OrbitPassCache(private val directory: File) {
     private var writes = 0
 
     fun key(target: OrbitalObject, observer: GeoPos, generation: String): String =
-        hex(digest("orekit-passes-3|${target.data}|$observer|$generation".toByteArray(Charsets.UTF_8)))
+        hex(digest(("orekit-passes-4|${target.data}|" +
+            "${observer.latitude},${observer.longitude},${observer.altitude}|$generation")
+            .toByteArray(Charsets.UTF_8)))
 
     fun get(key: String, start: Long, end: Long): Entry? {
         val cached = synchronized(memory) { memory[key] } ?: read(key)?.also {

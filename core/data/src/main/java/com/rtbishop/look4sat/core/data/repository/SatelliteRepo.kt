@@ -120,7 +120,11 @@ class SatelliteRepo(
 
     override suspend fun initRepository() = withContext(dispatcher) {
         combine(
-            settingsRepo.selectedIds, settingsRepo.stationPosition, settingsRepo.databaseState,
+            settingsRepo.selectedIds,
+            settingsRepo.stationPosition.map {
+                GeoPos(it.latitude, it.longitude, it.altitude)
+            }.distinctUntilChanged(),
+            settingsRepo.databaseState,
             settingsRepo.otherSettings.map { it.stateOfUtc }.distinctUntilChanged(),
             astroData.state.map { it.generation }.distinctUntilChanged()
         ) { ids, position, database, utc, generation ->

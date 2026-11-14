@@ -152,9 +152,13 @@ internal class OrekitOrbitSession(
         val bodyPosition = state.getPVCoordinates(runtime.terrestrial).position
         val axis1 = bodyPosition.orthogonal()
         val axis2 = Vector3D.crossProduct(bodyPosition.normalize(), axis1)
-        return (0..90).map { index ->
-            val angle = 2 * PI * index / 90
-            val reference = Vector3D(kotlin.math.cos(angle), axis1, kotlin.math.sin(angle), axis2)
+        // pointOnLimb chooses between two tangents by distance to an outside point.
+        // A unit direction lies inside Earth and can select the opposite tangent.
+        val radius = maxOf(bodyPosition.norm, 2 * runtime.earth.equatorialRadius)
+        return (0..360).map { index ->
+            val angle = 2 * PI * index / 360
+            val reference = Vector3D(radius * kotlin.math.cos(angle), axis1,
+                radius * kotlin.math.sin(angle), axis2)
             val limb = runtime.earth.pointOnLimb(bodyPosition, reference)
             val point = runtime.earth.transform(limb, runtime.terrestrial, state.date)
             GeoPos(Math.toDegrees(point.latitude), Math.toDegrees(point.longitude))

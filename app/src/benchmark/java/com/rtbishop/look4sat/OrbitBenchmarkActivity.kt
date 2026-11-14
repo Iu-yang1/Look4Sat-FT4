@@ -30,7 +30,6 @@ class OrbitBenchmarkActivity : Activity() {
         scope.launch {
             try {
                 container.astroData.state.first { it.ready }
-                container.satelliteRepo.initRepository()
                 val selected = container.satelliteRepo.satellites.first { it.isNotEmpty() }
                 val station = container.settingsRepo.stationPosition.value
                 val other = com.rtbishop.look4sat.core.domain.predict.GeoPos(31.25, 125.0)
@@ -47,11 +46,18 @@ class OrbitBenchmarkActivity : Activity() {
                         var count = 0
                         val windows = JSONArray()
                         for (target in targets) {
-                            val session = engine.openSession(target)
-                            for ((index, observer) in listOf(station, other).withIndex()) {
-                                val passes = session.passes(observer, start, start + hours * 3600000L) {
-                                    context.ensureActive()
+                            val stations = listOf(station, other)
+                            val predicted = if (intent.getBooleanExtra("batch", false)) {
+                                engine.passes(target, stations, start, start + hours * 3600000L)
+                            } else {
+                                val session = engine.openSession(target)
+                                stations.map { observer ->
+                                    session.passes(observer, start, start + hours * 3600000L) {
+                                        context.ensureActive()
+                                    }
                                 }
+                            }
+                            for ((index, passes) in predicted.withIndex()) {
                                 count += passes.size
                                 passes.forEach { pass -> windows.put(window(pass, index)) }
                             }

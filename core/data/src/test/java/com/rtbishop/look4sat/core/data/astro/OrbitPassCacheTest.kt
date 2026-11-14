@@ -49,6 +49,11 @@ class OrbitPassCacheTest {
         }
         assertEquals(batch[0], batch[2])
         assertTrue(diagnostics.any { "stations=3" in it && "earthTransforms=" in it })
+        stations.forEach { engine.openSession(target).passes(it, start, start + 86400000) }
+        fun propagations(line: String) = Regex("propagations=(\\d+)").find(line)!!.groupValues[1].toLong()
+        val shared = propagations(diagnostics.first { "stations=3" in it })
+        val independent = diagnostics.filter { "stations=1 " in it }.sumOf(::propagations)
+        assertTrue("Shared=$shared independent=$independent", shared < independent * .7)
     }
 
     @Test fun cancelledExtensionDoesNotReplaceCompleteCache() {

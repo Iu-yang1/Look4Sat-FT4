@@ -2,5 +2,4 @@
 <resources>
     <string name="prefs_trajectory_precision">轨迹计算精度</string>
     <string name="prefs_trajectory_precision_current">轨迹计算精度: %1$s</string>
-    <string name="prefs_trajectory_precision_hint">Ultra 保持当前采样精度,降低档位可减少计算量。</string>
 </resources>

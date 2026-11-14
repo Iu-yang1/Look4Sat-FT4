@@ -2,5 +2,4 @@
 <resources>
     <string name="prefs_trajectory_precision">ගමන් පථ නිරවද්‍යතාව</string>
     <string name="prefs_trajectory_precision_current">ගමන් පථ නිරවද්‍යතාව: %1$s</string>
-    <string name="prefs_trajectory_precision_hint">Ultra වත්මන් නියැදි නිරවද්‍යතාව තබා ගනී. පහළ මට්ටම් ගණනය කිරීම් අඩු කරයි.</string>
 </resources>

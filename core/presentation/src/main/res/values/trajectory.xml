@@ -2,5 +2,4 @@
 <resources>
     <string name="prefs_trajectory_precision">Trajectory precision</string>
     <string name="prefs_trajectory_precision_current">Trajectory precision: %1$s</string>
-    <string name="prefs_trajectory_precision_hint">Ultra keeps the current sampling. Lower levels reduce calculation work.</string>
 </resources>

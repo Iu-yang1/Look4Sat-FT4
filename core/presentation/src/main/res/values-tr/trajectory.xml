@@ -2,5 +2,4 @@
 <resources>
     <string name="prefs_trajectory_precision">Yörünge hassasiyeti</string>
     <string name="prefs_trajectory_precision_current">Yörünge hassasiyeti: %1$s</string>
-    <string name="prefs_trajectory_precision_hint">Ultra mevcut örneklemeyi korur. Daha düşük düzeyler hesaplama yükünü azaltır.</string>
 </resources>

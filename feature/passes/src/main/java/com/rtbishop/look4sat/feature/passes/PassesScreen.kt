@@ -112,10 +112,9 @@ fun PassesDestination(
         onPauseOrDispose { viewModel.setPresentationActive(false) }
     }
     val uiState = viewModel.uiState.collectAsStateWithLifecycle().value
-    val prediction = container.satelliteRepo.passPrediction.collectAsStateWithLifecycle().value
     com.rtbishop.look4sat.core.presentation.ContentDrawTiming("passes",
-        uiState.itemsList.isNotEmpty() && prediction.resultRequestId == prediction.requestId,
-        prediction.requestId, prediction.complete && !uiState.isRefreshing)
+        uiState.itemsList.isNotEmpty() && uiState.resultRequestId == uiState.predictionRequestId,
+        uiState.predictionRequestId, uiState.predictionComplete && !uiState.isRefreshing)
     val stationPosition = container.settingsRepo.stationPosition.collectAsStateWithLifecycle().value
     val passListFontScale = container.settingsRepo.otherSettings.collectAsStateWithLifecycle().value.passListFontScale
     PassesScreen(

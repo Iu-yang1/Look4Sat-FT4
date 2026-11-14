@@ -84,6 +84,9 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import com.rtbishop.look4sat.core.domain.predict.CelestialState
 import com.rtbishop.look4sat.core.domain.predict.OrbitalPass
 import com.rtbishop.look4sat.core.domain.predict.GeoPos
@@ -505,10 +508,13 @@ fun PassScheduleDestination(
     var resultQueryId by remember { androidx.compose.runtime.mutableLongStateOf(-1) }
     var currentTime by remember { mutableStateOf(System.currentTimeMillis()) }
     var minimumElevationSlider by remember(config.minimumElevation) { mutableStateOf(config.minimumElevation) }
-    LaunchedEffect(Unit) {
-        while (true) {
-            currentTime = System.currentTimeMillis()
-            delay(1_000L)
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    LaunchedEffect(lifecycle) {
+        lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            while (true) {
+                currentTime = System.currentTimeMillis()
+                delay(1_000L)
+            }
         }
     }
     val showTrackingSettings = remember { mutableStateOf(false) }
@@ -519,16 +525,22 @@ fun PassScheduleDestination(
         derivedStateOf { passes.filter { it.losTime > currentTime } }
     }
     var scheduleDays by remember { mutableStateOf<List<PassScheduleDay>>(emptyList()) }
+    var daysRequestId by remember { androidx.compose.runtime.mutableLongStateOf(-1) }
+    var daysSource by remember { mutableStateOf<List<OrbitalPass>>(emptyList()) }
     com.rtbishop.look4sat.core.presentation.ContentDrawTiming("schedule",
-        scheduleDays.isNotEmpty() && resultQueryId == queryId, queryId,
-        resultQueryId == queryId && !isCalculating)
-    LaunchedEffect(visiblePasses, isUtc, stationPosition) {
+        scheduleDays.isNotEmpty() && daysRequestId == queryId, queryId,
+        daysRequestId == queryId && daysSource == visiblePasses && !isCalculating)
+    LaunchedEffect(visiblePasses, isUtc, stationPosition, resultQueryId) {
+        val source = visiblePasses
+        val sourceRequest = resultQueryId
         // Show satellite windows before computing the auxiliary solar headers.
         scheduleDays = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
-            groupPassScheduleByDate(visiblePasses, isUtc, stationPosition)
+            groupPassScheduleByDate(source, isUtc, stationPosition)
         }
+        daysRequestId = sourceRequest
+        daysSource = source
         scheduleDays = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
-            groupPassScheduleByDate(visiblePasses, isUtc, stationPosition, container.satelliteRepo.celestial)
+            groupPassScheduleByDate(source, isUtc, stationPosition, container.satelliteRepo.celestial)
         }
     }
 

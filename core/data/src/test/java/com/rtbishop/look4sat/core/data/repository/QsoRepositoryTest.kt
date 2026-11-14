@@ -203,7 +203,10 @@ class QsoRepositoryTest {
 
         override fun observeAll(): Flow<List<QsoEntity>> = records
         override suspend fun find(id: Long): QsoEntity? = records.value.firstOrNull { it.id == id }
-        override suspend fun getAll(): List<QsoEntity> = records.value.sortedByDescending { it.startUtcMillis }
+        override suspend fun getAll(): List<QsoEntity> {
+            allReads++
+            return records.value.sortedByDescending { it.startUtcMillis }
+        }
         override suspend fun getDedupeKeys(): List<String> = records.value.map { it.dedupeKey }
 
         override suspend fun save(record: QsoEntity): Long {
@@ -868,10 +871,7 @@ class QsoRepositoryUpstreamTest {
 
         override suspend fun find(id: Long): QsoEntity? = rows[id]
 
-        override suspend fun getAll(): List<QsoEntity> {
-            allReads++
-            return rows.values.toList()
-        }
+        override suspend fun getAll(): List<QsoEntity> = rows.values.toList()
 
         override suspend fun getDedupeKeys(): List<String> = rows.values.map { it.dedupeKey }
 

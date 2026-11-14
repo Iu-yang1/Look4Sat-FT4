@@ -110,11 +110,18 @@ class SatelliteRepoTest {
             unusedService(com.rtbishop.look4sat.core.domain.astro.ICelestialService::class.java), readyData())
         val job = launch { repo.initRepository() }
         try {
-            val first = withTimeout(5000) { repo.passes.first { it.isNotEmpty() } }
+            val first = withTimeout(5000) { repo.passPrediction.first { it.windows.isNotEmpty() } }
             assertTrue(repo.isCalculating.value)
-            assertEquals(listOf(1), first.map { it.catNum })
-            assertTrue(first.all { it.maxElevation > 10.0 })
+            assertFalse(first.complete)
+            assertTrue(first.requestId > 0L)
+            assertEquals(first.requestId, first.resultRequestId)
+            assertEquals(listOf(1), first.windows.map { it.catNum })
+            assertTrue(first.windows.all { it.maxElevation > 10.0 })
             releaseSlow.countDown()
+            val completed = withTimeout(5000) { repo.passPrediction.first { it.complete } }
+            assertEquals(first.requestId, completed.requestId)
+            assertEquals(completed.requestId, completed.resultRequestId)
+            assertEquals(listOf(1, 2), completed.windows.map { it.catNum }.sorted())
             withTimeout(5000) { repo.isCalculating.first { !it } }
             assertEquals(listOf(1, 2), repo.passes.value.map { it.catNum }.sorted())
         } finally {

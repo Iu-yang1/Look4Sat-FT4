@@ -120,9 +120,9 @@ class PassesViewModel(
         // LOS expiry refresh to the lifetime of a nested collectLatest loop.
         viewModelScope.launch {
             val clockTicks = clock(1_000)
-            combine(satelliteRepo.passes, clockTicks) { allPasses, timeNow ->
-                allPasses to timeNow
-            }.collect { (allPasses, timeNow) ->
+            combine(satelliteRepo.passes, satelliteRepo.passPrediction, clockTicks) { fallback, prediction, timeNow ->
+                Triple(if (prediction.requestId == 0L) fallback else prediction.windows, prediction, timeNow)
+            }.collect { (allPasses, prediction, timeNow) ->
                 val current = _uiState.value
                 val isUtc = current.isUtc
                 val showDeepSpace = current.showDeepSpace
@@ -138,6 +138,9 @@ class PassesViewModel(
                 _uiState.update {
                     it.copy(
                         itemsList = processed,
+                        predictionRequestId = prediction.requestId,
+                        resultRequestId = prediction.resultRequestId,
+                        predictionComplete = prediction.complete,
                         groupedPasses = grouped,
                         nextPass = nextPass,
                         nextTime = nextTime,

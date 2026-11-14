@@ -117,6 +117,9 @@ interface ISatelliteRepo {
 }
 
 private val noOrbitFailures: StateFlow<Map<Int, String>> = kotlinx.coroutines.flow.MutableStateFlow(emptyMap())
-data class PassPredictionState(val requestId: Long = 0, val resultRequestId: Long = -1, val complete: Boolean = false)
+data class PassPredictionState(
+    val requestId: Long = 0, val resultRequestId: Long = -1, val complete: Boolean = false,
+    val windows: List<OrbitalPass> = emptyList()
+)
 private val idlePassPrediction: StateFlow<PassPredictionState> =
     kotlinx.coroutines.flow.MutableStateFlow(PassPredictionState())

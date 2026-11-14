@@ -228,7 +228,8 @@ class SatelliteRepo(
                                 if (partial.isNotEmpty() && now - lastPublication >= 250_000_000 &&
                                     calculationGeneration.isLatest(generation)) {
                                     mutablePasses.value = partial.sortedBy { it.aosTime }
-                                    prediction.value = prediction.value.copy(resultRequestId = generation)
+                                    prediction.value = prediction.value.copy(resultRequestId = generation,
+                                        windows = mutablePasses.value)
                                     lastPublication = now
                                 }
                             }
@@ -236,7 +237,8 @@ class SatelliteRepo(
                     ).filter(::matches)
                     if (calculationGeneration.isLatest(generation)) {
                         mutablePasses.value = result
-                        prediction.value = prediction.value.copy(resultRequestId = generation, complete = true)
+                        prediction.value = prediction.value.copy(resultRequestId = generation, complete = true,
+                            windows = result)
                         diagnostics?.record(
                             com.rtbishop.look4sat.core.domain.control.ControlDiagnosticSource.RADIO,
                             "orbit/loading",

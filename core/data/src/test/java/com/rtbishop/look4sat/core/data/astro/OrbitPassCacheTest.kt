@@ -15,6 +15,59 @@ class OrbitPassCacheTest {
     private val observer = GeoPos(23.13, 113.26)
     private val start = Instant.parse("2000-06-28T00:10:00Z").toEpochMilli()
 
+    @Test fun leftRightAndBothExtensionsMatchFreshSearchIncludingSeamPeaks() {
+        val directory = Files.createTempDirectory("passes-extensions-").toFile()
+        try {
+            val diagnostics = mutableListOf<String>()
+            val engine = OrekitOrbitEngine(AstroTestData.repository, directory, diagnostic = diagnostics::add)
+            val target = engine.bind(elements)
+            val raw = AstroTestData.engine.openSession(target)
+            val ranges = listOf(
+                start to start + 12 * 3600000,
+                start to start + 15 * 3600000,
+                start - 3 * 3600000 to start + 15 * 3600000,
+                start - 5 * 3600000 to start + 18 * 3600000,
+                start - 5 * 3600000 to start + 22 * 3600000,
+                start + 8 * 86400000 to start + 9 * 86400000
+            )
+            ranges.forEach { (from, to) ->
+                assertEquivalent(raw.passes(observer, from, to), engine.openSession(target).passes(observer, from, to))
+            }
+            assertTrue(diagnostics.any { "cache=extension" in it })
+            assertTrue(diagnostics.any { "cache=miss" in it })
+        } finally { directory.deleteRecursively() }
+    }
+
+    @Test fun batchStationsMatchIndependentPreciseWindowsAndSharePropagation() = kotlinx.coroutines.runBlocking {
+        val diagnostics = java.util.Collections.synchronizedList(mutableListOf<String>())
+        val engine = OrekitOrbitEngine(AstroTestData.repository, diagnostic = diagnostics::add)
+        val target = engine.bind(elements)
+        val stations = listOf(observer, GeoPos(-12.0, 145.0, 150.0), observer)
+        val batch = engine.passes(target, stations, start, start + 86400000)
+        stations.forEachIndexed { index, position ->
+            assertEquivalent(AstroTestData.engine.openSession(target).passes(position, start, start + 86400000), batch[index])
+        }
+        assertEquals(batch[0], batch[2])
+        assertTrue(diagnostics.any { "stations=3" in it && "earthTransforms=" in it })
+    }
+
+    @Test fun cancelledExtensionDoesNotReplaceCompleteCache() {
+        val directory = Files.createTempDirectory("passes-cancel-extension-").toFile()
+        try {
+            val engine = OrekitOrbitEngine(AstroTestData.repository, directory)
+            val target = engine.bind(elements)
+            val original = engine.openSession(target).passes(observer, start, start + 12 * 3600000)
+            var calls = 0
+            assertThrows(CancellationException::class.java) {
+                engine.openSession(target).passes(observer, start, start + 20 * 3600000) {
+                    if (++calls > 20) throw CancellationException()
+                }
+            }
+            val reopened = OrekitOrbitEngine(AstroTestData.repository, directory)
+            assertEquivalent(original, reopened.openSession(target).passes(observer, start, start + 12 * 3600000))
+        } finally { directory.deleteRecursively() }
+    }
+
     @Test fun diskReuseMatchesUncachedWindowsAndAvoidsAnotherScan() {
         val directory = Files.createTempDirectory("passes-cache-").toFile()
         try {
@@ -130,8 +183,8 @@ class OrbitPassCacheTest {
             assertEquals(a.maxElevation, b.maxElevation, .1)
             assertEquals(a.aosAzimuth, b.aosAzimuth, .1)
             assertEquals(a.losAzimuth, b.losAzimuth, .1)
-            assertEquals(a.startClipped, b.startClipped)
-            assertEquals(a.endClipped, b.endClipped)
+            assertEquals("Start clipping: expected=$a actual=$b", a.startClipped, b.startClipped)
+            assertEquals("End clipping: expected=$a actual=$b", a.endClipped, b.endClipped)
             assertEquals(a.continuousVisibility, b.continuousVisibility)
         }
     }

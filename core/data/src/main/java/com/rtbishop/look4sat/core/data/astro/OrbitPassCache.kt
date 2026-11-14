@@ -28,6 +28,17 @@ internal class OrbitPassCache(private val directory: File) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Entry>?) = size > 64
     }
     private var writes = 0
+    private val locks = Array(64) { Any() }
+
+    fun <T> withKey(key: String, block: () -> T): T =
+        synchronized(locks[(key.hashCode() and Int.MAX_VALUE) % locks.size], block)
+
+    fun <T> withKeys(keys: List<String>, block: () -> T): T {
+        val indices = keys.map { (it.hashCode() and Int.MAX_VALUE) % locks.size }.distinct().sorted()
+        fun locked(index: Int): T = if (index == indices.size) block()
+            else synchronized(locks[indices[index]]) { locked(index + 1) }
+        return locked(0)
+    }
 
     fun key(target: OrbitalObject, observer: GeoPos, generation: String): String =
         hex(digest(("orekit-passes-4|${target.data}|" +
@@ -35,13 +46,16 @@ internal class OrbitPassCache(private val directory: File) {
             .toByteArray(Charsets.UTF_8)))
 
     fun get(key: String, start: Long, end: Long): Entry? {
-        val cached = synchronized(memory) { memory[key] } ?: read(key)?.also {
-            synchronized(memory) { memory[key] = it }
-        }
-        return cached?.takeIf { it.start <= start && it.end >= end }
+        return peek(key)?.takeIf { it.start <= start && it.end >= end }
     }
 
-    fun put(key: String, start: Long, end: Long, passes: List<OrbitalPass>) {
+    fun peek(key: String): Entry? = withKey(key) {
+        synchronized(memory) { memory[key] } ?: read(key)?.also {
+            synchronized(memory) { memory[key] = it }
+        }
+    }
+
+    fun put(key: String, start: Long, end: Long, passes: List<OrbitalPass>) = withKey(key) {
         val entry = Entry(start, end, passes.map {
             Window(it.aosTime, it.aosAzimuth, it.losTime, it.losAzimuth, it.altitude,
                 it.maxElevation, it.hasDecayed, it.startClipped, it.endClipped,
@@ -49,7 +63,7 @@ internal class OrbitPassCache(private val directory: File) {
         })
         synchronized(memory) { memory[key] = entry }
         try {
-            if (!directory.isDirectory && !directory.mkdirs()) return
+            if (!directory.isDirectory && !directory.mkdirs()) return@withKey
             val payload = ByteArrayOutputStream().also { bytes ->
                 DataOutputStream(bytes).use { output ->
                     output.writeUTF(key)
@@ -78,7 +92,9 @@ internal class OrbitPassCache(private val directory: File) {
                     output.write(payload)
                 }
                 val destination = File(directory, "$key.cache")
-                if (!destination.exists() || destination.delete()) temporary.renameTo(destination)
+                // Android rename replaces the destination atomically. Never delete the
+                // valid file first: failed replacement must leave its coverage intact.
+                if (!temporary.renameTo(destination)) throw java.io.IOException("Cache rename failed")
             } finally { temporary.delete() }
             val prune = synchronized(memory) { ++writes % 16 == 0 }
             if (prune) directory.listFiles().orEmpty()
@@ -87,6 +103,7 @@ internal class OrbitPassCache(private val directory: File) {
         } catch (_: java.io.IOException) {
             // Cache storage is optional; the already computed result remains valid.
         }
+        Unit
     }
 
     private fun read(key: String): Entry? = try {

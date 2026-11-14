@@ -18,15 +18,52 @@ import org.orekit.propagation.analytical.tle.TLE
 import org.orekit.propagation.analytical.tle.TLEPropagator
 import kotlin.math.PI
 import kotlin.math.min
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.ensureActive
+import kotlin.coroutines.coroutineContext
 
 class OrekitOrbitEngine(
     private val data: IAstroDataRepository,
-    cacheDirectory: java.io.File? = null
+    cacheDirectory: java.io.File? = null,
+    scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
+    private val diagnostic: (String) -> Unit = {}
 ) : IOrbitEngine {
     private val passCache = cacheDirectory?.let(::OrbitPassCache)
+    private val coordinator = OrbitComputationCoordinator(scope, diagnostic = diagnostic)
+    private data class Request(
+        val elements: OrbitalData, val runtime: Any?, val observers: List<List<Double>>,
+        val start: Long, val end: Long
+    )
     override fun bind(elements: OrbitalData) = OrbitalObject(elements, data.snapshot())
     override fun openSession(target: OrbitalObject): IOrbitSession =
-        OrekitOrbitSession(target.copy(snapshot = target.snapshot ?: data.snapshot()), passCache)
+        OrekitOrbitSession(target.copy(snapshot = target.snapshot ?: data.snapshot()), passCache, diagnostic)
+
+    override suspend fun passes(target: OrbitalObject, observers: List<GeoPos>,
+        startMillis: Long, endMillis: Long): List<List<OrbitalPass>> {
+        require(endMillis > startMillis)
+        val pinned = target.copy(snapshot = target.snapshot ?: data.snapshot())
+        val hour = 3600000L
+        val normalized = passCache != null && endMillis - startMillis <= 14L * 86400000
+        val start = if (normalized) maxOf(Math.floorDiv(startMillis, hour) * hour,
+            requireNotNull(pinned.snapshot).coverageStartMillis) else startMillis
+        val end = if (normalized) minOf((Math.floorDiv(endMillis - 1, hour) + 1) * hour,
+            requireNotNull(pinned.snapshot).coverageEndMillis - 1) else endMillis
+        val key = Request(pinned.data, pinned.snapshot,
+            observers.map { listOf(it.latitude, it.longitude, it.altitude) }, start, end)
+        val windows = coordinator.compute(key) {
+            val context = coroutineContext
+            OrekitOrbitSession(pinned, passCache, diagnostic).batchPasses(observers, start, end) {
+                context.ensureActive()
+            }
+        }
+        val context = coroutineContext
+        val cropSession = OrekitOrbitSession(pinned, diagnostic = diagnostic)
+        return observers.indices.map { index ->
+            cropSession.crop(observers[index], windows[index], startMillis, endMillis) { context.ensureActive() }
+        }
+    }
 }
 
 internal fun orekitTle(data: OrbitalData, runtime: OrekitRuntime): TLE {
@@ -45,13 +82,17 @@ internal fun orekitTle(data: OrbitalData, runtime: OrekitRuntime): TLE {
 /** Thread-confined session; callers must not share it between jobs. */
 internal class OrekitOrbitSession(
     override val target: OrbitalObject,
-    private val passCache: OrbitPassCache? = null
+    private val passCache: OrbitPassCache? = null,
+    private val diagnostic: (String) -> Unit = {}
 ) : IOrbitSession {
     internal val runtime = target.snapshot as OrekitRuntime
     private val propagator = TLEPropagator.selectExtrapolator(orekitTle(target.data, runtime), runtime.teme)
     private val stations = mutableMapOf<GeoPos, org.orekit.frames.TopocentricFrame>()
+    private var propagationCount = 0L
+    private var earthTransformCount = 0L
     private fun station(observer: GeoPos) = stations.getOrPut(observer) { runtime.station(observer) }
     internal fun state(time: Long): SpacecraftState {
+        propagationCount++
         val state = propagator.propagate(runtime.date(time))
         val radius = state.position.norm
         require(radius.isFinite() && state.pvCoordinates.velocity.norm.isFinite()) { "Non-finite propagated orbit" }
@@ -70,8 +111,9 @@ internal class OrekitOrbitSession(
     }
     override fun directions(observers: List<GeoPos>, timeMillis: Long): List<OrbitDirection> {
         val state = state(timeMillis)
+        val body = state.getPVCoordinates(runtime.terrestrial).position
         return observers.map { observer ->
-            val coordinates = station(observer).getTrackingCoordinates(state.position, state.frame, state.date)
+            val coordinates = station(observer).getTrackingCoordinates(body, runtime.terrestrial, state.date)
             OrbitDirection(coordinates.azimuth, coordinates.elevation)
         }
     }
@@ -120,45 +162,123 @@ internal class OrekitOrbitSession(
         return (1000 * min(30.0, min(target.data.orbitalPeriod * 60 / 720, (PI / 180) / rate))).toLong()
     }
     override fun passes(observer: GeoPos, startMillis: Long, endMillis: Long,
-                        checkCancelled: () -> Unit): List<OrbitalPass> {
+                        checkCancelled: () -> Unit): List<OrbitalPass> =
+        batchPasses(listOf(observer), startMillis, endMillis, checkCancelled).single()
+
+    private data class CachePlan(
+        val key: String?, val start: Long, val end: Long,
+        val retained: List<OrbitalPass>, val searches: List<Pair<Long, Long>>
+    )
+
+    internal fun batchPasses(observers: List<GeoPos>, startMillis: Long, endMillis: Long,
+        checkCancelled: () -> Unit): List<List<OrbitalPass>> {
         require(endMillis > startMillis)
         checkCancelled()
         val cache = passCache
         if (cache == null || endMillis - startMillis > 14L * 86400000) {
-            return searchPasses(observer, startMillis, endMillis, checkCancelled)
+            return searchPassesBatch(observers, startMillis, endMillis, checkCancelled)
         }
-        // Keep short tracking queries and multi-day schedules from evicting each
-        // other. A covering longer-range result can still serve a shorter query.
         var horizon = 86400000L
         while (horizon < endMillis - startMillis) horizon *= 2
-        fun key(span: Long) = cache.key(target, observer, "${runtime.cacheIdentity}:window-$span")
-        val ranges = generateSequence(horizon) { (it * 2).takeIf { next -> next <= 16L * 86400000 } }
-        val entry = ranges.firstNotNullOfOrNull { cache.get(key(it), startMillis, endMillis) } ?: run {
-            val hour = 3600000L
-            val start = maxOf(Math.floorDiv(startMillis, hour) * hour, runtime.coverageStartMillis)
-            val end = minOf((Math.floorDiv(endMillis, hour) + 1) * hour, runtime.coverageEndMillis - 1)
-            try {
-                val windows = searchPasses(observer, start, end, checkCancelled)
-                checkCancelled()
-                cache.put(key(horizon), start, end, windows)
-                cache.get(key(horizon), startMillis, endMillis)
-            } catch (error: OrbitPredictionException) {
-                // Padding must never turn a valid requested interval into a failure.
-                return searchPasses(observer, startMillis, endMillis, checkCancelled)
-            }
-        } ?: return searchPasses(observer, startMillis, endMillis, checkCancelled)
-        return entry.windows.flatMap { window ->
+        fun key(observer: GeoPos, span: Long) =
+            cache.key(target, observer, "${runtime.cacheIdentity}:window-$span")
+        val spans = generateSequence(horizon) { (it * 2).takeIf { next -> next <= 16L * 86400000 } }.toList()
+        val allSpans = generateSequence(86400000L) { (it * 2).takeIf { next -> next <= 16L * 86400000 } }.toList()
+        val keys = observers.flatMap { observer -> allSpans.map { key(observer, it) } }
+        return cache.withKeys(keys) {
             checkCancelled()
-            val start = maxOf(startMillis, window.aos)
-            val end = minOf(endMillis, window.los)
+            val plans = observers.map { observer ->
+                val hit = spans.firstNotNullOfOrNull { cache.get(key(observer, it), startMillis, endMillis) }
+                if (hit != null) {
+                    diagnostic("cat=${target.data.catnum} cache=hit start=$startMillis end=$endMillis")
+                    CachePlan(null, hit.start, hit.end, hit.windows.map { it.restore(target) }, emptyList())
+                } else {
+                    val hour = 3600000L
+                    val start = maxOf(Math.floorDiv(startMillis, hour) * hour, runtime.coverageStartMillis)
+                    val end = minOf((Math.floorDiv(endMillis - 1, hour) + 1) * hour, runtime.coverageEndMillis - 1)
+                    val ownKey = key(observer, horizon)
+                    val previous = cache.peek(ownKey) ?: allSpans.mapNotNull { cache.peek(key(observer, it)) }
+                        .filter { it.start < end && it.end > start }
+                        .maxByOrNull { minOf(it.end, end) - maxOf(it.start, start) }
+                    incrementalPlan(ownKey, previous, start, end, horizon)
+                }
+            }
+            val windows = plans.map { it.retained.toMutableList() }
+            val searches = linkedMapOf<Pair<Long, Long>, MutableList<Int>>()
+            plans.forEachIndexed { index, plan ->
+                plan.searches.forEach { range -> searches.getOrPut(range) { mutableListOf() }.add(index) }
+            }
+            try {
+                searches.forEach { (range, indices) ->
+                    val result = searchPassesBatch(indices.map(observers::get), range.first, range.second, checkCancelled)
+                    indices.forEachIndexed { offset, index -> windows[index].addAll(result[offset]) }
+                }
+                checkCancelled()
+            } catch (error: OrbitPredictionException) {
+                // Never publish partial coverage, including a completed left extension
+                // followed by failure in the right extension.
+                return@withKeys searchPassesBatch(observers, startMillis, endMillis, checkCancelled)
+            }
+            val ordered = windows.map { it.sortedBy(OrbitalPass::aosTime) }
+            plans.forEachIndexed { index, plan ->
+                plan.key?.let { cache.put(it, plan.start, plan.end, ordered[index]) }
+            }
+            observers.indices.map { index ->
+                crop(observers[index], ordered[index], startMillis, endMillis, checkCancelled)
+            }
+        }
+    }
+
+    private fun incrementalPlan(key: String, old: OrbitPassCache.Entry?, start: Long, end: Long,
+        span: Long): CachePlan {
+        val from = minOf(start, old?.start ?: start)
+        val to = maxOf(end, old?.end ?: end)
+        if (old == null || old.end <= start || old.start >= end || to - from > 2 * span) {
+            diagnostic("cat=${target.data.catnum} cache=miss start=$start end=$end")
+            return CachePlan(key, start, end, emptyList(), listOf(start to end))
+        }
+        val ranges = mutableListOf<Pair<Long, Long>>()
+        if (start < old.start) {
+            val edge = old.windows.firstOrNull()?.takeIf { it.aos == old.start }
+            // Finish inside the already searched invisible gap, not at a numerically
+            // solved LOS whose residual could look like a clipped visible endpoint.
+            val finish = edge?.let {
+                it.los + ((old.windows.getOrNull(1)?.aos ?: old.end) - it.los) / 2
+            } ?: old.start
+            ranges += from to finish
+        }
+        if (end > old.end) {
+            val edge = old.windows.lastOrNull()?.takeIf { it.los == old.end }
+            val begin = edge?.let {
+                val previous = old.windows.getOrNull(old.windows.lastIndex - 1)?.los ?: old.start
+                previous + (it.aos - previous) / 2
+            } ?: old.end
+            ranges += begin to to
+        }
+        val merged = if (ranges.size == 2 && ranges[0].second >= ranges[1].first) {
+            listOf(from to to)
+        } else ranges
+        val retained = old.windows.filter { window ->
+            merged.none { (a, b) -> window.aos < b && window.los > a }
+        }.map { it.restore(target) }
+        diagnostic("cat=${target.data.catnum} cache=extension start=$from end=$to searches=$merged")
+        return CachePlan(key, from, to, retained, merged)
+    }
+
+    internal fun crop(observer: GeoPos, windows: List<OrbitalPass>, startMillis: Long,
+        endMillis: Long, checkCancelled: () -> Unit): List<OrbitalPass> =
+        windows.flatMap { window ->
+            checkCancelled()
+            val start = maxOf(startMillis, window.aosTime)
+            val end = minOf(endMillis, window.losTime)
             when {
                 end <= start -> emptyList()
-                (start != window.aos || end != window.los) && window.tca in start..end -> {
+                (start != window.aosTime || end != window.losTime) && window.tcaTime in start..end -> {
                     val first = directions(listOf(observer), start).single()
                     val last = directions(listOf(observer), end).single()
-                    val startClipped = if (start == window.aos) window.startClipped else first.elevation > 0
-                    val endClipped = if (end == window.los) window.endClipped else last.elevation > 0
-                    listOf(window.restore(target).copy(
+                    val startClipped = if (start == window.aosTime) window.startClipped else first.elevation > 0
+                    val endClipped = if (end == window.losTime) window.endClipped else last.elevation > 0
+                    listOf(window.copy(
                         aosTime = start, aosAzimuth = Math.toDegrees(first.azimuth).round(1),
                         losTime = end, losAzimuth = Math.toDegrees(last.azimuth).round(1),
                         startClipped = startClipped, endClipped = endClipped,
@@ -166,70 +286,85 @@ internal class OrekitOrbitSession(
                         hasDecayed = target.data.hasDecayed(start)
                     ))
                 }
-                start != window.aos || end != window.los ->
-                    searchPasses(observer, start, end, checkCancelled)
-                else -> listOf(window.restore(target))
+                start != window.aosTime || end != window.losTime ->
+                    searchPassesBatch(listOf(observer), start, end, checkCancelled).single().map { clipped ->
+                        // Searching a truncated peak can end exactly at a previously
+                        // solved real boundary. Preserve its known event identity.
+                        val clippedStart = if (clipped.aosTime == window.aosTime)
+                            window.startClipped else clipped.startClipped
+                        val clippedEnd = if (clipped.losTime == window.losTime)
+                            window.endClipped else clipped.endClipped
+                        clipped.copy(startClipped = clippedStart, endClipped = clippedEnd,
+                            continuousVisibility = clippedStart && clippedEnd)
+                    }
+                else -> listOf(window)
             }
         }
-    }
 
-    private fun searchPasses(observer: GeoPos, startMillis: Long, endMillis: Long,
-                             checkCancelled: () -> Unit): List<OrbitalPass> {
-        val topo = station(observer)
+    private fun searchPassesBatch(observers: List<GeoPos>, startMillis: Long, endMillis: Long,
+                             checkCancelled: () -> Unit): List<List<OrbitalPass>> {
+        val topos = observers.map(::station)
+        val propagationStart = propagationCount
+        val transformStart = earthTransformCount
         // Bracketing revisits endpoints for elevation, slope and adaptive steps.
         // Keep only this search's recent samples; never share propagators across jobs.
         class Sample(val state: SpacecraftState) {
-            private val local by lazy(LazyThreadSafetyMode.NONE) {
-                state.frame.getKinematicTransformTo(topo, state.date).transformOnlyPV(state.pvCoordinates)
+            private val body by lazy(LazyThreadSafetyMode.NONE) {
+                earthTransformCount++
+                state.getPVCoordinates(runtime.terrestrial)
             }
-            // Same Hipparchus angle and derivative used by Orekit's elevation detectors;
-            // share the expensive frame conversion for both event functions.
-            val value by lazy(LazyThreadSafetyMode.NONE) { local.position.delta }
-            val derivative by lazy(LazyThreadSafetyMode.NONE) {
-                local.toUnivariateDerivative1Vector().delta.firstDerivative
-            }
+            private val locals = arrayOfNulls<org.orekit.utils.TimeStampedPVCoordinates>(topos.size)
+            fun local(index: Int): org.orekit.utils.TimeStampedPVCoordinates =
+                locals[index] ?: runtime.terrestrial.getKinematicTransformTo(topos[index], state.date)
+                    .transformOnlyPV(body).also { locals[index] = it }
+            fun value(index: Int) = local(index).position.delta
+            fun derivative(index: Int) =
+                local(index).toUnivariateDerivative1Vector().delta.firstDerivative
+            fun direction(index: Int) = topos[index].getTrackingCoordinates(
+                body.position, runtime.terrestrial, state.date)
         }
-        val samples = object : LinkedHashMap<Long, Sample>(16, 0.75f, true) {
-            override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Long, Sample>?) = size > 16
+        val samples = object : LinkedHashMap<Long, Sample>(64, 0.75f, true) {
+            override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Long, Sample>?) = size > 64
         }
         fun sample(time: Long): Sample {
             checkCancelled()
             return samples.getOrPut(time) { Sample(state(time)) }
         }
-        val value = { time: Long -> sample(time).value }
-        val maxima = mutableListOf<Long>()
-        var failure: OrbitEventSearchException? = null
+        val maxima = observers.map { mutableListOf<Long>() }
+        var failure: OrbitBatchSearchException? = null
         val events = try {
-            eventBoundaries(startMillis, endMillis, value,
-                { time -> sample(time).derivative }, { time -> step(sample(time).state) }, checkCancelled,
-                { maxima.add(it) })
-        } catch (error: OrbitEventSearchException) {
+            eventBoundariesBatch(startMillis, endMillis, observers.indices.map { index ->
+                OrbitEventFunction({ sample(it).value(index) }, { sample(it).derivative(index) },
+                    { maxima[index].add(it) })
+            }, { time -> step(sample(time).state) }, checkCancelled)
+        } catch (error: OrbitBatchSearchException) {
             failure = error
             error.boundaries
         }
         val validEnd = failure?.validUntilMillis ?: endMillis
-        val boundaries = listOf(startMillis) + events + validEnd
-        val passes = boundaries.zipWithNext().mapNotNull { (a, b) ->
-            checkCancelled()
-            if (b <= a) return@mapNotNull null
-            if (value(a + (b - a) / 2) <= 0) return@mapNotNull null
-            val candidates = listOf(a, b) + maxima.filter { it in a..b }
-            val tca = candidates.maxBy { value(it) }
-            fun coordinates(time: Long) = sample(time).state.let {
-                topo.getTrackingCoordinates(it.position, it.frame, it.date)
+        val results = observers.indices.map { index ->
+            val boundaries = listOf(startMillis) + events[index] + validEnd
+            boundaries.zipWithNext().mapNotNull { (a, b) ->
+                checkCancelled()
+                if (b <= a || sample(a + (b - a) / 2).value(index) <= 0) return@mapNotNull null
+                val candidates = listOf(a, b) + maxima[index].filter { it in a..b }
+                val tca = candidates.maxBy { sample(it).value(index) }
+                val first = sample(a).direction(index)
+                val last = sample(b).direction(index)
+                val peak = sample(tca).state
+                val peakAltitude = runtime.earth.transform(peak.position, peak.frame, peak.date).altitude / 1000
+                val clippedStart = a == startMillis && sample(a).value(index) > 0
+                val clippedEnd = b == validEnd && sample(b).value(index) > 0
+                OrbitalPass(a, Math.toDegrees(first.azimuth).round(1), b, Math.toDegrees(last.azimuth).round(1),
+                    peakAltitude.toInt(), Math.toDegrees(sample(tca).value(index)).round(1), target,
+                    hasDecayed = target.data.hasDecayed(a), startClipped = clippedStart,
+                    endClipped = clippedEnd, continuousVisibility = clippedStart && clippedEnd, tcaTime = tca)
             }
-            val first = coordinates(a)
-            val last = coordinates(b)
-            val peak = sample(tca).state
-            val peakAltitude = runtime.earth.transform(peak.position, peak.frame, peak.date).altitude / 1000
-            val clippedStart = a == startMillis && value(a) > 0
-            val clippedEnd = b == validEnd && value(b) > 0
-            OrbitalPass(a, Math.toDegrees(first.azimuth).round(1), b, Math.toDegrees(last.azimuth).round(1),
-                peakAltitude.toInt(), Math.toDegrees(value(tca)).round(1), target,
-                hasDecayed = target.data.hasDecayed(a), startClipped = clippedStart,
-                endClipped = clippedEnd, continuousVisibility = clippedStart && clippedEnd, tcaTime = tca)
         }
-        failure?.let { throw OrbitPredictionException(validEnd, passes, it) }
-        return passes
+        diagnostic("cat=${target.data.catnum} stations=${observers.size} searchStart=$startMillis " +
+            "searchEnd=$endMillis propagations=${propagationCount - propagationStart} " +
+            "earthTransforms=${earthTransformCount - transformStart} partial=${failure != null}")
+        failure?.let { throw OrbitPredictionException(validEnd, results.firstOrNull().orEmpty(), it) }
+        return results
     }
 }

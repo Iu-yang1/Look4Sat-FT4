@@ -8,6 +8,7 @@ import com.rtbishop.look4sat.core.domain.predict.OrbitalPass
 import com.rtbishop.look4sat.core.domain.predict.OrbitalPos
 import com.rtbishop.look4sat.core.domain.predict.TemeState
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.ensureActive
 
 const val DEFAULT_ASTRO_DATA_URL =
     "https://github.com/Iu-yang1/Look4Sat-FT4/releases/download/orekit-data-full/orekit-data.zip"
@@ -60,6 +61,18 @@ interface IAstroDataRepository {
 interface IOrbitEngine {
     fun openSession(target: OrbitalObject): IOrbitSession
     fun bind(elements: OrbitalData): OrbitalObject
+    /** Ordered station windows; implementations may share exact-time propagation. */
+    suspend fun passes(
+        target: OrbitalObject, observers: List<GeoPos>, startMillis: Long, endMillis: Long
+    ): List<List<OrbitalPass>> {
+        val context = kotlin.coroutines.coroutineContext
+        val session = openSession(target)
+        return observers.map { observer ->
+            session.passes(observer, startMillis, endMillis) {
+                context.ensureActive()
+            }
+        }
+    }
 }
 
 /** Geometry at one fixed orbital instant; no propagation or data loading occurs here. */

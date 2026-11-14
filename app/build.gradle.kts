@@ -55,4 +55,10 @@ android {
             }
         }
     }
+    if (providers.gradleProperty("orbitBenchmark").orNull == "true") {
+        sourceSets.getByName("release") {
+            java.srcDir("src/benchmark/java")
+            manifest.srcFile("src/benchmark/AndroidManifest.xml")
+        }
+    }
 }

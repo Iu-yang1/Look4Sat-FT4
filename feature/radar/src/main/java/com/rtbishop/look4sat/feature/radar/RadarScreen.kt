@@ -628,7 +628,7 @@ private fun RadarActionsMenu(
             )
             RadarToolMenuItem(
                 iconRes = R.drawable.ic_recording,
-                label = stringResource(if(recordingActive) R.string.recording_active else R.string.recording_title),
+                label = stringResource(if (recordingActive) R.string.recording_active else R.string.recording_title),
                 onClick = onRecording
             )
             RadarToolMenuItem(
@@ -647,11 +647,6 @@ private fun RadarActionsMenu(
                 label = stringResource(R.string.nav_map),
                 enabled = hasPass,
                 onClick = onMap
-            )
-            RadarToolMenuItem(
-                iconRes = R.drawable.ic_recording,
-                label = stringResource(if (recordingActive) R.string.recording_active else R.string.recording_title),
-                onClick = onRecording
             )
         }
     }

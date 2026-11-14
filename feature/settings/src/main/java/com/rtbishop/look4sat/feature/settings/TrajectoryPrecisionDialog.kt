@@ -56,7 +56,8 @@ internal fun TrajectoryPrecisionDialog(
         acceptEnabled = selected != current.name
     ) { padding ->
         Column(
-            modifier = Modifier.verticalScroll(rememberScrollState()).padding(horizontal = padding),
+            modifier = Modifier.verticalScroll(rememberScrollState())
+                .padding(start = padding, end = padding, bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Text(

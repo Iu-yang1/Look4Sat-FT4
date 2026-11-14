@@ -82,7 +82,7 @@ data class OtherSettings(
     val passListFontScale: Float = 1f,
     /** Persisted APK update source, independent from ephemeris data sources. */
     val updateSource: UpdateSource = UpdateSource.AUTO,
-    val trajectoryPrecision: TrajectoryPrecision = TrajectoryPrecision.ULTRA
+    val trajectoryPrecision: TrajectoryPrecision = TrajectoryPrecision.DEFAULT
 )
 
 /** Persisted identifiers for the configurable fourth bottom-navigation slot. */

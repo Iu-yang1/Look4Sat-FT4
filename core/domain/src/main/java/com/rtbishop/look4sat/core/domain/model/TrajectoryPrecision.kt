@@ -14,7 +14,9 @@ enum class TrajectoryPrecision(
     ULTRA("Ultra", 1.0, 30_000);
 
     companion object {
+        val DEFAULT = HIGH
+
         fun fromStored(value: String?): TrajectoryPrecision =
-            entries.firstOrNull { it.name == value } ?: ULTRA
+            entries.firstOrNull { it.name == value } ?: DEFAULT
     }
 }

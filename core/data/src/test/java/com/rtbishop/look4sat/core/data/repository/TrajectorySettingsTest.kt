@@ -13,17 +13,18 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
 class TrajectorySettingsTest {
-    @Test fun defaultsToCurrentUltraAndKeepsEveryLevelAfterReopening() {
+    @Test fun defaultsToHighAndKeepsEverySavedLevelAfterReopening() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val preferences = context.getSharedPreferences("trajectory-settings", Context.MODE_PRIVATE)
         preferences.edit().clear().commit()
         fun repository() = SettingsRepo(context.getSystemService(LocationManager::class.java), preferences, "test")
-        assertEquals(TrajectoryPrecision.ULTRA, repository().otherSettings.value.trajectoryPrecision)
+        assertEquals(TrajectoryPrecision.HIGH, repository().otherSettings.value.trajectoryPrecision)
+        assertEquals(TrajectoryPrecision.HIGH, TrajectoryPrecision.fromStored(null))
         for (precision in TrajectoryPrecision.entries) {
             repository().updateOtherSettings { it.copy(trajectoryPrecision = precision) }
             assertEquals(precision, repository().otherSettings.value.trajectoryPrecision)
         }
         preferences.edit().putString("trajectoryPrecision", "removed-option").commit()
-        assertEquals(TrajectoryPrecision.ULTRA, repository().otherSettings.value.trajectoryPrecision)
+        assertEquals(TrajectoryPrecision.HIGH, repository().otherSettings.value.trajectoryPrecision)
     }
 }

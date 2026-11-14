@@ -30,10 +30,11 @@ class OrbitPrecisionTest {
                     .openSession(target.getObject())
                 val actual = session.passes(observer, start, start + 86400000)
                 assertEquals("$target / $level", baseline.size, actual.size)
+                val timeTolerance = if (level == TrajectoryPrecision.HIGH) 200.0 else 1000.0
                 baseline.zip(actual).forEach { (expected, found) ->
-                    assertEquals(expected.aosTime.toDouble(), found.aosTime.toDouble(), 1000.0)
-                    assertEquals(expected.losTime.toDouble(), found.losTime.toDouble(), 1000.0)
-                    assertEquals(expected.tcaTime.toDouble(), found.tcaTime.toDouble(), 1000.0)
+                    assertEquals(expected.aosTime.toDouble(), found.aosTime.toDouble(), timeTolerance)
+                    assertEquals(expected.losTime.toDouble(), found.losTime.toDouble(), timeTolerance)
+                    assertEquals(expected.tcaTime.toDouble(), found.tcaTime.toDouble(), timeTolerance)
                     assertEquals(expected.maxElevation, found.maxElevation, .11)
                     assertEquals(expected.startClipped, found.startClipped)
                     assertEquals(expected.endClipped, found.endClipped)

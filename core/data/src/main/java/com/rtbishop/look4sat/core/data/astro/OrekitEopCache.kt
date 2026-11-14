@@ -21,23 +21,37 @@ internal object OrekitEopCache {
         val file = File(directory, FILE_NAME)
         if (!file.isFile || file.length() !in 32..8_000_000) null else {
             val bytes = file.readBytes()
-            val payload = bytes.copyOfRange(32, bytes.size)
+            val checksum = MessageDigest.getInstance("SHA-256").apply { update(bytes, 32, bytes.size - 32) }.digest()
             require(MessageDigest.isEqual(bytes.copyOfRange(0, 32),
-                MessageDigest.getInstance("SHA-256").digest(payload)))
-            DataInputStream(ByteArrayInputStream(payload)).use { input ->
+                checksum))
+            DataInputStream(ByteArrayInputStream(bytes, 32, bytes.size - 32)).use { input ->
                 require(input.readUTF() == FORMAT && input.readUTF() == identity)
                 val count = input.readInt()
                 require(count in 4..60000)
+                var previousMjd = Int.MIN_VALUE
+                val versions = mutableMapOf<Int, ITRFVersion>()
+                val types = EopDataType.values().associateBy { it.name }
                 List(count) {
                     val mjd = input.readInt()
-                    val values = DoubleArray(10) { input.readDouble() }
-                    val itrf = ITRFVersion.getITRFVersion(input.readInt())
-                    val type = EopDataType.valueOf(input.readUTF())
-                    EOPEntry(mjd, values[0], values[1], values[2], values[3], values[4],
-                        values[5], values[6], values[7], values[8], values[9], itrf,
+                    require(mjd > previousMjd)
+                    previousMjd = mjd
+                    val ut1 = input.readDouble()
+                    val lod = input.readDouble()
+                    val x = input.readDouble()
+                    val y = input.readDouble()
+                    val xRate = input.readDouble()
+                    val yRate = input.readDouble()
+                    val ddPsi = input.readDouble()
+                    val ddEps = input.readDouble()
+                    val dx = input.readDouble()
+                    val dy = input.readDouble()
+                    val year = input.readInt()
+                    val itrf = versions.getOrPut(year) { ITRFVersion.getITRFVersion(year) }
+                    val type = requireNotNull(types[input.readUTF()])
+                    EOPEntry(mjd, ut1, lod, x, y, xRate, yRate, ddPsi, ddEps, dx, dy, itrf,
                         AbsoluteDate.createMJDDate(mjd, 0.0, utc), type)
-                }.also { entries ->
-                    require(input.read() == -1 && entries.zipWithNext().all { (a, b) -> a.mjd < b.mjd })
+                }.also {
+                    require(input.read() == -1)
                 }
             }
         }

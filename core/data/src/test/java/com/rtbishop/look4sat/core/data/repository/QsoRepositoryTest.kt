@@ -37,6 +37,48 @@ import java.lang.reflect.Proxy
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class QsoRepositoryTest {
+    @Test fun failedWriteStaysPendingAndNextMaintenanceRetries() = runBlocking {
+        val state = MemoryQsoMaintenanceState()
+        val dao = FakeQsoDao()
+        val repository = QsoRepository(dao, Dispatchers.Unconfined, state)
+        repository.consolidateConfirmations()
+        dao.failNextSave = true
+        assertTrue(runCatching { repository.save(record(QsoStatus.COMPLETE)) }.isFailure)
+        assertTrue(state.needsMaintenance)
+        repository.consolidateConfirmations()
+        assertFalse(state.needsMaintenance)
+    }
+    @Test fun cleanMaintenanceSkipsScanAndEveryMutationMarksBeforeWriting() = runBlocking {
+        val state = MemoryQsoMaintenanceState()
+        val dao = FakeQsoDao()
+        val repository = QsoRepository(dao, Dispatchers.Unconfined, state)
+        assertTrue(state.needsMaintenance)
+        repository.consolidateConfirmations()
+        assertFalse(state.needsMaintenance)
+        val id = repository.save(record(QsoStatus.COMPLETE))
+        assertTrue(state.needsMaintenance)
+        repository.consolidateConfirmations()
+        assertFalse(state.needsMaintenance)
+        repository.delete(id)
+        assertTrue(state.needsMaintenance)
+        repository.consolidateConfirmations()
+        assertFalse(state.needsMaintenance)
+        val reads = dao.allReads
+        assertEquals(0, repository.consolidateConfirmations())
+        assertEquals(reads, dao.allReads)
+    }
+
+    @Test fun ordinaryWritesCoalesceIntoOneDeferredMaintenance() = runTest {
+        val dispatcher = UnconfinedTestDispatcher(testScheduler)
+        val state = MemoryQsoMaintenanceState()
+        val repository = QsoRepository(FakeQsoDao(), dispatcher, state, backgroundScope)
+        repository.consolidateConfirmations()
+        repeat(10) { repository.save(record(QsoStatus.COMPLETE).copy(startUtcMillis = it.toLong())) }
+        assertTrue(state.needsMaintenance)
+        testScheduler.advanceTimeBy(501)
+        testScheduler.runCurrent()
+        assertFalse(state.needsMaintenance)
+    }
     @Test fun uploadedStationRetainsFullMainGridSetAndPrimaryLocator() = runBlocking {
         val dao=FakeQsoDao()
         val repository=QsoRepository(dao,Dispatchers.Unconfined)
@@ -154,6 +196,8 @@ class QsoRepositoryTest {
     }
 
     private class FakeQsoDao : QsoDao {
+        var failNextSave = false
+        var allReads = 0
         private val records = MutableStateFlow<List<QsoEntity>>(emptyList())
         private var nextId = 1L
 
@@ -163,6 +207,10 @@ class QsoRepositoryTest {
         override suspend fun getDedupeKeys(): List<String> = records.value.map { it.dedupeKey }
 
         override suspend fun save(record: QsoEntity): Long {
+            if (failNextSave) {
+                failNextSave = false
+                throw java.io.IOException("Simulated interrupted write")
+            }
             val id = record.id.takeIf { it != 0L } ?: nextId++
             records.value = records.value.filterNot { it.id == id } + record.copy(id = id)
             return id
@@ -820,7 +868,10 @@ class QsoRepositoryUpstreamTest {
 
         override suspend fun find(id: Long): QsoEntity? = rows[id]
 
-        override suspend fun getAll(): List<QsoEntity> = rows.values.toList()
+        override suspend fun getAll(): List<QsoEntity> {
+            allReads++
+            return rows.values.toList()
+        }
 
         override suspend fun getDedupeKeys(): List<String> = rows.values.map { it.dedupeKey }
 

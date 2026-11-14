@@ -74,6 +74,9 @@ fun officialSatelliteName(name: String, officialNames: Collection<String> = empt
  * the time window is what makes a match unambiguous.
  */
 fun sameContactIdentity(local: QsoRecord, remote: QsoRecord): Boolean {
+    if (!local.theirCallsign.trim().equals(remote.theirCallsign.trim(), true) ||
+        abs(local.startUtcMillis - remote.startUtcMillis) >= 60_000L ||
+        local.matchableMode != remote.matchableMode) return false
     val localSat = satelliteIdentity(local.satelliteName)
     return localSat.isNotBlank() &&
         localSat == satelliteIdentity(remote.satelliteName) &&
@@ -122,12 +125,37 @@ data class SplitConfirmationPair(val localIndex: Int, val confirmationIndex: Int
 fun splitConfirmationPairs(records: List<QsoRecord>): List<SplitConfirmationPair> {
     val taken = mutableSetOf<Int>()
     val pairs = mutableListOf<SplitConfirmationPair>()
+    data class Identity(val satellite: String, val call: String, val mode: String, val satelliteQso: Boolean)
+    data class Bucket(val identity: Identity, val minute: Long)
+    val identities = records.map { record ->
+        Identity(satelliteIdentity(record.satelliteName),
+            buildString { record.theirCallsign.trim().forEach { append(it.uppercaseChar().lowercaseChar()) } },
+            record.matchableMode, record.isSatellite)
+    }
+    val buckets = records.indices.groupBy {
+        Bucket(identities[it], Math.floorDiv(records[it].startUtcMillis, 60_000L))
+    }
+    fun candidates(index: Int, confirmed: Boolean): List<Int> {
+        val identity = identities[index]
+        if (identity.satellite.isBlank()) return emptyList()
+        val minute = Math.floorDiv(records[index].startUtcMillis, 60_000L)
+        // Restore the original traversal order after consulting adjacent minute
+        // buckets: the old first-match and ambiguity rules depend on this order.
+        return (-1L..1L).flatMap { buckets[Bucket(identity, minute + it)].orEmpty() }
+            .filter { records[it].lotwConfirmed == confirmed }.sorted()
+    }
+    fun sameIdentity(a: Int, b: Int): Boolean {
+        val one = records[a]
+        val two = records[b]
+        return identities[a] == identities[b] && identities[a].satellite.isNotBlank() &&
+            abs(one.startUtcMillis - two.startUtcMillis) < 60_000L &&
+            (one.myCallsign.isBlank() || two.myCallsign.isBlank() || one.myCallsign.equals(two.myCallsign, true))
+    }
     // Pass 1: fold a downloaded confirmation into the unconfirmed local row it belongs to.
-    val pendingIndices = records.indices.filter { !records[it].lotwConfirmed }
     records.indices.filter { records[it].lotwConfirmed }.forEach { confirmationIndex ->
         val confirmation = records[confirmationIndex]
-        val localIndex = pendingIndices.firstOrNull { index ->
-            index !in taken && sameContactIdentity(records[index], confirmation) &&
+        val localIndex = candidates(confirmationIndex, false).firstOrNull { index ->
+            index !in taken && sameIdentity(index, confirmationIndex) &&
                 bandsMatchOrMirror(records[index], confirmation)
         } ?: return@forEach
         taken += localIndex
@@ -140,10 +168,10 @@ fun splitConfirmationPairs(records: List<QsoRecord>): List<SplitConfirmationPair
     confirmedLeft.forEach { index ->
         if (index in taken) return@forEach
         val cluster = mutableListOf(index)
-        confirmedLeft.forEach { candidate ->
+        candidates(index, true).forEach { candidate ->
             if (candidate != index && candidate !in taken &&
                 cluster.all {
-                    sameContactIdentity(records[it], records[candidate]) &&
+                    sameIdentity(it, candidate) &&
                         bandsMatchOrMirror(records[it], records[candidate])
                 }
             ) {

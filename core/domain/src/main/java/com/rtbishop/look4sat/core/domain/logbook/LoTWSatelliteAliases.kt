@@ -107,10 +107,15 @@ object LoTWSatelliteAliases {
     fun lookup(name: String): String? {
         val normalized = normalize(name)
         table[normalized]?.let { return it }
-        return table.entries
-            .filter { it.key.length >= 5 && normalized.contains(it.key) }
-            .maxByOrNull { it.key.length }
-            ?.value
+        var longest = 4
+        var match: String? = null
+        for ((key, value) in table) {
+            if (key.length > longest && normalized.contains(key)) {
+                longest = key.length
+                match = value
+            }
+        }
+        return match
     }
 
     /** Upper case, everything that is not A-Z0-9 removed ("ISS (ZARYA)" -> "ISSZARYA"). */

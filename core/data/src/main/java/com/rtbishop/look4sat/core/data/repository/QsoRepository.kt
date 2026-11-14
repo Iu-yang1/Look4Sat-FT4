@@ -28,6 +28,10 @@ import com.rtbishop.look4sat.core.domain.logbook.withConfirmation
 import com.rtbishop.look4sat.core.domain.logbook.confirmationLookupKey
 import com.rtbishop.look4sat.core.domain.logbook.officialSatelliteName
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.sync.Mutex
@@ -37,61 +41,82 @@ import java.util.Locale
 
 class QsoRepository(
     private val dao: QsoDao,
-    private val dispatcher: CoroutineDispatcher
+    private val dispatcher: CoroutineDispatcher,
+    private val maintenance: QsoMaintenanceState = MemoryQsoMaintenanceState(),
+    private val maintenanceScope: CoroutineScope? = null
 ) : IQsoRepository {
     private val importMutex = Mutex()
+    private var maintenanceJob: Job? = null
+
+    private suspend fun <T> mutate(block: suspend () -> T): T = importMutex.withLock {
+        maintenance.markPending()
+        block().also {
+            maintenanceJob?.cancel()
+            maintenanceJob = maintenanceScope?.launch(dispatcher) {
+                delay(500)
+                try { consolidateConfirmations() }
+                catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+                catch (error: Exception) {
+                    android.util.Log.w("Look4SatQso", "Deferred confirmation maintenance failed", error)
+                }
+            }
+        }
+    }
 
     override val records: Flow<List<QsoRecord>> = dao.observeAll().map { records -> records.map(QsoEntity::toDomain) }
 
     override suspend fun find(id: Long): QsoRecord? = withContext(dispatcher) { dao.find(id)?.toDomain() }
 
     override suspend fun save(record: QsoRecord): Long = withContext(dispatcher) {
-        importMutex.withLock {
-            val previous = if (record.id != 0L) dao.find(record.id)?.toDomain() else null
-            // Editing a record that was already uploaded or confirmed must not rewrite it in
-            // place: that contact already exists on LoTW under the old values. The original row
-            // keeps its upload/confirmation state, and the edited content is saved as a NEW
-            // record (without any LoTW state, so it can be uploaded again).
-            if (previous != null &&
-                (previous.lotwUploaded || previous.lotwConfirmed || previous.wavelogUploaded) &&
-                !record.sameEditableContentAs(previous)
-            ) {
-                dao.save(record.copy(
-                    id = 0L,
-                    lotwUploaded = false, lotwConfirmed = false, lotwReceived = false,
-                    wavelogUploaded = false,
-                    wavelogStation = "",
-                    lotwQslDate = "", vuccGrids = emptyList(), theirVuccGrids = emptyList(),
-                    dxcc = null, country = "", cqZone = null, region = ""
-                ).copy(syncOrigin = "").toEntity())
-            } else {
-                val saved = if (previous?.lotwConfirmed == true && sameConfirmedContact(record, previous)) {
-                    record.withConfirmation(previous)
-                } else if (previous?.lotwConfirmed == true) record.copy(
-                    lotwConfirmed = false, lotwQslDate = "", vuccGrids = emptyList(), theirVuccGrids = emptyList(),
-                    dxcc = null, country = "", cqZone = null, region = ""
-                ) else record
-                val received = if (previous != null && (
-                    stableQsoKey(record) != stableQsoKey(previous) || record.myGrid != previous.myGrid ||
-                        record.rxFrequencyHz != previous.rxFrequencyHz || record.band != previous.band ||
-                        record.rxBand != previous.rxBand || record.propagationMode != previous.propagationMode
-                    )) false else saved.lotwReceived
-                dao.save(saved.copy(lotwReceived = received, syncOrigin = "").toEntity())
-            }
+        mutate { saveLocked(record) }
+    }
+
+    private suspend fun saveLocked(record: QsoRecord): Long {
+        val previous = if (record.id != 0L) dao.find(record.id)?.toDomain() else null
+        // Editing an uploaded/confirmed contact creates a new local record;
+        // preserve the original contact's server identity and confirmation.
+        return if (previous != null &&
+            (previous.lotwUploaded || previous.lotwConfirmed || previous.wavelogUploaded) &&
+            !record.sameEditableContentAs(previous)
+        ) {
+            dao.save(record.copy(
+                id = 0L,
+                lotwUploaded = false, lotwConfirmed = false, lotwReceived = false,
+                wavelogUploaded = false, wavelogStation = "",
+                lotwQslDate = "", vuccGrids = emptyList(), theirVuccGrids = emptyList(),
+                dxcc = null, country = "", cqZone = null, region = ""
+            ).copy(syncOrigin = "").toEntity())
+        } else {
+            val saved = if (previous?.lotwConfirmed == true && sameConfirmedContact(record, previous)) {
+                record.withConfirmation(previous)
+            } else if (previous?.lotwConfirmed == true) record.copy(
+                lotwConfirmed = false, lotwQslDate = "", vuccGrids = emptyList(), theirVuccGrids = emptyList(),
+                dxcc = null, country = "", cqZone = null, region = ""
+            ) else record
+            val received = if (previous != null && (
+                stableQsoKey(record) != stableQsoKey(previous) || record.myGrid != previous.myGrid ||
+                    record.rxFrequencyHz != previous.rxFrequencyHz || record.band != previous.band ||
+                    record.rxBand != previous.rxBand || record.propagationMode != previous.propagationMode
+                )) false else saved.lotwReceived
+            dao.save(saved.copy(lotwReceived = received, syncOrigin = "").toEntity())
         }
     }
 
-    override suspend fun delete(id: Long) = withContext(dispatcher) { importMutex.withLock { dao.delete(id) } }
+    override suspend fun delete(id: Long) = withContext(dispatcher) { mutate { dao.delete(id) } }
 
     override suspend fun deleteMany(ids: Set<Long>) = withContext(dispatcher) {
         if (ids.isEmpty()) return@withContext
-        importMutex.withLock { dao.applySyncBatch(ids.toList(), emptyList()) }
+        mutate { dao.applySyncBatch(ids.toList(), emptyList()) }
     }
 
-    override suspend fun deleteAll() = withContext(dispatcher) { importMutex.withLock { dao.deleteAll() } }
+    override suspend fun deleteAll() = withContext(dispatcher) { mutate { dao.deleteAll() } }
 
     override suspend fun markUploaded(ids: List<Long>, grids: List<String>, certificateCallsign: String) = withContext(dispatcher) {
         if (ids.isEmpty()) return@withContext
+        mutate { markUploadedLocked(ids, grids, certificateCallsign) }
+    }
+
+    private suspend fun markUploadedLocked(ids: List<Long>, grids: List<String>, certificateCallsign: String) {
         dao.markUploaded(ids)
         // The accepted LoTW station location is authoritative, including on a resubmit.
         // Update all own-grid fields together: keeping an old MY_GRIDSQUARE or
@@ -119,38 +144,40 @@ class QsoRepository(
         // the stored dedupe key follows the new value.
         if (certificateCallsign.isNotBlank()) {
             ids.mapNotNull { id -> dao.find(id)?.toDomain()?.takeIf { it.myCallsign.isBlank() } }
-                .forEach { save(it.copy(myCallsign = certificateCallsign.trim().uppercase(Locale.US))) }
+                .forEach { saveLocked(it.copy(myCallsign = certificateCallsign.trim().uppercase(Locale.US))) }
         }
     }
 
     override suspend fun rewriteMyCallsign(ids: List<Long>, callsign: String): Int = withContext(dispatcher) {
         val target = callsign.trim().uppercase(Locale.US)
         if (ids.isEmpty() || target.isBlank()) return@withContext 0
-        var changed = 0
-        ids.forEach { id ->
-            val record = dao.find(id)?.toDomain() ?: return@forEach
-            if (record.myCallsign.trim().equals(target, true)) return@forEach
-            save(record.copy(myCallsign = target))
-            changed++
+        mutate {
+            var changed = 0
+            ids.forEach { id ->
+                val record = dao.find(id)?.toDomain() ?: return@forEach
+                if (record.myCallsign.trim().equals(target, true)) return@forEach
+                saveLocked(record.copy(myCallsign = target))
+                changed++
+            }
+            changed
         }
-        changed
     }
 
     override suspend fun markWavelogUploaded(ids: List<Long>, stationId: String, stationCallsign: String) =
         withContext(dispatcher) {
             if (ids.isEmpty()) return@withContext
-            importMutex.withLock { dao.markWavelogUploaded(ids, stationId) }
-            // Same backfill as the LoTW side, from the other identity source: a Wavelog-only setup
-            // has no certificate, so records logged there carry no own callsign. The server has
-            // just imported them under the station profile's callsign — write that in, so the
-            // local row is the one a later sync pulls back (the dedupe key contains the own
-            // callsign; a blank one could never match the server's copy). Blanks only, and
-            // through save() so the stored key follows.
-            if (stationCallsign.isNotBlank()) {
-                ids.mapNotNull { id -> dao.find(id)?.toDomain()?.takeIf { it.myCallsign.isBlank() } }
-                    .forEach { save(it.copy(myCallsign = stationCallsign.trim().uppercase(Locale.US))) }
-            }
+            mutate { markWavelogUploadedLocked(ids, stationId, stationCallsign) }
         }
+
+    private suspend fun markWavelogUploadedLocked(ids: List<Long>, stationId: String, stationCallsign: String) {
+        dao.markWavelogUploaded(ids, stationId)
+        // Backfill blank own callsigns through the same save path so the dedupe
+        // key follows the identity accepted by the Wavelog station profile.
+        if (stationCallsign.isNotBlank()) {
+            ids.mapNotNull { id -> dao.find(id)?.toDomain()?.takeIf { it.myCallsign.isBlank() } }
+                .forEach { saveLocked(it.copy(myCallsign = stationCallsign.trim().uppercase(Locale.US))) }
+        }
+    }
 
     override suspend fun exportAdi(ids: Set<Long>?, includeIncomplete: Boolean): String = withContext(dispatcher) {
         val records = dao.getAll()
@@ -163,23 +190,23 @@ class QsoRepository(
     }
 
     override suspend fun importAdi(content: String): AdifImportResult = withContext(dispatcher) {
-        importMutex.withLock {
+        mutate {
             mergeRecords(AdifCodec.decode(content))
         }
     }
 
     override suspend fun mergeConfirmed(records: List<QsoRecord>): AdifImportResult = withContext(dispatcher) {
-        importMutex.withLock { mergeRecords(records.filter { it.lotwConfirmed }) }
+        mutate { mergeRecords(records.filter { it.lotwConfirmed }) }
     }
 
     override suspend fun mergeLoTW(records: List<QsoRecord>): AdifImportResult = withContext(dispatcher) {
-        importMutex.withLock { mergeRecords(records, fromLoTW = true) }
+        mutate { mergeRecords(records, fromLoTW = true) }
     }
 
     override suspend fun mergeLoTW(records: List<QsoRecord>, sourceKey: String, replaceExisting: Boolean): AdifImportResult = withContext(dispatcher) {
         require(sourceKey.isNotBlank())
         val origin = "LOTW|${sourceKey.trim().uppercase(Locale.US)}"
-        importMutex.withLock { mergeRecords(records, fromLoTW = true, origin = origin, replaceExisting = replaceExisting) }
+        mutate { mergeRecords(records, fromLoTW = true, origin = origin, replaceExisting = replaceExisting) }
     }
 
     /**
@@ -192,26 +219,30 @@ class QsoRepository(
      * marked as uploaded, so a later upload never sends them straight back.
      */
     override suspend fun mergeWavelog(records: List<QsoRecord>): AdifImportResult = withContext(dispatcher) {
-        importMutex.withLock { mergeWavelogRecords(records) }
+        mutate { mergeWavelogRecords(records) }
     }
 
     override suspend fun mergeWavelog(records: List<QsoRecord>, sourceKey: String, replaceExisting: Boolean): AdifImportResult = withContext(dispatcher) {
         require(sourceKey.isNotBlank())
         val origin = "WAVELOG|${sourceKey.trim().trimEnd('/')}"
-        importMutex.withLock { mergeWavelogRecords(records, origin, replaceExisting) }
+        mutate { mergeWavelogRecords(records, origin, replaceExisting) }
     }
 
     override suspend fun consolidateConfirmations(): Int = withContext(dispatcher) {
         importMutex.withLock {
+            if (!maintenance.needsMaintenance) return@withLock 0
+            maintenance.markPending()
             val working = dao.getAll().map(QsoEntity::toDomain).toMutableList()
             val consolidation = consolidateSplitRows(working)
             val renames = rewriteOfficialNames(working)
             if (consolidation.merged.isEmpty() && consolidation.redundant.isEmpty() && renames.isEmpty()) {
+                maintenance.markComplete()
                 return@withLock 0
             }
             val toSave = LinkedHashMap(consolidation.merged).apply { putAll(renames) }
-            dao.saveBatch(toSave.values.map(QsoRecord::toEntity))
-            consolidation.redundant.forEach { dao.delete(it.id) }
+            dao.applySyncBatch(emptyList(), toSave.values.map(QsoRecord::toEntity),
+                consolidation.redundant.map { it.id })
+            maintenance.markComplete()
             consolidation.redundant.size
         }
     }

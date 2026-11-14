@@ -26,11 +26,8 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -92,66 +89,44 @@ fun RadarViewCompose(
     val radarColor = MaterialTheme.colorScheme.secondary
     val rotatorColor = MaterialTheme.colorScheme.tertiary
     val sunColor = MaterialTheme.colorScheme.primary
-    val animTransition = rememberInfiniteTransition(label = "animScale")
-    val animScale by animTransition.animateFloat(
+    val hasPulse = (item.elevation > 0 && !item.eclipsed) ||
+        (trackBPosition?.let { it.elevation > 0 && !it.eclipsed } == true)
+    val animScale = if (hasPulse) rememberInfiniteTransition(label = "animScale").animateFloat(
         initialValue = 16f,
         targetValue = 64f,
         animationSpec = infiniteRepeatable(tween(1000)),
         label = "animScale"
-    )
+    ) else rememberUpdatedState(16f)
     // Drive the sweep from the animation framework to eliminate state mutation inside the draw block
-    val sweepTransition = rememberInfiniteTransition(label = "sweep")
-    val sweepDegrees by sweepTransition.animateFloat(
+    val sweepDegrees = if (shouldShowSweep) rememberInfiniteTransition(label = "sweep").animateFloat(
         initialValue = 0f,
         targetValue = 360f,
         animationSpec = infiniteRepeatable(tween(SWEEP_DURATION_MS, easing = LinearEasing)),
         label = "sweepDegrees"
-    )
+    ) else rememberUpdatedState(0f)
     val measurer = rememberTextMeasurer()
     val sunPainter = painterResource(R.drawable.ic_sun)
     val moonPainter = painterResource(R.drawable.ic_moon)
     // Track path cache — keyed by both canvas size and items reference so it rebuilds
     // when the satellite track data arrives asynchronously after the first composition
-    var cachedRadius by remember { mutableFloatStateOf(0f) }
-    var cachedItemsRef by remember { mutableStateOf<List<OrbitalPos>>(emptyList()) }
-    var cachedSweepColor by remember { mutableStateOf(Color.Unspecified) }
-    var trackPath by remember { mutableStateOf(Path()) }
-    var trackEffect by remember { mutableStateOf(PathEffect.cornerPathEffect(0f)) }
-    // Station-B overlay track (dashed, with the same directional arrow stamp as station A)
-    var cachedTrackBRef by remember { mutableStateOf<List<OrbitalPos>?>(null) }
-    var trackBPath by remember { mutableStateOf(Path()) }
-    var trackBEffect by remember { mutableStateOf(PathEffect.cornerPathEffect(0f)) }
-    // ShaderBrush is cached to avoid allocating a new GPU shader object every frame
-    var cachedSweepBrush by remember { mutableStateOf<ShaderBrush?>(null) }
+    val geometry = remember(items, trackB) { RadarGeometry(items, trackB) }
 
     Canvas(modifier = modifier.aspectRatio(1f)) {
         val radius = size.minDimension / 2f * 0.95f
         // Rebuild track path and sweep brush when canvas size or track data changes
-        if (radius != cachedRadius || items !== cachedItemsRef || trackB !== cachedTrackBRef) {
-            trackPath = createTrackPath(items, radius)
-            trackEffect = createTrackEffect(trackPath)
-            val newTrackBPath = trackB?.let { createTrackPath(it, radius) } ?: Path()
-            trackBPath = newTrackBPath
-            trackBEffect = if (!newTrackBPath.isEmpty) createTrackEffect(newTrackBPath)
-            else PathEffect.cornerPathEffect(0f)
-            cachedSweepBrush = makeSweepBrush(center, primaryColor)
-            cachedRadius = radius
-            cachedItemsRef = items
-            cachedTrackBRef = trackB
-            cachedSweepColor = primaryColor
-        } else if (primaryColor != cachedSweepColor) {
-            // Rebuild brush on theme change without waiting for a size change
-            cachedSweepBrush = makeSweepBrush(center, primaryColor)
-            cachedSweepColor = primaryColor
-        }
+        geometry.prepare(radius, 4.dp.toPx())
+        val trackPath = geometry.path
+        val trackEffect = geometry.effect
+        val trackBPath = geometry.pathB
+        val trackBEffect = geometry.effectB
         rotate(if (shouldUseCompass) -azimElev.first else 0f) {
-            if (shouldShowSweep) cachedSweepBrush?.let { drawSweep(center, sweepDegrees, radius, it) }
+            if (shouldShowSweep) drawSweep(center, sweepDegrees.value, radius, geometry.brush(center, primaryColor))
             val radarStrokeWidth = if (compactPassPreview) 1.0.dp.toPx() else STROKE_WIDTH
             drawRadar(radius, radarColor, radarStrokeWidth)
             if (!compactPassPreview) drawElevationLabels(radius, primaryColor, measurer)
             translate(center.x, center.y) {
                 if (compactPassPreview) {
-                    drawPassPreviewTrack(items, radius, primaryColor)
+                    drawPassPreviewTrack(geometry, primaryColor)
                 } else {
                     drawTrack(trackPath, trackEffect, aimColor, primaryColor)
                 }
@@ -166,11 +141,11 @@ fun RadarViewCompose(
                 }
                 trackBPosition?.let { posB ->
                     if (posB.elevation > 0) {
-                        drawPosition(posB, radius, animScale, trackBColor)
+                        drawPosition(posB, radius, animScale.value, trackBColor)
                     }
                 }
                 if (item.elevation > 0) {
-                    drawPosition(item, radius, animScale, primaryColor)
+                    drawPosition(item, radius, animScale.value, primaryColor)
                 }
                 sunPosition?.let { sun ->
                     if (sun.elevation > 0) drawBodyIcon(sun.azimuth, sun.elevation, radius, sunColor, sunPainter, 52f)
@@ -191,6 +166,46 @@ fun RadarViewCompose(
                 if (shouldUseCompass) drawAim(azimElev.first, azimElev.second, radius, aimColor)
             }
         }
+    }
+}
+
+/** Drawing caches are ordinary objects: writing them must not schedule recomposition. */
+private class RadarGeometry(val items: List<OrbitalPos>, val itemsB: List<OrbitalPos>?) {
+    var radius = Float.NaN
+    var inset = Float.NaN
+    var path = Path()
+    var pathB = Path()
+    var effect = PathEffect.cornerPathEffect(0f)
+    var effectB = PathEffect.cornerPathEffect(0f)
+    var start = Offset.Zero
+    var end = Offset.Zero
+    private var brushCenter = Offset.Unspecified
+    private var brushColor = Color.Unspecified
+    private var sweepBrush: ShaderBrush? = null
+
+    fun prepare(nextRadius: Float, endpointInset: Float) {
+        if (radius == nextRadius && inset == endpointInset) return
+        radius = nextRadius
+        inset = endpointInset
+        path = createTrackPath(items, radius)
+        effect = if (path.isEmpty) PathEffect.cornerPathEffect(0f) else createTrackEffect(path)
+        pathB = itemsB?.let { createTrackPath(it, radius) } ?: Path()
+        effectB = if (pathB.isEmpty) PathEffect.cornerPathEffect(0f) else createTrackEffect(pathB)
+        fun point(index: Int) = items[index].let {
+            sph2Cart(it.azimuth, it.elevation, radius.toDouble())
+        }
+        if (items.isNotEmpty()) {
+            start = insetAlongTrack(point(0), point(minOf(1, items.lastIndex)), endpointInset)
+            end = insetAlongTrack(point(items.lastIndex), point(maxOf(0, items.lastIndex - 1)), endpointInset)
+        }
+    }
+    fun brush(center: Offset, color: Color): ShaderBrush {
+        if (sweepBrush == null || center != brushCenter || color != brushColor) {
+            sweepBrush = makeSweepBrush(center, color)
+            brushCenter = center
+            brushColor = color
+        }
+        return requireNotNull(sweepBrush)
     }
 }
 
@@ -220,36 +235,22 @@ private fun DrawScope.drawTrack(path: Path, effect: PathEffect, color: Color, ef
 
 /** Compact list preview: thin path with AOS (green) and LOS (red) endpoint dots, no arrows. */
 private fun DrawScope.drawPassPreviewTrack(
-    positions: List<OrbitalPos>,
-    radius: Float,
+    geometry: RadarGeometry,
     trackColor: Color,
 ) {
-    if (positions.isEmpty()) return
+    if (geometry.items.isEmpty()) return
 
     // Keep the actual track identical to the full radar geometry. Only inset the
     // endpoint dots a short distance along the first/last track segments so they
     // remain visible when AOS or LOS is close to the radar edge.
-    val path = createTrackPath(positions, radius)
+    val path = geometry.path
     if (!path.isEmpty) {
         drawPath(path, trackColor, style = Stroke(width = 0.9.dp.toPx()))
     }
 
-    val first = positions.first()
-    val last = positions.last()
-    val startPoint = sph2Cart(first.azimuth, first.elevation, radius.toDouble())
-    val endPoint = sph2Cart(last.azimuth, last.elevation, radius.toDouble())
-    val nextPoint = positions.getOrNull(1)?.let {
-        sph2Cart(it.azimuth, it.elevation, radius.toDouble())
-    } ?: startPoint
-    val previousPoint = positions.getOrNull(positions.lastIndex - 1)?.let {
-        sph2Cart(it.azimuth, it.elevation, radius.toDouble())
-    } ?: endPoint
-    val endpointInset = 4.0.dp.toPx()
-    val start = insetAlongTrack(startPoint, nextPoint, endpointInset)
-    val end = insetAlongTrack(endPoint, previousPoint, endpointInset)
     val endpointRadius = 1.5.dp.toPx()
-    drawCircle(Color(0xFF2E7D32), endpointRadius, start)
-    drawCircle(Color(0xFFD32F2F), endpointRadius, end)
+    drawCircle(Color(0xFF2E7D32), endpointRadius, geometry.start)
+    drawCircle(Color(0xFFD32F2F), endpointRadius, geometry.end)
 }
 
 /** Move a marker from an endpoint toward its adjacent sample without changing the track. */

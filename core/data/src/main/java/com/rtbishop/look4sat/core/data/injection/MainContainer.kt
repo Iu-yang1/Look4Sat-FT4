@@ -128,7 +128,12 @@ class MainContainer(private val context: Context) : IMainContainer {
         bundledArchive = { context.assets.open("astronomy/orekit-data.zip") }
     )
     private val orbitEngine = com.rtbishop.look4sat.core.data.astro.OrekitOrbitEngine(
-        astroData, java.io.File(context.cacheDir, "orbit-passes"))
+        astroData, java.io.File(context.cacheDir, "orbit-passes"), appScope) { message ->
+            controlDiagnostics.record(
+                com.rtbishop.look4sat.core.domain.control.ControlDiagnosticSource.RADIO,
+                "orbit/work", message)
+            android.util.Log.d("Look4SatOrbit", message)
+        }
     private val celestialService = com.rtbishop.look4sat.core.data.astro.OrekitCelestialService(astroData)
     override val satelliteRepo = provideSatelliteRepo()
     override val databaseRepo = provideDatabaseRepo()
@@ -149,7 +154,9 @@ class MainContainer(private val context: Context) : IMainContainer {
                 QSO_MIGRATION_7_8
             )
             .build()
-        QsoRepository(database.qsoDao(), Dispatchers.IO)
+        QsoRepository(database.qsoDao(), Dispatchers.IO,
+            com.rtbishop.look4sat.core.data.repository.StoredQsoMaintenanceState(
+                context.getSharedPreferences("qso-maintenance", Context.MODE_PRIVATE)), appScope)
     }
     override val amSatRepo by lazy { AmSatRepository(remoteSource, appScope) }
     override val lotwRepo: ILoTWRepository by lazy { LoTWRepository() }

@@ -68,8 +68,7 @@ class MainApplication : Application(), IContainerProvider, com.rtbishop.look4sat
         container.appScope.launch { checkAutoUpdate() }
         // automatic LoTW grid sync on every app start (gated, see checkLoTWAutoSync)
         container.appScope.launch { checkLoTWAutoSync() }
-        // repair logbooks split by the old name/band identity mismatch, independent of
-        // whether a sync is due (cheap read + in-memory match on every start)
+        // Retry interrupted or newly versioned identity repair; clean logbooks skip the scan.
         container.appScope.launch { runCatching { container.qsoRepository.consolidateConfirmations() } }
         // load satellite data on every app start
         container.appScope.launch { container.satelliteRepo.initRepository() }

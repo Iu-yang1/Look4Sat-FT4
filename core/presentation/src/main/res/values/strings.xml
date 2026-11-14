@@ -65,8 +65,8 @@
     <string name="pass_whatsnew_message" translatable="false">Recent updates include improved pass calculations, normalized AOS and LOS times, CAT radio control for full-duplex satellite operation, mutual pass matching, and fixes for UTC pass times.</string>
 
     <!-- AMSAT Status screen -->
-    <string name="nav_amsat">AMSAT Status</string>
-    <string name="amsat_title">AMSAT Satellite Status</string>
+    <string name="nav_amsat">AMSAT</string>
+    <string name="amsat_title">AMSAT</string>
     <string name="amsat_refresh">Refresh</string>
     <string name="amsat_retry">Retry</string>
     <string name="amsat_updated">Updated:</string>
@@ -668,7 +668,7 @@ Upstream: https://github.com/rt-bishop/Look4Sat</string>
 
     <!-- FT4 -->
     <string name="nav_ft4">FT4</string>
-    <string name="sat_amsat_status">AMSAT status</string>
+    <string name="sat_amsat_status">AMSAT</string>
     <string name="ft4_title">FT4 satellite operation</string>
     <string name="ft4_back">Back</string>
     <string name="ft4_page_spectrum">Spectrum</string>

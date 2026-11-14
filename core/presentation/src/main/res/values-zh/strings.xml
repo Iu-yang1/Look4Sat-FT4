@@ -52,8 +52,8 @@
 
     <!-- AMSAT Status screen -->
 
-    <string name="nav_amsat">AMSAT 状态</string>
-    <string name="amsat_title">AMSAT 卫星状态</string>
+    <string name="nav_amsat">AMSAT</string>
+    <string name="amsat_title">AMSAT</string>
     <string name="amsat_refresh">刷新</string>
     <string name="amsat_retry">重试</string>
     <string name="amsat_updated">更新于：</string>
@@ -638,7 +638,7 @@
 
     <!-- FT4 -->
     <string name="nav_ft4">FT4</string>
-    <string name="sat_amsat_status">AMSAT 状态</string>
+    <string name="sat_amsat_status">AMSAT</string>
     <string name="ft4_title">FT4 卫星通联</string>
     <string name="ft4_back">返回</string>
     <string name="ft4_page_spectrum">频谱</string>

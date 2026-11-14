@@ -15,7 +15,9 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
@@ -45,6 +47,8 @@ fun BottomToolDialog(
     }
     val options = listOf(
         BottomBarTool.FT4 to R.string.nav_ft4,
+        BottomBarTool.JTTY to R.string.nav_jtty,
+        BottomBarTool.SUNLIGHT to R.string.sunlight_title,
         BottomBarTool.MAP to R.string.nav_map,
         BottomBarTool.GRID_FINDER to R.string.gridfinder_title,
         BottomBarTool.MUTUAL to R.string.nav_mutual,
@@ -64,7 +68,9 @@ fun BottomToolDialog(
     ) { padding ->
         Column(
             verticalArrangement = Arrangement.spacedBy(2.dp),
-            modifier = Modifier.padding(horizontal = padding)
+            modifier = Modifier
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = padding)
         ) {
             Text(
                 text = stringResource(R.string.prefs_bottom_tool_description),

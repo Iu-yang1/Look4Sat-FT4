@@ -433,7 +433,7 @@ private fun Look4SatNavigationScaffold(
             navItems.forEach { screen ->
                 val isSelected = when {
                     selectedScreen == screen -> true
-                    screen is Screen.More && selectedScreen in moreItems -> true
+                    screen is Screen.More && selectedScreen != primaryTool && selectedScreen in moreItems -> true
                     screen is Screen.More && showMoreSheet -> true
                     else -> false
                 }
@@ -739,6 +739,8 @@ private fun bottomBarLabelRes(screen: Screen): Int = when (screen) {
 }
 
 private fun bottomBarScreen(value: String): Screen = when (BottomBarTool.normalize(value)) {
+    BottomBarTool.JTTY -> Screen.Jtty
+    BottomBarTool.SUNLIGHT -> Screen.Sunlight
     BottomBarTool.MAP -> Screen.Map
     BottomBarTool.GRID_FINDER -> Screen.GridFinder
     BottomBarTool.MUTUAL -> Screen.Mutual
@@ -748,6 +750,8 @@ private fun bottomBarScreen(value: String): Screen = when (BottomBarTool.normali
 }
 
 private fun bottomBarToolTitleRes(value: String): Int = when (BottomBarTool.normalize(value)) {
+    BottomBarTool.JTTY -> R.string.nav_jtty
+    BottomBarTool.SUNLIGHT -> R.string.sunlight_title
     BottomBarTool.MAP -> R.string.nav_map
     BottomBarTool.GRID_FINDER -> R.string.gridfinder_title
     BottomBarTool.MUTUAL -> R.string.nav_mutual
@@ -811,7 +815,10 @@ private fun MoreDestinationsSheet(
         ) { showSettingsPage ->
         if (showSettingsPage) {
             Column(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 20.dp, vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 TextButton(onClick = { showToolSettings = false }) {
@@ -828,6 +835,8 @@ private fun MoreDestinationsSheet(
                 )
                 val options = listOf(
                     BottomBarTool.FT4 to R.string.nav_ft4,
+                    BottomBarTool.JTTY to R.string.nav_jtty,
+                    BottomBarTool.SUNLIGHT to R.string.sunlight_title,
                     BottomBarTool.MAP to R.string.nav_map,
                     BottomBarTool.GRID_FINDER to R.string.gridfinder_title,
                     BottomBarTool.MUTUAL to R.string.nav_mutual,

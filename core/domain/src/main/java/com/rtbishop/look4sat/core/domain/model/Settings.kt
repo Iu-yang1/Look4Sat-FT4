@@ -87,6 +87,8 @@ data class OtherSettings(
 /** Persisted identifiers for the configurable fourth bottom-navigation slot. */
 object BottomBarTool {
     const val FT4 = "ft4"
+    const val JTTY = "jtty"
+    const val SUNLIGHT = "sunlight"
     const val MAP = "map"
     const val GRID_FINDER = "grid_finder"
     const val MUTUAL = "mutual"
@@ -94,7 +96,7 @@ object BottomBarTool {
     const val PASS_SCHEDULE = "pass_schedule"
 
     fun normalize(value: String): String = when (value) {
-        FT4, MAP, GRID_FINDER, MUTUAL, AMSAT, PASS_SCHEDULE -> value
+        FT4, JTTY, SUNLIGHT, MAP, GRID_FINDER, MUTUAL, AMSAT, PASS_SCHEDULE -> value
         else -> FT4
     }
 }

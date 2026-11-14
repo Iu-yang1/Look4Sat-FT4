@@ -39,7 +39,8 @@ internal fun eventBoundaries(
 /** All stations visit the identical coarse instants, with independent precise roots. */
 internal fun eventBoundariesBatch(
     start: Long, end: Long, functions: List<OrbitEventFunction>,
-    stepMillis: (Long) -> Long, checkCancelled: () -> Unit
+    stepMillis: (Long) -> Long, checkCancelled: () -> Unit,
+    maximumStepMillis: Long = 30_000
 ): List<List<Long>> {
     require(end > start)
     val roots = functions.map { sortedSetOf<Long>() }
@@ -65,7 +66,7 @@ internal fun eventBoundariesBatch(
         val derivatives = DoubleArray(functions.size) { functions[it].derivative(a) }
         while (a < end) {
             checkCancelled()
-            val b = min(end, a + stepMillis(a).coerceIn(100, 30_000))
+            val b = min(end, a + stepMillis(a).coerceIn(100, maximumStepMillis))
             functions.forEachIndexed { index, function ->
                 val da = derivatives[index]
                 val db = function.derivative(b)

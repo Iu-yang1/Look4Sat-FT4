@@ -72,6 +72,7 @@ class SatelliteRepo(
     private val calculationLock = Any()
     private var calculationJob: Job? = null
     private val workers = Semaphore(orbitWorkerCount())
+    private val radarTracks = com.rtbishop.look4sat.core.data.astro.RadarTrackCache()
     private val realtimeSessions = java.util.WeakHashMap<Job,
         LinkedHashMap<OrbitalObject, com.rtbishop.look4sat.core.domain.astro.IOrbitSession>>()
 
@@ -127,7 +128,7 @@ class SatelliteRepo(
                 GeoPos(it.latitude, it.longitude, it.altitude)
             }.distinctUntilChanged(),
             settingsRepo.databaseState,
-            settingsRepo.otherSettings.map { it.stateOfUtc }.distinctUntilChanged(),
+            settingsRepo.otherSettings.map { it.stateOfUtc to it.trajectoryPrecision }.distinctUntilChanged(),
             astroData.state.map { it.generation }.distinctUntilChanged()
         ) { ids, position, database, utc, generation ->
             listOf(ids, position, database.contentVersion, utc, generation)
@@ -184,6 +185,35 @@ class SatelliteRepo(
                 }
             }
         }
+
+    override suspend fun getRadarTrack(
+        sat: OrbitalObject, pos: GeoPos, start: Long, end: Long
+    ): List<OrbitalPos> = withContext(dispatcher) {
+        if (end <= start) return@withContext emptyList()
+        val pinned = if (sat.snapshot == null) sat.copy(snapshot = astroData.snapshot()) else sat
+        val started = System.nanoTime()
+        val context = coroutineContext
+        val (track, hit) = radarTracks.get(pinned, pos, start, end) {
+            calculate(pinned) {
+                val session = orbit.openSession(pinned)
+                val observer = listOf(GeoPos(pos.latitude, pos.longitude, pos.altitude))
+                val step = ((end - start) / 1200 + 1).coerceAtLeast(15_000)
+                buildList {
+                    var time = start
+                    while (true) {
+                        context.ensureActive()
+                        val direction = session.directions(observer, time).single()
+                        add(OrbitalPos(time = time, azimuth = direction.azimuth, elevation = direction.elevation))
+                        if (time == end) break
+                        time = minOf(time + step, end)
+                    }
+                }
+            }
+        }
+        android.util.Log.d("Look4SatOrbit", "radarTrack cat=${sat.data.catnum} cache=${if (hit) "hit" else "miss"} " +
+            "points=${track.size} start=$start end=$end elapsedMs=${(System.nanoTime() - started) / 1_000_000}")
+        track
+    }
 
     override suspend fun getRadios(sat: OrbitalObject, pos: GeoPos, radios: List<SatRadio>, time: Long): List<SatRadio> {
         val position = getPosition(sat, pos, time)

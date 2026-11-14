@@ -141,6 +141,14 @@ private fun SettingsScreen(
     val context = LocalContext.current
     var showUpdateChecker by rememberSaveable { mutableStateOf(false) }
     var showAstroData by rememberSaveable { mutableStateOf(false) }
+    var showTrajectoryPrecision by rememberSaveable { mutableStateOf(false) }
+    if (showTrajectoryPrecision) {
+        TrajectoryPrecisionDialog(
+            current = uiState.otherSettings.trajectoryPrecision,
+            onDismiss = { showTrajectoryPrecision = false },
+            onSave = { onAction(SettingsAction.SetTrajectoryPrecision(it)) }
+        )
+    }
     if (showAstroData) {
         com.rtbishop.look4sat.core.presentation.AstroDataPanel(astroData) { showAstroData = false }
     }
@@ -582,6 +590,12 @@ private fun SettingsScreen(
                         onMapSettings = { showMapSettings = true },
                         loTWEnabled = !wavelogMode,
                         onAction = onAction
+                    )
+                    CardButton(
+                        onClick = { showTrajectoryPrecision = true },
+                        text = stringResource(R.string.prefs_trajectory_precision_current,
+                            uiState.otherSettings.trajectoryPrecision.label),
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp)
                     )
                     val astroState by astroData.state.collectAsStateWithLifecycle()
                     CardButton(

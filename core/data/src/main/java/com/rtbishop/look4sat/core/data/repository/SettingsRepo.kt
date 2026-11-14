@@ -149,6 +149,7 @@ class SettingsRepo(
     private val keyTiandituKey = "tiandituKey"
     private val keyBottomBarTool = "bottomBarTool"
     private val keyPassListFontScale = "passListFontScale"
+    private val keyTrajectoryPrecision = "trajectoryPrecision"
     private val keyFt4OperatorCallsign = "ft4OperatorCallsign"
     private val keyFt4DecodeEnabled = "ft4DecodeEnabled"
     private val keyFt4DecodeDepth = "ft4DecodeDepth"
@@ -1175,6 +1176,7 @@ class SettingsRepo(
                 putString(keyTiandituKey, new.tiandituKey)
                 putString(keyBottomBarTool, new.bottomBarTool)
                 putFloat(keyPassListFontScale, new.passListFontScale)
+                putString(keyTrajectoryPrecision, new.trajectoryPrecision.name)
             }
             new
         }
@@ -1200,7 +1202,9 @@ class SettingsRepo(
         mapSource = MapSource.normalize(preferences.getString(keyMapSource, null).orEmpty()),
         tiandituKey = preferences.getString(keyTiandituKey, null).orEmpty().trim(),
         bottomBarTool = BottomBarTool.normalize(preferences.getString(keyBottomBarTool, null).orEmpty()),
-        passListFontScale = preferences.getFloat(keyPassListFontScale, 1f).coerceIn(0.6f, 1.4f)
+        passListFontScale = preferences.getFloat(keyPassListFontScale, 1f).coerceIn(0.6f, 1.4f),
+        trajectoryPrecision = com.rtbishop.look4sat.core.domain.model.TrajectoryPrecision.fromStored(
+            preferences.getString(keyTrajectoryPrecision, null))
     )
     //endregion
 

@@ -12,6 +12,7 @@ import com.rtbishop.look4sat.core.domain.predict.OrbitalPass
 import com.rtbishop.look4sat.core.domain.predict.OrbitalPos
 import com.rtbishop.look4sat.core.domain.predict.TemeState
 import com.rtbishop.look4sat.core.domain.utility.round
+import com.rtbishop.look4sat.core.domain.model.TrajectoryPrecision
 import org.hipparchus.geometry.euclidean.threed.Vector3D
 import org.orekit.propagation.SpacecraftState
 import org.orekit.propagation.analytical.tle.TLE
@@ -28,22 +29,24 @@ class OrekitOrbitEngine(
     private val data: IAstroDataRepository,
     cacheDirectory: java.io.File? = null,
     scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
+    private val precision: () -> TrajectoryPrecision = { TrajectoryPrecision.ULTRA },
     private val diagnostic: (String) -> Unit = {}
 ) : IOrbitEngine {
     private val passCache = cacheDirectory?.let(::OrbitPassCache)
     private val coordinator = OrbitComputationCoordinator(scope, diagnostic = diagnostic)
     private data class Request(
         val elements: OrbitalData, val runtime: Any?, val observers: List<List<Double>>,
-        val start: Long, val end: Long
+        val start: Long, val end: Long, val precision: TrajectoryPrecision
     )
     override fun bind(elements: OrbitalData) = OrbitalObject(elements, data.snapshot())
     override fun openSession(target: OrbitalObject): IOrbitSession =
-        OrekitOrbitSession(target.copy(snapshot = target.snapshot ?: data.snapshot()), passCache, diagnostic)
+        OrekitOrbitSession(target.copy(snapshot = target.snapshot ?: data.snapshot()), passCache, diagnostic, precision())
 
     override suspend fun passes(target: OrbitalObject, observers: List<GeoPos>,
         startMillis: Long, endMillis: Long): List<List<OrbitalPass>> {
         require(endMillis > startMillis)
         val pinned = target.copy(snapshot = target.snapshot ?: data.snapshot())
+        val sampling = precision()
         val hour = 3600000L
         val normalized = passCache != null && endMillis - startMillis <= 14L * 86400000
         val start = if (normalized) maxOf(Math.floorDiv(startMillis, hour) * hour,
@@ -51,15 +54,15 @@ class OrekitOrbitEngine(
         val end = if (normalized) minOf((Math.floorDiv(endMillis - 1, hour) + 1) * hour,
             requireNotNull(pinned.snapshot).coverageEndMillis - 1) else endMillis
         val key = Request(pinned.data, pinned.snapshot,
-            observers.map { listOf(it.latitude, it.longitude, it.altitude) }, start, end)
+            observers.map { listOf(it.latitude, it.longitude, it.altitude) }, start, end, sampling)
         val windows = coordinator.compute(key) {
             val context = coroutineContext
-            OrekitOrbitSession(pinned, passCache, diagnostic).batchPasses(observers, start, end) {
+            OrekitOrbitSession(pinned, passCache, diagnostic, sampling).batchPasses(observers, start, end) {
                 context.ensureActive()
             }
         }
         val context = coroutineContext
-        val cropSession = OrekitOrbitSession(pinned, diagnostic = diagnostic)
+        val cropSession = OrekitOrbitSession(pinned, diagnostic = diagnostic, precision = sampling)
         return observers.indices.map { index ->
             cropSession.crop(observers[index], windows[index], startMillis, endMillis) { context.ensureActive() }
         }
@@ -83,7 +86,8 @@ internal fun orekitTle(data: OrbitalData, runtime: OrekitRuntime): TLE {
 internal class OrekitOrbitSession(
     override val target: OrbitalObject,
     private val passCache: OrbitPassCache? = null,
-    private val diagnostic: (String) -> Unit = {}
+    private val diagnostic: (String) -> Unit = {},
+    private val precision: TrajectoryPrecision = TrajectoryPrecision.ULTRA
 ) : IOrbitSession {
     internal val runtime = target.snapshot as OrekitRuntime
     private val propagator = TLEPropagator.selectExtrapolator(orekitTle(target.data, runtime), runtime.teme)
@@ -159,7 +163,9 @@ internal class OrekitOrbitSession(
     private fun step(state: SpacecraftState): Long {
         val pv = state.pvCoordinates
         val rate = Vector3D.crossProduct(pv.position, pv.velocity).norm / pv.position.normSq
-        return (1000 * min(30.0, min(target.data.orbitalPeriod * 60 / 720, (PI / 180) / rate))).toLong()
+        return min(precision.maximumSearchStepMillis.toDouble(), 1000 * min(
+            target.data.orbitalPeriod * 60 / 720, (PI / 180) / rate
+        ) * precision.samplingScale).toLong()
     }
     override fun passes(observer: GeoPos, startMillis: Long, endMillis: Long,
                         checkCancelled: () -> Unit): List<OrbitalPass> =
@@ -181,7 +187,8 @@ internal class OrekitOrbitSession(
         var horizon = 86400000L
         while (horizon < endMillis - startMillis) horizon *= 2
         fun key(observer: GeoPos, span: Long) =
-            cache.key(target, observer, "${runtime.cacheIdentity}:window-$span")
+            cache.key(target, observer, "${runtime.cacheIdentity}:window-$span" +
+                if (precision == TrajectoryPrecision.ULTRA) "" else ":sampling-${precision.name}")
         val spans = generateSequence(horizon) { (it * 2).takeIf { next -> next <= 16L * 86400000 } }.toList()
         val allSpans = generateSequence(86400000L) { (it * 2).takeIf { next -> next <= 16L * 86400000 } }.toList()
         val keys = observers.flatMap { observer -> allSpans.map { key(observer, it) } }
@@ -336,7 +343,14 @@ internal class OrekitOrbitSession(
             eventBoundariesBatch(startMillis, endMillis, observers.indices.map { index ->
                 OrbitEventFunction({ sample(it).value(index) }, { sample(it).derivative(index) },
                     { maxima[index].add(it) })
-            }, { time -> step(sample(time).state) }, checkCancelled)
+            }, { time ->
+                val current = sample(time)
+                // The old engine scanned visible portions at 30 s and the sky at 60 s.
+                val visibleLimit = if (precision == TrajectoryPrecision.LIGHT &&
+                    observers.indices.any { current.value(it) >= 0 }) 30_000L
+                    else precision.maximumSearchStepMillis
+                minOf(step(current.state), visibleLimit)
+            }, checkCancelled, precision.maximumSearchStepMillis)
         } catch (error: OrbitBatchSearchException) {
             failure = error
             error.boundaries
@@ -361,7 +375,7 @@ internal class OrekitOrbitSession(
                     endClipped = clippedEnd, continuousVisibility = clippedStart && clippedEnd, tcaTime = tca)
             }
         }
-        diagnostic("cat=${target.data.catnum} stations=${observers.size} searchStart=$startMillis " +
+        diagnostic("cat=${target.data.catnum} sampling=${precision.name} stations=${observers.size} searchStart=$startMillis " +
             "searchEnd=$endMillis propagations=${propagationCount - propagationStart} " +
             "earthTransforms=${earthTransformCount - transformStart} partial=${failure != null}")
         failure?.let { throw OrbitPredictionException(validEnd, results.firstOrNull().orEmpty(), it) }

@@ -85,6 +85,10 @@ interface ISatelliteRepo {
     /** Get the ground track for a satellite over a time range. */
     suspend fun getTrack(sat: OrbitalObject, pos: GeoPos, start: Long, end: Long): List<OrbitalPos>
 
+    /** Fixed AOS–LOS display geometry, independent of the live clock and CAT sampling. */
+    suspend fun getRadarTrack(sat: OrbitalObject, pos: GeoPos, start: Long, end: Long): List<OrbitalPos> =
+        getTrack(sat, pos, start, end)
+
     /** Get Doppler-shifted radio frequencies for a satellite at the given time. */
     suspend fun getRadios(sat: OrbitalObject, pos: GeoPos, radios: List<SatRadio>, time: Long): List<SatRadio>
 

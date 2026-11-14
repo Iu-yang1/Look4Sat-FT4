@@ -300,7 +300,7 @@ class RadarViewModel(
         if (!pass.continuousVisibility) {
             // For a matched session the pass has already been expanded to
             // station A's full horizon window by findCurrentPass().
-            val track = satelliteRepo.getTrack(pass.orbitalObject, stationPos, pass.aosTime, pass.losTime)
+            val track = satelliteRepo.getRadarTrack(pass.orbitalObject, stationPos, pass.aosTime, pass.losTime)
             _uiState.update { it.copy(satTrack = track) }
         }
         return allRadios

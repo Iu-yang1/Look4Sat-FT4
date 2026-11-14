@@ -34,6 +34,43 @@ import org.junit.Test
 @OptIn(ExperimentalCoroutinesApi::class)
 class SatelliteRepoTest {
     @Test
+    fun fixedRadarTracksUseOnlyDirectionsAndReuseGeometryAcrossLocationTimestamps() = runBlocking {
+        val real = com.rtbishop.look4sat.core.data.astro.AstroTestData.engine
+        var sessions = 0
+        val engine = object : com.rtbishop.look4sat.core.domain.astro.IOrbitEngine by real {
+            override fun openSession(target: OrbitalObject): com.rtbishop.look4sat.core.domain.astro.IOrbitSession {
+                sessions++
+                val actual = real.openSession(target)
+                return object : com.rtbishop.look4sat.core.domain.astro.IOrbitSession by actual {
+                    override fun position(observer: com.rtbishop.look4sat.core.domain.predict.GeoPos, timeMillis: Long) =
+                        error("Radar geometry must not compute eclipse and footprint data")
+                }
+            }
+        }
+        val repo = SatelliteRepo(kotlinx.coroutines.Dispatchers.Default,
+            TestLocalSource { emptyList() }, FakeSettingsRepo(), engine,
+            unusedService(com.rtbishop.look4sat.core.domain.astro.ICelestialService::class.java),
+            com.rtbishop.look4sat.core.data.astro.AstroTestData.repository)
+        val target = real.bind(orbitalData(1).copy(epoch = 179.78495062))
+        val observer = com.rtbishop.look4sat.core.domain.predict.GeoPos(23.13, 113.26)
+        val start = java.time.Instant.parse("2000-06-28T00:10:00Z").toEpochMilli()
+        val end = start + 65_000
+        val track = repo.getRadarTrack(target, observer, start, end)
+        assertEquals(listOf(start, start + 15000, start + 30000, start + 45000, start + 60000, end),
+            track.map { it.time })
+        val reference = real.openSession(target)
+        track.forEach { point ->
+            val expected = reference.position(observer, point.time)
+            assertEquals(expected.azimuth, point.azimuth, 1e-12)
+            assertEquals(expected.elevation, point.elevation, 1e-12)
+        }
+        val replay = repo.getRadarTrack(target, observer.copy(timestamp = end + 3600000), start, end)
+        assertTrue(track === replay)
+        assertEquals(1, sessions)
+        assertTrue(repo.getRadarTrack(target, observer, end, end).isEmpty())
+    }
+
+    @Test
     fun onlyContentOrStationChangesRestartRepositoryPrediction() = runTest {
         val settings = FakeSettingsRepo()
         (settings.passesSettings as MutableStateFlow).value =

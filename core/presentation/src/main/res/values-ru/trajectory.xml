@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="prefs_trajectory_precision">Точность траектории</string>
+    <string name="prefs_trajectory_precision_current">Точность траектории: %1$s</string>
+    <string name="prefs_trajectory_precision_hint">Ultra сохраняет текущую частоту расчёта. Более низкие уровни уменьшают объём вычислений.</string>
+</resources>

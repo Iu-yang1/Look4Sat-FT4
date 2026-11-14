@@ -274,7 +274,7 @@ class Ft4ViewModel(
                 }
                 if (pass != null && !pass.continuousVisibility) {
                     val track = runCatching {
-                        container.satelliteRepo.getTrack(
+                        container.satelliteRepo.getRadarTrack(
                             pass.orbitalObject,
                             container.settingsRepo.stationPosition.value,
                             pass.aosTime,

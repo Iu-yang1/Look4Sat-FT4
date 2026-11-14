@@ -337,6 +337,9 @@ class SettingsViewModel(
             is SettingsAction.SetPassListFontScale -> settingsRepo.updateOtherSettings {
                 it.copy(passListFontScale = action.value.coerceIn(0.6f, 1.4f))
             }
+            is SettingsAction.SetTrajectoryPrecision -> settingsRepo.updateOtherSettings {
+                it.copy(trajectoryPrecision = action.value)
+            }
             is SettingsAction.SetFt4Callsign -> settingsRepo.updateFt4Settings {
                 it.copy(operatorCallsign = action.value)
             }

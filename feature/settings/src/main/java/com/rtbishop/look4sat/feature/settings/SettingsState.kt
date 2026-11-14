@@ -171,6 +171,7 @@ sealed interface SettingsAction {
     data class UpdateMapSettings(val mapSource: String, val tiandituKey: String) : SettingsAction
     data class SetBottomBarTool(val value: String) : SettingsAction
     data class SetPassListFontScale(val value: Float) : SettingsAction
+    data class SetTrajectoryPrecision(val value: com.rtbishop.look4sat.core.domain.model.TrajectoryPrecision) : SettingsAction
     // FT4
     data class SetFt4Callsign(val value: String) : SettingsAction
     data class ToggleFt4Decode(val value: Boolean) : SettingsAction

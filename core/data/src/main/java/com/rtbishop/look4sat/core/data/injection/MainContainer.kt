@@ -128,7 +128,8 @@ class MainContainer(private val context: Context) : IMainContainer {
         bundledArchive = { context.assets.open("astronomy/orekit-data.zip") }
     )
     private val orbitEngine = com.rtbishop.look4sat.core.data.astro.OrekitOrbitEngine(
-        astroData, java.io.File(context.cacheDir, "orbit-passes"), appScope) { message ->
+        astroData, java.io.File(context.cacheDir, "orbit-passes"), appScope,
+        precision = { settingsRepo.otherSettings.value.trajectoryPrecision }) { message ->
             controlDiagnostics.record(
                 com.rtbishop.look4sat.core.domain.control.ControlDiagnosticSource.RADIO,
                 "orbit/work", message)

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="prefs_trajectory_precision">Precisión de trayectoria</string>
+    <string name="prefs_trajectory_precision_current">Precisión de trayectoria: %1$s</string>
+    <string name="prefs_trajectory_precision_hint">Ultra conserva el muestreo actual. Los niveles inferiores reducen el trabajo de cálculo.</string>
+</resources>

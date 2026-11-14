@@ -44,21 +44,24 @@ fun PassRadarPreview(
     stationPosition: GeoPos,
     modifier: Modifier = Modifier
 ) {
+    val observer = remember(stationPosition.latitude, stationPosition.longitude, stationPosition.altitude) {
+        GeoPos(stationPosition.latitude, stationPosition.longitude, stationPosition.altitude)
+    }
     var positions by remember(
-        pass.catNum, pass.aosTime, pass.losTime, pass.orbitalObject, stationPosition
+        pass.catNum, pass.aosTime, pass.losTime, pass.orbitalObject, observer
     ) { mutableStateOf(emptyList<OrbitalPos>()) }
 
     LaunchedEffect(
-        pass.catNum, pass.aosTime, pass.losTime, pass.orbitalObject, stationPosition,
+        pass.catNum, pass.aosTime, pass.losTime, pass.orbitalObject, observer,
         pass.continuousVisibility, satelliteRepo
     ) {
         positions = if (satelliteRepo == null || pass.continuousVisibility || pass.losTime <= pass.aosTime) {
             emptyList()
         } else {
             try {
-                satelliteRepo.getTrack(
+                satelliteRepo.getRadarTrack(
                     sat = pass.orbitalObject,
-                    pos = stationPosition,
+                    pos = observer,
                     start = pass.aosTime,
                     end = pass.losTime
                 )

@@ -84,6 +84,7 @@ data class MutualUiState(
     val focusedCatNum: Int? = null,
     val isCalculating: Boolean = false,
     val hasSearched: Boolean = false,
+    val resultGeneration: Int = -1,
     val selectedPassIndex: Int = -1,
     val isUtc: Boolean = false,
     val errorMessage: String? = null,
@@ -446,7 +447,14 @@ class MutualViewModel(
 
             val results = try {
                 withContext(computeDispatcher) {
-                    findMutualPasses(filteredSatellites, posA, posB, minElevA, minElevB, time, hours, hoursBefore)
+                    findMutualPasses(filteredSatellites, posA, posB, minElevA, minElevB, time, hours, hoursBefore) { partial ->
+                        withContext(Dispatchers.Main.immediate) {
+                            if (generation == queryGeneration) _uiState.update {
+                                it.copy(mutualPasses = partial.sortedBy(MutualPass::startTime),
+                                    resultGeneration = generation)
+                            }
+                        }
+                    }
                 }
             } catch (cancelled: kotlinx.coroutines.CancellationException) {
                 throw cancelled
@@ -470,12 +478,13 @@ class MutualViewModel(
             _uiState.update {
                 it.copy(
                     mutualPasses = sortedResults,
+                    resultGeneration = generation,
                     isCalculating = false,
                     errorMessage = errorMsg
                 )
             }
             android.util.Log.i("Look4SatStartup",
-                "page=mutual predictionComplete targets=${filteredSatellites.size} " +
+                "page=mutual predictionComplete request=$generation targets=${filteredSatellites.size} " +
                     "windows=${sortedResults.size} elapsedMs=${(System.nanoTime() - started) / 1_000_000}")
             onCompleted?.invoke(sortedResults)
         }
@@ -497,7 +506,8 @@ class MutualViewModel(
         satellites: List<OrbitalObject>,
         posA: GeoPos, posB: GeoPos,
         minElevADeg: Double, minElevBDeg: Double,
-        time: Long, hours: Int, hoursBefore: Int
+        time: Long, hours: Int, hoursBefore: Int,
+        onProgress: suspend (List<MutualPass>) -> Unit
     ): List<MutualPass> {
         // The main Passes list is filtered by its own minimum elevation, AOS
         // window and radio settings, and is calculated for the device location.
@@ -508,7 +518,7 @@ class MutualViewModel(
         val sampleInterval = 5_000L
         return findMutualPassesIndependently(
             satellites, posA, posB, minElevADeg, minElevBDeg,
-            time, endTime, sampleInterval
+            time, endTime, sampleInterval, onProgress
         )
     }
 
@@ -517,14 +527,28 @@ class MutualViewModel(
         satellites: List<OrbitalObject>,
         posA: GeoPos, posB: GeoPos,
         minElevADeg: Double, minElevBDeg: Double,
-        time: Long, endTime: Long, sampleInterval: Long
+        time: Long, endTime: Long, sampleInterval: Long,
+        onProgress: suspend (List<MutualPass>) -> Unit
     ): List<MutualPass> = coroutineScope {
         val permits = Semaphore((Runtime.getRuntime().availableProcessors() - 1).coerceIn(1, 4))
+        val partial = mutableListOf<MutualPass>()
+        val publication = kotlinx.coroutines.sync.Mutex()
+        var lastPublication = 0L
         satellites.map { sat ->
             async {
                 permits.withPermit {
                     findSatelliteMutualPasses(sat, posA, posB, minElevADeg, minElevBDeg,
-                        time, endTime, sampleInterval)
+                        time, endTime, sampleInterval).also { windows ->
+                        publication.lock()
+                        try {
+                            partial.addAll(windows)
+                            val now = System.nanoTime()
+                            if (partial.isNotEmpty() && now - lastPublication >= 250_000_000) {
+                                onProgress(partial.toList())
+                                lastPublication = now
+                            }
+                        } finally { publication.unlock() }
+                    }
                 }
             }
         }.awaitAll().flatten()
@@ -542,8 +566,7 @@ class MutualViewModel(
         val margin = (sat.data.orbitalPeriod * 60000).toLong()
         val searchStart = maxOf(time - margin, sat.snapshot?.coverageStartMillis ?: Long.MIN_VALUE)
         val searchEnd = minOf(endTime + margin, sat.snapshot?.coverageEndMillis?.minus(1) ?: Long.MAX_VALUE)
-        val windowsA = session.passes(posA, searchStart, searchEnd) { context.ensureActive() }
-        val windowsB = session.passes(posB, searchStart, searchEnd) { context.ensureActive() }
+        val (windowsA, windowsB) = satelliteRepo.orbit.passes(sat, listOf(posA, posB), searchStart, searchEnd)
         var indexA = 0
         var indexB = 0
         while (indexA < windowsA.size && indexB < windowsB.size) {

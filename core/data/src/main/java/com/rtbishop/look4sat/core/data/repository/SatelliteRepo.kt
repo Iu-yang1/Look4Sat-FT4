@@ -59,6 +59,8 @@ class SatelliteRepo(
     private val failures = MutableStateFlow<Map<Int, String>>(emptyMap())
     override val orbitFailures: StateFlow<Map<Int, String>> = failures
     private val calculationGeneration = PassCalculationGeneration()
+    private val prediction = MutableStateFlow(com.rtbishop.look4sat.core.domain.repository.PassPredictionState())
+    override val passPrediction = prediction
     private val mutablePasses = MutableStateFlow<List<OrbitalPass>>(emptyList())
     override val passes: StateFlow<List<OrbitalPass>> = mutablePasses
     private val calculating = MutableStateFlow(false)
@@ -202,6 +204,7 @@ class SatelliteRepo(
             val next = launch(start = CoroutineStart.LAZY) {
                 val started = System.nanoTime()
                 calculating.value = true
+                prediction.value = prediction.value.copy(requestId = generation, complete = false)
                 try {
                     if (!astroData.state.value.ready) {
                         mutablePasses.value = emptyList()
@@ -215,17 +218,17 @@ class SatelliteRepo(
                     // Cold loads can show completed windows while the remaining satellites
                     // are still being predicted. Keep the refresh indicator until all finish.
                     val partial = mutableListOf<OrbitalPass>()
-                    val publishPartial = mutablePasses.value.isEmpty()
                     var lastPublication = 0L
                     val result = predict(filterSatellitesByModes(targets.value, activeModes, ids),
                         settingsRepo.stationPosition.value, time, time + hoursAhead * 3600000L,
-                        onProgress = if (!publishPartial) null else { windows ->
+                        onProgress = { windows ->
                             synchronized(partial) {
                                 partial.addAll(windows.filter(::matches))
                                 val now = System.nanoTime()
                                 if (partial.isNotEmpty() && now - lastPublication >= 250_000_000 &&
                                     calculationGeneration.isLatest(generation)) {
                                     mutablePasses.value = partial.sortedBy { it.aosTime }
+                                    prediction.value = prediction.value.copy(resultRequestId = generation)
                                     lastPublication = now
                                 }
                             }
@@ -233,13 +236,14 @@ class SatelliteRepo(
                     ).filter(::matches)
                     if (calculationGeneration.isLatest(generation)) {
                         mutablePasses.value = result
+                        prediction.value = prediction.value.copy(resultRequestId = generation, complete = true)
                         diagnostics?.record(
                             com.rtbishop.look4sat.core.domain.control.ControlDiagnosticSource.RADIO,
                             "orbit/loading",
                             "page=passes targets=${targets.value.size} windows=${result.size} " +
                                 "hours=$hoursAhead elapsedMs=${(System.nanoTime() - started) / 1_000_000}")
                         android.util.Log.i("Look4SatStartup",
-                            "page=passes predictionComplete targets=${targets.value.size} windows=${result.size} " +
+                            "page=passes predictionComplete request=$generation targets=${targets.value.size} windows=${result.size} " +
                                 "elapsedMs=${(System.nanoTime() - started) / 1_000_000}")
                     }
                 } finally {
@@ -265,9 +269,8 @@ class SatelliteRepo(
             if (end <= start) return@withContext emptyList<OrbitalPass>()
             satellites.orbitParallelMap { satellite ->
                 workers.withPermit {
-                    val context = coroutineContext
                     val windows = try {
-                        orbit.openSession(satellite).passes(observer, start, end) { context.ensureActive() }
+                        orbit.passes(satellite, listOf(observer), start, end).single()
                             .also { synchronized(failures) {
                                 failures.value = failures.value - satellite.data.catnum
                             } }
@@ -288,12 +291,28 @@ class SatelliteRepo(
 
     override suspend fun getSchedulePasses(catNums: Set<Int>, startTime: Long, hoursAhead: Int,
         minElevation: Double
+    ): List<OrbitalPass> = getSchedulePasses(catNums, startTime, hoursAhead, minElevation) {}
+
+    override suspend fun getSchedulePasses(catNums: Set<Int>, startTime: Long, hoursAhead: Int,
+        minElevation: Double, onProgress: (List<OrbitalPass>) -> Unit
     ): List<OrbitalPass> {
         if (!astroData.state.value.ready) return emptyList()
         val started = System.nanoTime()
+        val partial = mutableListOf<OrbitalPass>()
+        var lastPublication = 0L
         val result = predict(targets.value.filter { it.data.catnum in catNums },
-            settingsRepo.stationPosition.value, startTime, startTime + hoursAhead * 3600000L)
+            settingsRepo.stationPosition.value, startTime, startTime + hoursAhead * 3600000L) { windows ->
+                synchronized(partial) {
+                    partial.addAll(windows.filter { it.maxElevation >= minElevation })
+                    val now = System.nanoTime()
+                    if (partial.isNotEmpty() && now - lastPublication >= 250_000_000) {
+                        onProgress(partial.sortedBy { it.aosTime })
+                        lastPublication = now
+                    }
+                }
+            }
             .filter { it.maxElevation >= minElevation }
+        onProgress(result)
         diagnostics?.record(
             com.rtbishop.look4sat.core.domain.control.ControlDiagnosticSource.RADIO, "orbit/loading",
             "page=schedule targets=${catNums.size} windows=${result.size} hours=$hoursAhead " +

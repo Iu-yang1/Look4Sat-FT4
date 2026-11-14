@@ -501,6 +501,8 @@ fun PassScheduleDestination(
         mutableStateOf(PassSchedulePassCache.get(passCalculationKey) ?: emptyList())
     }
     var isCalculating by remember { mutableStateOf(false) }
+    var queryId by remember { androidx.compose.runtime.mutableLongStateOf(0) }
+    var resultQueryId by remember { androidx.compose.runtime.mutableLongStateOf(-1) }
     var currentTime by remember { mutableStateOf(System.currentTimeMillis()) }
     var minimumElevationSlider by remember(config.minimumElevation) { mutableStateOf(config.minimumElevation) }
     LaunchedEffect(Unit) {
@@ -517,7 +519,9 @@ fun PassScheduleDestination(
         derivedStateOf { passes.filter { it.losTime > currentTime } }
     }
     var scheduleDays by remember { mutableStateOf<List<PassScheduleDay>>(emptyList()) }
-    com.rtbishop.look4sat.core.presentation.ContentDrawTiming("schedule", scheduleDays.isNotEmpty())
+    com.rtbishop.look4sat.core.presentation.ContentDrawTiming("schedule",
+        scheduleDays.isNotEmpty() && resultQueryId == queryId, queryId,
+        resultQueryId == queryId && !isCalculating)
     LaunchedEffect(visiblePasses, isUtc, stationPosition) {
         // Show satellite windows before computing the auxiliary solar headers.
         scheduleDays = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
@@ -549,6 +553,8 @@ fun PassScheduleDestination(
     BackHandler(enabled = showTrackingSettings.value) { showTrackingSettings.value = false }
 
     LaunchedEffect(passCalculationKey, config.reminderMinutes) {
+        queryId++
+        val request = queryId
         // The repository is populated asynchronously after app startup. Wait for it
         // when the tracking selection is non-empty, rather than clearing a saved schedule.
         if (satellites.isEmpty() && currentlyTrackedIds.isNotEmpty()) return@LaunchedEffect
@@ -569,6 +575,16 @@ fun PassScheduleDestination(
             cachedPasses
         } else {
             isCalculating = true
+            val updates = kotlinx.coroutines.channels.Channel<List<OrbitalPass>>(
+                kotlinx.coroutines.channels.Channel.CONFLATED)
+            val publication = launch {
+                for (windows in updates) {
+                    if (request == queryId) {
+                        passes = windows
+                        resultQueryId = request
+                    }
+                }
+            }
             try {
                 val calculated = if (config.satelliteIds.isEmpty()) {
                     emptyList()
@@ -577,16 +593,20 @@ fun PassScheduleDestination(
                         catNums = config.satelliteIds,
                         startTime = System.currentTimeMillis(),
                         hoursAhead = PASS_SCHEDULE_WINDOW_HOURS,
-                        minElevation = config.minimumElevation.toDouble()
+                        minElevation = config.minimumElevation.toDouble(),
+                        onProgress = { updates.trySend(it) }
                     )
                 }
                 PassSchedulePassCache.put(passCalculationKey, calculated)
                 calculated
             } finally {
-                isCalculating = false
+                updates.close()
+                publication.cancel()
+                if (request == queryId) isCalculating = false
             }
         }
         passes = calculatedPasses
+        resultQueryId = request
         // Alarm IPC must not hold back the first frame containing calculated rows.
         val selectedConfig = config
         kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {

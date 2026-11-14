@@ -70,6 +70,14 @@ interface ISatelliteRepo {
         minElevation: Double
     ): List<OrbitalPass>
 
+    suspend fun getSchedulePasses(
+        catNums: Set<Int>, startTime: Long, hoursAhead: Int, minElevation: Double,
+        onProgress: (List<OrbitalPass>) -> Unit
+    ): List<OrbitalPass> = getSchedulePasses(catNums, startTime, hoursAhead, minElevation)
+        .also(onProgress)
+
+    val passPrediction: StateFlow<PassPredictionState> get() = idlePassPrediction
+
     /** Get the current position of a single satellite. */
     suspend fun getPosition(sat: OrbitalObject, pos: GeoPos, time: Long): OrbitalPos
     suspend fun getCoverage(sat: OrbitalObject, time: Long): List<GeoPos> = emptyList()
@@ -109,3 +117,6 @@ interface ISatelliteRepo {
 }
 
 private val noOrbitFailures: StateFlow<Map<Int, String>> = kotlinx.coroutines.flow.MutableStateFlow(emptyMap())
+data class PassPredictionState(val requestId: Long = 0, val resultRequestId: Long = -1, val complete: Boolean = false)
+private val idlePassPrediction: StateFlow<PassPredictionState> =
+    kotlinx.coroutines.flow.MutableStateFlow(PassPredictionState())

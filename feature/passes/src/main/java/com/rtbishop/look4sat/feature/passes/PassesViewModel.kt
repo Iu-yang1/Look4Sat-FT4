@@ -43,6 +43,8 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Calendar
@@ -50,12 +52,28 @@ import java.util.Date
 import java.util.Locale
 import java.util.TimeZone
 
+@OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class PassesViewModel(
     private val satelliteRepo: ISatelliteRepo,
     private val settingsRepo: ISettingsRepo
 ) : ViewModel() {
     private var sunTimesKey: List<Any?>? = null
     private var sunTimesCache: Map<String, Pair<String, String>> = emptyMap()
+    private val presentationActive = MutableStateFlow(true)
+    private var dateLabelKey: Pair<String, Locale>? = null
+    private var dateFormatter: SimpleDateFormat? = null
+    private val dateLabels = mutableMapOf<Long, String>()
+
+    fun setPresentationActive(active: Boolean) { presentationActive.value = active }
+
+    private fun clock(periodMillis: Long) = presentationActive.flatMapLatest { active ->
+        if (!active) emptyFlow() else flow {
+            while (true) {
+                emit(System.currentTimeMillis())
+                delay(periodMillis)
+            }
+        }
+    }
 
     private val defaultPass = getDefaultPass()
     private val _uiState = MutableStateFlow(
@@ -101,12 +119,7 @@ class PassesViewModel(
         // Combining the source StateFlow with an independent ticker avoids tying the
         // LOS expiry refresh to the lifetime of a nested collectLatest loop.
         viewModelScope.launch {
-            val clockTicks = flow {
-                while (true) {
-                    emit(System.currentTimeMillis())
-                    delay(1_000L)
-                }
-            }
+            val clockTicks = clock(1_000)
             combine(satelliteRepo.passes, clockTicks) { allPasses, timeNow ->
                 allPasses to timeNow
             }.collect { (allPasses, timeNow) ->
@@ -138,12 +151,7 @@ class PassesViewModel(
         }
         // Solar headers must not hold back ready satellite rows or their countdown.
         viewModelScope.launch {
-            val calendarTicks = flow {
-                while (true) {
-                    emit(Unit)
-                    delay(60_000L)
-                }
-            }
+            val calendarTicks = clock(60_000)
             combine(satelliteRepo.passes, settingsRepo.stationPosition,
                 settingsRepo.otherSettings.map { it.stateOfUtc }.distinctUntilChanged(), calendarTicks,
                 satelliteRepo.isCalculating
@@ -258,8 +266,16 @@ class PassesViewModel(
 
     private fun groupPasses(passes: List<OrbitalPass>, isUtc: Boolean): Map<String, List<OrbitalPass>> {
         val tz = if (isUtc) TimeZone.getTimeZone("UTC") else TimeZone.getDefault()
-        val sdfDate = dateFormat(tz)
-        return groupPassSections(passes) { sdfDate.format(Date(it.aosTime)) }
+        val key = tz.id to Locale.getDefault()
+        if (dateLabelKey != key) {
+            dateLabelKey = key
+            dateFormatter = dateFormat(tz)
+            dateLabels.clear()
+        }
+        dateLabels.keys.retainAll(passes.mapTo(hashSetOf()) { it.aosTime })
+        return groupPassSections(passes) { pass ->
+            dateLabels.getOrPut(pass.aosTime) { requireNotNull(dateFormatter).format(Date(pass.aosTime)) }
+        }
     }
 
     /** Computes live progress while retaining completed passes in the requested history window. */

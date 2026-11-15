@@ -11,6 +11,7 @@ package com.rtbishop.look4sat.core.data.repository
 
 import com.rtbishop.look4sat.core.data.database.QsoDao
 import com.rtbishop.look4sat.core.data.database.entity.QsoEntity
+import com.rtbishop.look4sat.core.data.maintenance.DataMaintenance
 import com.rtbishop.look4sat.core.domain.logbook.AdifCodec
 import com.rtbishop.look4sat.core.domain.logbook.AdifImportResult
 import com.rtbishop.look4sat.core.domain.logbook.IQsoRepository
@@ -48,20 +49,23 @@ class QsoRepository(
     private val importMutex = Mutex()
     private var maintenanceJob: Job? = null
 
-    private suspend fun <T> mutate(block: suspend () -> T): T = importMutex.withLock {
-        maintenance.markPending()
-        block().also {
-            maintenanceJob?.cancel()
-            maintenanceJob = maintenanceScope?.launch(dispatcher) {
-                delay(500)
-                try { consolidateConfirmations() }
-                catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
-                catch (error: Exception) {
-                    android.util.Log.w("Look4SatQso", "Deferred confirmation maintenance failed", error)
+    private suspend fun <T> mutate(block: suspend () -> T): T =
+        DataMaintenance.write {
+            importMutex.withLock {
+                maintenance.markPending()
+                block().also {
+                    maintenanceJob?.cancel()
+                    maintenanceJob = maintenanceScope?.launch(dispatcher) {
+                        delay(500)
+                        try { consolidateConfirmations() }
+                        catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+                        catch (error: Exception) {
+                            android.util.Log.w("Look4SatQso", "Deferred confirmation maintenance failed", error)
+                        }
+                    }
                 }
             }
         }
-    }
 
     override val records: Flow<List<QsoRecord>> = dao.observeAll().map { records -> records.map(QsoEntity::toDomain) }
 
@@ -229,21 +233,23 @@ class QsoRepository(
     }
 
     override suspend fun consolidateConfirmations(): Int = withContext(dispatcher) {
-        importMutex.withLock {
-            if (!maintenance.needsMaintenance) return@withLock 0
-            maintenance.markPending()
-            val working = dao.getAll().map(QsoEntity::toDomain).toMutableList()
-            val consolidation = consolidateSplitRows(working)
-            val renames = rewriteOfficialNames(working)
-            if (consolidation.merged.isEmpty() && consolidation.redundant.isEmpty() && renames.isEmpty()) {
+        DataMaintenance.write {
+            importMutex.withLock {
+                if (!maintenance.needsMaintenance) return@withLock 0
+                maintenance.markPending()
+                val working = dao.getAll().map(QsoEntity::toDomain).toMutableList()
+                val consolidation = consolidateSplitRows(working)
+                val renames = rewriteOfficialNames(working)
+                if (consolidation.merged.isEmpty() && consolidation.redundant.isEmpty() && renames.isEmpty()) {
+                    maintenance.markComplete()
+                    return@withLock 0
+                }
+                val toSave = LinkedHashMap(consolidation.merged).apply { putAll(renames) }
+                dao.applySyncBatch(emptyList(), toSave.values.map(QsoRecord::toEntity),
+                    consolidation.redundant.map { it.id })
                 maintenance.markComplete()
-                return@withLock 0
+                consolidation.redundant.size
             }
-            val toSave = LinkedHashMap(consolidation.merged).apply { putAll(renames) }
-            dao.applySyncBatch(emptyList(), toSave.values.map(QsoRecord::toEntity),
-                consolidation.redundant.map { it.id })
-            maintenance.markComplete()
-            consolidation.redundant.size
         }
     }
 
@@ -460,7 +466,7 @@ class QsoRepository(
     }
 }
 
-private fun QsoEntity.toDomain() = QsoRecord(
+internal fun QsoEntity.toDomain() = QsoRecord(
     id = id,
     startUtcMillis = startUtcMillis,
     endUtcMillis = endUtcMillis,
@@ -507,7 +513,7 @@ private fun QsoEntity.toDomain() = QsoRecord(
     syncOrigin = syncOrigin
 )
 
-private fun QsoRecord.toEntity() = QsoEntity(
+internal fun QsoRecord.toEntity() = QsoEntity(
     id = id,
     startUtcMillis = startUtcMillis,
     endUtcMillis = endUtcMillis,

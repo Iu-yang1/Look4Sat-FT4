@@ -52,18 +52,23 @@ internal class AndroidLoTWStorage(context: Context) : LoTWStorage {
             .setKeySize(256).build())
         generateKey()
     }
-    @Synchronized override fun read(name: String): ByteArray? {
+    override fun read(name: String): ByteArray? = synchronized(
+        com.rtbishop.look4sat.core.data.maintenance.DataMaintenance.preferencesLock
+    ) {
         val file = file(name)
-        if (!file.baseFile.exists() && !File(file.baseFile.path + ".bak").exists()) return null
+        if (!file.baseFile.exists() && !File(file.baseFile.path + ".bak").exists()) return@synchronized null
         val bytes = file.readFully()
         require(bytes.size in 29..(16 * 1024 * 1024) && bytes[0] == 1.toByte())
-        return Cipher.getInstance("AES/GCM/NoPadding").run {
+        Cipher.getInstance("AES/GCM/NoPadding").run {
             init(Cipher.DECRYPT_MODE, key(), GCMParameterSpec(128, bytes.copyOfRange(1, 13)))
             updateAAD(name.toByteArray(Charsets.UTF_8))
             doFinal(bytes, 13, bytes.size - 13)
         }
     }
-    @Synchronized override fun write(name: String, data: ByteArray) {
+    override fun write(name: String, data: ByteArray) = synchronized(
+        com.rtbishop.look4sat.core.data.maintenance.DataMaintenance.preferencesLock
+    ) {
+        if (name != "rollback") com.rtbishop.look4sat.core.data.maintenance.DataMaintenance.checkWritable()
         val cipher = Cipher.getInstance("AES/GCM/NoPadding").apply {
             init(Cipher.ENCRYPT_MODE, key())
             updateAAD(name.toByteArray(Charsets.UTF_8))
@@ -74,6 +79,11 @@ internal class AndroidLoTWStorage(context: Context) : LoTWStorage {
         try { stream.write(bytes); file.finishWrite(stream) }
         catch (error: Exception) { file.failWrite(stream); throw error }
     }
-    @Synchronized override fun delete(name: String) = file(name).delete()
+    override fun delete(name: String) = synchronized(
+        com.rtbishop.look4sat.core.data.maintenance.DataMaintenance.preferencesLock
+    ) {
+        if (name != "rollback") com.rtbishop.look4sat.core.data.maintenance.DataMaintenance.checkWritable()
+        file(name).delete()
+    }
     private companion object { const val ALIAS = "look4sat.lotw.storage.v1" }
 }

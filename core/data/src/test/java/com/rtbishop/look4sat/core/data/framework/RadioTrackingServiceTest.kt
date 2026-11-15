@@ -65,6 +65,82 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class RadioTrackingServiceTest {
+    @Test fun ordinarySplitProbeNeverUsesAReadThatSelectsTheOtherVfo() = runTest {
+        val tx = FakeRadioController()
+        val rx = FakeRadioController()
+        val fixture = Fixture(backgroundScope, tx, rx, splitMode = true)
+        fixture.service.connectRadios()
+        tx.beforeReadTx = { error("A normal check must not select another VFO") }
+        tx.operations.clear(); rx.operations.clear()
+        assertTrue(fixture.service.probe().connected)
+        assertTrue(tx.operations.isEmpty())
+        assertTrue(rx.operations.isEmpty())
+        tx.beforeReadTx = null
+        fixture.close()
+    }
+
+    @Test fun diagnosticLeaseRequiresNoPassAndDoesNotTuneRadio() = runTest {
+        val tx = FakeRadioController().apply { frequencyHz = 145_900_000 }
+        val rx = FakeRadioController()
+        val fixture = Fixture(backgroundScope, tx, rx)
+        fixture.service.connectRadios()
+        tx.operations.clear(); rx.operations.clear()
+        val request = fixture.request(101).copy(
+            mode = com.rtbishop.look4sat.core.domain.ft4.DigitalTransmitMode.DIAGNOSTIC,
+            waveformDurationMillis = 1000, maximumPttMillis = 5000)
+        val before = fixture.service.probe()
+        assertTrue(before.connected)
+        val lease = fixture.service.beginTransmit(request)
+        assertTrue(lease.diagnostic)
+        assertTrue(runCatching { fixture.service.beginTransmit(request) }.isFailure)
+        fixture.service.confirmTransmitReady(lease)
+        assertEquals(PttState.ON, fixture.service.state.value.pttState)
+        fixture.service.endTransmit(lease)
+        assertEquals(PttState.OFF, fixture.service.state.value.pttState)
+        assertTrue(tx.operations.none { it.startsWith("frequency:") || it.startsWith("mode:") ||
+            it.startsWith("data:") || it.startsWith("split-modes:") })
+        fixture.close()
+    }
+
+    @Test fun diagnosticRejectsUnknownExternalPttAndFailedOnReleasesLease() = runTest {
+        val tx = FakeRadioController(pttReadbackSupported = true)
+        val fixture = Fixture(backgroundScope, tx, FakeRadioController())
+        fixture.service.connectRadios()
+        tx.physicalPtt = null
+        val request = fixture.request(102).copy(
+            mode = com.rtbishop.look4sat.core.domain.ft4.DigitalTransmitMode.DIAGNOSTIC,
+            waveformDurationMillis = 1000, maximumPttMillis = 5000)
+        assertTrue(runCatching { fixture.service.beginTransmit(request) }.isFailure)
+        assertFalse(tx.operations.contains("ptt:on"))
+        fixture.close()
+        val failing = Fixture(backgroundScope, FakeRadioController(pttOnSucceeds = false), FakeRadioController())
+        failing.service.connectRadios()
+        val lease = failing.service.beginTransmit(request)
+        assertTrue(runCatching { failing.service.confirmTransmitReady(lease) }.isFailure)
+        assertEquals(PttState.ERROR, failing.service.state.value.pttState)
+        assertNull(failing.service.state.value.txLeaseId)
+        failing.service.emergencyPttOff()
+        assertEquals(PttState.OFF, failing.service.state.value.pttState)
+        failing.close()
+    }
+
+    @Test fun diagnosticWatchdogStopsTestAndDisconnectedProbeDoesNotConnect() = runTest {
+        val tx = FakeRadioController()
+        val fixture = Fixture(backgroundScope, tx, FakeRadioController())
+        assertFalse(fixture.service.probe().connected)
+        assertTrue(tx.operations.isEmpty())
+        fixture.service.connectRadios()
+        val lease = fixture.service.beginTransmit(fixture.request(103).copy(
+            mode = com.rtbishop.look4sat.core.domain.ft4.DigitalTransmitMode.DIAGNOSTIC,
+            waveformDurationMillis = 1000, maximumPttMillis = 5000))
+        fixture.service.confirmTransmitReady(lease)
+        runCurrent(); advanceTimeBy(5001); runCurrent()
+        assertEquals(PttState.OFF, fixture.service.state.value.pttState)
+        assertNull(fixture.service.state.value.txLeaseId)
+        assertTrue(tx.operations.contains("ptt:off"))
+        fixture.close()
+    }
+
     @Test fun oneRadioCleanupFailureDoesNotLeaveTheOtherConnectionOpen() = runTest {
         val tx = FakeRadioController()
         val rx = FakeRadioController()

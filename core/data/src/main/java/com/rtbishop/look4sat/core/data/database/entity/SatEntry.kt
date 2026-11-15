@@ -20,6 +20,7 @@ package com.rtbishop.look4sat.core.data.database.entity
 import androidx.room.ColumnInfo
 import androidx.room.Entity
 
+@kotlinx.serialization.Serializable
 @Entity(tableName = "entries", primaryKeys = ["catnum"])
 data class SatEntry(
     val name: String,

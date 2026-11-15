@@ -10,7 +10,20 @@ import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 
-internal class RadioAudioCredentials(context: Context) {
+internal interface RadioAudioSecretStore {
+    fun snapshot(): Map<String, Pair<String, String>>
+    fun restore(values: Map<String, Pair<String, String>>, replace: Boolean)
+}
+
+internal class RadioAudioCredentials(context: Context) : RadioAudioSecretStore {
+    override fun snapshot(): Map<String, Pair<String, String>> =
+        synchronized(com.rtbishop.look4sat.core.data.maintenance.DataMaintenance.preferencesLock) {
+            preferences.all.keys.associateWith { checkNotNull(read(it)) }
+        }
+    override fun restore(values: Map<String, Pair<String, String>>, replace: Boolean) {
+        if (replace) check(preferences.edit().clear().commit())
+        values.forEach { (identity, credentials) -> save(identity, credentials.first, credentials.second) }
+    }
     private val preferences=context.getSharedPreferences("radio_audio_secrets",Context.MODE_PRIVATE)
     private fun key(): SecretKey {
         val store=KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
@@ -21,11 +34,14 @@ internal class RadioAudioCredentials(context: Context) {
         }.generateKey()
     }
     fun save(identity: String, username: String, password: String) {
-        IcomLanProtocol.credential(username); IcomLanProtocol.credential(password)
-        val cipher=Cipher.getInstance("AES/GCM/NoPadding").apply { init(Cipher.ENCRYPT_MODE,key()) }
-        cipher.updateAAD(identity.toByteArray())
-        val encrypted=cipher.doFinal("$username\n$password".toByteArray())
-        check(preferences.edit().putString(identity,Base64.encodeToString(cipher.iv+encrypted,Base64.NO_WRAP)).commit())
+        synchronized(com.rtbishop.look4sat.core.data.maintenance.DataMaintenance.preferencesLock) {
+            com.rtbishop.look4sat.core.data.maintenance.DataMaintenance.checkWritable()
+            IcomLanProtocol.credential(username); IcomLanProtocol.credential(password)
+            val cipher=Cipher.getInstance("AES/GCM/NoPadding").apply { init(Cipher.ENCRYPT_MODE,key()) }
+            cipher.updateAAD(identity.toByteArray())
+            val encrypted=cipher.doFinal("$username\n$password".toByteArray())
+            check(preferences.edit().putString(identity,Base64.encodeToString(cipher.iv+encrypted,Base64.NO_WRAP)).commit())
+        }
     }
     fun read(identity: String): Pair<String,String>? {
         val value=preferences.getString(identity,null) ?: return null

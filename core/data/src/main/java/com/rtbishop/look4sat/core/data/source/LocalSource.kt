@@ -22,6 +22,7 @@ import com.rtbishop.look4sat.core.domain.model.SatRadio
 import com.rtbishop.look4sat.core.domain.predict.OrbitalData
 import com.rtbishop.look4sat.core.domain.predict.OrbitalObject
 import com.rtbishop.look4sat.core.domain.source.ILocalSource
+import com.rtbishop.look4sat.core.data.maintenance.DataMaintenance
 import com.rtbishop.look4sat.core.data.database.entity.SatEntry as FrameworkEntry
 import com.rtbishop.look4sat.core.data.database.entity.SatRadio as FrameworkRadio
 import com.rtbishop.look4sat.core.domain.model.SatRadio as DomainRadio
@@ -48,14 +49,15 @@ class LocalSource(private val look4SatDao: Look4SatDao) : ILocalSource {
     override suspend fun getEntriesNames() = look4SatDao.getEntriesNames()
 
     override suspend fun renameEntries(names: Map<Int, String>) =
-        names.forEach { (catnum, name) -> look4SatDao.renameEntry(catnum, name) }
+        DataMaintenance.write { names.forEach { (catnum, name) -> look4SatDao.renameEntry(catnum, name) } }
 
     override suspend fun deleteEntriesWithIds(ids: List<Int>) =
-        ids.chunked(999).forEach { idsPart -> look4SatDao.deleteEntriesWithIds(idsPart) }
+        DataMaintenance.write { ids.chunked(999).forEach { idsPart -> look4SatDao.deleteEntriesWithIds(idsPart) } }
 
-    override suspend fun insertEntries(entries: List<OrbitalData>) = look4SatDao.insertEntries(entries.toEntity())
+    override suspend fun insertEntries(entries: List<OrbitalData>) =
+        DataMaintenance.write { look4SatDao.insertEntries(entries.toEntity()) }
 
-    override suspend fun deleteEntries() = look4SatDao.deleteEntries()
+    override suspend fun deleteEntries() = DataMaintenance.write { look4SatDao.deleteEntries() }
 
     override suspend fun getIdsWithModes(modes: List<String>) = look4SatDao.getIdsWithModes(modes)
     override suspend fun getIdsWithModesAndUplink(modes: List<String>) = look4SatDao.getIdsWithModesAndUplink(modes)
@@ -86,12 +88,12 @@ class LocalSource(private val look4SatDao: Look4SatDao) : ILocalSource {
     }
 
     override suspend fun insertRadios(radios: List<SatRadio>, isCustom: Boolean) {
-        look4SatDao.insertRadios(radios.map { it.copy(isCustom = isCustom) }.toFrameworkRadios())
+        DataMaintenance.write { look4SatDao.insertRadios(radios.map { it.copy(isCustom = isCustom) }.toFrameworkRadios()) }
     }
 
-    override suspend fun deleteManagedRadios() = look4SatDao.deleteManagedRadios()
+    override suspend fun deleteManagedRadios() = DataMaintenance.write { look4SatDao.deleteManagedRadios() }
 
-    override suspend fun deleteRadios() = look4SatDao.deleteRadios()
+    override suspend fun deleteRadios() = DataMaintenance.write { look4SatDao.deleteRadios() }
 
     private fun DomainRadio.toFramework() = FrameworkRadio(
         this.uuid, this.info, this.isAlive, this.downlinkLow, this.downlinkHigh, this.downlinkMode,

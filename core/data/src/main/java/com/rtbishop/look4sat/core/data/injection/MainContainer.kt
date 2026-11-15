@@ -111,8 +111,35 @@ import kotlinx.coroutines.flow.asStateFlow
 import okhttp3.OkHttpClient
 import java.util.concurrent.TimeUnit
 
-class MainContainer(private val context: Context) : IMainContainer {
+class MainContainer(
+    private val context: Context,
+    private val beforeRestore: suspend () -> Unit = {}
+) : IMainContainer {
 
+    private val satelliteDatabase by lazy { provideSatelliteDatabase() }
+    private val qsoDatabase by lazy {
+        Room.databaseBuilder(context, QsoDatabase::class.java, "Look4SatQsoDB")
+            .addMigrations(QSO_MIGRATION_1_2, QSO_MIGRATION_2_3, QSO_MIGRATION_3_4,
+                QSO_MIGRATION_4_5, QSO_MIGRATION_5_6, QSO_MIGRATION_6_7, QSO_MIGRATION_7_8).build()
+    }
+    private val rawPreferences by lazy {
+        context.getSharedPreferences("${context.packageName}_preferences", Context.MODE_PRIVATE)
+    }
+    private val backupStore by lazy {
+        com.rtbishop.look4sat.core.data.maintenance.BackupSnapshotStore(context, satelliteDatabase, qsoDatabase, rawPreferences)
+    }
+    init {
+        // One cheap existence check on ordinary starts; recover before any consumer reads data.
+        if (java.io.File(context.noBackupFilesDir, "backup-restore-journal").exists()) {
+            try {
+                com.rtbishop.look4sat.core.data.maintenance.BackupRepository.recover(backupStore)
+            } catch (error: Exception) {
+                satelliteDatabase.close()
+                qsoDatabase.close()
+                throw error
+            }
+        }
+    }
     private val localSource = provideLocalSource()
     private val remoteSource = provideRemoteSource()
     private val mainHandler = CoroutineExceptionHandler { _, error -> println("MainHandler: $error") }
@@ -144,18 +171,7 @@ class MainContainer(private val context: Context) : IMainContainer {
     override val wavelogUploadRepository: IWavelogUploadRepository by lazy { WavelogUploadRepository() }
     override val wavelogSyncRepository: IWavelogSyncRepository by lazy { WavelogSyncRepository() }
     override val qsoRepository: IQsoRepository by lazy {
-        val database = Room.databaseBuilder(context, QsoDatabase::class.java, "Look4SatQsoDB")
-            .addMigrations(
-                QSO_MIGRATION_1_2,
-                QSO_MIGRATION_2_3,
-                QSO_MIGRATION_3_4,
-                QSO_MIGRATION_4_5,
-                QSO_MIGRATION_5_6,
-                QSO_MIGRATION_6_7,
-                QSO_MIGRATION_7_8
-            )
-            .build()
-        QsoRepository(database.qsoDao(), Dispatchers.IO,
+        QsoRepository(qsoDatabase.qsoDao(), Dispatchers.IO,
             com.rtbishop.look4sat.core.data.repository.StoredQsoMaintenanceState(
                 context.getSharedPreferences("qso-maintenance", Context.MODE_PRIVATE)), appScope)
     }
@@ -239,6 +255,39 @@ class MainContainer(private val context: Context) : IMainContainer {
         )
     }
     override val radioTrackingService: IRadioTrackingService by lazy { sharedRadioTrackingService }
+    override val radioSelfCheck: com.rtbishop.look4sat.core.domain.maintenance.IRadioSelfCheckService by lazy {
+        com.rtbishop.look4sat.core.data.maintenance.RadioSelfCheckService(
+            appScope, settingsRepo, radioTrackingService, audioHub, radioAudioSession, digitalTransmitCoordinator,
+            com.rtbishop.look4sat.core.data.ft4.Ft4AudioOutputFactory { rate, volume -> radioAudioSession.createOutput(rate, volume) },
+            disciplinedClock, controlDiagnostics, n76ReceivePcm.audio,
+            { ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED }
+        )
+    }
+    override val backupRepository: com.rtbishop.look4sat.core.domain.maintenance.IBackupRepository by lazy {
+        com.rtbishop.look4sat.core.data.maintenance.BackupRepository(
+            context, appScope, backupStore, recordingService, settingsRepo.appVersionName,
+            stopServices = {
+                beforeRestore()
+                radioSelfCheck.cancel()
+                ft4AudioTransmitter.emergencyStop()
+                jttyTransmitter.stop()
+                ft4Service.stopReceiving()
+                jttyService.stopReceiving()
+                recordingService.stop()
+                recordingService.stopPlayback()
+                rotatorTrackingService.stopTracking(park = false)
+                rotatorTrackingService.emergencyStop()
+                rotatorTrackingService.disconnect(park = false)
+                radioTrackingService.stopTracking()
+                radioTrackingService.disconnectRadios()
+                radioAudioSession.close()
+                audioHub.stopAll()
+                astroData.cancel()
+                lotwUploadRepository.discardPreview()
+            },
+            refreshSettings = { (settingsRepo as SettingsRepo).reloadAfterRestore() }
+        )
+    }
     override val rotatorTrackingService: IRotatorTrackingService by lazy {
         val manager = context.getSystemService(BluetoothManager::class.java)
         val serialFactory = AndroidRadioTransportFactory(context, manager)
@@ -336,13 +385,15 @@ class MainContainer(private val context: Context) : IMainContainer {
         return DatabaseRepo(dbDispatcher, dataParser, localSource, remoteSource, settingsRepo)
     }
 
-    private fun provideLocalSource(): ILocalSource {
+    private fun provideLocalSource(): ILocalSource = LocalSource(satelliteDatabase.look4SatDao())
+
+    private fun provideSatelliteDatabase(): Look4SatDb {
         val builder = Room.databaseBuilder(context, Look4SatDb::class.java, "Look4SatDBv400")
         val database = builder
             .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
             .fallbackToDestructiveMigration(false)
             .build()
-        return LocalSource(database.look4SatDao())
+        return database
     }
 
     private fun provideRemoteSource(): IRemoteSource {
@@ -369,8 +420,7 @@ class MainContainer(private val context: Context) : IMainContainer {
 
     private fun provideSettingsRepo(): ISettingsRepo {
         val manager = context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
-        val appPrefsFileName = "${context.packageName}_preferences"
-        val appPreferences = context.getSharedPreferences(appPrefsFileName, Context.MODE_PRIVATE)
+        val appPreferences = com.rtbishop.look4sat.core.data.maintenance.SnapshotPreferences(rawPreferences)
         val appVersionName = context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "4.0.4"
         return SettingsRepo(manager, appPreferences, appVersionName)
     }

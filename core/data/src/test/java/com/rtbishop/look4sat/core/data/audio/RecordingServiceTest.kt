@@ -41,6 +41,34 @@ class RecordingServiceTest {
         override suspend fun selectInputDevice(deviceKey:String?)=Unit
         override suspend fun stopAll()=Unit
     }
+    @Test fun backupRotationFinalizesSegmentWithoutOpeningAnotherCapture() = runTest {
+        val hub = Hub()
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val config = MutableStateFlow(RadioControlSettings(true, RadioControlSettings.MODEL_ICOM_IC705,
+            "", "", "", "", 19200).copy(radioAudio = RadioAudioSettings(backend = RadioAudioBackend.ICOM_WLAN)))
+        val settings = stub<ISettingsRepo> { if (it == "getRadioControlSettings") config else null }
+        val radio = stub<IRadioTrackingService> { if (it == "getState") MutableStateFlow(RadioTrackingState()) else null }
+        val app = RuntimeEnvironment.getApplication() as RecordingTestApplication
+        val service = RecordingService(app, backgroundScope, settings, hub, hub, N76ReceivePcmBus(),
+            { RadioAudioState(receivingReady = true) }, { radio }, dispatcher, dispatcher, temp.root)
+        val request = RecordingRequest("wlan", "FO-29")
+        service.start(request)
+        val job = launch { service.runRecording(request) }
+        runCurrent()
+        hub.input.emit(TimestampedAudioChunk(FloatArray(480) { .2f }, 48000, 0, 0, AudioSampleFormat.PCM_FLOAT))
+        runCurrent()
+        val rotation = async { service.rotateForBackup() }
+        runCurrent()
+        hub.input.emit(TimestampedAudioChunk(FloatArray(480) { .2f }, 48000, 480, 0, AudioSampleFormat.PCM_FLOAT))
+        runCurrent()
+        rotation.await()
+        assertEquals(1, service.files.value.size)
+        assertEquals(1, hub.subscribers)
+        assertTrue(service.state.value.active)
+        service.stop(); job.join()
+        assertEquals(0, hub.subscribers)
+        assertEquals(2, service.files.value.size)
+    }
     @Test fun sharedReceiveStreamRecordsMonoSplitsDiscontinuitiesAndOutlivesPage()=runTest {
         val hub=Hub();val dispatcher=StandardTestDispatcher(testScheduler)
         val config=MutableStateFlow(RadioControlSettings(true,RadioControlSettings.MODEL_ICOM_IC705,"","","","",19200).copy(radioAudio=RadioAudioSettings(backend=RadioAudioBackend.ICOM_WLAN)))

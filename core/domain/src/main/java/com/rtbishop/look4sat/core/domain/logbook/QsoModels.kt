@@ -30,6 +30,7 @@ data class QsoMessageEvent(
     val detail: String = ""
 )
 
+@Serializable
 data class QsoRecord(
     val id: Long = 0L,
     val startUtcMillis: Long,

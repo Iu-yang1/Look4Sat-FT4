@@ -29,6 +29,23 @@ import com.rtbishop.look4sat.core.domain.model.SatItem
 
 @Dao
 interface Look4SatDao {
+    @Query("SELECT * FROM entries ORDER BY catnum")
+    fun snapshotEntries(): List<SatEntry>
+
+    @Query("SELECT * FROM radios ORDER BY uuid")
+    fun snapshotRadios(): List<SatRadio>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    fun restoreEntries(entries: List<SatEntry>)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    fun restoreRadios(radios: List<SatRadio>)
+
+    @Query("DELETE FROM entries")
+    fun clearEntriesForRestore()
+
+    @Query("DELETE FROM radios")
+    fun clearRadiosForRestore()
 
     @Query("SELECT COUNT(*) FROM entries")
     suspend fun getEntriesTotal(): Int

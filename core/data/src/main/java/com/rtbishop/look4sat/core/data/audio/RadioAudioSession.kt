@@ -105,7 +105,7 @@ class RadioAudioSession(
                 session.open()
             }
         } else {
-            require(config.txDeviceKey.isNotBlank()) { "Select a radio audio output" }
+            if (!receive) require(config.txDeviceKey.isNotBlank()) { "Select a radio audio output" }
             val bluetooth=manager.getDevices(AudioManager.GET_DEVICES_OUTPUTS).firstOrNull {
                 deviceKey(it)==config.txDeviceKey && it.type==AudioDeviceInfo.TYPE_BLUETOOTH_SCO
             }

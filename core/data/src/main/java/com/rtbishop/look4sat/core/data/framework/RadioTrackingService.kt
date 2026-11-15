@@ -610,6 +610,26 @@ class RadioTrackingService(
 
     // ── Digital transmit lease ──────────────────────────────────────────────
 
+    override suspend fun probe(): com.rtbishop.look4sat.core.domain.maintenance.RadioProbe =
+        transmitMutex.withLock {
+            val controller = rxController?.takeIf { it.isConnected } ?: txController?.takeIf { it.isConnected }
+                ?: return@withLock com.rtbishop.look4sat.core.domain.maintenance.RadioProbe(false)
+            // Use the existing serialized controller. No VFO selection, tuning or mode writes.
+            val working = controller.readFrequencyAndMode()
+            val pttController = txController?.takeIf { it.isConnected } ?: controller
+            val txWorking = if (pttController === controller) working else pttController.readFrequencyAndMode()
+            com.rtbishop.look4sat.core.domain.maintenance.RadioProbe(
+                connected = controller.isConnected,
+                frequencyHz = working?.first,
+                mode = working?.second,
+                pttSupported = pttController.supportsPttReadback,
+                transmitting = if (pttController.supportsPttReadback) pttController.readPttState() else null,
+                // Some controllers select the other VFO to read it. A normal check must not do that.
+                txFrequencyHz = if (_state.value.splitMode) _state.value.txFrequencyHz else txWorking?.first,
+                txMode = _state.value.txMode ?: txWorking?.second
+            )
+        }
+
     override suspend fun beginTransmit(request: TxRequest): TxLease = transmitMutex.withLock {
         val startedNanos = System.nanoTime()
         require(request.waveformDurationMillis in 1L..request.mode.maximumWaveformMillis) {
@@ -620,6 +640,9 @@ class RadioTrackingService(
         }
         check(!hasTransmitClaim) { "Another transmit lease is active" }
         manualEpoch.incrementAndGet()
+        if (request.mode == com.rtbishop.look4sat.core.domain.ft4.DigitalTransmitMode.DIAGNOSTIC) {
+            return@withLock beginDiagnosticTransmit(request)
+        }
         if (settingsRepo.radioControlSettings.value.catTransport == RadioControlSettings.TRANSPORT_VOX) {
             return@withLock beginVoxTransmit(request)
         }
@@ -758,6 +781,57 @@ class RadioTrackingService(
             _state.update { it.copy(transmitPreparing=false) }
             tuningRevision.incrementAndGet()
             updateCommandState(busy = false)
+        }
+    }
+
+    private suspend fun beginDiagnosticTransmit(request: TxRequest): TxLease {
+        check(!request.automatic && pendingControls.get() == 0) { "Radio settings are changing" }
+        val current = _state.value
+        check(current.pttState == PttState.OFF && !current.catTransmitting) { "Radio is already transmitting" }
+        val vox = settingsRepo.radioControlSettings.value.catTransport == RadioControlSettings.TRANSPORT_VOX
+        check(!vox || request.diagnosticAudio) { "VOX requires an audio test" }
+        val controller = txController
+        if (!vox) {
+            check(controller?.isConnected == true) { "TX radio is not connected" }
+            check(connectedCatPttSupported) { "CAT PTT is not supported" }
+            check(refreshCatTransmitState()) { "CAT transmit state is unknown or the radio is transmitting" }
+        }
+        val frequency = if (vox) current.txFrequencyHz ?: 0L
+            else if (current.splitMode) checkNotNull(controller).readTxVfoFrequency()
+            else checkNotNull(controller).readFrequencyAndMode()?.first
+        check(vox || frequency != null) { "TX frequency readback is unavailable" }
+        transmitPreparing = true
+        _state.update { it.copy(transmitPreparing = true) }
+        try {
+            if (request.diagnosticAudio && controller != null &&
+                settingsRepo.radioControlSettings.value.radioModel == RadioControlSettings.MODEL_ICOM_IC705) {
+                savedAudioState = checkNotNull(controller.captureAudioState(current.splitMode)) {
+                    "Cannot read the original radio audio settings"
+                }
+                dataModeController = controller
+                dataModeBaseMode = checkNotNull(current.txMode) { "TX mode is unknown" }
+                dataModeUsesSplit = current.splitMode
+                check(controller.setAudioInput(settingsRepo.radioControlSettings.value.radioAudio.backend ==
+                    com.rtbishop.look4sat.core.domain.audio.RadioAudioBackend.ICOM_WLAN)) {
+                    "Radio modulation input was not confirmed"
+                }
+            }
+            val lease = TxLease(
+                nextLeaseId++, request.sessionGeneration, frequency ?: 0L, 0,
+                request.waveformStartUtcMillis, request.waveformStartUtcMillis + 500, 1000, 5000,
+                current.currentPass?.catNum ?: 0, current.selectedTransponder?.uuid.orEmpty(),
+                controller?.pttSafetyGeneration() ?: 0, false, usesVox = vox, diagnostic = true
+            )
+            activeTxLease = lease
+            _state.update { it.copy(txLeaseId = lease.id, txLeaseGeneration = lease.sessionGeneration) }
+            diagnose("selfcheck/prepare", "lease=${lease.id} audio=${request.diagnosticAudio}")
+            return lease
+        } catch (error: Throwable) {
+            withContext(NonCancellable) { restoreDataModeLocked() }
+            throw error
+        } finally {
+            transmitPreparing = false
+            _state.update { it.copy(transmitPreparing = false) }
         }
     }
 
@@ -997,8 +1071,8 @@ class RadioTrackingService(
             check(radioProfile(settingsRepo.radioControlSettings.value.radioModel).capabilities.ptt) {
                 "This radio does not support CAT PTT"
             }
-            check(pendingControls.get() == 0 && _state.value.isActive &&
-                _state.value.trackingPhase == TrackingPhase.READY) { "Radio tracking context changed" }
+            check(pendingControls.get() == 0 && (lease.diagnostic || _state.value.isActive &&
+                _state.value.trackingPhase == TrackingPhase.READY)) { "Radio tracking context changed" }
             if (lease.automatic) validateAutomaticLease(lease)
             val controller = checkNotNull(txController) { "TX radio is not connected" }
             val confirmed = withTimeoutOrNull(PTT_COMMAND_TIMEOUT_MILLIS) {

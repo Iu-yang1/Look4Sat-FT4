@@ -39,6 +39,7 @@ internal class RecordingService(
     private val legacy=File(context.getExternalFilesDir(Environment.DIRECTORY_MUSIC) ?: context.filesDir,"N76")
     @Volatile private var active: Job?=null
     private var player: MediaPlayer?=null
+    private val segmentRequests = Channel<CompletableDeferred<Unit>>(1)
     @Volatile private var foreground=true
     @Volatile private var pending: RecordingRequest?=null
     @Volatile private var pendingConfiguration: Pair<String,RadioAudioSettings>?=null
@@ -139,6 +140,12 @@ internal class RecordingService(
                     mutable.update {it.copy(phase=RecordingPhase.RECORDING)}
                     for(chunk in queue) {
                         ensureActive()
+                        segmentRequests.tryReceive().getOrNull()?.let { request ->
+                            if (request.isActive) {
+                                try { finishSegment("backup"); request.complete(Unit) }
+                                catch (error: Exception) { request.completeExceptionally(error); throw error }
+                            }
+                        }
                         check(chunk.sampleRate in 8000..192000) {"Unsupported recording sample rate"}
                         val config=settings.radioControlSettings.value
                         check(sourceConfig==(config.radioModel to config.radioAudio)) {"Receive source changed; recording saved"}
@@ -182,6 +189,10 @@ internal class RecordingService(
             mutable.update {it.copy(phase=RecordingPhase.FINISHING)}
             runCatching {finishSegment("stopped")}.onFailure {mutable.update {s->s.copy(error=it.message)}}
             refreshFiles()
+            while (true) {
+                val request = segmentRequests.tryReceive().getOrNull() ?: break
+                request.complete(Unit)
+            }
             pending=null;pendingConfiguration=null;active=null;mutable.update {it.copy(phase=RecordingPhase.IDLE)}
             if(!foreground && source.kind==RecordingSourceKind.N76) runCatching {radio().setAudioForeground(false)}
         }}
@@ -190,6 +201,14 @@ internal class RecordingService(
         val job=active
         if(job!=null && job!=currentCoroutineContext().job) job.cancelAndJoin()
         if(job==null) {pending=null;pendingConfiguration=null;mutable.update {it.copy(phase=RecordingPhase.IDLE)}}
+    }
+    override suspend fun rotateForBackup() {
+        if (!state.value.active) return
+        withTimeout(6000) {
+            val request = CompletableDeferred<Unit>(currentCoroutineContext().job)
+            segmentRequests.send(request)
+            request.await()
+        }
     }
     override fun setApplicationForeground(foreground: Boolean) {this.foreground=foreground}
     override suspend fun refreshFiles()=withContext(ioDispatcher) {

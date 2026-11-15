@@ -20,6 +20,14 @@ import kotlinx.coroutines.flow.Flow
 @Dao
 interface QsoDao {
     @Query("SELECT * FROM qso_records ORDER BY startUtcMillis DESC, id DESC")
+    fun snapshotRecords(): List<QsoEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    fun restoreRecords(records: List<QsoEntity>)
+
+    @Query("DELETE FROM qso_records")
+    fun clearForRestore()
+    @Query("SELECT * FROM qso_records ORDER BY startUtcMillis DESC, id DESC")
     fun observeAll(): Flow<List<QsoEntity>>
 
     @Query("SELECT * FROM qso_records WHERE id = :id LIMIT 1")

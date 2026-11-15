@@ -25,6 +25,8 @@ interface IRecordingService {
     suspend fun runRecording(request: RecordingRequest)
     suspend fun stop()
     suspend fun refreshFiles()
+    /** Finalizes the current segment without interrupting the receive subscription. */
+    suspend fun rotateForBackup() = Unit
     suspend fun play(id: String)
     suspend fun stopPlayback()
     suspend fun export(id: String, destinationUri: String)

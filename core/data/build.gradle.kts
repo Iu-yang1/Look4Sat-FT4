@@ -1,5 +1,6 @@
 plugins {
     alias(libs.plugins.convention.coreDataPlugin)
+    alias(libs.plugins.kotlin.serialization)
 }
 
 android {
@@ -12,6 +13,7 @@ android {
 }
 
 dependencies {
+    implementation(libs.kotlin.serialization)
     testImplementation(testFixtures(project(":core:domain")))
     implementation(libs.orekit)
     implementation(project(":core:ft4-native"))

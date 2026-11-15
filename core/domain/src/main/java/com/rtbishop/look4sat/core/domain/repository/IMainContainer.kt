@@ -32,6 +32,10 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.StateFlow
 
 interface IMainContainer {
+    val radioSelfCheck: com.rtbishop.look4sat.core.domain.maintenance.IRadioSelfCheckService
+        get() = error("Self-check is unavailable")
+    val backupRepository: com.rtbishop.look4sat.core.domain.maintenance.IBackupRepository
+        get() = error("Backup is unavailable")
     val astroData: com.rtbishop.look4sat.core.domain.astro.IAstroDataRepository
         get() = satelliteRepo.astroData
     val appScope: CoroutineScope

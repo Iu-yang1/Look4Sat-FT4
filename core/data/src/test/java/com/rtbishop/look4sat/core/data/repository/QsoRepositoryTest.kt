@@ -201,6 +201,13 @@ class QsoRepositoryTest {
         private val records = MutableStateFlow<List<QsoEntity>>(emptyList())
         private var nextId = 1L
 
+        override fun snapshotRecords() = records.value
+        override fun restoreRecords(records: List<QsoEntity>) {
+            this.records.value = records
+            nextId = (records.maxOfOrNull { it.id } ?: 0) + 1
+        }
+        override fun clearForRestore() { records.value = emptyList() }
+
         override fun observeAll(): Flow<List<QsoEntity>> = records
         override suspend fun find(id: Long): QsoEntity? = records.value.firstOrNull { it.id == id }
         override suspend fun getAll(): List<QsoEntity> {
@@ -866,6 +873,13 @@ class QsoRepositoryUpstreamTest {
     private class FakeQsoDao : QsoDao {
         private val rows = linkedMapOf<Long, QsoEntity>()
         private var nextId = 1L
+
+        override fun snapshotRecords() = rows.values.toList()
+        override fun restoreRecords(records: List<QsoEntity>) {
+            records.forEach { rows[it.id] = it }
+            nextId = (rows.keys.maxOrNull() ?: 0) + 1
+        }
+        override fun clearForRestore() { rows.clear() }
 
         override fun observeAll(): Flow<List<QsoEntity>> = flowOf(rows.values.toList())
 

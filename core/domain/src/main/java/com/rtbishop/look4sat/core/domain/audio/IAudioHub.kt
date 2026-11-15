@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
 
 enum class AudioConsumer {
+    SELF_CHECK,
     SSTV,
     CW,
     MORSE_EXPERT,

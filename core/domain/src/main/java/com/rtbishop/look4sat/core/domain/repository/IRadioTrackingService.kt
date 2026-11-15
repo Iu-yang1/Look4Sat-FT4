@@ -86,6 +86,8 @@ data class RadioTrackingState(
 }
 
 interface IRadioTrackingService {
+    suspend fun probe(): com.rtbishop.look4sat.core.domain.maintenance.RadioProbe =
+        com.rtbishop.look4sat.core.domain.maintenance.RadioProbe(false)
     val state: StateFlow<RadioTrackingState>
 
     suspend fun connectRadios()

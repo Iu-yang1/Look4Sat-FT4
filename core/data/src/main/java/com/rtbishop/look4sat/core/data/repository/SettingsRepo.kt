@@ -63,6 +63,26 @@ class SettingsRepo(
     override val appVersionName: String
 ) : ISettingsRepo {
 
+    internal fun reloadAfterRestore() {
+        _satelliteSelection.value = getSelectedIds()
+        _typesSelection.value = getSelectedTypes()
+        _mapElevationAngles.value = readMapElevationAngles()
+        _mapElevationContoursEnabled.value = preferences.getBoolean(keyMapElevationContoursEnabled, false)
+        _lotwSettings.value = getLoTWSettings()
+        _logbookSyncProvider.value = getLogbookSyncProvider()
+        _logbookSourceLock.value = getLogbookSourceLock()
+        _wavelogUploadSettings.value = getWavelogUploadSettings()
+        _passesSettings.value = getPassesSettings()
+        _stationPosition.value = getStationPosition()
+        _databaseState.value = getDatabaseState()
+        _rcSettings.value = getRCSettings()
+        _rotatorSettings.value = getRotatorSettings()
+        _otherSettings.value = getOtherSettings()
+        _ft4Settings.value = getFt4Settings()
+        _dataSourcesSettings.value = getDataSourcesSettings()
+        _radioControlSettings.value = getRadioControlSettings()
+    }
+
     private val keyBluetoothRotatorAddress = "bluetoothAddress"
     private val keyBluetoothRotatorName = "bluetoothName"
     private val keyBluetoothRotatorFormat = "bluetoothFormat"

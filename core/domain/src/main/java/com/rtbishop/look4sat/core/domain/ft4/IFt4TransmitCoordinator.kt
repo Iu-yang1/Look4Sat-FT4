@@ -10,7 +10,7 @@
 package com.rtbishop.look4sat.core.domain.ft4
 
 enum class DigitalTransmitMode(val maximumWaveformMillis: Long, val maximumPttMillis: Long) {
-    FT4(6_000, 12_000), JTTY(30_208, 35_000)
+    FT4(6_000, 12_000), JTTY(30_208, 35_000), DIAGNOSTIC(1_000, 5_000)
 }
 
 data class TxRequest(
@@ -21,7 +21,8 @@ data class TxRequest(
     val expectedTransponderUuid: String,
     val automatic: Boolean,
     val maximumPttMillis: Long = 8_500L,
-    val mode: DigitalTransmitMode = DigitalTransmitMode.FT4
+    val mode: DigitalTransmitMode = DigitalTransmitMode.FT4,
+    val diagnosticAudio: Boolean = false
 )
 
 data class TxLease(
@@ -38,7 +39,8 @@ data class TxLease(
     val pttSafetyGeneration: Long,
     val automatic: Boolean,
     /** True when transmit is controlled by the radio's external VOX circuit. */
-    val usesVox: Boolean = false
+    val usesVox: Boolean = false,
+    val diagnostic: Boolean = false
 )
 
 interface IDigitalTransmitCoordinator {

@@ -21,6 +21,7 @@ import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.PrimaryKey
 
+@kotlinx.serialization.Serializable
 @Entity(tableName = "radios")
 data class SatRadio(
     @PrimaryKey val uuid: String,

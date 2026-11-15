@@ -10,8 +10,11 @@ internal fun radioControlTransports(model: String): List<String> {
         when {
             transport == RadioControlSettings.TRANSPORT_VOX -> true
             family == RadioProtocolFamily.VERO_GAIA -> transport == RadioControlSettings.TRANSPORT_BLUETOOTH
-            family == RadioProtocolFamily.L4S || model == RadioControlSettings.MODEL_YAESU_FTX1 ->
+            family == RadioProtocolFamily.L4S ->
                 transport == RadioControlSettings.TRANSPORT_USB
+            model == RadioControlSettings.MODEL_YAESU_FTX1 ->
+                transport == RadioControlSettings.TRANSPORT_USB ||
+                    transport == RadioControlSettings.TRANSPORT_BLUETOOTH
             else -> true
         }
     }

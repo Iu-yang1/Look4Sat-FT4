@@ -278,8 +278,9 @@ class RadioTrackingService(
             _state.update { it.copy(errorMessage = "N76 requires Bluetooth") }
             return
         }
-        if (profile.isFtx1 && rcSettings.catTransport != RadioControlSettings.TRANSPORT_USB) {
-            _state.update { it.copy(errorMessage = "FTX-1 requires USB CAT") }
+        if (profile.isFtx1 && rcSettings.catTransport !in setOf(
+                RadioControlSettings.TRANSPORT_USB, RadioControlSettings.TRANSPORT_BLUETOOTH)) {
+            _state.update { it.copy(errorMessage = "FTX-1 requires USB or Bluetooth CAT") }
             return
         }
         if (rcSettings.catTransport == RadioControlSettings.TRANSPORT_BLUETOOTH &&
@@ -511,7 +512,7 @@ class RadioTrackingService(
                 tuningStepHz={settingsRepo.radioControlSettings.value.l4sDopplerStepHz},
                 correctionStepHz={settingsRepo.radioControlSettings.value.l4sCorrectionEditStepHz})
         } else if (profile.isFtx1) {
-            Ftx1Controller(checkNotNull(transport) { "FTX-1 USB transport is unavailable" }, diagnostics)
+            Ftx1Controller(checkNotNull(transport) { "FTX-1 CAT transport is unavailable" }, diagnostics)
         } else if (usesHamlib) {
             HamlibRigctldController(
                 endpoint = address,

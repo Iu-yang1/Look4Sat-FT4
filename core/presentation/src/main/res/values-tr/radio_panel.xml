@@ -1,0 +1,3 @@
+<resources>
+    <string name="rc_ftx1_bluetooth_hint">TUN/LIN PORT SELECT ayarını CAT-3 yapın. Kablo ve telsizin seri ayarları aynı olmalıdır (38400, 8N1 önerilir). MAIN yazılımı ≥ 1.08.</string>
+</resources>

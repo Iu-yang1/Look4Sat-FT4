@@ -1,0 +1,3 @@
+<resources>
+    <string name="rc_ftx1_bluetooth_hint">Виберіть CAT-3 у TUN/LIN PORT SELECT. Параметри порту кабелю та радіостанції мають збігатися (рекомендовано 38400, 8N1). Прошивка MAIN ≥ 1.08.</string>
+</resources>

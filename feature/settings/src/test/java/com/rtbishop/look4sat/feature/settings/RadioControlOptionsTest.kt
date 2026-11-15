@@ -12,9 +12,14 @@ class RadioControlOptionsTest {
         }
         assertEquals(listOf("BLUETOOTH", "VOX"), radioControlTransports(RadioControlSettings.MODEL_VERO_N76))
         for (model in listOf(RadioControlSettings.MODEL_QUANSHENG_UVK1,
-            RadioControlSettings.MODEL_QUANSHENG_UVK5V3, RadioControlSettings.MODEL_YAESU_FTX1)) {
+            RadioControlSettings.MODEL_QUANSHENG_UVK5V3)) {
             assertEquals(listOf("USB", "VOX"), radioControlTransports(model))
         }
+    }
+
+    @Test fun ftx1OffersBluetoothAndUsbWithoutEnablingTcp() {
+        assertEquals(listOf("BLUETOOTH", "USB", "VOX"),
+            radioControlTransports(RadioControlSettings.MODEL_YAESU_FTX1))
     }
 
     @Test fun savingVoxChangesOnlyTransportAndEnableFlagRegardlessOfHiddenConfiguration() {

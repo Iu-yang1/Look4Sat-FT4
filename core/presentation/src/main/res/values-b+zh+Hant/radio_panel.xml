@@ -1,5 +1,6 @@
 <resources>
     <string name="rc_ftx1_usb_hint">USB CAT-1（增強連接埠）· MAIN 韌體 ≥ 1.08</string>
+    <string name="rc_ftx1_bluetooth_hint">TUN/LIN PORT SELECT 設為 CAT-3。線材與電台串口參數須一致（建議 38400、8N1）。MAIN 韌體 ≥ 1.08。</string>
     <string name="rc_panel_reference">基準頻率</string>
     <string name="rc_panel_reference_compact">基準頻率</string>
     <string name="rc_panel_independent">獨立</string>

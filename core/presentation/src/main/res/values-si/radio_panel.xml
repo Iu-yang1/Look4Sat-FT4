@@ -1,0 +1,3 @@
+<resources>
+    <string name="rc_ftx1_bluetooth_hint">TUN/LIN PORT SELECT සඳහා CAT-3 තෝරන්න. කේබලයේ සහ ගුවන්විදුලියේ අනුක්‍රමික සැකසුම් ගැළපිය යුතුය (38400, 8N1 නිර්දේශිතයි). MAIN ස්ථිරාංග ≥ 1.08.</string>
+</resources>

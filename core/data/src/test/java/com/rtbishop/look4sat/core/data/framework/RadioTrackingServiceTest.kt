@@ -288,6 +288,64 @@ class RadioTrackingServiceTest {
         fixture.close()
     }
 
+    @Test fun ftx1UsbAndBluetoothShareMainSubTrackingWithoutStartingOnConnection() = runTest {
+        for (transport in listOf(RadioControlSettings.TRANSPORT_USB, RadioControlSettings.TRANSPORT_BLUETOOTH)) {
+            val tx = FakeRadioController(pttReadbackSupported = true)
+            val fixture = Fixture(backgroundScope, tx, FakeRadioController(),
+                radioModel = RadioControlSettings.MODEL_YAESU_FTX1, splitMode = true, transport = transport)
+            fixture.service.connectRadios()
+            runCurrent()
+            assertTrue(fixture.service.state.value.txConnected)
+            assertTrue(fixture.service.state.value.rxConnected)
+            assertEquals(1, fixture.service.state.value.physicalConnectionCount)
+            assertFalse(fixture.service.state.value.isActive)
+            assertFalse(tx.operations.any { it.startsWith("rx-frequency:") || it.startsWith("tx-frequency:") })
+
+            fixture.startTracking()
+            runCurrent()
+            assertTrue(fixture.service.state.value.isActive)
+            assertEquals(fixture.service.state.value.targetRxFrequencyHz, tx.frequencyHz)
+            assertEquals(fixture.service.state.value.targetTxFrequencyHz, tx.txFrequencyHz)
+            tx.operations.clear()
+            fixture.position.distanceRate = 2.4
+            advanceTimeBy(1_100L)
+            runCurrent()
+            assertTrue(tx.operations.any { it.startsWith("rx-frequency:") })
+            assertTrue(tx.operations.any { it.startsWith("tx-frequency:") })
+            assertFalse(tx.operations.any { it.startsWith("vfo:") || it == "ptt:on" })
+            fixture.close()
+        }
+    }
+
+    @Test fun ftx1RejectsTcpBeforeConstructingAnyController() = runTest {
+        val tx = FakeRadioController()
+        val fixture = Fixture(backgroundScope, tx, FakeRadioController(),
+            radioModel = RadioControlSettings.MODEL_YAESU_FTX1, transport = RadioControlSettings.TRANSPORT_TCP)
+        fixture.service.connectRadios()
+        assertFalse(fixture.service.state.value.txConnected)
+        assertTrue(tx.operations.isEmpty())
+        assertEquals("FTX-1 requires USB or Bluetooth CAT", fixture.service.state.value.errorMessage)
+        fixture.close()
+    }
+
+    @Test fun changingFtx1BetweenUsbAndBluetoothReconnectsWithoutResumingTracking() = runTest {
+        val tx = FakeRadioController()
+        val fixture = Fixture(backgroundScope, tx, FakeRadioController(),
+            radioModel = RadioControlSettings.MODEL_YAESU_FTX1, splitMode = true)
+        fixture.service.connectRadios()
+        fixture.startTracking()
+        runCurrent()
+        assertTrue(fixture.service.state.value.isActive)
+        assertTrue(fixture.service.applyRadioControlSettings(fixture.settings.radioControlSettings.value.copy(
+            catTransport = RadioControlSettings.TRANSPORT_BLUETOOTH)))
+        runCurrent()
+        assertTrue(fixture.service.state.value.txConnected)
+        assertEquals(2, tx.operations.count { it == "connect" })
+        assertFalse(fixture.service.state.value.isActive)
+        assertFalse("ptt:on" in tx.operations)
+        fixture.close()
+    }
+
     @Test fun ic705DopplerChangesBothFrequenciesWithoutSwitchingToTxVfo() = runTest {
         val tx = FakeRadioController()
         val fixture = Fixture(backgroundScope, tx, FakeRadioController(),

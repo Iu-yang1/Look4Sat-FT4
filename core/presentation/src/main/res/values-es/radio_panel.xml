@@ -1,0 +1,3 @@
+<resources>
+    <string name="rc_ftx1_bluetooth_hint">Configure TUN/LIN PORT SELECT en CAT-3. Los ajustes serie del cable y la radio deben coincidir (se recomienda 38400, 8N1). Firmware MAIN ≥ 1.08.</string>
+</resources>

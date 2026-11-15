@@ -163,14 +163,18 @@ internal class Ftx1SimulatedTransport(private val chunkSize: Int = 512): RadioTr
     var frequencyReply:String?=null
     var failWrites=false
     var silent=false
+    var echo=false
+    var onWrite: ((String) -> Unit)?=null
     private val pending=ConcurrentLinkedQueue<Byte>()
     override suspend fun connect():Boolean {isConnected=true;return true}
     override suspend fun disconnect(){isConnected=false;pending.clear()}
     override suspend fun write(bytes:ByteArray):Boolean {
         if(!isConnected || failWrites)return false
         val command=bytes.toString(Charsets.US_ASCII);commands+=command
-        if(silent || command==ignore)return true
+        onWrite?.invoke(command)
         fun reply(text:String){pending.addAll(text.encodeToByteArray().toList())}
+        if(echo)reply(command)
+        if(silent || command==ignore)return true
         if(command==reject){reply("?;");return true}
         when {
             command=="ID;"->reply(id)

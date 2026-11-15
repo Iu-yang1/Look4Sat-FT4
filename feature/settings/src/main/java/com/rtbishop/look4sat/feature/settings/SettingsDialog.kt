@@ -1743,6 +1743,8 @@ fun RadioControlDialog(
                             if (radioModelDescriptor(model).protocolFamily == RadioProtocolFamily.L4S ||
                                 model == RadioControlSettings.MODEL_YAESU_FTX1) {
                                 splitMode.value = true
+                            }
+                            if (radioModelDescriptor(model).protocolFamily == RadioProtocolFamily.L4S) {
                                 if (catTransport.value != RadioControlSettings.TRANSPORT_USB) {
                                     txAddressByTransport[catTransport.value] = txAddress.value
                                     txNameByTransport[catTransport.value] = txName.value
@@ -1776,7 +1778,14 @@ fun RadioControlDialog(
             }
             Spacer(modifier = Modifier.height(6.dp))
 
-            if (isFtx1) Text(stringResource(R.string.rc_ftx1_usb_hint),style=MaterialTheme.typography.bodySmall)
+            if (isFtx1) Text(
+                stringResource(
+                    if (catTransport.value == RadioControlSettings.TRANSPORT_BLUETOOTH) {
+                        R.string.rc_ftx1_bluetooth_hint
+                    } else R.string.rc_ftx1_usb_hint
+                ),
+                style = MaterialTheme.typography.bodySmall
+            )
             if (isN76) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically) {
@@ -2080,7 +2089,8 @@ fun RadioControlDialog(
                 Spacer(modifier = Modifier.height(6.dp))
             }
 
-            if (catTransport.value != RadioControlSettings.TRANSPORT_TCP && !isN76) {
+            if (catTransport.value != RadioControlSettings.TRANSPORT_TCP && !isN76 &&
+                !(isFtx1 && catTransport.value == RadioControlSettings.TRANSPORT_BLUETOOTH)) {
                 // Baud rate belongs to the local serial link. TCP bridges/rigctld own their serial settings.
                 Text(stringResource(R.string.rc_baud_rate), fontWeight = FontWeight.Medium)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {

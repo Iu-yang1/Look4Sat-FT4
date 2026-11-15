@@ -1,5 +1,6 @@
 <resources>
     <string name="rc_ftx1_usb_hint">USB CAT-1（增强端口）· MAIN 固件 ≥ 1.08</string>
+    <string name="rc_ftx1_bluetooth_hint">TUN/LIN PORT SELECT 设为 CAT-3。线材与电台串口参数须一致（建议 38400、8N1）。MAIN 固件 ≥ 1.08。</string>
     <string name="rc_panel_reference">基准频率</string>
     <string name="rc_panel_reference_compact">基准频率</string>
     <string name="rc_panel_independent">独立</string>

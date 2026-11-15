@@ -27,6 +27,16 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.Composable
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
@@ -35,27 +45,44 @@ import com.rtbishop.look4sat.core.presentation.MainTheme
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Job
+import com.rtbishop.look4sat.core.presentation.R as CoreR
 
 class MainActivity : ComponentActivity() {
+    private var foregroundStartJob: Job? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         installSplashScreen()
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
-        val settingsRepo = (applicationContext as IContainerProvider).getMainContainer().settingsRepo
-        observeNightFilterState()
+        val app = application as? MainApplication
+        lifecycleScope.launch {
+            app?.awaitReady()
+            observeNightFilterState()
+        }
         setContent {
-            val otherSettings by settingsRepo.otherSettings.collectAsStateWithLifecycle()
-            // Light theme is opt-in: the app stays dark until the user turns it on.
-            MainTheme(isDarkTheme = !otherSettings.stateOfLightTheme) { NavRoot() }
+            val startup = app?.startupState?.collectAsStateWithLifecycle()?.value
+            if (startup != null && !startup.ready) {
+                MainTheme { RecoveryStartupPanel(startup, app::retryRecovery, ::finishAffinity) }
+            } else {
+                val settingsRepo = (applicationContext as IContainerProvider).getMainContainer().settingsRepo
+                val otherSettings by settingsRepo.otherSettings.collectAsStateWithLifecycle()
+                // Light theme is opt-in: the app stays dark until the user turns it on.
+                MainTheme(isDarkTheme = !otherSettings.stateOfLightTheme) { NavRoot() }
+            }
         }
     }
 
     override fun onStart() {
         super.onStart()
-        val mainContainer = (applicationContext as IContainerProvider).getMainContainer()
-        mainContainer.recordingService.setApplicationForeground(true)
-        mainContainer.appScope.launch { mainContainer.radioTrackingService.setAudioForeground(true) }
+        foregroundStartJob?.cancel()
+        foregroundStartJob = lifecycleScope.launch {
+            (application as? MainApplication)?.awaitReady()
+            if (!lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) return@launch
+            val mainContainer = (applicationContext as IContainerProvider).getMainContainer()
+            mainContainer.recordingService.setApplicationForeground(true)
+            mainContainer.radioTrackingService.setAudioForeground(true)
+        }
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -64,9 +91,15 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onStop() {
+        foregroundStartJob?.cancel()
+        if ((application as? MainApplication)?.isReady == false) {
+            super.onStop()
+            return
+        }
         val mainContainer = (applicationContext as IContainerProvider).getMainContainer()
         mainContainer.recordingService.setApplicationForeground(false)
         mainContainer.appScope.launch {
+            runCatching { mainContainer.radioSelfCheck.cancel() }
             runCatching {mainContainer.recordingService.stopPlayback()}
             runCatching {mainContainer.ft4AudioTransmitter.emergencyStop()}
             runCatching {mainContainer.jttyTransmitter.stop()}
@@ -102,6 +135,31 @@ class MainActivity : ComponentActivity() {
             })
         } else {
             window.decorView.setLayerType(View.LAYER_TYPE_NONE, null)
+        }
+    }
+}
+
+@Composable
+private fun RecoveryStartupPanel(state: RecoveryStartupState, retry: () -> Unit, close: () -> Unit) {
+    Surface(Modifier.fillMaxSize()) {
+        Box(Modifier.fillMaxSize().safeDrawingPadding().padding(24.dp), contentAlignment = Alignment.Center) {
+            Column(Modifier.widthIn(max = 480.dp).fillMaxWidth().verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                Text(stringResource(CoreR.string.backup_title), style = MaterialTheme.typography.titleLarge)
+                if (state.error == null) {
+                    Text(stringResource(CoreR.string.backup_restoring))
+                    LinearProgressIndicator(Modifier.fillMaxWidth())
+                } else {
+                    Text(stringResource(CoreR.string.backup_recovery_notice))
+                    Text(state.error, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                    Button(onClick = retry, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                        Text(stringResource(CoreR.string.amsat_retry))
+                    }
+                    OutlinedButton(onClick = close, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                        Text(stringResource(CoreR.string.backup_close_app))
+                    }
+                }
+            }
         }
     }
 }

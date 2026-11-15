@@ -121,12 +121,14 @@ fun SettingsDestination() {
     val container = (context.applicationContext as IContainerProvider).getMainContainer()
     val viewModel: SettingsViewModel = viewModel(factory = SettingsViewModel.factory(container, context))
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val backupState by container.backupRepository.state.collectAsStateWithLifecycle()
     SettingsScreen(
         uiState = uiState,
         onAction = viewModel::onAction,
         radioAudioSession=container.radioAudioSession,
         audioSettingsForModel=container.settingsRepo::getRadioAudioSettings,
-        astroData = container.astroData
+        astroData = container.astroData,
+        lastBackupMillis = backupState.lastBackupMillis
     )
 }
 
@@ -136,9 +138,11 @@ private fun SettingsScreen(
     onAction: (SettingsAction) -> Unit,
     radioAudioSession: com.rtbishop.look4sat.core.domain.audio.IRadioAudioSession,
     audioSettingsForModel: (String)->com.rtbishop.look4sat.core.domain.audio.RadioAudioSettings,
-    astroData: com.rtbishop.look4sat.core.domain.astro.IAstroDataRepository
+    astroData: com.rtbishop.look4sat.core.domain.astro.IAstroDataRepository,
+    lastBackupMillis: Long = 0L
 ) {
     val context = LocalContext.current
+    val utilityPanels = com.rtbishop.look4sat.core.presentation.LocalUtilityPanels.current
     var showUpdateChecker by rememberSaveable { mutableStateOf(false) }
     var showAstroData by rememberSaveable { mutableStateOf(false) }
     var showTrajectoryPrecision by rememberSaveable { mutableStateOf(false) }
@@ -604,6 +608,17 @@ private fun SettingsScreen(
                             com.rtbishop.look4sat.core.presentation.astroStatus(astroState),
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp)
                     )
+                    CardButton(
+                        onClick = utilityPanels.backup,
+                        text = stringResource(R.string.backup_title),
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp)
+                    )
+                    if (lastBackupMillis > 0) Text(
+                        stringResource(R.string.backup_last) + ": " +
+                            java.text.DateFormat.getDateTimeInstance().format(Date(lastBackupMillis)),
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+                    )
                 }
             }
             if (isDebuggableBuild) {
@@ -1024,6 +1039,7 @@ private fun OutputCard(
     onExportDiagnostics: () -> Unit,
     onClearDiagnostics: () -> Unit
 ) {
+    val panels = com.rtbishop.look4sat.core.presentation.LocalUtilityPanels.current
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -1042,6 +1058,12 @@ private fun OutputCard(
                     modifier = Modifier.weight(1f)
                 )
             }
+            Spacer(modifier = Modifier.height(6.dp))
+            CardButton(
+                onClick = panels.selfCheck,
+                text = stringResource(R.string.selfcheck_title),
+                modifier = Modifier.fillMaxWidth()
+            )
             Spacer(modifier = Modifier.height(6.dp))
             Text(
                 stringResource(R.string.control_diagnostics_count, diagnosticCount),

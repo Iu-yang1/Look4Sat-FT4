@@ -17,6 +17,8 @@
  */
 package com.rtbishop.look4sat.feature.radar
 
+import androidx.compose.foundation.layout.heightIn
+
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
@@ -451,12 +453,16 @@ private fun ExpandedRadioControl(
     radioControl: RadioControlSubState,
     onAction: (RadarAction) -> Unit,
 ) {
+    val utilityPanels = com.rtbishop.look4sat.core.presentation.LocalUtilityPanels.current
     Column(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp).padding(bottom = 8.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         HorizontalDivider(thickness = 1.dp, color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
         ReferenceFrequencyControls(radioControl, onAction)
+        OutlinedButton(onClick = utilityPanels.selfCheck, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+            Text(stringResource(R.string.selfcheck_title))
+        }
         TxToneControl(radio, radioControl, onAction)
         if (DopplerFrequencyCalculator.isNamedLinearTransponder(radio)) {
             OutlinedButton(

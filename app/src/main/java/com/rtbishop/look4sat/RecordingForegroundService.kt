@@ -24,6 +24,10 @@ class RecordingForegroundService: Service() {
     override fun onBind(intent: Intent?): IBinder?=null
     @android.annotation.SuppressLint("MissingPermission") // UI requests notification consent; FGS still runs after denial.
     override fun onStartCommand(intent: Intent?,flags: Int,startId: Int): Int {
+        if ((application as? MainApplication)?.isReady == false) {
+            stopSelf(startId)
+            return START_NOT_STICKY
+        }
         if(intent?.action==STOP) {
             scope.launch {recording.stop();if(!recording.state.value.active) stopForeground(STOP_FOREGROUND_REMOVE);stopSelfResult(startId)}
             return START_NOT_STICKY

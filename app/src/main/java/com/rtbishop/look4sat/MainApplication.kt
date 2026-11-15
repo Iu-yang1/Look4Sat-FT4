@@ -45,6 +45,15 @@ import com.rtbishop.look4sat.core.domain.repository.lotwSyncToday
 import com.rtbishop.look4sat.core.domain.repository.resolveLoTWSyncMode
 import com.rtbishop.look4sat.core.domain.repository.shouldAutoSyncLoTW
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.cancelAndJoin
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -56,22 +65,59 @@ class MainApplication : Application(), IContainerProvider, com.rtbishop.look4sat
 
     private lateinit var container: IMainContainer
     private var usbReconnectJob: Job? = null
+    private val startupScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private var startupJob: Job? = null
+    private val startupWork = mutableListOf<Job>()
+    private val startup = MutableStateFlow(RecoveryStartupState())
+    val startupState = startup.asStateFlow()
+    val isReady get() = startup.value.ready
 
-    override fun getMainContainer(): IMainContainer = container
+    override fun getMainContainer(): IMainContainer {
+        check(isReady) { "Backup recovery must finish before accessing app data" }
+        return container
+    }
+
+    suspend fun awaitReady() { startup.first { it.ready } }
 
     override fun onCreate() {
         super.onCreate()
-        container = MainContainer(this)
+        if (java.io.File(noBackupFilesDir, "backup-restore-journal").exists()) retryRecovery()
+        else finishStartup(MainContainer(this, ::stopForRestore))
+    }
+
+    fun retryRecovery() {
+        if (startupJob?.isActive == true) return
+        startup.value = RecoveryStartupState()
+        startupJob = startupScope.launch {
+            try {
+                val restored = withContext(Dispatchers.IO) { MainContainer(this@MainApplication, ::stopForRestore) }
+                finishStartup(restored)
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (error: Exception) { startup.value = RecoveryStartupState(error = error.message ?: error.javaClass.simpleName) }
+        }
+    }
+
+    private fun finishStartup(value: IMainContainer) {
+        container = value
+        startup.value = RecoveryStartupState(ready = true)
         observeL4sUsbAttachments()
         clearAmSatCacheOnAppBackground()
         // trigger automatic update every 48 hours
-        container.appScope.launch { checkAutoUpdate() }
+        startupWork += container.appScope.launch { checkAutoUpdate() }
         // automatic LoTW grid sync on every app start (gated, see checkLoTWAutoSync)
-        container.appScope.launch { checkLoTWAutoSync() }
+        startupWork += container.appScope.launch { checkLoTWAutoSync() }
         // Retry interrupted or newly versioned identity repair; clean logbooks skip the scan.
-        container.appScope.launch { runCatching { container.qsoRepository.consolidateConfirmations() } }
+        startupWork += container.appScope.launch { runCatching { container.qsoRepository.consolidateConfirmations() } }
         // load satellite data on every app start
-        container.appScope.launch { container.satelliteRepo.initRepository() }
+        startupWork += container.appScope.launch { container.satelliteRepo.initRepository() }
+    }
+
+    private suspend fun stopForRestore() {
+        withContext(Dispatchers.Main.immediate) {
+            usbReconnectJob?.cancelAndJoin()
+            startupWork.forEach { it.cancelAndJoin() }
+            stopService(Intent(this@MainApplication, LogbookSyncService::class.java))
+        }
     }
 
     /** USB CAT reattachment is a device event, not an FT4 audio or CAT retry.
@@ -98,6 +144,8 @@ class MainApplication : Application(), IContainerProvider, com.rtbishop.look4sat
                 if (event != "attach" || device == null) return
                 usbReconnectJob = container.appScope.launch {
                     delay(450) // Android permission and descriptor discovery settle after attach.
+                    val backup = container.backupRepository.state.value
+                    if (backup.busy || backup.needsRestart) return@launch
                     val config = container.settingsRepo.radioControlSettings.value
                     if (!matchesConfiguredL4sUsbDevice(config, device.vendorId, device.productId)) return@launch
                     val matches = manager.deviceList.values.filter {
@@ -213,3 +261,5 @@ class MainApplication : Application(), IContainerProvider, com.rtbishop.look4sat
         }
     }
 }
+
+data class RecoveryStartupState(val ready: Boolean = false, val error: String? = null)

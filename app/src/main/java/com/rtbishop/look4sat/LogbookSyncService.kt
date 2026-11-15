@@ -71,6 +71,10 @@ class LogbookSyncService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if ((application as? MainApplication)?.isReady == false) {
+            stopSelf(startId)
+            return START_NOT_STICKY
+        }
         if (intent?.action != LogbookBackgroundSyncController.ACTION_START) {
             if (currentRequest == null) stopSelf(startId)
             return START_NOT_STICKY

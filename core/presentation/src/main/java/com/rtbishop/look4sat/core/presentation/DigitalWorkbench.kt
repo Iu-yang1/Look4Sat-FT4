@@ -184,6 +184,7 @@ fun DigitalWorkbench(
                 .verticalScroll(rememberScrollState()).padding(padding),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
+            val utilityPanels = LocalUtilityPanels.current
             Text(status)
             panel.radio.errorMessage?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             panel.radio.lastCommandError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
@@ -205,6 +206,9 @@ fun DigitalWorkbench(
                 modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp))
             TextButton(onClick = { controls = false; onAudio() }) {
                 Text(stringResource(R.string.radio_audio_title))
+            }
+            TextButton(onClick = { controls = false; utilityPanels.selfCheck() }) {
+                Text(stringResource(R.string.selfcheck_title))
             }
         }
     }

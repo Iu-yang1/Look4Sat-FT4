@@ -43,6 +43,8 @@ internal class ApplicationPlugin : Plugin<Project> {
             implementation(project(":feature:settings"))
             implementation(project(":feature:status"))
             implementation(project(":feature:sunlight"))
+            implementation(project(":feature:selfcheck"))
+            implementation(project(":feature:backup"))
             implementation(libs.androidx.core.splashscreen)
             implementation(libs.compose.material3.adaptive)
             implementation(libs.compose.navigation3)

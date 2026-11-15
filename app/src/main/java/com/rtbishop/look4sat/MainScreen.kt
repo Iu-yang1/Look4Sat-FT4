@@ -134,6 +134,8 @@ fun NavRoot(deeplink: String? = null) {
     val rootCurrentKey = rootBackStack.lastOrNull()
     val context = LocalContext.current
     val container = (context.applicationContext as IContainerProvider).getMainContainer()
+    var utilityPanel by rememberSaveable { mutableStateOf<String?>(null) }
+    val backupState by container.backupRepository.state.collectAsStateWithLifecycle()
     val mutualViewModel: MutualViewModel = viewModel(
         viewModelStoreOwner = context as ViewModelStoreOwner,
         factory = MutualViewModel.factory(container)
@@ -215,6 +217,11 @@ fun NavRoot(deeplink: String? = null) {
     val popTransition = slideInHorizontally(tween(300)) { -it / 3 } togetherWith
         slideOutHorizontally(tween(300)) { it }
     CompositionLocalProvider(
+        com.rtbishop.look4sat.core.presentation.LocalUtilityPanels provides
+            com.rtbishop.look4sat.core.presentation.UtilityPanels(
+                selfCheck = { utilityPanel = "selfcheck" },
+                backup = { utilityPanel = "backup" }
+            ),
         LocalElevationThresholds provides ElevationThresholds(
             low = otherSettings.lowElevation,
             high = otherSettings.highElevation
@@ -367,6 +374,14 @@ fun NavRoot(deeplink: String? = null) {
             }
         }
         )
+        if (utilityPanel == "selfcheck" && !backupState.needsRestart &&
+            backupState.phase != com.rtbishop.look4sat.core.domain.maintenance.BackupPhase.RESTORING) {
+            com.rtbishop.look4sat.feature.selfcheck.SelfCheckPanel(container) { utilityPanel = null }
+        }
+        if (utilityPanel == "backup" || backupState.needsRestart ||
+            backupState.phase == com.rtbishop.look4sat.core.domain.maintenance.BackupPhase.RESTORING) {
+            com.rtbishop.look4sat.feature.backup.BackupPanel(container) { utilityPanel = null }
+        }
     }
 }
 

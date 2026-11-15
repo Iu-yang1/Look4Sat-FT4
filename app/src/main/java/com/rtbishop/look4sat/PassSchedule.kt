@@ -158,7 +158,8 @@ private data class ScheduledPass(
 )
 
 private object PassScheduleStore {
-    private fun prefs(context: Context) = context.getSharedPreferences(PASS_SCHEDULE_PREFS, Context.MODE_PRIVATE)
+    private fun prefs(context: Context) = com.rtbishop.look4sat.core.data.maintenance.SnapshotPreferences(
+        context.getSharedPreferences(PASS_SCHEDULE_PREFS, Context.MODE_PRIVATE))
 
     fun readConfig(context: Context): PassScheduleConfig {
         val prefs = prefs(context)
@@ -425,6 +426,10 @@ private object PassScheduleNotificationScheduler {
 
 class PassScheduleAlarmReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
+        if ((context.applicationContext as? MainApplication)?.isReady == false) {
+            PassScheduleNotificationScheduler.scheduleRefreshRetry(context)
+            return
+        }
         when (intent.action) {
             PassScheduleNotificationScheduler.ACTION_ALERT ->
                 PassScheduleNotificationScheduler.showAlert(context, intent)

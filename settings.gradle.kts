@@ -34,5 +34,7 @@ include(
     ":feature:satellites",
     ":feature:settings",
     ":feature:status",
+    ":feature:selfcheck",
+    ":feature:backup",
     ":feature:sunlight"
 )

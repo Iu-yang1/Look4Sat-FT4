@@ -216,7 +216,7 @@ private val darkTileFilter by lazy { createColorFilter() }
 private var mapIsLightUi: Boolean? = null
 
 /** Theme the tile filter / icon caches were last applied for (drives the per-frame theme check). */
-private var appliedLightUi: Boolean? = null
+private var appliedLightMapPalette: Boolean? = null
 
 /** True while the offline OSM source is active — satellite imagery (Tianditu) is never filtered. */
 private var offlineTilesActive = true
@@ -635,6 +635,9 @@ private fun MapScreen(
     val timeString = uiState.mapData?.aosTime ?: "00:00:00"
     val isTimeAos = uiState.mapData?.isTimeAos ?: true
     val usesTianditu = tiandituLayers(uiState.mapSource) != null && uiState.tiandituKey.isNotBlank()
+    // Tianditu supplies light, unfiltered tiles even when the app UI is in dark mode.
+    // Use the light-map label palette so custom grid, region and marker text stays legible.
+    val useLightMapPalette = uiState.isLightUi || usesTianditu
     val copyrightResId = if (usesTianditu) R.string.map_copyright_tianditu else R.string.map_copyright_osm
 
     // Slider span = the window the ground track is drawn for (2.4 orbital periods from the
@@ -996,9 +999,9 @@ private fun MapScreen(
                 AndroidView({ mapView }) { view ->
                     // Theme change: recolor the paints/tile filter/overlays and drop the icon
                     // caches, which baked the previous theme's colors into their bitmaps.
-                    if (appliedLightUi != uiState.isLightUi) {
-                        appliedLightUi = uiState.isLightUi
-                        applyMapColors(uiState.isLightUi)
+                    if (appliedLightMapPalette != useLightMapPalette) {
+                        appliedLightMapPalette = useLightMapPalette
+                        applyMapColors(useLightMapPalette)
                         iconCache.evictAll()
                         dotIcon = null
                         view.overlayManager.tilesOverlay.setColorFilter(
@@ -1049,7 +1052,7 @@ private fun MapScreen(
                         }
                     }
                     if (!uiState.isGridMode) {
-                        uiState.stationPosition?.let { setStationPosition(it, view, uiState.isLightUi) }
+                        uiState.stationPosition?.let { setStationPosition(it, view, useLightMapPalette) }
                         setOtherStationPosition(otherStationPosition, otherStationGrid, view)
                         if (passWindow != null) {
                             // Clear the previous pass immediately while the replacement
@@ -1068,8 +1071,8 @@ private fun MapScreen(
                             uiState.positions?.let { setPositions(it, view) { item -> onAction(MapAction.SelectItem(item)) } }
                         }
                         setTerminator(uiState.sunLatDeg, uiState.sunLonDeg, view)
-                        setSubSolarPoint(uiState.sunLatDeg, uiState.sunLonDeg, view, uiState.isLightUi)
-                        setMoonPosition(uiState.moonLatDeg, uiState.moonLonDeg, view, uiState.isLightUi)
+                        setSubSolarPoint(uiState.sunLatDeg, uiState.sunLonDeg, view, useLightMapPalette)
+                        setMoonPosition(uiState.moonLatDeg, uiState.moonLonDeg, view, useLightMapPalette)
                         // Time scrub: keep the scrubbed satellite centred, in the same pass that
                         // moves its marker so the two can never disagree. The pan is applied
                         // directly instead of as an osmdroid animation: the eased clock advances
@@ -1474,64 +1477,7 @@ private fun WorkedGridQsoDialog(
                                 }
                             }
                         }
-                        if (showGridActivity) {
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(top = 6.dp),
-                                verticalArrangement = Arrangement.spacedBy(3.dp)
-                            ) {
-                                Text(
-                                    text = stringResource(R.string.map_grid_activity_recent_operators),
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                                if (recentOperators.isEmpty()) {
-                                    Text(
-                                        text = stringResource(R.string.map_grid_activity_no_recent_operators),
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                } else {
-                                    recentOperators.take(6).forEach { operator ->
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            Text(
-                                                text = operator.call,
-                                                style = MaterialTheme.typography.bodySmall,
-                                                color = MaterialTheme.colorScheme.onSurface
-                                            )
-                                            Spacer(Modifier.weight(1f))
-                                            operator.date?.let { date ->
-                                                Text(
-                                                    text = date,
-                                                    style = MaterialTheme.typography.bodySmall,
-                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                                )
-                                            }
-                                        }
-                                    }
-                                }
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text(
-                                        text = stringResource(R.string.map_grid_activity_source_prefix),
-                                        style = MaterialTheme.typography.bodySmall
-                                    )
-                                    Text(
-                                        text = stringResource(R.string.map_grid_activity_source_link),
-                                        style = MaterialTheme.typography.bodySmall.copy(
-                                            textDecoration = TextDecoration.Underline
-                                        ),
-                                        color = MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.clickable {
-                                            uriHandler.openUri("https://gridmaster.fr")
-                                        }
-                                    )
-                                }
-                            }
-                        }
+
                     }
                     TextButton(
                         enabled = !matchCalculating,
@@ -1554,6 +1500,67 @@ private fun WorkedGridQsoDialog(
                         }
                         Spacer(Modifier.width(4.dp))
                         Text(stringResource(R.string.grid_qso_match))
+                    }
+                }
+                if (showGridActivity) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 6.dp),
+                        verticalArrangement = Arrangement.spacedBy(3.dp)
+                    ) {
+                        Text(
+                            text = stringResource(R.string.map_grid_activity_recent_operators),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        if (recentOperators.isEmpty()) {
+                            Text(
+                                text = stringResource(R.string.map_grid_activity_no_recent_operators),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        } else {
+                            recentOperators.take(6).forEach { operator ->
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = operator.call,
+                                        style = MaterialTheme.typography.bodySmall.copy(
+                                            fontWeight = MaterialTheme.typography.titleMedium.fontWeight,
+                                            fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+                                        ),
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                    Spacer(Modifier.weight(1f))
+                                    operator.date?.let { date ->
+                                        Text(
+                                            text = date,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = stringResource(R.string.map_grid_activity_source_prefix),
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                            Text(
+                                text = stringResource(R.string.map_grid_activity_source_link),
+                                style = MaterialTheme.typography.bodySmall.copy(
+                                    textDecoration = TextDecoration.Underline
+                                ),
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.clickable {
+                                    uriHandler.openUri("https://gridmaster.fr")
+                                }
+                            )
+                        }
                     }
                 }
                 androidx.compose.material3.HorizontalDivider()

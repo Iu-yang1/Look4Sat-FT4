@@ -960,12 +960,12 @@ class SettingsRepo(
     //endregion
 
     //region # RC settings
+    // TODO: Remove after a few releases (added in v4.2.0)
+    private val keyRCFormatsMigrated = "rcFormatsMigrated"
+
     init {
         migrateRCFormats()
     }
-
-    // TODO: Remove after a few releases (added in v4.2.0)
-    private val keyRCFormatsMigrated = "rcFormatsMigrated"
 
     private fun migrateRCFormats() {
         if (preferences.getBoolean(keyRCFormatsMigrated, false)) return

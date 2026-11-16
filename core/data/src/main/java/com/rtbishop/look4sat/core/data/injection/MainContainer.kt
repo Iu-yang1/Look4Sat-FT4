@@ -285,7 +285,8 @@ class MainContainer(
                 astroData.cancel()
                 lotwUploadRepository.discardPreview()
             },
-            refreshSettings = { (settingsRepo as SettingsRepo).reloadAfterRestore() }
+            refreshSettings = { (settingsRepo as SettingsRepo).reloadAfterRestore() },
+            diagnostics = controlDiagnostics
         )
     }
     override val rotatorTrackingService: IRotatorTrackingService by lazy {

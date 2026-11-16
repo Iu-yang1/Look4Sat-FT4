@@ -210,6 +210,23 @@ class BackupRepositoryTest {
         assertEquals("""[{"cached":true}]""", schedule.getString("events", ""))
     }
 
+    @Test fun unnamedLegacyPreferencesDoNotPreventBackupOrReplacingNamedSettings() = runBlocking {
+        preferences.edit().putBoolean(null, true).putString("callsign", "BA7OPF").commit()
+        val schedule = context.getSharedPreferences("pass_schedule_preferences", Context.MODE_PRIVATE)
+        schedule.edit().putBoolean(null, true).putBoolean("notify_at_start", true).commit()
+        assertTrue(preferences.all.containsKey(null))
+        val file = backup(setOf(BackupCategory.SETTINGS))
+        inspect(file)
+        preferences.edit().putString("callsign", "CHANGED").putString("new-setting", "remove").commit()
+        repository.restore(setOf(BackupCategory.SETTINGS), RestoreMode.REPLACE)
+        assertTrue(await(BackupPhase.COMPLETE, BackupPhase.FAILED).needsRestart)
+        assertEquals("BA7OPF", preferences.getString("callsign", ""))
+        assertFalse(preferences.contains("new-setting"))
+        assertTrue(preferences.getBoolean(null, false))
+        assertTrue(schedule.getBoolean(null, false))
+        assertTrue(schedule.getBoolean("notify_at_start", false))
+    }
+
     @Test fun startupJournalRestoresUncommittedChangesAndIsIdempotent() {
         preferences.edit().putString("callsign", "BEFORE").commit()
         logs.qsoDao().restoreRecords(listOf(record.toEntity()))

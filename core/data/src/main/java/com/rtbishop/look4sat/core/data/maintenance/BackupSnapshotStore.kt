@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.SharedPreferences
 import android.os.Environment
 import android.util.Base64
+import android.util.Log
 import com.rtbishop.look4sat.core.data.audio.RadioAudioCredentials
 import com.rtbishop.look4sat.core.data.audio.RadioAudioSecretStore
 import com.rtbishop.look4sat.core.data.database.Look4SatDb
@@ -72,6 +73,16 @@ internal fun preferenceCategory(key: String): BackupCategory = when {
     else -> BackupCategory.SETTINGS
 }
 
+private fun SharedPreferences.namedBackupValues(): Map<String, Any?> {
+    // SharedPreferences permits null keys. An older RC-format migration wrote its flag
+    // before its key was initialized; it has no named setting to export or replace.
+    val stored: Map<String?, Any?> = all
+    return buildMap {
+        stored.forEach { (key, value) -> if (key != null) put(key, value) }
+        if (size != stored.size) Log.w("Look4SatBackup", "Ignoring unnamed legacy preference; named settings preserved")
+    }
+}
+
 /** Merge identities as the logbook does, without dropping local/raw fields through ADIF. */
 internal fun mergeBackupRecords(local: List<QsoRecord>, incoming: List<QsoRecord>): List<QsoRecord> {
     val result = local.toMutableList()
@@ -126,24 +137,39 @@ internal class BackupSnapshotStore(
     val journal = File(context.noBackupFilesDir, "backup-restore-journal")
 
     fun snapshot(categories: Set<BackupCategory>): BackupSnapshot = synchronized(DataMaintenance.preferencesLock) {
-        val entries = if (BackupCategory.SATELLITES in categories) satellites.look4SatDao().snapshotEntries() else emptyList()
-        val radios = if (BackupCategory.SATELLITES in categories) satellites.look4SatDao().snapshotRadios() else emptyList()
-        val records = if (BackupCategory.LOGBOOK in categories) logs.qsoDao().snapshotRecords().map { it.toDomain() } else emptyList()
+        val entries = if (BackupCategory.SATELLITES in categories) backupStep("satellites") {
+            satellites.look4SatDao().snapshotEntries()
+        } else emptyList()
+        val radios = if (BackupCategory.SATELLITES in categories) backupStep("transponders") {
+            satellites.look4SatDao().snapshotRadios()
+        } else emptyList()
+        val records = if (BackupCategory.LOGBOOK in categories) backupStep("logbook") {
+            logs.qsoDao().snapshotRecords().map { it.toDomain() }
+        } else emptyList()
         val lotwNames = buildList {
             if (BackupCategory.LOGBOOK in categories) addAll(listOf("station", "receipts"))
             if (BackupCategory.CREDENTIALS in categories) add("certificate")
         }
         BackupSnapshot(
-            preferences.all.filterKeys { preferenceCategory(it) in categories }.mapValues { StoredPreference.from(checkNotNull(it.value)) },
+            backupStep("preferences") {
+                preferences.namedBackupValues().filterKeys { preferenceCategory(it) in categories }
+                    .mapValues { StoredPreference.from(checkNotNull(it.value)) }
+            },
             entries, radios, records,
-            lotwNames.mapNotNull { name -> lotw.read(name)?.let { bytes ->
-                try { name to Base64.encodeToString(bytes, Base64.NO_WRAP) } finally { bytes.fill(0) }
-            } }.toMap(),
-            if (BackupCategory.CREDENTIALS in categories) audio.snapshot().mapValues { AudioLogin(it.value.first, it.value.second) } else emptyMap(),
+            backupStep("lotw") {
+                lotwNames.mapNotNull { name -> lotw.read(name)?.let { bytes ->
+                    try { name to Base64.encodeToString(bytes, Base64.NO_WRAP) } finally { bytes.fill(0) }
+                } }.toMap()
+            },
+            if (BackupCategory.CREDENTIALS in categories) backupStep("audio-credentials") {
+                audio.snapshot().mapValues { AudioLogin(it.value.first, it.value.second) }
+            } else emptyMap(),
             if (BackupCategory.SETTINGS in categories) astronomy.getString("downloadUrl", "").orEmpty() else "",
             if (BackupCategory.ASTRONOMY in categories) astronomy.getString("activeDirectory", null) else null,
-            if (BackupCategory.SETTINGS in categories) schedule.all.filterKeys { it in scheduleKeys }
-                .mapValues { StoredPreference.from(checkNotNull(it.value)) } else emptyMap()
+            if (BackupCategory.SETTINGS in categories) backupStep("schedule") {
+                schedule.namedBackupValues().filterKeys { it in scheduleKeys }
+                    .mapValues { StoredPreference.from(checkNotNull(it.value)) }
+            } else emptyMap()
         )
     }
 
@@ -225,7 +251,7 @@ internal class BackupSnapshotStore(
             }
             val editor = preferences.edit()
             if (mode == RestoreMode.REPLACE) {
-                preferences.all.keys.filter { preferenceCategory(it) in categories }.forEach(editor::remove)
+                preferences.namedBackupValues().keys.filter { preferenceCategory(it) in categories }.forEach(editor::remove)
             }
             snapshot.preferences.filterKeys { preferenceCategory(it) in categories }.forEach { (key, stored) ->
                 writePreference(editor, key, stored.value())
@@ -267,8 +293,9 @@ internal class BackupSnapshotStore(
         }
     }
 
-    fun writeSnapshot(target: File, snapshot: BackupSnapshot) =
+    fun writeSnapshot(target: File, snapshot: BackupSnapshot) = backupStep("snapshot-json") {
         target.writeText(backupJson.encodeToString(snapshot), Charsets.UTF_8)
+    }
 
     fun readSnapshot(source: File): BackupSnapshot {
         require(source.length() <= 256L * 1024 * 1024) { "Snapshot metadata is too large" }

@@ -6,6 +6,8 @@ import android.util.AtomicFile
 import com.rtbishop.look4sat.core.data.astro.AstroDataPackage
 import com.rtbishop.look4sat.core.data.astro.OrekitRuntime
 import com.rtbishop.look4sat.core.domain.audio.IRecordingService
+import com.rtbishop.look4sat.core.domain.control.IControlDiagnostics
+import com.rtbishop.look4sat.core.domain.control.NoOpControlDiagnostics
 import com.rtbishop.look4sat.core.domain.maintenance.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -23,7 +25,8 @@ internal class BackupRepository(
     private val recordings: IRecordingService,
     private val version: String,
     private val stopServices: suspend () -> Unit,
-    private val refreshSettings: () -> Unit
+    private val refreshSettings: () -> Unit,
+    private val diagnostics: IControlDiagnostics = NoOpControlDiagnostics
 ) : IBackupRepository {
     private val history = context.getSharedPreferences("backup-history", Context.MODE_PRIVATE)
     private val mutable = MutableStateFlow(BackupState(
@@ -50,7 +53,9 @@ internal class BackupRepository(
                 mutable.update { it.copy(phase = BackupPhase.IDLE) }
                 throw cancelled
             } catch (error: Exception) {
-                mutable.update { it.copy(phase = BackupPhase.FAILED, error = error.message ?: error.javaClass.simpleName) }
+                diagnostics.recordBackupFailure(phase.name.lowercase(java.util.Locale.ROOT), error)
+                val failure = if (error is BackupStepException) error.cause ?: error else error
+                mutable.update { it.copy(phase = BackupPhase.FAILED, error = failure.message ?: failure.javaClass.simpleName) }
             } finally { password.fill('\u0000') }
         }
     }
@@ -68,7 +73,9 @@ internal class BackupRepository(
             val archive = File(work, "archive.l4sbackup")
             val snapshotRoot = File(work, "contents").apply { check(mkdirs()) }
             try {
-                if (BackupCategory.RECORDINGS in options.categories) recordings.rotateForBackup()
+                if (BackupCategory.RECORDINGS in options.categories) backupStep("recording-rotation") {
+                    recordings.rotateForBackup()
+                }
                 val snapshot = DataMaintenance.write {
                     val value = store.snapshot(options.categories)
                     store.writeSnapshot(File(snapshotRoot, "snapshot.json"), value)
@@ -77,7 +84,9 @@ internal class BackupRepository(
                             directory.listFiles().orEmpty().filter {
                                 it.isFile && (it.name.endsWith(".wav") || it.name.endsWith(".wav.json"))
                             }.forEach { file ->
-                                copyFile(file, File(snapshotRoot, "recordings/$name/${file.name}"), task::ensureActive)
+                                backupStep("recording-copy") {
+                                    copyFile(file, File(snapshotRoot, "recordings/$name/${file.name}"), task::ensureActive)
+                                }
                             }
                         }
                     }
@@ -86,15 +95,17 @@ internal class BackupRepository(
                 if (BackupCategory.ASTRONOMY in options.categories) {
                     snapshot.astronomyGeneration?.let { generation ->
                         val directory = File(store.astronomyRoot, generation)
-                        val metadata = AstroDataPackage.metadata(directory)
+                        val metadata = backupStep("astronomy-metadata") { AstroDataPackage.metadata(directory) }
                         if (!metadata.builtIn) {
                             directory.listFiles().orEmpty().filter(File::isFile).forEach {
-                                copyFile(it, File(snapshotRoot, "astronomy/${it.name}"), task::ensureActive)
+                                backupStep("astronomy-copy") {
+                                    copyFile(it, File(snapshotRoot, "astronomy/${it.name}"), task::ensureActive)
+                                }
                             }
                         }
                     }
                 }
-                val entries = entries(snapshotRoot, options.categories, task::ensureActive)
+                val entries = backupStep("checksums") { entries(snapshotRoot, options.categories, task::ensureActive) }
                 val counts = store.counts(snapshot, options.categories).toMutableMap()
                 if (BackupCategory.RECORDINGS in options.categories)
                     counts[BackupCategory.RECORDINGS] = entries.count { it.category == BackupCategory.RECORDINGS && it.path.endsWith(".wav") }.toLong()
@@ -104,18 +115,20 @@ internal class BackupRepository(
                     createdAtMillis = System.currentTimeMillis(), appVersion = version,
                     categories = options.categories, counts = counts, entries = entries
                 )
-                BackupArchive.pack(snapshotRoot, description, archive, password, task::ensureActive)
+                backupStep("archive") { BackupArchive.pack(snapshotRoot, description, archive, password, task::ensureActive) }
                 password.fill('\u0000')
                 check(snapshotRoot.deleteRecursively()) { "Could not remove backup staging data" }
                 mutable.update { it.copy(phase = BackupPhase.EXPORTING, totalBytes = archive.length()) }
                 val uri = Uri.parse(destinationUri)
                 try {
-                    checkNotNull(context.contentResolver.openOutputStream(uri, "wt")) { "Cannot open backup destination" }.use { output ->
-                        archive.inputStream().use { input ->
-                            BackupArchive.copy(input, output, check = {
-                                task.ensureActive()
-                                mutable.update { it.copy(completedBytes = archive.length().coerceAtMost(it.completedBytes + 65536)) }
-                            })
+                    backupStep("export") {
+                        checkNotNull(context.contentResolver.openOutputStream(uri, "wt")) { "Cannot open backup destination" }.use { output ->
+                            archive.inputStream().use { input ->
+                                BackupArchive.copy(input, output, check = {
+                                    task.ensureActive()
+                                    mutable.update { it.copy(completedBytes = archive.length().coerceAtMost(it.completedBytes + 65536)) }
+                                })
+                            }
                         }
                     }
                 } catch (error: Exception) {
@@ -159,7 +172,10 @@ internal class BackupRepository(
                 currentCoroutineContext().ensureActive()
                 mutable.update { it.copy(estimatedBytes = bytes, availableCounts = counts) }
             } catch (cancelled: CancellationException) { throw cancelled }
-            catch (_: Exception) { mutable.update { it.copy(estimatedBytes = null, availableCounts = emptyMap()) } }
+            catch (error: Exception) {
+                diagnostics.recordBackupFailure("estimate", error)
+                mutable.update { it.copy(estimatedBytes = null, availableCounts = emptyMap()) }
+            }
         }
     }
 

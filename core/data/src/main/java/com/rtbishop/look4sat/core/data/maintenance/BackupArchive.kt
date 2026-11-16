@@ -11,11 +11,12 @@ import java.security.SecureRandom
 import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
-import javax.crypto.Cipher
-import javax.crypto.CipherInputStream
-import javax.crypto.CipherOutputStream
-import javax.crypto.spec.GCMParameterSpec
-import javax.crypto.spec.SecretKeySpec
+import org.bouncycastle.crypto.engines.AESEngine
+import org.bouncycastle.crypto.io.CipherOutputStream
+import org.bouncycastle.crypto.modes.GCMBlockCipher
+import org.bouncycastle.crypto.modes.GCMModeCipher
+import org.bouncycastle.crypto.params.AEADParameters
+import org.bouncycastle.crypto.params.KeyParameter
 
 @Serializable
 internal data class BackupEntry(val path: String, val bytes: Long, val sha256: String, val category: BackupCategory)
@@ -64,7 +65,7 @@ internal object BackupArchive {
                 header.writeInt(iterations)
                 header.write(salt)
                 header.write(nonce)
-                CipherOutputStream(raw, cipher(Cipher.ENCRYPT_MODE, password, salt, nonce))
+                CipherOutputStream(raw, cipher(true, password, salt, nonce))
             } else raw
             ZipOutputStream(payload).use { zip ->
                 zip.putNextEntry(ZipEntry("manifest.json"))
@@ -103,8 +104,8 @@ internal object BackupArchive {
                     require(header.readInt() == iterations) { "Unsupported password derivation" }
                     val salt = ByteArray(16).also(header::readFully)
                     val nonce = ByteArray(12).also(header::readFully)
-                    CipherInputStream(raw, cipher(Cipher.DECRYPT_MODE, password, salt, nonce)).use { input ->
-                        decrypted.outputStream().buffered().use { copy(input, it, availableBytes, check) }
+                    decrypted.outputStream().buffered().use { output ->
+                        decrypt(raw, output, cipher(false, password, salt, nonce), availableBytes, check)
                     }
                 } else {
                     decrypted.outputStream().buffered().use { copy(raw, it, availableBytes, check) }
@@ -171,13 +172,39 @@ internal object BackupArchive {
         }
     }
 
-    private fun cipher(mode: Int, password: CharArray, salt: ByteArray, nonce: ByteArray): Cipher {
+    // Android's default AEAD provider buffers the entire archive until doFinal. Use the
+    // lightweight streaming engine directly, without installing or replacing JCA providers.
+    internal fun cipher(encrypt: Boolean, password: CharArray, salt: ByteArray, nonce: ByteArray): GCMModeCipher {
         val bytes = derivePkcs12Key("PBKDF2WithHmacSHA256", password, salt, iterations, 256)
         return try {
-            Cipher.getInstance("AES/GCM/NoPadding").apply {
-                init(mode, SecretKeySpec(bytes, "AES"), GCMParameterSpec(128, nonce))
-                updateAAD(magic)
+            GCMBlockCipher.newInstance(AESEngine.newInstance()).apply {
+                init(encrypt, AEADParameters(KeyParameter(bytes), 128, nonce, magic))
             }
         } finally { bytes.fill(0) }
+    }
+
+    private fun decrypt(input: InputStream, output: OutputStream, cipher: GCMModeCipher, limit: Long, check: () -> Unit) {
+        val source = ByteArray(65536)
+        // Allow for both an AES block and the tag retained between input chunks.
+        val decoded = ByteArray(source.size + 32)
+        var total = 0L
+        fun write(count: Int) {
+            total = Math.addExact(total, count.toLong())
+            require(total <= limit) { "Backup exceeds the available storage or declared size" }
+            output.write(decoded, 0, count)
+        }
+        try {
+            while (true) {
+                check()
+                val count = input.read(source)
+                if (count < 0) break
+                write(cipher.processBytes(source, 0, count, decoded, 0))
+            }
+            check()
+            write(cipher.doFinal(decoded, 0))
+        } finally {
+            source.fill(0)
+            decoded.fill(0)
+        }
     }
 }

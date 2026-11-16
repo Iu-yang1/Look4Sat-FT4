@@ -8,17 +8,23 @@ import kotlinx.coroutines.CancellationException
 
 internal class BackupStepException(val step: String, cause: Exception) : Exception(cause.message, cause)
 
-internal inline fun <T> backupStep(step: String, block: () -> T): T = try {
-    block()
-} catch (cancelled: CancellationException) {
-    throw cancelled
-} catch (error: BackupStepException) {
-    throw error
-} catch (error: Exception) {
-    throw BackupStepException(step, error)
+internal inline fun <T> backupStep(step: String, block: () -> T): T {
+    val started = System.nanoTime()
+    Log.i("Look4SatBackup", "Starting $step")
+    return try {
+        block()
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (error: BackupStepException) {
+        throw error
+    } catch (error: Exception) {
+        throw BackupStepException(step, error)
+    } finally {
+        Log.i("Look4SatBackup", "Finished $step after ${(System.nanoTime() - started) / 1_000_000} ms")
+    }
 }
 
-internal fun IControlDiagnostics.recordBackupFailure(operation: String, error: Exception) {
+internal fun IControlDiagnostics.recordBackupFailure(operation: String, error: Throwable) {
     val step = (error as? BackupStepException)?.step ?: "operation"
     val failure = if (error is BackupStepException) error.cause ?: error else error
     val stage = "backup/$operation/$step"

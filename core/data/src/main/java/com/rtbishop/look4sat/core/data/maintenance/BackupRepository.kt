@@ -62,7 +62,10 @@ internal class BackupRepository(
                 mutable.update { it.copy(phase = BackupPhase.FAILED, error = failure.message ?: failure.javaClass.simpleName) }
             } catch (error: OutOfMemoryError) {
                 diagnostics.recordBackupFailure(phase.name.lowercase(java.util.Locale.ROOT), error)
-                mutable.update { it.copy(phase = BackupPhase.FAILED, error = error.javaClass.simpleName) }
+                val restart = phase == BackupPhase.RESTORING
+                if (restart) DataMaintenance.restartRequired = true
+                mutable.update { it.copy(phase = BackupPhase.FAILED, error = error.javaClass.simpleName,
+                    needsRestart = it.needsRestart || restart) }
             } finally { password.fill('\u0000') }
         }
     }

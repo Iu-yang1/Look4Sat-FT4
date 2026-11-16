@@ -41,6 +41,7 @@ class BackupRepositoryTest {
     private lateinit var store: BackupSnapshotStore
     private var stops = 0
     private var failRefresh = false
+    private var refreshFailure: Error? = null
     private var recordingFailure: Throwable? = null
     private lateinit var repository: BackupRepository
     private val record = QsoRecord(startUtcMillis = 1000, theirCallsign = "JA1ABC", myCallsign = "BA7OPF",
@@ -68,6 +69,7 @@ class BackupRepositoryTest {
         repository = BackupRepository(context, scope, store, recorder, "test",
             stopServices = { stops++ }, refreshSettings = {
                 if (failRefresh) { failRefresh = false; error("Injected failure after database writes") }
+                refreshFailure?.let { throw it }
             })
     }
 
@@ -106,6 +108,24 @@ class BackupRepositoryTest {
         recordingFailure = null
         backup(setOf(BackupCategory.SETTINGS))
         Unit
+    }
+
+    @Test fun memoryFailureDuringRestoreKeepsRecoveryJournalUntilRestart() = runBlocking {
+        preferences.edit().putString("callsign", "BACKUP").commit()
+        val archive = backup(setOf(BackupCategory.SETTINGS))
+        preferences.edit().putString("callsign", "ORIGINAL").commit()
+        inspect(archive)
+        refreshFailure = OutOfMemoryError("injected after writes")
+        repository.restore(setOf(BackupCategory.SETTINGS), RestoreMode.REPLACE)
+        val result = await(BackupPhase.COMPLETE, BackupPhase.FAILED)
+        assertEquals(BackupPhase.FAILED, result.phase)
+        assertTrue(result.needsRestart)
+        assertTrue(DataMaintenance.restartRequired)
+        assertTrue(File(store.journal, "ready").isFile)
+        DataMaintenance.restartRequired = false
+        BackupRepository.recover(store)
+        assertEquals("ORIGINAL", preferences.getString("callsign", ""))
+        assertFalse(store.journal.exists())
     }
 
     @Test fun selectedCategoriesReplaceAndPreserveUnselectedData() = runBlocking {

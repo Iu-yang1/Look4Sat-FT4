@@ -19,8 +19,8 @@ import java.io.InputStream
 @Config(sdk = [34])
 class UpdateSourceMergeTest {
     private val context = ApplicationProvider.getApplicationContext<Context>()
-    private val tag = "4.4.8-ba7opf.13.20"
-    private val asset = "$RELEASE_REPOSITORY/releases/download/$tag/Look4Sat-FT4-$tag-release.apk"
+    private val tag = "4.4.8-ba7opf-orekit.15.01"
+    private val asset = "$RELEASE_REPOSITORY/releases/download/$tag/Look4Sat-BA7OPF-Orekit-$tag-release.apk"
 
     @Test fun automaticCheckFallsBackWithoutChangingRepositoryOrGuessingAssetNames() = runBlocking {
         val remote = Remote { url ->
@@ -52,7 +52,7 @@ class UpdateSourceMergeTest {
             val remote = Remote { NetworkResult(200, manifest().byteInputStream()) }
             val release = UpdateRepository(remote, context).getLatestRelease(source) {}
             assertEquals(prefix + asset, release?.apkUrl)
-            assertEquals(listOf(prefix + "https://github.com/Iu-yang1/Look4Sat-FT4/releases/latest/download/update.json"),
+            assertEquals(listOf(prefix + "https://github.com/Iu-yang1/Look4Sat-BA7OPF-Orekit/releases/latest/download/update.json"),
                 remote.requests.map { it.first })
         }
     }
@@ -95,7 +95,7 @@ class UpdateSourceMergeTest {
     private fun manifest() = """
         {"tag_name":"$tag","html_url":"$RELEASE_REPOSITORY/releases/tag/$tag",
         "name":"$tag","body":"Release notes","draft":false,"prerelease":false,
-        "assets":[{"name":"Look4Sat-FT4-$tag-release.apk","browser_download_url":"$asset",
+        "assets":[{"name":"Look4Sat-BA7OPF-Orekit-$tag-release.apk","browser_download_url":"$asset",
         "content_type":"application/vnd.android.package-archive","state":"uploaded","size":20000000}]}
     """.trimIndent()
 

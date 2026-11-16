@@ -67,6 +67,15 @@ class VersionComparatorTest {
     }
 
     @Test
+    fun `orekit release numbers compare across the package transition`() {
+        assertTrue(VersionComparator.isNewer("4.4.8-ba7opf-orekit.15.01", "4.4.8-ba7opf.14.11"))
+        assertTrue(VersionComparator.isNewer("4.4.8-ba7opf-orekit.15.02", "4.4.8-ba7opf-orekit.15.01"))
+        assertFalse(VersionComparator.isNewer("4.4.8-ba7opf-orekit.15.01", "4.4.8-ba7opf-orekit.15.01"))
+        assertEquals(listOf(4, 4, 8) to listOf(15, 1),
+            VersionComparator.parse("4.4.8-ba7opf-orekit.15.01"))
+    }
+
+    @Test
     fun `parse extracts base and suffix segments`() {
         assertEquals(listOf(4, 4, 6) to listOf(7), VersionComparator.parse("v4.4.6-ba7opf.7"))
         assertEquals(listOf(4, 4, 6) to listOf(9, 1), VersionComparator.parse("v4.4.6-ba7opf.9.1"))

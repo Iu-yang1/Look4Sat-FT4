@@ -7,8 +7,10 @@ import re
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
 
-REPOSITORY = "https://github.com/Iu-yang1/Look4Sat-FT4"
-TAG_PATTERN = re.compile(r"[vV]?[0-9]+(?:\.[0-9]+)+(?:-[A-Za-z0-9]+(?:\.[0-9]+)*)?")
+REPOSITORY = "https://github.com/Iu-yang1/Look4Sat-BA7OPF-Orekit"
+TAG_PATTERN = re.compile(
+    r"[vV]?[0-9]+(?:\.[0-9]+)+(?:-[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*(?:\.[0-9]+)*)?"
+)
 
 
 def build_manifest(release):
@@ -25,13 +27,13 @@ def build_manifest(release):
         normalized = name.lower()
         if not normalized.endswith(".apk"):
             continue
-        if "look4sat" not in normalized or "ft4" not in normalized:
+        if not normalized.startswith("look4sat-ba7opf-orekit-"):
             continue
         if any(word in normalized for word in ("debug", "unsigned", "unaligned")):
             continue
         url = asset.get("browser_download_url", "")
         parsed = urlsplit(url)
-        prefix = f"/Iu-yang1/Look4Sat-FT4/releases/download/{tag}/"
+        prefix = f"/Iu-yang1/Look4Sat-BA7OPF-Orekit/releases/download/{tag}/"
         if (
             parsed.scheme != "https"
             or parsed.netloc != "github.com"

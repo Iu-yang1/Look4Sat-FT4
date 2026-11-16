@@ -13,7 +13,7 @@ dependencyResolutionManagement {
         mavenCentral()
     }
 }
-rootProject.name = "Look4Sat"
+rootProject.name = "Look4Sat-BA7OPF-Orekit"
 include(":app")
 include(
     ":core:cw",

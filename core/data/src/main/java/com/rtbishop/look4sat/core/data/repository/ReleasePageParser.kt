@@ -4,7 +4,7 @@ import com.rtbishop.look4sat.core.domain.model.LatestRelease
 import java.net.URI
 import org.json.JSONObject
 
-internal const val RELEASE_REPOSITORY = "https://github.com/Iu-yang1/Look4Sat-FT4"
+internal const val RELEASE_REPOSITORY = "https://github.com/Iu-yang1/Look4Sat-BA7OPF-Orekit"
 internal const val LATEST_RELEASE_URL = "$RELEASE_REPOSITORY/releases/latest"
 internal const val LATEST_RELEASE_MANIFEST_URL = "$LATEST_RELEASE_URL/download/update.json"
 internal val UPDATE_MIRRORS = listOf(
@@ -60,7 +60,7 @@ internal fun parseReleasePage(html: String, mirror: String, supportedAbis: List<
     return LatestRelease(tag, title, description, selectReleaseAsset(assets, tag, supportedAbis)?.url?.let { mirror + it })
 }
 
-private val RELEASE_TAG = Regex("[vV]?[0-9]+(?:\\.[0-9]+)+(?:-[A-Za-z0-9]+(?:\\.[0-9]+)*)?")
+private val RELEASE_TAG = Regex("[vV]?[0-9]+(?:\\.[0-9]+)+(?:-[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*(?:\\.[0-9]+)*)?")
 
 private fun htmlAttribute(tag: String, name: String): String? =
     Regex("\\b${Regex.escape(name)}\\s*=\\s*([\"'])(.*?)\\1", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))

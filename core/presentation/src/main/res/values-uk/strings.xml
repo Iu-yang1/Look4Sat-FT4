@@ -46,7 +46,7 @@
     <string name="pass_empty_list_message">
         Переконайтеся, що ваші фільтри правильні, і ви вибрали супутники</string>
     <string name="pass_error_message">Немає майбутніх прольотів супутників</string>
-    <string name="pass_welcome_title">Ласкаво просимо до Look4Sat\!</string>
+    <string name="pass_welcome_title">Ласкаво просимо до Look4Sat-BA7OPF-Orekit\!</string>
     <string name="pass_welcome_message">
         Обов’язково встановіть своє місцезнаходження за допомогою GPS, широти/довготи або QTH у налаштуваннях.
         \n\nБудь ласка, оновлюйте базу даних принаймні раз на тиждень, щоб отримувати точні прогнози.</string>

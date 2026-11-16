@@ -11,7 +11,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.ensureActive
 
 const val DEFAULT_ASTRO_DATA_URL =
-    "https://github.com/Iu-yang1/Look4Sat-FT4/releases/download/orekit-data-full/orekit-data.zip"
+    "https://github.com/Iu-yang1/Look4Sat-BA7OPF-Orekit/releases/download/orekit-data-full/orekit-data.zip"
 
 enum class AstroDataPhase { LOADING, MISSING, DOWNLOADING, VERIFYING, READY, FAILED }
 

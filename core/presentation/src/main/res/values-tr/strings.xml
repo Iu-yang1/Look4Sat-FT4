@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- Commmon -->
-    <string name="app_name" translatable="false">Look4Sat-BA7OPF</string>
+    <string name="app_name" translatable="false">Look4Sat-BA7OPF-Orekit</string>
     <string name="btn_accept">Kabul et</string>
     <string name="btn_cancel">İptal</string>
     <string name="empty_list_message">Gösterilecek veri bulunamadı</string>
@@ -50,11 +50,11 @@
     <string name="pass_empty_list_message">
         Filtrelerinizin doğru olduğundan ve uydu seçtiğinizden emin olun</string>
     <string name="pass_error_message">Gösterilecek yaklaşan uydu geçişi bulunmuyor</string>
-    <string name="pass_welcome_title">Look4Sat\'a hoş geldiniz\!</string>
+    <string name="pass_welcome_title">Look4Sat-BA7OPF-Orekit\'a hoş geldiniz\!</string>
     <string name="pass_welcome_message">
         Ayarlar\'dan GPS, Enlem/Boylam veya QTH kullanarak konumunuzu belirlediğinizden emin olun.
         \n\nDoğru tahminler alabilmek için veritabanını en az haftada bir güncelleyin.</string>
-    <string name="pass_whatsnew_title" translatable="false">What\'s new in Look4Sat</string>
+    <string name="pass_whatsnew_title" translatable="false">What\'s new in Look4Sat-BA7OPF-Orekit</string>
     <string name="pass_whatsnew_message" translatable="false">
         * Switched to short-form commands in NetworkReporter, by theojalba
         \n* Added CAT radio control for full-duplex SAT operation, by jcmerg
@@ -108,10 +108,10 @@
     <string name="map_visible">Görünür</string>
 
     <!-- Settings screen -->
-    <string name="prefs_app_title" translatable="false">Look4Sat-BA7OPF v%s</string>
-    <string name="prefs_app_url" translatable="false">https://github.com/Iu-yang1/Look4Sat-FT4/releases/latest</string>
+    <string name="prefs_app_title" translatable="false">Look4Sat-BA7OPF-Orekit v%s</string>
+    <string name="prefs_app_url" translatable="false">https://github.com/Iu-yang1/Look4Sat-BA7OPF-Orekit/releases/latest</string>
     <string name="prefs_github_title" translatable="false">GitHub</string>
-    <string name="prefs_github_url" translatable="false">https://github.com/Iu-yang1/Look4Sat-FT4</string>
+    <string name="prefs_github_url" translatable="false">https://github.com/Iu-yang1/Look4Sat-BA7OPF-Orekit</string>
     <string name="prefs_license_title" translatable="false">GPLv3</string>
     <string name="prefs_license_url" translatable="false">https://www.gnu.org/licenses/gpl-3.0.html</string>
     <string name="prefs_privacy_title">Gizlilik Politikası</string>
@@ -208,6 +208,9 @@
     <string name="prefs_outro_title">Teşekkürler</string>
     <string name="prefs_outro_thanks" translatable="false">
         • Look4Sat users and contributors!
+        \n• Arty Bishop and atsunatsu/Look4Sat contributors
+        \n• CS GROUP, Orekit and Hipparchus contributors (Apache-2.0)
+        \n• jl1nie/mfsk-core and WSJT-X contributors (FT4/JTTY)
         \n• David A. B. Johnson (predict4java)
         \n• Dave Moten (predict4java)
         \n• Alexandru Csete (Gpredict)

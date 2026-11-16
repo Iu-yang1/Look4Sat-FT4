@@ -68,7 +68,7 @@
     <string name="backup_saved">උපස්ථය සුරකින ලදී.</string>
     <string name="backup_restored">ප්‍රතිස්ථාපනය සම්පූර්ණයි</string>
     <string name="backup_failed">මෙහෙයුම අසමත් විය. විස්තර පරීක්ෂා කර නැවත උත්සාහ කරන්න.</string>
-    <string name="backup_restart_notice">ප්‍රතිස්ථාපිත දත්ත පූරණයට Look4Sat වසා නැවත විවෘත කරන්න.</string>
+    <string name="backup_restart_notice">ප්‍රතිස්ථාපිත දත්ත පූරණයට Look4Sat-BA7OPF-Orekit වසා නැවත විවෘත කරන්න.</string>
     <string name="backup_rebind">සම්බන්ධ කිරීමට පෙර රේඩියෝව, USB/ශ්‍රව්‍ය උපාංග සහ නිර්යාත ෆෝල්ඩර අවසර පරීක්ෂා කරන්න.</string>
     <string name="backup_close_app">යෙදුම වසන්න</string>
     <string name="backup_estimated_size">ඇස්තමේන්තුගත ප්‍රමාණය: %1$s</string>

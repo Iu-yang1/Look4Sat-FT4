@@ -181,7 +181,7 @@ fun SelfCheckPanel(container: IMainContainer, onDismiss: () -> Unit) {
                             Text(stringResource(R.string.selfcheck_test))
                         }
                     }
-                    TextButton(onClick = { export.launch("Look4Sat-selfcheck-${System.currentTimeMillis()}.txt") }) {
+                    TextButton(onClick = { export.launch("Look4Sat-BA7OPF-Orekit-selfcheck-${System.currentTimeMillis()}.txt") }) {
                         Text(stringResource(R.string.selfcheck_export))
                     }
                 }

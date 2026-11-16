@@ -68,7 +68,7 @@
     <string name="backup_saved">Yedek kaydedildi.</string>
     <string name="backup_restored">Geri yükleme tamamlandı</string>
     <string name="backup_failed">İşlem başarısız. Ayrıntıları kontrol edip tekrar deneyin.</string>
-    <string name="backup_restart_notice">Geri yüklenen verileri yüklemek için Look4Sat uygulamasını kapatıp açın.</string>
+    <string name="backup_restart_notice">Geri yüklenen verileri yüklemek için Look4Sat-BA7OPF-Orekit uygulamasını kapatıp açın.</string>
     <string name="backup_rebind">Bağlanmadan önce telsizi, USB/ses aygıtlarını ve dışa aktarma klasörü izinlerini kontrol edin.</string>
     <string name="backup_close_app">Uygulamayı kapat</string>
     <string name="backup_estimated_size">Tahmini boyut: %1$s</string>

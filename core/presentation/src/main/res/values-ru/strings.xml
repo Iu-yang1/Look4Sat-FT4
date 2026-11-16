@@ -45,7 +45,7 @@
     <string name="pass_empty_list_message">
         Убедитесь, что ваши фильтры настроены правильно и вы выбрали спутники</string>
     <string name="pass_error_message">Нет предстоящих пролётов спутников</string>
-    <string name="pass_welcome_title">Добро пожаловать в Look4Sat\!</string>
+    <string name="pass_welcome_title">Добро пожаловать в Look4Sat-BA7OPF-Orekit\!</string>
     <string name="pass_welcome_message">
         Обязательно укажите свое местоположение по GPS, широте/долготе или QTH в настройках.
         \n\nПожалуйста, обновляйте базу данных как минимум раз в неделю, чтобы получать точные прогнозы.</string>

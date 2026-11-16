@@ -61,7 +61,7 @@
 
         <meta-data
             android:name="android.telephony.PROPERTY_SATELLITE_DATA_OPTIMIZED"
-            android:value="cn.ba7opf.look4sat" />
+            android:value="${applicationId}" />
 
         <provider
             android:name="androidx.core.content.FileProvider"

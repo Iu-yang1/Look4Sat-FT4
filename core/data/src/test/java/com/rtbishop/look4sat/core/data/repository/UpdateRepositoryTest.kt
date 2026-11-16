@@ -14,24 +14,34 @@ import org.junit.Test
 
 class UpdateRepositoryTest {
     @Test
+    fun newPackageOnlySelectsOrekitBuilds() {
+        val tag = "4.4.8-ba7opf-orekit.15.01"
+        val base = "$RELEASE_REPOSITORY/releases/download/$tag/"
+        val legacy = asset("Look4Sat-FT4-$tag-release.apk", base)
+        val current = asset("Look4Sat-BA7OPF-Orekit-$tag-release.apk", base)
+        assertEquals(null, selectReleaseAsset(listOf(legacy), tag, listOf("arm64-v8a")))
+        assertEquals(current, selectReleaseAsset(listOf(legacy, current), tag, listOf("arm64-v8a")))
+    }
+
+    @Test
     fun selectsCompatibleSignedReleaseAssetInsteadOfFirstApk() {
-        val base = "https://github.com/Iu-yang1/Look4Sat-FT4/releases/download/v4.4.9/"
+        val base = "https://github.com/Iu-yang1/Look4Sat-BA7OPF-Orekit/releases/download/v4.4.9/"
         val assets = listOf(
             asset("other-app.apk", base),
-            asset("Look4Sat-FT4-v4.4.9-unsigned.apk", base),
-            asset("Look4Sat-FT4-v4.4.9-x86_64-release.apk", base),
-            asset("Look4Sat-FT4-v4.4.9-arm64-v8a-release.apk", base)
+            asset("Look4Sat-BA7OPF-Orekit-v4.4.9-unsigned.apk", base),
+            asset("Look4Sat-BA7OPF-Orekit-v4.4.9-x86_64-release.apk", base),
+            asset("Look4Sat-BA7OPF-Orekit-v4.4.9-arm64-v8a-release.apk", base)
         )
 
         val selected = selectReleaseAsset(assets, "v4.4.9", listOf("arm64-v8a", "armeabi-v7a"))
 
-        assertEquals("Look4Sat-FT4-v4.4.9-arm64-v8a-release.apk", selected?.name)
+        assertEquals("Look4Sat-BA7OPF-Orekit-v4.4.9-arm64-v8a-release.apk", selected?.name)
     }
 
     @Test
     fun rejectsAssetsFromOtherRepositories() {
         val asset = ReleaseAsset(
-            name = "Look4Sat-FT4-v4.4.9-universal-release.apk",
+            name = "Look4Sat-BA7OPF-Orekit-v4.4.9-universal-release.apk",
             url = "https://github.com/attacker/repo/releases/download/v4.4.9/app.apk",
             contentType = "application/vnd.android.package-archive",
             state = "uploaded",
@@ -52,27 +62,27 @@ class UpdateRepositoryTest {
     @Test
     fun parsesRealAssetsFromExpandedReleaseFragmentThroughMirror() {
         val html = """
-            <meta content='https://github.com/Iu-yang1/Look4Sat-FT4/releases/tag/v4.4.8-ba7opf.9.17' property='og:url'>
-            <title>Release 9.17 · Iu-yang1/Look4Sat-FT4</title>
+            <meta content='https://github.com/Iu-yang1/Look4Sat-BA7OPF-Orekit/releases/tag/v4.4.8-ba7opf.9.17' property='og:url'>
+            <title>Release 9.17 · Iu-yang1/Look4Sat-BA7OPF-Orekit</title>
             <div class="markdown-body"><p>Grid map</p><p>LoTW &amp; logbook</p></div>
-            <a href="/Iu-yang1/Look4Sat-FT4/releases/download/v4.4.8-ba7opf.9.17/Look4Sat-FT4-arm64-v8a.apk">APK</a>
-            <a href="/Iu-yang1/Look4Sat-FT4/releases/download/v4.4.8-ba7opf.9.17/Look4Sat-FT4-unsigned.apk">Unsigned</a>
+            <a href="/Iu-yang1/Look4Sat-BA7OPF-Orekit/releases/download/v4.4.8-ba7opf.9.17/Look4Sat-BA7OPF-Orekit-arm64-v8a.apk">APK</a>
+            <a href="/Iu-yang1/Look4Sat-BA7OPF-Orekit/releases/download/v4.4.8-ba7opf.9.17/Look4Sat-BA7OPF-Orekit-unsigned.apk">Unsigned</a>
         """.trimIndent()
         val release = parseReleasePage(html, UPDATE_MIRRORS.first(), listOf("arm64-v8a"))!!
         assertEquals("v4.4.8-ba7opf.9.17", release.versionTag)
         assertEquals("Grid map\nLoTW & logbook", release.body)
-        assertEquals("https://ghfast.top/https://github.com/Iu-yang1/Look4Sat-FT4/releases/download/v4.4.8-ba7opf.9.17/Look4Sat-FT4-arm64-v8a.apk", release.apkUrl)
+        assertEquals("https://ghfast.top/https://github.com/Iu-yang1/Look4Sat-BA7OPF-Orekit/releases/download/v4.4.8-ba7opf.9.17/Look4Sat-BA7OPF-Orekit-arm64-v8a.apk", release.apkUrl)
     }
 
     @Test
     fun doesNotGuessApkNameWhenNoAssetWasPublished() {
-        val html = """<meta property="og:url" content="https://github.com/Iu-yang1/Look4Sat-FT4/releases/tag/v4.4.8">"""
+        val html = """<meta property="og:url" content="https://github.com/Iu-yang1/Look4Sat-BA7OPF-Orekit/releases/tag/v4.4.8">"""
         assertEquals(null, parseReleasePage(html, "", listOf("arm64-v8a"))?.apkUrl)
     }
 
     @Test
     fun rejectsUntrustedMirrorAndNestedExternalDownload() {
-        val own = "https://github.com/Iu-yang1/Look4Sat-FT4/releases/download/v4.4.8/Look4Sat-FT4.apk"
+        val own = "https://github.com/Iu-yang1/Look4Sat-BA7OPF-Orekit/releases/download/v4.4.8/Look4Sat-BA7OPF-Orekit.apk"
         assertEquals(false, isTrustedDownloadUrl("https://evil.example/" + own))
         assertEquals(false, isTrustedDownloadUrl("https://ghfast.top/https://github.com/attacker/repo/releases/download/v4.4.8/app.apk"))
         assertEquals(true, isTrustedDownloadUrl("https://ghfast.top/" + own))
@@ -81,7 +91,7 @@ class UpdateRepositoryTest {
 
     @Test
     fun x86DoesNotAcceptAnX8664OnlyAsset() {
-        val base = "https://github.com/Iu-yang1/Look4Sat-FT4/releases/download/v4.4.9/"
-        assertEquals(null, selectReleaseAsset(listOf(asset("Look4Sat-FT4-x86_64.apk", base)), "v4.4.9", listOf("x86")))
+        val base = "https://github.com/Iu-yang1/Look4Sat-BA7OPF-Orekit/releases/download/v4.4.9/"
+        assertEquals(null, selectReleaseAsset(listOf(asset("Look4Sat-BA7OPF-Orekit-x86_64.apk", base)), "v4.4.9", listOf("x86")))
     }
 }

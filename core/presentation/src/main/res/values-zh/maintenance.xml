@@ -68,7 +68,7 @@
     <string name="backup_saved">备份已保存。</string>
     <string name="backup_restored">恢复完成</string>
     <string name="backup_failed">操作失败，请检查详细信息后重试。</string>
-    <string name="backup_restart_notice">请关闭并重新打开 Look4Sat，以加载恢复后的数据。</string>
+    <string name="backup_restart_notice">请关闭并重新打开 Look4Sat-BA7OPF-Orekit，以加载恢复后的数据。</string>
     <string name="backup_rebind">连接前请检查电台、USB/音频设备及导出目录权限。</string>
     <string name="backup_close_app">关闭应用</string>
     <string name="backup_estimated_size">预计大小：%1$s</string>

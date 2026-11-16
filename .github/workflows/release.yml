@@ -112,11 +112,11 @@ jobs:
           $dist = Join-Path $PWD 'dist'
           New-Item -ItemType Directory -Path $dist -Force | Out-Null
           $versionTag = $env:TAG_NAME.TrimStart('v')
-          $apkName = "Look4Sat-FT4-v$versionTag-universal-release.apk"
+          $apkName = "Look4Sat-BA7OPF-Orekit-v$versionTag-universal-release.apk"
           $releaseApk = Join-Path $dist $apkName
           Copy-Item -LiteralPath $apks[0].FullName -Destination $releaseApk -Force
           "RELEASE_APK=$releaseApk" | Out-File -LiteralPath $env:GITHUB_ENV -Encoding utf8 -Append
-          $releaseAab = Join-Path $dist "Look4Sat-FT4-v$versionTag-release.aab"
+          $releaseAab = Join-Path $dist "Look4Sat-BA7OPF-Orekit-v$versionTag-release.aab"
           Copy-Item -LiteralPath $bundles[0].FullName -Destination $releaseAab -Force
           "RELEASE_AAB=$releaseAab" | Out-File -LiteralPath $env:GITHUB_ENV -Encoding utf8 -Append
           $checksumFile = Join-Path $dist "SHA256SUMS-$versionTag.txt"
@@ -143,8 +143,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'APK signature verification failed' }
 
           $packageName = ((& $aapt2 dump packagename $env:RELEASE_APK) -join '').Trim()
-          if ($LASTEXITCODE -ne 0 -or $packageName -ne 'cn.ba7opf.look4sat') {
-            throw 'APK applicationId does not match cn.ba7opf.look4sat'
+          if ($LASTEXITCODE -ne 0 -or $packageName -ne 'cn.ba7opf.look4sat.orekit') {
+            throw 'APK applicationId does not match cn.ba7opf.look4sat.orekit'
           }
 
           $certificate = Join-Path $env:RUNNER_TEMP 'look4sat-release-cert.der'
@@ -210,7 +210,7 @@ jobs:
             'supply',
             '--aab', $env:RELEASE_AAB,
             '--json_key', $serviceAccount,
-            '--package_name', 'cn.ba7opf.look4sat',
+            '--package_name', 'cn.ba7opf.look4sat.orekit',
             '--track', 'production',
             '--skip_upload_images', 'true',
             '--skip_upload_screenshots', 'true'

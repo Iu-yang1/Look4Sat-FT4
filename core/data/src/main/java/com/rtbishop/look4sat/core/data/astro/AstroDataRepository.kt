@@ -45,10 +45,12 @@ internal fun astroDownloadCandidates(url: String, source: UpdateSource): List<St
 }
 
 internal fun migrateAstroDownloadUrl(url: String): String {
-    val oldDefault =
-        "https://github.com/Iu-yang1/Look4Sat-FT4/releases/download/orekit-data/orekit-data.zip"
+    val oldDefaults = setOf(
+        "https://github.com/Iu-yang1/Look4Sat-FT4/releases/download/orekit-data/orekit-data.zip",
+        "https://github.com/Iu-yang1/Look4Sat-FT4/releases/download/orekit-data-full/orekit-data.zip"
+    )
     val prefix = UPDATE_MIRRORS.firstOrNull { url.startsWith(it) }.orEmpty()
-    return if (url.removePrefix(prefix) == oldDefault) prefix + DEFAULT_ASTRO_DATA_URL else url
+    return if (url.removePrefix(prefix) in oldDefaults) prefix + DEFAULT_ASTRO_DATA_URL else url
 }
 
 class AstroDataRepository(

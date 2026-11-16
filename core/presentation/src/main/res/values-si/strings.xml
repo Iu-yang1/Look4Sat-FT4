@@ -46,7 +46,7 @@
     <string name="pass_empty_list_message">
         ඔබගේ පෙරහන් නිවැරදි බවත් ඔබ චන්ද්‍රිකා තෝරාගෙන ඇති බවත් සහතික කර ගන්න</string>
     <string name="pass_error_message">ප්‍රදර්ශනය කිරීමට ඉදිරියට එන චන්ද්‍රිකා පසුකර යෑම් නැත.</string>
-    <string name="pass_welcome_title">Look4Sat වෙත සාදරයෙන් පිළිගනිමු\!</string>
+    <string name="pass_welcome_title">Look4Sat-BA7OPF-Orekit වෙත සාදරයෙන් පිළිගනිමු\!</string>
     <string name="pass_welcome_message">
         සැකසුම් තුළ GPS, Lat/Lon හෝ QTH හරහා ඔබේ ස්ථානය සැකසීමට වග බලා ගන්න.
         \n\nනිවැරදි අනාවැකි ලබා ගැනීම සඳහා අවම වශයෙන් සතිපතා දත්ත සමුදාය යාවත්කාලීන කරන්න.</string>

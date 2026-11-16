@@ -86,3 +86,4 @@ fastlane/readme.md
 /.kotlin/sessions/
 dist/
 core/ft4-native/rust/target/
+__pycache__/

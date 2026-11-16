@@ -46,7 +46,7 @@
     <string name="pass_empty_list_message">
         Asegúrate de que tus filtros sean correctos y hayas seleccionado satélites</string>
     <string name="pass_error_message">No hay pases de satélite próximos para mostrar</string>
-    <string name="pass_welcome_title">Bienvenido a Look4Sat\!</string>
+    <string name="pass_welcome_title">Bienvenido a Look4Sat-BA7OPF-Orekit\!</string>
     <string name="pass_welcome_message">
         Asegúrate de configurar tu posición mediante GPS, Latitud/Longitud o QTH en Configuración.
         \n\nActualiza la base de datos al menos una vez por semana para obtener predicciones precisas.</string>

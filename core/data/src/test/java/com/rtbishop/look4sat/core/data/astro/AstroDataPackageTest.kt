@@ -68,6 +68,10 @@ class AstroDataPackageTest {
         }
         assertEquals("https://example.org/data.zip", migrateAstroDownloadUrl("https://example.org/data.zip"))
         assertEquals(github, migrateAstroDownloadUrl(github))
+        val full = old.replace("/orekit-data/", "/orekit-data-full/")
+        for (prefix in listOf("") + com.rtbishop.look4sat.core.data.repository.UPDATE_MIRRORS) {
+            assertEquals(prefix + github, migrateAstroDownloadUrl(prefix + full))
+        }
     }
 
     @Test fun corruptFileHashesNeverPassVerification() {

@@ -68,7 +68,7 @@
     <string name="backup_saved">備份已儲存。</string>
     <string name="backup_restored">還原完成</string>
     <string name="backup_failed">操作失敗，請檢查詳細資訊後重試。</string>
-    <string name="backup_restart_notice">請關閉並重新開啟 Look4Sat，載入還原後的資料。</string>
+    <string name="backup_restart_notice">請關閉並重新開啟 Look4Sat-BA7OPF-Orekit，載入還原後的資料。</string>
     <string name="backup_rebind">連線前請檢查電台、USB/音訊裝置及匯出資料夾權限。</string>
     <string name="backup_close_app">關閉應用程式</string>
     <string name="backup_estimated_size">預計大小：%1$s</string>

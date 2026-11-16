@@ -265,7 +265,7 @@ private fun SettingsScreen(
         val text = uiState.controlDiagnosticsExportText ?: return@LaunchedEffect
         val intent = Intent(Intent.ACTION_SEND).apply {
             type = "text/plain"
-            putExtra(Intent.EXTRA_SUBJECT, "Look4Sat control diagnostics")
+            putExtra(Intent.EXTRA_SUBJECT, "Look4Sat-BA7OPF-Orekit control diagnostics")
             putExtra(Intent.EXTRA_TEXT, text)
         }
         context.startActivity(Intent.createChooser(intent, context.getString(R.string.control_diagnostics_export)))

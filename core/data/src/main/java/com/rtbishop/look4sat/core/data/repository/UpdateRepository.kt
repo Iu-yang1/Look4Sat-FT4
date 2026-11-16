@@ -306,7 +306,7 @@ private fun releaseAssetScore(
     supportedAbis: List<String>
 ): Int? {
     val normalized = name.lowercase(Locale.US)
-    if (!normalized.endsWith(".apk") || "look4sat" !in normalized || "ft4" !in normalized) return null
+    if (!normalized.endsWith(".apk") || !normalized.startsWith("look4sat-ba7opf-orekit-")) return null
     if (listOf("debug", "unsigned", "unaligned").any(normalized::contains)) return null
     if (state.isNotBlank() && state != "uploaded") return null
     if (contentType.isNotBlank() && contentType !in APK_CONTENT_TYPES) return null

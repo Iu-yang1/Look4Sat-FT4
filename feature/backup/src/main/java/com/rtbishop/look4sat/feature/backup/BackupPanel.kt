@@ -139,7 +139,7 @@ fun BackupPanel(container: IMainContainer, onDismiss: () -> Unit) {
                 if (BackupCategory.CREDENTIALS in ui.categories) Text(stringResource(R.string.backup_password_required))
                 Button(onClick = {
                     val stamp = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.ROOT).format(Date())
-                    create.launch("Look4Sat-backup-$stamp.l4sbackup")
+                    create.launch("Look4Sat-BA7OPF-Orekit-backup-$stamp.l4sbackup")
                 }, enabled = ui.categories.isNotEmpty() && ui.password == ui.confirmation &&
                     (BackupCategory.CREDENTIALS !in ui.categories || ui.password.isNotEmpty()),
                     modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
@@ -168,7 +168,7 @@ fun BackupPanel(container: IMainContainer, onDismiss: () -> Unit) {
                 Text(it, style = MaterialTheme.typography.bodySmall)
             }
             if (state.retryExportAvailable) Button(onClick = {
-                retryExport.launch("Look4Sat-backup-${System.currentTimeMillis()}.l4sbackup")
+                retryExport.launch("Look4Sat-BA7OPF-Orekit-backup-${System.currentTimeMillis()}.l4sbackup")
             }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text(stringResource(R.string.backup_retry_export)) }
         }
     }

@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources xmlns:tools="http://schemas.android.com/tools" tools:ignore="MissingTranslation">
     <!-- Commmon -->
-    <string name="app_name" translatable="false">Look4Sat-BA7OPF</string>
+    <string name="app_name" translatable="false">Look4Sat-BA7OPF-Orekit</string>
     <string name="btn_accept">Accept</string>
     <string name="btn_cancel">Cancel</string>
     <string name="btn_save">Save</string>
@@ -57,11 +57,11 @@
     <string name="pass_empty_list_message">
         Make sure your filters are correct and you have selected satellites</string>
     <string name="pass_error_message">There are no upcoming satellite passes to display</string>
-    <string name="pass_welcome_title">Welcome to Look4Sat\!</string>
+    <string name="pass_welcome_title">Welcome to Look4Sat-BA7OPF-Orekit\!</string>
     <string name="pass_welcome_message">
         Make sure to set your position via GPS, Lat/Lon or QTH in Settings.
         \n\nPlease update the database at least weekly to get accurate predictions.</string>
-    <string name="pass_whatsnew_title" translatable="false">What\'s new in Look4Sat</string>
+    <string name="pass_whatsnew_title" translatable="false">What\'s new in Look4Sat-BA7OPF-Orekit</string>
     <string name="pass_whatsnew_message" translatable="false">Recent updates include improved pass calculations, normalized AOS and LOS times, CAT radio control for full-duplex satellite operation, mutual pass matching, and fixes for UTC pass times.</string>
 
     <!-- AMSAT Status screen -->
@@ -197,10 +197,10 @@
     <string name="map_visible">Visible</string>
 
     <!-- Settings screen -->
-    <string name="prefs_app_title" translatable="false">Look4Sat-BA7OPF v%s</string>
-    <string name="prefs_app_url" translatable="false">https://github.com/Iu-yang1/Look4Sat-FT4/releases/latest</string>
+    <string name="prefs_app_title" translatable="false">Look4Sat-BA7OPF-Orekit v%s</string>
+    <string name="prefs_app_url" translatable="false">https://github.com/Iu-yang1/Look4Sat-BA7OPF-Orekit/releases/latest</string>
     <string name="prefs_github_title" translatable="false">GitHub</string>
-    <string name="prefs_github_url" translatable="false">https://github.com/Iu-yang1/Look4Sat-FT4</string>
+    <string name="prefs_github_url" translatable="false">https://github.com/Iu-yang1/Look4Sat-BA7OPF-Orekit</string>
     <string name="prefs_license_title" translatable="false">GPLv3</string>
     <string name="prefs_license_url" translatable="false">https://www.gnu.org/licenses/gpl-3.0.html</string>
     <string name="prefs_privacy_title">Privacy Policy</string>
@@ -581,7 +581,7 @@
 
     <string name="prefs_outro_title">Credits &amp; Notices</string>
     <string name="prefs_project_wiki">Project Wiki</string>
-    <string name="project_wiki_intro">Look4Sat-BA7OPF is a customized fork of Look4Sat. All upstream features, plus:</string>
+    <string name="project_wiki_intro">Look4Sat-BA7OPF-Orekit is a customized fork of Look4Sat. All upstream features, plus:</string>
     <string name="project_wiki_section_logbook">Satellite Logbook &amp; LoTW</string>
     <string name="project_wiki_logbook_1">Satellite logbook — one-tap logging of callsign, time, frequency, mode, report and grid.</string>
     <string name="project_wiki_logbook_2">Direct LoTW upload — import your ARRL certificate and upload logs to LoTW right from the app, no PC needed.</string>
@@ -595,6 +595,9 @@
     <string name="project_wiki_grids_how">How: enable Grid mode on the map → sync LoTW/Wavelog in Settings.</string>
     <string name="prefs_outro_thanks" translatable="false">
         * Look4Sat users and contributors!
+        \n* Arty Bishop and atsunatsu/Look4Sat contributors
+        \n* CS GROUP, Orekit and Hipparchus contributors (Apache-2.0)
+        \n* jl1nie/mfsk-core and WSJT-X contributors (FT4/JTTY)
         \n* David A. B. Johnson (predict4java)
         \n* Dave Moten (predict4java)
         \n* Alexandru Csete (Gpredict)
@@ -605,8 +608,10 @@
         \n* BH2VSQ BG5JSU (TianDiTu rendering support)
         \n* BG5JSU (LoTW upload support)
     </string>
-    <string name="prefs_outro_notice">Look4Sat-BA7OPF is an unofficial modified build based on Look4Sat (GPL-3.0), independently maintained by BA7OPF. It is not affiliated with or endorsed by the original Look4Sat project.
-Upstream: https://github.com/rt-bishop/Look4Sat</string>
+    <string name="prefs_outro_notice">Look4Sat-BA7OPF-Orekit is an unofficial fork of Look4Sat (GPL-3.0), independently maintained by BA7OPF, using Orekit for orbital and astronomical calculations. It is not affiliated with or endorsed by the upstream Look4Sat or Orekit projects.
+\nUpstream: https://github.com/rt-bishop/Look4Sat
+\nUpstream updates: https://github.com/atsunatsu/Look4Sat
+\nOrekit: https://www.orekit.org (Apache-2.0)</string>
 <string name="prefs_outro_license">Licensed under the GNU General Public License v3 · The app comes with no warranty</string>
 
     <!-- Mutual match page -->
@@ -647,7 +652,7 @@ Upstream: https://github.com/rt-bishop/Look4Sat</string>
     <string name="mutual_station_b">Station B</string>
     <string name="update_source_selection">Update source</string>
     <string name="update_source_auto">Automatic (try all)</string>
-    <string name="update_source_github">GitHub · Look4Sat-FT4</string>
+    <string name="update_source_github">GitHub · Look4Sat-BA7OPF-Orekit</string>
     <string name="update_source_ghfast">ghfast.top (mirror)</string>
     <string name="update_source_llkk">gh.llkk.cc (mirror)</string>
     <string name="update_source_moeyy">github.moeyy.xyz (mirror)</string>
@@ -1077,7 +1082,7 @@ Upstream: https://github.com/rt-bishop/Look4Sat</string>
 
 <string name="lotw_upload_result_rejected_guidance">LoTW explicitly rejected this upload. Review the server reason above, correct the issue, and then prepare a new upload.</string>
 
-<string name="lotw_upload_result_unknown_guidance">Look4Sat could not confirm whether LoTW accepted the upload. The server may already have received it. Check LoTW before resubmitting; this result will not be retried automatically.</string>
+<string name="lotw_upload_result_unknown_guidance">Look4Sat-BA7OPF-Orekit could not confirm whether LoTW accepted the upload. The server may already have received it. Check LoTW before resubmitting; this result will not be retried automatically.</string>
 
 <string name="lotw_upload_result_previous_unknown_guidance">An earlier attempt may have reached LoTW. Check your LoTW account first. If the QSO is absent, select the record in Settings → Logbook and use Resubmit.</string>
 

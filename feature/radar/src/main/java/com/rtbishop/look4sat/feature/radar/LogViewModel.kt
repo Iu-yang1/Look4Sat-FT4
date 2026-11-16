@@ -329,7 +329,7 @@ class LogViewModel(
                 .joinToString("\n")
             val currentGrid = settingsRepo.stationPosition.value.qthLocator.take(6)
             val logLine = "📍 Log: ${_uiState.value.stationGrid.take(4)} | Current: $currentGrid"
-            val viaLine = "via Look4Sat-BA7OPF — TNX de ${_uiState.value.ownCallsign}"
+            val viaLine = "via Look4Sat-BA7OPF-Orekit — TNX de ${_uiState.value.ownCallsign}"
             val tag = "#HamRadio #SatelliteQSO #" + shortName.filter { it.isLetterOrDigit() }
             val text = listOf(firstLine, elLine, modeLines, "", logLine, viaLine, tag).joinToString("\n")
             _uiState.update { it.copy(postText = text) }

@@ -68,7 +68,7 @@
     <string name="backup_saved">Копію збережено.</string>
     <string name="backup_restored">Відновлення завершено</string>
     <string name="backup_failed">Операція не вдалася. Перевірте відомості й повторіть.</string>
-    <string name="backup_restart_notice">Закрийте й знову відкрийте Look4Sat, щоб завантажити відновлені дані.</string>
+    <string name="backup_restart_notice">Закрийте й знову відкрийте Look4Sat-BA7OPF-Orekit, щоб завантажити відновлені дані.</string>
     <string name="backup_rebind">Перед підключенням перевірте радіо, USB/аудіопристрої та дозволи папок експорту.</string>
     <string name="backup_close_app">Закрити застосунок</string>
     <string name="backup_estimated_size">Орієнтовний розмір: %1$s</string>

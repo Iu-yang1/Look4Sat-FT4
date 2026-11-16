@@ -68,7 +68,7 @@
     <string name="backup_saved">Copia guardada.</string>
     <string name="backup_restored">Restauración completada</string>
     <string name="backup_failed">La operación falló. Revisa los detalles e inténtalo de nuevo.</string>
-    <string name="backup_restart_notice">Cierra y vuelve a abrir Look4Sat para cargar los datos restaurados.</string>
+    <string name="backup_restart_notice">Cierra y vuelve a abrir Look4Sat-BA7OPF-Orekit para cargar los datos restaurados.</string>
     <string name="backup_rebind">Comprueba la radio, los dispositivos USB/audio y los permisos de exportación antes de conectar.</string>
     <string name="backup_close_app">Cerrar aplicación</string>
     <string name="backup_estimated_size">Tamaño estimado: %1$s</string>

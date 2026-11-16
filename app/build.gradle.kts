@@ -35,7 +35,7 @@ val unsignedReleaseBuild = providers.gradleProperty("look4sat.unsignedRelease").
 android {
     namespace = libs.versions.packageName.get()
     defaultConfig {
-        applicationId = if (l4sDevelopment) "cn.ba7opf.look4sat.l4s" else "cn.ba7opf.look4sat"
+        applicationId = if (l4sDevelopment) "cn.ba7opf.look4sat.orekit.l4s" else "cn.ba7opf.look4sat.orekit"
         if (l4sDevelopment) versionCode = libs.versions.appVersionCode.get().toInt() + 5
         ndk {
             abiFilters += listOf("arm64-v8a", "armeabi-v7a")

@@ -47,7 +47,7 @@
     <string name="pass_altitude">高度：%d km</string>
     <string name="pass_empty_list_message">请确保您的过滤器设置正确，并且已选择卫星</string>
     <string name="pass_error_message">没有即将过境的卫星</string>
-    <string name="pass_welcome_title">欢迎来到 Look4Sat\!</string>
+    <string name="pass_welcome_title">欢迎来到 Look4Sat-BA7OPF-Orekit\!</string>
     <string name="pass_welcome_message">请务必在设置中通过GPS、经纬度或QTH定位您的位置\n建议至少每周更新一次数据库，以确保预测结果的准确性</string>
 
     <!-- AMSAT Status screen -->
@@ -546,7 +546,7 @@
 
     <string name="prefs_outro_title">致谢与声明</string>
     <string name="prefs_project_wiki">Project Wiki</string>
-    <string name="project_wiki_intro">Look4Sat-BA7OPF 是基于 Look4Sat 的定制版，保留上游全部功能，并新增：</string>
+    <string name="project_wiki_intro">Look4Sat-BA7OPF-Orekit 是基于 Look4Sat 的定制版，保留上游全部功能，并新增：</string>
     <string name="project_wiki_section_logbook">卫星日志本与 LoTW</string>
     <string name="project_wiki_logbook_1">卫星通联日志本——通联时一键记录呼号、时间、频率、模式、信号报告和网格。</string>
     <string name="project_wiki_logbook_2">LoTW 直传——导入 ARRL 证书后，直接在 App 内把日志上传到 LoTW，无需电脑。</string>
@@ -560,6 +560,9 @@
     <string name="project_wiki_grids_how">用法：地图页开启网格模式 → 设置里同步 LoTW/Wavelog。</string>
     <string name="prefs_outro_thanks" translatable="false">
         • Look4Sat 所有用户及贡献者!
+        \n• Arty Bishop 和 atsunatsu/Look4Sat 貢獻者
+        \n• CS GROUP、Orekit 和 Hipparchus 貢獻者（Apache-2.0）
+        \n• jl1nie/mfsk-core 和 WSJT-X 貢獻者（FT4/JTTY）
         \n• David A. B. Johnson (predict4java)
         \n• Dave Moten (predict4java)
         \n• Alexandru Csete (Gpredict)
@@ -570,8 +573,10 @@
         \n• BH2VSQ BG5JSU（天地图渲染支持）
         \n• BG5JSU（LoTW上传支持）
     </string>
-    <string name="prefs_outro_notice">Look4Sat-BA7OPF 是基于 Look4Sat（GPL-3.0）的非官方修改版，由 BA7OPF 独立维护，与原项目无隶属关系，亦未获其背书。
-上游项目：https://github.com/rt-bishop/Look4Sat</string>
+    <string name="prefs_outro_notice">Look4Sat-BA7OPF-Orekit 是基於 Look4Sat（GPL-3.0）的非官方修改版，由 BA7OPF 獨立維護，採用 Orekit 進行軌道與天文計算。與上游 Look4Sat 及 Orekit 專案無隸屬關係，亦未獲其背書。
+\n上游專案：https://github.com/rt-bishop/Look4Sat
+\n持續合併上游：https://github.com/atsunatsu/Look4Sat
+\nOrekit：https://www.orekit.org（Apache-2.0）</string>
 <string name="prefs_outro_license">基于 GNU GPL v3 许可 · 本程序不提供任何保修</string>
 
     <!-- 匹配页 Mutual match page -->
@@ -986,7 +991,7 @@
 
 <string name="lotw_upload_result_rejected_guidance">LoTW 明确拒绝了本次上传。请查看上方服务器返回的原因，修正问题后重新准备上传。</string>
 
-<string name="lotw_upload_result_unknown_guidance">Look4Sat 无法确认 LoTW 是否接收了本次上传，服务器可能已经收到数据。请先登录 LoTW 核查，不会自动重试。</string>
+<string name="lotw_upload_result_unknown_guidance">Look4Sat-BA7OPF-Orekit 无法确认 LoTW 是否接收了本次上传，服务器可能已经收到数据。请先登录 LoTW 核查，不会自动重试。</string>
 
 <string name="lotw_upload_result_previous_unknown_guidance">之前的上传可能已到达 LoTW。请先登录 LoTW 核查；如果没有这条 QSO，请在“设置 → 日志本”中选中该记录并使用“重传选中”。</string>
 
@@ -1004,7 +1009,7 @@
 
     <string name="update_source_selection">更新源</string>
     <string name="update_source_auto">自动选择（依次尝试）</string>
-    <string name="update_source_github">GitHub · Look4Sat-FT4</string>
+    <string name="update_source_github">GitHub · Look4Sat-BA7OPF-Orekit</string>
     <string name="update_source_ghfast">ghfast.top（代理）</string>
     <string name="update_source_llkk">gh.llkk.cc（代理）</string>
     <string name="update_source_moeyy">github.moeyy.xyz（代理）</string>

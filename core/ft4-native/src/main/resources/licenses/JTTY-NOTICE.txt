@@ -1,5 +1,5 @@
 JTTY PHY, source coding and receiver: jl1nie/mfsk-core
-Pinned source: 707ebed2fb2290279e16ac79146c7a14df8b793b
+Pinned source: df4bb0b349917352c220a442d84bf4661281367f (mfsk-core 0.16.1)
 https://github.com/jl1nie/mfsk-core
 GPL-3.0-only; see mfsk-core-GPL-3.0.txt.
 Derived algorithms and independent oracle fixtures: WSJT-X, K1JT and collaborators.

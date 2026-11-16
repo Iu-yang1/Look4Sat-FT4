@@ -33,14 +33,13 @@ checksum = "b6d2cec3eae94f9f509c767b45932f1ada8350c4bdb85af2fcab4a3c14807981"
 name = "look4sat-ft4"
 version = "0.1.0"
 dependencies = [
- "libm",
  "mfsk-core",
 ]
 
 [[package]]
 name = "mfsk-core"
-version = "0.14.0"
-source = "git+https://github.com/jl1nie/mfsk-core?rev=707ebed2fb2290279e16ac79146c7a14df8b793b#707ebed2fb2290279e16ac79146c7a14df8b793b"
+version = "0.16.1"
+source = "git+https://github.com/jl1nie/mfsk-core?rev=df4bb0b349917352c220a442d84bf4661281367f#df4bb0b349917352c220a442d84bf4661281367f"
 dependencies = [
  "crc",
  "num-complex",

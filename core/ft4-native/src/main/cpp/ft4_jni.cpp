@@ -7,7 +7,7 @@
 #define FT4_ANDROID_ABI "host-x86_64"
 #endif
 #ifndef FT4_UPSTREAM_SHA
-#define FT4_UPSTREAM_SHA "707ebed2fb2290279e16ac79146c7a14df8b793b"
+#define FT4_UPSTREAM_SHA "df4bb0b349917352c220a442d84bf4661281367f"
 #endif
 
 namespace {
@@ -24,7 +24,9 @@ void fail(JNIEnv *env, const char *message) {
     if(type) { env->ThrowNew(type,message);env->DeleteLocalRef(type); }
 }
 jobjectArray native_capabilities(JNIEnv *env,jclass) {
-    const char *values[]={FT4_ANDROID_ABI,"1","1","1","",FT4_UPSTREAM_SHA,"mfsk-core-rust","0.14.0"};
+    char version[32]{};
+    if(l4s_ft4_core_version(version,sizeof(version))!=0) { fail(env,"Unable to read decoder version");return nullptr; }
+    const char *values[]={FT4_ANDROID_ABI,"1","1","1","",FT4_UPSTREAM_SHA,"mfsk-core-rust",version};
     jclass string=env->FindClass("java/lang/String");
     jobjectArray out=env->NewObjectArray(8,string,nullptr);
     for(int i=0;i<8;i++) { jstring s=env->NewStringUTF(values[i]);env->SetObjectArrayElement(out,i,s);env->DeleteLocalRef(s); }

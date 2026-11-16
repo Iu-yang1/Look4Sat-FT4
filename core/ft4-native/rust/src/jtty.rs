@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
-// JTTY algorithms: jl1nie/mfsk-core 707ebed2fb2290279e16ac79146c7a14df8b793b.
+// JTTY algorithms: jl1nie/mfsk-core df4bb0b349917352c220a442d84bf4661281367f.
 use super::{guarded, string, write_text};
 use mfsk_core::jtty::{assemble::MessageUpdate, pack, rx::{Params, Receiver, Stream}, source::ALPHABET, tx};
 use std::{collections::HashMap, ffi::c_char, sync::{Arc, Mutex, OnceLock, atomic::{AtomicBool, AtomicU64, Ordering}}};
@@ -93,6 +93,55 @@ pub unsafe extern "C" fn l4s_jtty_result(id: u64, index: usize, out: *mut Row) -
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn stream_messages(audio: &[i16]) -> Vec<(String, bool)> {
+        let id = l4s_jtty_create();
+        let mut messages = Vec::new();
+        for block in audio.chunks(512) {
+            assert!(unsafe { l4s_jtty_push(id, block.as_ptr(), block.len(), 1500.0, 50.0) } >= 0);
+            for row in get(id).unwrap().rows.lock().unwrap().iter() {
+                messages.push((row.text.clone(), row.complete));
+            }
+        }
+        l4s_jtty_close(id);
+        messages
+    }
+    #[test]
+    fn streaming_rejects_aliases_without_hiding_a_nearby_station() {
+        const FOX: &str = "THE QUICK BROWN FOX JUMPS OVER THE LAZY DOG";
+        let fox = tx::synth_f32(&tones(FOX).unwrap(), 1500.0, 1.0);
+        let mut complete = 0;
+        for trial in 1..=24 {
+            let mut seed = 1000u64 + trial;
+            let mut uniform = || {
+                seed = seed * 16807 % 2147483647;
+                seed as f64 / 2147483647.0
+            };
+            let scale = (2.0f32 * 2500.0 / 6000.0).sqrt() * 10f32.powf(-3.0 / 20.0);
+            let audio: Vec<i16> = (0usize..6000 + fox.len() + 2 * 59 * 384).map(|i| {
+                let gaussian = (-2.0 * uniform().ln()).sqrt() * (std::f64::consts::TAU * uniform()).cos();
+                let signal = i.checked_sub(6000).and_then(|i| fox.get(i)).copied().unwrap_or(0.0);
+                (100.0 * (gaussian as f32 + scale * signal)).round().clamp(-32767.0, 32767.0) as i16
+            }).collect();
+            let messages = stream_messages(&audio);
+            for (text, _) in &messages {
+                assert!(FOX.contains(text.trim()), "Alias at seed {trial}: {text}");
+            }
+            complete += usize::from(messages.iter().any(|(text, end)| text == FOX && *end));
+        }
+        assert!(complete >= 23, "Only {complete}/24 complete streaming messages");
+        let other = tx::synth_f32(&tones("CQ DL3WDG JN68").unwrap(), 1530.0, 12000.0);
+        let start = 2400;
+        let other_start = start + 37 * 384 / 2;
+        let audio: Vec<i16> = (0usize..(start + fox.len()).max(other_start + other.len()) + 2 * 59 * 384).map(|i| {
+            let a = i.checked_sub(start).and_then(|i| fox.get(i)).copied().unwrap_or(0.0) * 14000.0;
+            let b = i.checked_sub(other_start).and_then(|i| other.get(i)).copied().unwrap_or(0.0);
+            (a + b).round().clamp(-32767.0, 32767.0) as i16
+        }).collect();
+        let messages = stream_messages(&audio);
+        for expected in [FOX, "CQ DL3WDG JN68"] {
+            assert!(messages.iter().any(|(text, end)| text == expected && *end), "Missing {expected}: {messages:?}");
+        }
+    }
     #[test] fn validation_and_length() {
         assert!(tones("CQ K1ABC FN42").is_some()); assert!(tones("TEST ~").is_none());
         assert!(tones("你好").is_none()); assert!(tones(&"A".repeat(81)).is_none());

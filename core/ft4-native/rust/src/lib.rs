@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-only
-// FT4-only Android adapter for mfsk-core, Copyright Look4Sat contributors.
-// Algorithm source: jl1nie/mfsk-core 707ebed2fb2290279e16ac79146c7a14df8b793b,
+// FT4/JTTY Android adapter for mfsk-core, Copyright Look4Sat contributors.
+// Algorithm source: jl1nie/mfsk-core df4bb0b349917352c220a442d84bf4661281367f,
 // a GPL-3.0 Rust implementation of WSJT-X by K1JT and collaborators.
 mod jtty;
 use mfsk_core::decoder::{DecodeParams, Decoder, Depth, Ft4Strategy, SlotInput};
-use mfsk_core::engine::tx::message_to_tones;
+use mfsk_core::engine::tx::{message_to_tones, synthesize};
 use mfsk_core::ft4::Ft4;
 use mfsk_core::msg::wsjt77::{pack77_message, Pack77Options};
 use std::collections::HashMap;
@@ -14,7 +14,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
-pub const UPSTREAM: &str = "707ebed2fb2290279e16ac79146c7a14df8b793b";
+pub const UPSTREAM: &str = "df4bb0b349917352c220a442d84bf4661281367f";
 pub const RATE: usize = 12_000;
 pub const SLOT: usize = 90_000;
 pub const START_OFFSET_MS: usize = 500;
@@ -73,38 +73,16 @@ pub fn waveform(text: &str, rate: u32, frequency: f32) -> Option<Vec<f32>> {
     if ![12_000, 24_000, 48_000].contains(&rate) || !frequency.is_finite() || !(0.0..=3000.0).contains(&frequency) { return None; }
     let (_, bits) = canonical(text)?;
     let tones = message_to_tones::<Ft4>(&bits);
-    Some(ft4_waveform(&tones,rate,frequency))
+    Some(synthesize::<Ft4>(&tones, rate, frequency, 1.0))
 }
 
-// WSJT-X gen_ft4wave.f90: FT4 has two full-symbol ramps, unlike FT8's NSPS/8
-// envelope. The pinned generic mfsk-core synth omits these FT4-only symbols.
-// Keep coding and decoding upstream, and correct only this transmit boundary.
-fn ft4_waveform(tones: &[u8], rate: u32, frequency: f32) -> Vec<f32> {
-    let nsps = (rate as usize * 48) / 1000;
-    let twopi = 8.0 * libm::atanf(1.0);
-    let c = (twopi/2.0) * libm::sqrtf(2.0/libm::logf(2.0));
-    let pulse: Vec<f32> = (1..=3*nsps).map(|i| {
-        let t=(i as f32-1.5*nsps as f32)/nsps as f32;
-        0.5*(libm::erff(c*(t+0.5))-libm::erff(c*(t-0.5)))
-    }).collect();
-    let mut increments=vec![0.0f32; (tones.len()+2)*nsps];
-    let peak=twopi/nsps as f32;
-    for (j,tone) in tones.iter().enumerate() {
-        for (i,p) in pulse.iter().enumerate() { increments[j*nsps+i] += peak*p*(*tone as f32); }
-    }
-    let shift=twopi*frequency/rate as f32;
-    let mut phase=0.0f32;
-    let mut wave=Vec::with_capacity(increments.len());
-    for d in increments {
-        wave.push(libm::sinf(phase)); phase=(phase+(d+shift))%twopi;
-    }
-    for i in 0..nsps {
-        let ramp=libm::cosf(twopi*i as f32/(2.0*nsps as f32));
-        wave[i] *= (1.0-ramp)/2.0;
-        let end=(tones.len()+1)*nsps+i;
-        wave[end] *= (1.0+ramp)/2.0;
-    }
-    wave
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn l4s_ft4_core_version(output: *mut c_char, capacity: usize) -> i32 {
+    guarded(-1, || {
+        if output.is_null() || capacity <= mfsk_core::VERSION.len() { return -1; }
+        write_text(mfsk_core::VERSION, unsafe { std::slice::from_raw_parts_mut(output, capacity) });
+        0
+    })
 }
 
 #[unsafe(no_mangle)]
@@ -248,6 +226,43 @@ pub unsafe extern "C" fn l4s_ft4_result(id: u64, index: usize, output: *mut Row)
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn core_identity_matches_the_locked_dependency() {
+        let mut output = [0i8; 32];
+        assert_eq!(unsafe { l4s_ft4_core_version(output.as_mut_ptr(), output.len()) }, 0);
+        assert_eq!(unsafe { std::ffi::CStr::from_ptr(output.as_ptr()) }.to_str().unwrap(), "0.16.1");
+        assert_eq!(unsafe { l4s_ft4_core_version(output.as_mut_ptr(), 6) }, -1);
+        assert_eq!(unsafe { l4s_ft4_core_version(std::ptr::null_mut(), 32) }, -1);
+        assert!(include_str!("../Cargo.lock").contains(UPSTREAM));
+        assert!(include_str!("../../src/main/cpp/CMakeLists.txt").contains(UPSTREAM));
+    }
+    #[test]
+    fn independent_beta6_waveform_oracles() {
+        for (name, tones, bytes, max_error, rms_db) in [
+            ("FT4", include_str!("../tests/fixtures/gen_wave/ft4.tones"),
+                include_bytes!("../tests/fixtures/gen_wave/ft4.i16").as_slice(), 2e-4, -80.0),
+            ("JTTY", include_str!("../tests/fixtures/gen_wave/jtty.tones"),
+                include_bytes!("../tests/fixtures/gen_wave/jtty.i16").as_slice(), 4e-5, -90.0),
+        ] {
+            let tones: Vec<u8> = tones.split_whitespace().map(|v| v.parse().unwrap()).collect();
+            let ours = if name == "FT4" { synthesize::<Ft4>(&tones, 12000, 1500.0, 1.0) }
+                else { mfsk_core::jtty::tx::synth_f32(&tones, 1500.0, 1.0) };
+            let reference: Vec<f32> = bytes.chunks_exact(2)
+                .map(|b| i16::from_le_bytes([b[0], b[1]]) as f32 / 32767.0).collect();
+            assert_eq!(ours.len(), reference.len());
+            let peak = ours.iter().map(|s| s.abs()).fold(0f32, f32::max);
+            let (mut max, mut error, mut power) = (0f32, 0f64, 0f64);
+            for (ours, reference) in ours.iter().zip(reference) {
+                let difference = ours / peak - reference;
+                max = max.max(difference.abs());
+                error += (difference as f64).powi(2);
+                power += (reference as f64).powi(2);
+            }
+            let db = 10.0 * (error / power).log10();
+            eprintln!("{name} WSJT-X beta6: max={max:.8}, relative RMS={db:.2} dB");
+            assert!(max < max_error && db < rms_db, "{name}: max {max}, RMS {db}");
+        }
+    }
     fn golden_pcm() -> Vec<i16> {
         let bytes=include_bytes!("../tests/fixtures/wsjtx-ft4.wav");let mut at=12;
         while at+8<=bytes.len() {

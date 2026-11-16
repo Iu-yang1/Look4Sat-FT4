@@ -12,6 +12,7 @@ void l4s_ft4_cancel(uint64_t);
 void l4s_ft4_close(uint64_t);
 int32_t l4s_ft4_reset(uint64_t);
 bool l4s_ft4_budget_exhausted(uint64_t);
+int32_t l4s_ft4_core_version(char *, size_t);
 int32_t l4s_ft4_validate(const char *, char *, size_t);
 int32_t l4s_ft4_generate(const char *, uint32_t, float, float *, size_t);
 int32_t l4s_ft4_decode(uint64_t, const float *, size_t, int64_t, uint32_t, size_t, bool, float, const char *, const char *, uint64_t);

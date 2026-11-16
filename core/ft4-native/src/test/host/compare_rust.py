@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import tomllib
 import wave
 import numpy as np
 
@@ -19,6 +20,7 @@ class Row(c.Structure):
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--rust", required=True)
+    p.add_argument("--baseline-rust")
     p.add_argument("--fortran", required=True)
     p.add_argument("--jt9", required=True)
     p.add_argument("--work", required=True)
@@ -37,15 +39,25 @@ def main():
     rust.l4s_ft4_close.argtypes = [c.c_uint64]
     rust.l4s_ft4_decode.argtypes = [c.c_uint64,c.c_void_p,c.c_size_t,c.c_int64,c.c_uint32,c.c_size_t,c.c_bool,c.c_float,c.c_char_p,c.c_char_p,c.c_uint64]
     rust.l4s_ft4_result.argtypes = [c.c_uint64,c.c_size_t,c.POINTER(Row)]
+    baseline = None
+    if a.baseline_rust:
+        baseline = c.CDLL(str(Path(a.baseline_rust).resolve()))
+        for symbol in ["l4s_ft4_create", "l4s_ft4_close", "l4s_ft4_decode", "l4s_ft4_result"]:
+            getattr(baseline, symbol).argtypes = getattr(rust, symbol).argtypes
+            getattr(baseline, symbol).restype = getattr(rust, symbol).restype
     ref.reference_ft4_wave.argtypes = [c.c_char_p,c.c_int,c.c_float,c.c_void_p,c.c_int]
     ref.reference_ft4_tones.argtypes = [c.c_char_p,c.c_void_p,c.c_int]
     ref.reference_ft4_wave_tones.argtypes = [c.c_void_p,c.c_int,c.c_float,c.c_void_p,c.c_int]
     work = Path(a.work).resolve(); work.mkdir(parents=True, exist_ok=True)
-    report = {"mfsk_core_commit":"707ebed2fb2290279e16ac79146c7a14df8b793b", "numpy_version":np.__version__,
+    manifest = Path(__file__).resolve().parents[3] / "rust" / "Cargo.toml"
+    upstream = tomllib.loads(manifest.read_text(encoding="utf-8"))["dependencies"]["mfsk-core"]["rev"]
+    report = {"mfsk_core_commit":upstream, "numpy_version":np.__version__,
               "trials_per_level":a.trials,"seed_base":0x4F5434,
               "legacy_fortran_sha256":hashlib.sha256(Path(a.fortran).read_bytes()).hexdigest(),
               "rust_sha256": hashlib.sha256(Path(a.rust).read_bytes()).hexdigest(),
               "oracle_sha256": hashlib.sha256(Path(a.jt9).read_bytes()).hexdigest(), "waveforms": []}
+    if baseline:
+        report["baseline_rust_sha256"] = hashlib.sha256(Path(a.baseline_rust).read_bytes()).hexdigest()
     messages = ["CQ K1ABC FN42", "K1ABC W9XYZ -12", "K1ABC W9XYZ RR73", "TNX 73", "CQ PJ4/K1ABC"]
     for message in messages:
         text = message.encode("ascii")
@@ -94,16 +106,16 @@ def main():
         assert result.returncode==0 and message in text,(message,result.returncode,text)
         report["transmit_interop"].append({"message":message,"decoded_by_official_wsjtx":True})
 
-    def decode(samples, index):
-        handle=rust.l4s_ft4_create()
+    def decode(engine, samples, index):
+        handle=engine.l4s_ft4_create()
         try:
-            n=rust.l4s_ft4_decode(handle,samples.ctypes.data,90000,index,3,3,True,1500,b"ZZ9ZZZ",b"",10000)
+            n=engine.l4s_ft4_decode(handle,samples.ctypes.data,90000,index,3,3,True,1500,b"ZZ9ZZZ",b"",10000)
             assert n>=0, n
             rows=[]
             for i in range(n):
-                r=Row(); assert rust.l4s_ft4_result(handle,i,c.byref(r))==0;rows.append(r.text.decode("ascii"))
+                r=Row(); assert engine.l4s_ft4_result(handle,i,c.byref(r))==0;rows.append(r.text.decode("ascii"))
             return rows
-        finally: rust.l4s_ft4_close(handle)
+        finally: engine.l4s_ft4_close(handle)
 
     if a.sweep:
         message = "CQ K1ABC FN42"
@@ -111,9 +123,13 @@ def main():
         assert ref.reference_ft4_wave(message.encode(),12000,1500,clean.ctypes.data,clean.size)==clean.size
         signal_power=float(np.mean(clean.astype(np.float64)**2))
         scores=[]; false_counts={"rust":0,"wsjtx":0}; corpus=hashlib.sha256()
+        if baseline:
+            false_counts["baseline"] = 0
         jt9=str(Path(a.jt9).resolve())
         for snr in list(range(-23,-11))+[None]:
             hits={"rust":0,"wsjtx":0}
+            if baseline:
+                hits["baseline"] = 0
             for trial in range(a.trials):
                 rng=np.random.default_rng(0x4F5434+trial)
                 samples=rng.normal(0,0.03,90000).astype(np.float32)
@@ -132,8 +148,13 @@ def main():
                                       cwd=folder,env=env,capture_output=True,timeout=30)
                 assert result.returncode==0,(result.returncode,result.stderr)
                 text=(result.stdout+result.stderr).decode("utf-8","replace")
-                rows=decode(samples,trial)
+                rows=decode(rust,samples,trial)
                 hits["rust"]+=message in rows;hits["wsjtx"]+=message in text
+                if baseline:
+                    baseline_rows = decode(baseline, samples, trial)
+                    hits["baseline"] += message in baseline_rows
+                    if snr is None:
+                        false_counts["baseline"] += len(baseline_rows)
                 if snr is None:
                     false_counts["rust"]+=len(rows)
                     false_counts["wsjtx"]+=sum(1 for line in text.splitlines() if " + " in line or " ~ " in line)
@@ -149,9 +170,14 @@ def main():
             raise AssertionError("Extend the upper SNR range")
         degradation=threshold("rust")-threshold("wsjtx")
         report.update(scores=scores,false_decodes=false_counts,threshold_degradation_db=degradation,corpus_sha256=corpus.hexdigest())
+        if baseline:
+            report["baseline_threshold_degradation_db"] = threshold("rust") - threshold("baseline")
         (work/"result.json").write_text(json.dumps(report,indent=2),encoding="utf-8")
         assert degradation<=0.5,report
         assert false_counts["rust"]<=false_counts["wsjtx"],report
+        if baseline:
+            assert report["baseline_threshold_degradation_db"] <= 0.5, report
+            assert false_counts["rust"] <= false_counts["baseline"], report
     (work/"result.json").write_text(json.dumps(report,indent=2),encoding="utf-8")
     print(json.dumps(report,indent=2))
 

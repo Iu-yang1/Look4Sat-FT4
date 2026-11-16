@@ -43,7 +43,7 @@ if(NOT RUST_STATUS EQUAL 0)
 endif()
 add_library(look4sat_ft4 SHARED ft4_jni.cpp jtty_jni.cpp)
 target_compile_definitions(look4sat_ft4 PRIVATE
-    FT4_ANDROID_ABI="${ANDROID_ABI}" FT4_UPSTREAM_SHA="707ebed2fb2290279e16ac79146c7a14df8b793b")
+    FT4_ANDROID_ABI="${ANDROID_ABI}" FT4_UPSTREAM_SHA="df4bb0b349917352c220a442d84bf4661281367f")
 target_compile_options(look4sat_ft4 PRIVATE -fno-fast-math -Wall -Wextra -Werror)
 target_link_options(look4sat_ft4 PRIVATE -Wl,-z,max-page-size=16384 -Wl,-z,common-page-size=16384 -Wl,--exclude-libs,ALL)
 target_link_libraries(look4sat_ft4 PRIVATE "${RUST_TARGET_DIR}/${RUST_TARGET}/release/liblook4sat_ft4.a" android log m dl)

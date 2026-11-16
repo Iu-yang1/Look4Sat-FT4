@@ -21,7 +21,7 @@ data class Ft4Capability(
     val unavailableReason: String = "",
     val upstreamCommit: String = "",
     val engineId: String = "mfsk-core-rust",
-    val engineVersion: String = "0.14.0"
+    val engineVersion: String = "unknown"
 )
 
 data class Ft4DecoderOptions(

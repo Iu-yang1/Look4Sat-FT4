@@ -13,6 +13,8 @@ public final class Ft4JniHostTest {
     public static void main(String[] args) throws Exception {
         Ft4NativeBindings api=Ft4NativeBindings.INSTANCE;
         check("mfsk-core-rust".equals(api.nativeCapabilities()[6]),"Engine identity");
+        check("0.16.1".equals(api.nativeCapabilities()[7]),"Loaded core version");
+        check("df4bb0b349917352c220a442d84bf4661281367f".equals(api.nativeCapabilities()[5]),"Upstream revision");
         check("".equals(api.nativeSelfTest()),"Native TX/RX self-test");
         byte[] data=Files.readAllBytes(Path.of(args[0]));ByteBuffer wav=ByteBuffer.wrap(data).order(ByteOrder.LITTLE_ENDIAN);
         float[] samples=new float[90000];int at=12;

@@ -41,6 +41,7 @@ class BackupRepositoryTest {
     private lateinit var store: BackupSnapshotStore
     private var stops = 0
     private var failRefresh = false
+    private var recordingFailure: Throwable? = null
     private lateinit var repository: BackupRepository
     private val record = QsoRecord(startUtcMillis = 1000, theirCallsign = "JA1ABC", myCallsign = "BA7OPF",
         satelliteName = "FO-29", mode = "MFSK", submode = "JTTY", myGrid = "OL62TI",
@@ -60,6 +61,7 @@ class BackupRepositoryTest {
             when (method.name) {
                 "getState" -> MutableStateFlow(RecordingState())
                 "getFiles" -> MutableStateFlow(emptyList<Any>())
+                "rotateForBackup" -> { recordingFailure?.let { throw it }; Unit }
                 else -> Unit
             }
         } as IRecordingService
@@ -91,6 +93,19 @@ class BackupRepositoryTest {
         repository.inspect(file.toURI().toString(), password.toCharArray())
         val result = await(BackupPhase.PREVIEW, BackupPhase.FAILED)
         assertEquals(result.error, BackupPhase.PREVIEW, result.phase)
+    }
+
+    @Test fun memoryFailureEndsPreparingAndAllowsRetryWithoutChangingData() = runBlocking {
+        preferences.edit().putString("callsign", "BA7OPF").commit()
+        recordingFailure = OutOfMemoryError("injected")
+        repository.create(File(temp.root, "failed.l4sbackup").toURI().toString(),
+            BackupOptions(setOf(BackupCategory.RECORDINGS)), charArrayOf())
+        assertEquals(BackupPhase.FAILED, await(BackupPhase.COMPLETE, BackupPhase.FAILED).phase)
+        assertEquals("BA7OPF", preferences.getString("callsign", ""))
+        assertFalse(repository.state.value.busy)
+        recordingFailure = null
+        backup(setOf(BackupCategory.SETTINGS))
+        Unit
     }
 
     @Test fun selectedCategoriesReplaceAndPreserveUnselectedData() = runBlocking {

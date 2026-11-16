@@ -48,7 +48,11 @@ internal class BackupRepository(
         val previous = active
         mutable.update { it.copy(phase = phase, error = null, completedBytes = 0, totalBytes = 0) }
         active = scope.launch(Dispatchers.IO) {
-            try { previous?.join(); cleanOldWork.await(); block() }
+            try {
+                backupStep("previous-task") { previous?.join() }
+                backupStep("startup-cleanup") { cleanOldWork.await() }
+                block()
+            }
             catch (cancelled: CancellationException) {
                 mutable.update { it.copy(phase = BackupPhase.IDLE) }
                 throw cancelled
@@ -56,6 +60,9 @@ internal class BackupRepository(
                 diagnostics.recordBackupFailure(phase.name.lowercase(java.util.Locale.ROOT), error)
                 val failure = if (error is BackupStepException) error.cause ?: error else error
                 mutable.update { it.copy(phase = BackupPhase.FAILED, error = failure.message ?: failure.javaClass.simpleName) }
+            } catch (error: OutOfMemoryError) {
+                diagnostics.recordBackupFailure(phase.name.lowercase(java.util.Locale.ROOT), error)
+                mutable.update { it.copy(phase = BackupPhase.FAILED, error = error.javaClass.simpleName) }
             } finally { password.fill('\u0000') }
         }
     }
@@ -76,7 +83,7 @@ internal class BackupRepository(
                 if (BackupCategory.RECORDINGS in options.categories) backupStep("recording-rotation") {
                     recordings.rotateForBackup()
                 }
-                val snapshot = DataMaintenance.write {
+                val snapshot = backupStep("snapshot-lock") { DataMaintenance.write {
                     val value = store.snapshot(options.categories)
                     store.writeSnapshot(File(snapshotRoot, "snapshot.json"), value)
                     if (BackupCategory.RECORDINGS in options.categories) {
@@ -91,7 +98,7 @@ internal class BackupRepository(
                         }
                     }
                     value
-                }
+                } }
                 if (BackupCategory.ASTRONOMY in options.categories) {
                     snapshot.astronomyGeneration?.let { generation ->
                         val directory = File(store.astronomyRoot, generation)

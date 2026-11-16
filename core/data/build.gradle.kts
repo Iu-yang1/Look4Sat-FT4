@@ -16,6 +16,7 @@ dependencies {
     implementation(libs.kotlin.serialization)
     testImplementation(testFixtures(project(":core:domain")))
     implementation(libs.orekit)
+    implementation(libs.bouncycastle.core)
     implementation(project(":core:ft4-native"))
     testImplementation(libs.robolectric)
     testImplementation(libs.androidx.test.core)

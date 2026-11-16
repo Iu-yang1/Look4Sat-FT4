@@ -578,7 +578,7 @@
         \n• BH2VSQ BG5JSU（天地图渲染支持）
         \n• BG5JSU（LoTW上传支持）
     </string>
-    <string name="prefs_outro_notice">Look4Sat-BA7OPF-Orekit 是基于 Look4Sat（GPL-3.0）的非官方修改版，由 BA7OPF 独立维护，采用 Orekit 进行轨道与天文计算。与上游 Look4Sat 及 Orekit 项目无隶属关系，亦未获其背书。
+    <string name="prefs_outro_notice">Look4Sat-BA7OPF-Orekit 是基于 Look4Sat（GPL-3.0）的非官方修改版，基于 BA7OPF 开发的基础上进行额外修改，采用 Orekit 进行轨道与天文计算。与上游 Look4Sat 及 Orekit 项目无隶属关系，亦未获其背书。
 \n上游项目：https://github.com/rt-bishop/Look4Sat
 \n持续合并上游：https://github.com/atsunatsu/Look4Sat
 \nOrekit：https://www.orekit.org（Apache-2.0）</string>

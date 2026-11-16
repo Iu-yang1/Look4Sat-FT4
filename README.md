@@ -4,7 +4,7 @@
 
 **BA7OPF Orekit 定制版** — 基于 [rt-bishop/Look4Sat](https://github.com/rt-bishop/Look4Sat)，持续合并 [atsunatsu/Look4Sat](https://github.com/atsunatsu/Look4Sat) 的更新，使用 Orekit 轨道与天文计算引擎，保留 FT4、JTTY、CAT 控制、录音及日志本等功能。
 
-非官方修改版（fork），独立维护；首次发布 2026-09，持续修改中。
+非官方修改版（fork），在 BA7OPF 开发版本的基础上进行额外修改；首次发布 2026-09，持续修改中。
 
 从 **4.4.8-ba7opf-orekit.15.01** 起，应用名为 **Look4Sat-BA7OPF-Orekit**，Android 包名为 `cn.ba7opf.look4sat.orekit`。这是独立安装的应用，不能覆盖旧包名版本；迁移前请在旧版“本地备份与恢复”中导出备份，在新版恢复并核对数据后再决定是否卸载旧版。包含凭据的备份需要密码，导出文件和密码请妥善保存。
 
@@ -48,7 +48,7 @@
 
 ## 许可证
 
-感谢 CS GROUP 与 Orekit／Hipparchus 贡献者提供轨道与天文计算库（Apache-2.0），以及 jl1nie/mfsk-core 与 WSJT-X 贡献者提供 FT4／JTTY 算法。各组件保留原有来源署名与许可证，详见软件内“致谢与声明”及随源码提供的许可文件。本项目由 BA7OPF 独立维护，未获上游项目或 Orekit 项目背书。
+感谢 CS GROUP 与 Orekit／Hipparchus 贡献者提供轨道与天文计算库（Apache-2.0），以及 jl1nie/mfsk-core 与 WSJT-X 贡献者提供 FT4／JTTY 算法。各组件保留原有来源署名与许可证，详见软件内“致谢与声明”及随源码提供的许可文件。本项目在 BA7OPF 开发版本的基础上进行额外修改，未获上游项目或 Orekit 项目背书。
 
 GNU General Public License v3.0。详见 [LICENSE](LICENSE)。
 

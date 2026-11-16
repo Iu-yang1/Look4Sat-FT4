@@ -608,7 +608,7 @@
         \n* BH2VSQ BG5JSU (TianDiTu rendering support)
         \n* BG5JSU (LoTW upload support)
     </string>
-    <string name="prefs_outro_notice">Look4Sat-BA7OPF-Orekit is an unofficial fork of Look4Sat (GPL-3.0), independently maintained by BA7OPF, using Orekit for orbital and astronomical calculations. It is not affiliated with or endorsed by the upstream Look4Sat or Orekit projects.
+    <string name="prefs_outro_notice">Look4Sat-BA7OPF-Orekit is an unofficial fork of Look4Sat (GPL-3.0), with additional modifications to the version developed by BA7OPF, using Orekit for orbital and astronomical calculations. It is not affiliated with or endorsed by the upstream Look4Sat or Orekit projects.
 \nUpstream: https://github.com/rt-bishop/Look4Sat
 \nUpstream updates: https://github.com/atsunatsu/Look4Sat
 \nOrekit: https://www.orekit.org (Apache-2.0)</string>

@@ -27,6 +27,11 @@ val hasReleaseSigning = listOf(
 
 val l4sDevelopment = providers.gradleProperty("l4sDevelopment").orNull == "true"
 
+// CI can opt into an unsigned release build so the untrusted Gradle build job
+// never needs the production keystore. Normal local release builds keep their
+// existing signing configuration.
+val unsignedReleaseBuild = providers.gradleProperty("look4sat.unsignedRelease").orNull == "true"
+
 android {
     namespace = libs.versions.packageName.get()
     defaultConfig {
@@ -37,7 +42,7 @@ android {
         }
     }
     signingConfigs {
-        if (hasReleaseSigning) {
+        if (hasReleaseSigning && !unsignedReleaseBuild) {
             create("release") {
                 storeFile = file(requireNotNull(releaseStoreFile))
                 storePassword = requireNotNull(releaseStorePassword)
@@ -50,9 +55,9 @@ android {
         release {
             if (providers.gradleProperty("catBluetoothTest").orNull == "true") versionNameSuffix = "-ic705-test1"
             if (l4sDevelopment) versionNameSuffix = "-l4s-alpha7"
-            if (hasReleaseSigning) {
-                signingConfig = signingConfigs.getByName("release")
-            }
+            signingConfig = if (hasReleaseSigning && !unsignedReleaseBuild) {
+                signingConfigs.getByName("release")
+            } else null
         }
     }
     if (providers.gradleProperty("orbitBenchmark").orNull == "true") {

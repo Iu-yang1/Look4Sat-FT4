@@ -44,6 +44,10 @@ jobs:
           git diff --binary cd2670f9508002ff94d51457b17da7cf101f283d f55ac70b5ca557b5342eea3b14e09abd755ca072 -- core/data gradle/libs.versions.toml > "$RUNNER_TEMP/pr28.patch"
           test -s "$RUNNER_TEMP/pr28.patch"
           git apply --3way --index "$RUNNER_TEMP/pr28.patch"
+          # Include the identical startup/download race repair in the old-package build.
+          git diff --binary f5a287070fc67230d69a30b9ad46e238db3b53fb 6fd3b297cf5a3acc714422b8b3cb6132eaf6c111 -- core/data/src/main/java/com/rtbishop/look4sat/core/data/astro/AstroDataRepository.kt > "$RUNNER_TEMP/astro-race.patch"
+          test -s "$RUNNER_TEMP/astro-race.patch"
+          git apply --3way --index "$RUNNER_TEMP/astro-race.patch"
           git diff --cached --stat
       - name: Verify version and included repairs
         shell: bash
@@ -52,6 +56,7 @@ jobs:
           if [ "${{ matrix.flavor }}" = orekit ]; then test "$(git rev-parse HEAD)" = "$GITHUB_SHA"; fi
           grep -Fq 'implementation(libs.bouncycastle.core)' core/data/build.gradle.kts
           grep -Fq 'internal fun cipher(encrypt: Boolean' core/data/src/main/java/com/rtbishop/look4sat/core/data/maintenance/BackupArchive.kt
+          grep -Fq 'Startup is not a user download' core/data/src/main/java/com/rtbishop/look4sat/core/data/astro/AstroDataRepository.kt
           grep -Fq "appVersionCode = \"$CODE\"" gradle/libs.versions.toml
           grep -Fq "appVersionName = \"$TAG\"" gradle/libs.versions.toml
           grep -Fq "\"$PKG\"" app/build.gradle.kts
@@ -123,6 +128,17 @@ jobs:
           result={'tag':os.environ['TAG'],'applicationId':os.environ['PKG'],'versionCode':int(os.environ['CODE']),'pr28_included':True,'same_signing_certificate':True,'tests_lint_and_build_passed':True,'assets':assets}
           (out/'verification.json').write_text(json.dumps(result,indent=2,ensure_ascii=False)+'\n',encoding='utf8')
           PY
+      - name: Print and preserve JUnit failure details
+        if: failure()
+        shell: bash
+        run: |
+          find core/data/build/test-results/testDebugUnitTest -name 'TEST-*AstroDataRepositoryTest.xml' -type f -exec sh -c 'echo "TEST RESULT: $1"; head -c 15000 "$1"; echo' _ {} \; || true
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: failed-junit-${{ matrix.flavor }}
+          path: core/data/build/test-results/testDebugUnitTest/
+          if-no-files-found: ignore
       - name: Optional aislop review
         continue-on-error: true
         run: |

@@ -128,6 +128,32 @@ class BackupRepositoryTest {
         assertFalse(store.journal.exists())
     }
 
+    @Test fun legacyAstronomyCacheSurvivesPreviewAndFullRestore() = runBlocking {
+        val contents = temp.newFolder()
+        com.rtbishop.look4sat.core.data.astro.AstroTestData.runtime.directory
+            .copyRecursively(File(contents, "astronomy"))
+        store.writeSnapshot(File(contents, "snapshot.json"), BackupSnapshot())
+        val category = BackupCategory.ASTRONOMY
+        val entries = contents.walkTopDown().filter(File::isFile).map {
+            BackupEntry(it.relativeTo(contents).invariantSeparatorsPath, it.length(), BackupArchive.digest(it), category)
+        }.toList()
+        val manifest = BackupManifest(createdAtMillis = 1, appVersion = "legacy", categories = setOf(category),
+            counts = mapOf(category to 1L), entries = entries)
+        val archive = temp.newFile()
+        BackupArchive.pack(contents, manifest, archive, "password".toCharArray()) {}
+        inspect(archive, "password")
+        repository.preview(setOf(category), RestoreMode.REPLACE)
+        assertEquals(BackupPhase.PREVIEW, await(BackupPhase.PREVIEW, BackupPhase.FAILED).phase)
+        repository.restore(setOf(category), RestoreMode.REPLACE)
+        val result = await(BackupPhase.COMPLETE, BackupPhase.FAILED)
+        assertEquals(result.error, BackupPhase.COMPLETE, result.phase)
+        val generation = context.getSharedPreferences("astronomy", Context.MODE_PRIVATE)
+            .getString("activeDirectory", null)
+        assertNotNull(generation)
+        com.rtbishop.look4sat.core.data.astro.AstroDataPackage.verify(File(store.astronomyRoot, generation!!)) {}
+        Unit
+    }
+
     @Test fun selectedCategoriesReplaceAndPreserveUnselectedData() = runBlocking {
         preferences.edit().putString("callsign", "BA7OPF").commit()
         logs.qsoDao().restoreRecords(listOf(record.toEntity()))

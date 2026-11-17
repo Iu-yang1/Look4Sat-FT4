@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.Uri
 import android.util.AtomicFile
 import com.rtbishop.look4sat.core.data.astro.AstroDataPackage
+import com.rtbishop.look4sat.core.data.astro.AstroPackageMetadata
 import com.rtbishop.look4sat.core.data.astro.OrekitRuntime
 import com.rtbishop.look4sat.core.domain.audio.IRecordingService
 import com.rtbishop.look4sat.core.domain.control.IControlDiagnostics
@@ -106,11 +107,9 @@ internal class BackupRepository(
                     snapshot.astronomyGeneration?.let { generation ->
                         val directory = File(store.astronomyRoot, generation)
                         val metadata = backupStep("astronomy-metadata") { AstroDataPackage.metadata(directory) }
-                        if (!metadata.builtIn) {
-                            directory.listFiles().orEmpty().filter(File::isFile).forEach {
-                                backupStep("astronomy-copy") {
-                                    copyFile(it, File(snapshotRoot, "astronomy/${it.name}"), task::ensureActive)
-                                }
+                        astronomyBackupFiles(directory, metadata).forEach {
+                            backupStep("astronomy-copy") {
+                                copyFile(it, File(snapshotRoot, "astronomy/${it.name}"), task::ensureActive)
                             }
                         }
                     }
@@ -174,7 +173,7 @@ internal class BackupRepository(
                 if (BackupCategory.ASTRONOMY in options.categories) {
                     val files = snapshot.astronomyGeneration?.let { File(store.astronomyRoot, it) }
                         ?.takeIf { it.isDirectory }?.let { directory ->
-                            if (AstroDataPackage.metadata(directory).builtIn) emptyList() else directory.listFiles().orEmpty().toList()
+                            astronomyBackupFiles(directory, AstroDataPackage.metadata(directory))
                         }.orEmpty()
                     counts[BackupCategory.ASTRONOMY] = if (files.isEmpty()) 0 else 1
                     bytes += files.sumOf { it.length() }
@@ -474,7 +473,9 @@ internal class BackupRepository(
         }
         if (File(root, "astronomy/manifest.json").isFile) {
             AstroDataPackage.verify(File(root, "astronomy"), check)
-            OrekitRuntime(File(root, "astronomy"), AstroDataPackage.metadata(File(root, "astronomy"))).validateCoverage(check)
+            // Verification must not rewrite a cache included in an older backup.
+            OrekitRuntime(File(root, "astronomy"), AstroDataPackage.metadata(File(root, "astronomy")),
+                writeCache = false).validateCoverage(check)
         }
     }
 
@@ -512,6 +513,10 @@ internal class BackupRepository(
     }
 
     companion object {
+        internal fun astronomyBackupFiles(directory: File, metadata: AstroPackageMetadata): List<File> =
+            if (metadata.builtIn) emptyList()
+            else (listOf("manifest.json") + metadata.files.map { it.name }).map { File(directory, it) }
+
         private fun recordKey(record: com.rtbishop.look4sat.core.domain.logbook.QsoRecord) =
             com.rtbishop.look4sat.core.data.repository.stableQsoKey(record)
         private fun freeSpace(directory: File) = (directory.usableSpace - 20L * 1024 * 1024).coerceAtLeast(0)

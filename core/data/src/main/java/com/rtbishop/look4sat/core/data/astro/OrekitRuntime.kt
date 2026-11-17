@@ -18,7 +18,11 @@ import java.io.InputStream
 import java.util.Date
 
 /** One immutable data generation. Never installs a process-global Orekit context. */
-internal class OrekitRuntime(val directory: File, metadata: AstroPackageMetadata) : AstroDataSnapshot {
+internal class OrekitRuntime(
+    val directory: File,
+    metadata: AstroPackageMetadata,
+    writeCache: Boolean = true
+) : AstroDataSnapshot {
     override val version = metadata.version
     override val coverageStartMillis = metadata.start
     override val coverageEndMillis = metadata.end
@@ -81,7 +85,7 @@ internal class OrekitRuntime(val directory: File, metadata: AstroPackageMetadata
                 "Earth orientation start does not match the package manifest"
             }
         }
-        if (cachedEop == null) {
+        if (cachedEop == null && writeCache) {
             try {
                 OrekitEopCache.write(directory, cacheIdentity, eopHistory.entries)
             } catch (error: java.io.IOException) {

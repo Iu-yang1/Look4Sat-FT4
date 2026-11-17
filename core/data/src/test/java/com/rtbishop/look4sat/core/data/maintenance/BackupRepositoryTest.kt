@@ -41,6 +41,8 @@ class BackupRepositoryTest {
     private lateinit var store: BackupSnapshotStore
     private var stops = 0
     private var failRefresh = false
+    private var refreshFailure: Error? = null
+    private var recordingFailure: Throwable? = null
     private lateinit var repository: BackupRepository
     private val record = QsoRecord(startUtcMillis = 1000, theirCallsign = "JA1ABC", myCallsign = "BA7OPF",
         satelliteName = "FO-29", mode = "MFSK", submode = "JTTY", myGrid = "OL62TI",
@@ -60,12 +62,14 @@ class BackupRepositoryTest {
             when (method.name) {
                 "getState" -> MutableStateFlow(RecordingState())
                 "getFiles" -> MutableStateFlow(emptyList<Any>())
+                "rotateForBackup" -> { recordingFailure?.let { throw it }; Unit }
                 else -> Unit
             }
         } as IRecordingService
         repository = BackupRepository(context, scope, store, recorder, "test",
             stopServices = { stops++ }, refreshSettings = {
                 if (failRefresh) { failRefresh = false; error("Injected failure after database writes") }
+                refreshFailure?.let { throw it }
             })
     }
 
@@ -91,6 +95,63 @@ class BackupRepositoryTest {
         repository.inspect(file.toURI().toString(), password.toCharArray())
         val result = await(BackupPhase.PREVIEW, BackupPhase.FAILED)
         assertEquals(result.error, BackupPhase.PREVIEW, result.phase)
+    }
+
+    @Test fun memoryFailureEndsPreparingAndAllowsRetryWithoutChangingData() = runBlocking {
+        preferences.edit().putString("callsign", "BA7OPF").commit()
+        recordingFailure = OutOfMemoryError("injected")
+        repository.create(File(temp.root, "failed.l4sbackup").toURI().toString(),
+            BackupOptions(setOf(BackupCategory.RECORDINGS)), charArrayOf())
+        assertEquals(BackupPhase.FAILED, await(BackupPhase.COMPLETE, BackupPhase.FAILED).phase)
+        assertEquals("BA7OPF", preferences.getString("callsign", ""))
+        assertFalse(repository.state.value.busy)
+        recordingFailure = null
+        backup(setOf(BackupCategory.SETTINGS))
+        Unit
+    }
+
+    @Test fun memoryFailureDuringRestoreKeepsRecoveryJournalUntilRestart() = runBlocking {
+        preferences.edit().putString("callsign", "BACKUP").commit()
+        val archive = backup(setOf(BackupCategory.SETTINGS))
+        preferences.edit().putString("callsign", "ORIGINAL").commit()
+        inspect(archive)
+        refreshFailure = OutOfMemoryError("injected after writes")
+        repository.restore(setOf(BackupCategory.SETTINGS), RestoreMode.REPLACE)
+        val result = await(BackupPhase.COMPLETE, BackupPhase.FAILED)
+        assertEquals(BackupPhase.FAILED, result.phase)
+        assertTrue(result.needsRestart)
+        assertTrue(DataMaintenance.restartRequired)
+        assertTrue(File(store.journal, "ready").isFile)
+        DataMaintenance.restartRequired = false
+        BackupRepository.recover(store)
+        assertEquals("ORIGINAL", preferences.getString("callsign", ""))
+        assertFalse(store.journal.exists())
+    }
+
+    @Test fun legacyAstronomyCacheSurvivesPreviewAndFullRestore() = runBlocking {
+        val contents = temp.newFolder()
+        com.rtbishop.look4sat.core.data.astro.AstroTestData.runtime.directory
+            .copyRecursively(File(contents, "astronomy"))
+        store.writeSnapshot(File(contents, "snapshot.json"), BackupSnapshot())
+        val category = BackupCategory.ASTRONOMY
+        val entries = contents.walkTopDown().filter(File::isFile).map {
+            BackupEntry(it.relativeTo(contents).invariantSeparatorsPath, it.length(), BackupArchive.digest(it), category)
+        }.toList()
+        val manifest = BackupManifest(createdAtMillis = 1, appVersion = "legacy", categories = setOf(category),
+            counts = mapOf(category to 1L), entries = entries)
+        val archive = temp.newFile()
+        BackupArchive.pack(contents, manifest, archive, "password".toCharArray()) {}
+        inspect(archive, "password")
+        repository.preview(setOf(category), RestoreMode.REPLACE)
+        assertEquals(BackupPhase.PREVIEW, await(BackupPhase.PREVIEW, BackupPhase.FAILED).phase)
+        repository.restore(setOf(category), RestoreMode.REPLACE)
+        val result = await(BackupPhase.COMPLETE, BackupPhase.FAILED)
+        assertEquals(result.error, BackupPhase.COMPLETE, result.phase)
+        val generation = context.getSharedPreferences("astronomy", Context.MODE_PRIVATE)
+            .getString("activeDirectory", null)
+        assertNotNull(generation)
+        com.rtbishop.look4sat.core.data.astro.AstroDataPackage.verify(File(store.astronomyRoot, generation!!)) {}
+        Unit
     }
 
     @Test fun selectedCategoriesReplaceAndPreserveUnselectedData() = runBlocking {
@@ -208,6 +269,23 @@ class BackupRepositoryTest {
         store.apply(snapshot, setOf(BackupCategory.SETTINGS), RestoreMode.REPLACE)
         assertEquals(20f, schedule.getFloat("minimum_elevation_value", 0f), 0f)
         assertEquals("""[{"cached":true}]""", schedule.getString("events", ""))
+    }
+
+    @Test fun unnamedLegacyPreferencesDoNotPreventBackupOrReplacingNamedSettings() = runBlocking {
+        preferences.edit().putBoolean(null, true).putString("callsign", "BA7OPF").commit()
+        val schedule = context.getSharedPreferences("pass_schedule_preferences", Context.MODE_PRIVATE)
+        schedule.edit().putBoolean(null, true).putBoolean("notify_at_start", true).commit()
+        assertTrue(preferences.all.containsKey(null))
+        val file = backup(setOf(BackupCategory.SETTINGS))
+        inspect(file)
+        preferences.edit().putString("callsign", "CHANGED").putString("new-setting", "remove").commit()
+        repository.restore(setOf(BackupCategory.SETTINGS), RestoreMode.REPLACE)
+        assertTrue(await(BackupPhase.COMPLETE, BackupPhase.FAILED).needsRestart)
+        assertEquals("BA7OPF", preferences.getString("callsign", ""))
+        assertFalse(preferences.contains("new-setting"))
+        assertTrue(preferences.getBoolean(null, false))
+        assertTrue(schedule.getBoolean(null, false))
+        assertTrue(schedule.getBoolean("notify_at_start", false))
     }
 
     @Test fun startupJournalRestoresUncommittedChangesAndIsIdempotent() {

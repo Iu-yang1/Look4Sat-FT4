@@ -4,8 +4,11 @@ import android.content.Context
 import android.net.Uri
 import android.util.AtomicFile
 import com.rtbishop.look4sat.core.data.astro.AstroDataPackage
+import com.rtbishop.look4sat.core.data.astro.AstroPackageMetadata
 import com.rtbishop.look4sat.core.data.astro.OrekitRuntime
 import com.rtbishop.look4sat.core.domain.audio.IRecordingService
+import com.rtbishop.look4sat.core.domain.control.IControlDiagnostics
+import com.rtbishop.look4sat.core.domain.control.NoOpControlDiagnostics
 import com.rtbishop.look4sat.core.domain.maintenance.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -23,7 +26,8 @@ internal class BackupRepository(
     private val recordings: IRecordingService,
     private val version: String,
     private val stopServices: suspend () -> Unit,
-    private val refreshSettings: () -> Unit
+    private val refreshSettings: () -> Unit,
+    private val diagnostics: IControlDiagnostics = NoOpControlDiagnostics
 ) : IBackupRepository {
     private val history = context.getSharedPreferences("backup-history", Context.MODE_PRIVATE)
     private val mutable = MutableStateFlow(BackupState(
@@ -45,12 +49,24 @@ internal class BackupRepository(
         val previous = active
         mutable.update { it.copy(phase = phase, error = null, completedBytes = 0, totalBytes = 0) }
         active = scope.launch(Dispatchers.IO) {
-            try { previous?.join(); cleanOldWork.await(); block() }
+            try {
+                backupStep("previous-task") { previous?.join() }
+                backupStep("startup-cleanup") { cleanOldWork.await() }
+                block()
+            }
             catch (cancelled: CancellationException) {
                 mutable.update { it.copy(phase = BackupPhase.IDLE) }
                 throw cancelled
             } catch (error: Exception) {
-                mutable.update { it.copy(phase = BackupPhase.FAILED, error = error.message ?: error.javaClass.simpleName) }
+                diagnostics.recordBackupFailure(phase.name.lowercase(java.util.Locale.ROOT), error)
+                val failure = if (error is BackupStepException) error.cause ?: error else error
+                mutable.update { it.copy(phase = BackupPhase.FAILED, error = failure.message ?: failure.javaClass.simpleName) }
+            } catch (error: OutOfMemoryError) {
+                diagnostics.recordBackupFailure(phase.name.lowercase(java.util.Locale.ROOT), error)
+                val restart = phase == BackupPhase.RESTORING
+                if (restart) DataMaintenance.restartRequired = true
+                mutable.update { it.copy(phase = BackupPhase.FAILED, error = error.javaClass.simpleName,
+                    needsRestart = it.needsRestart || restart) }
             } finally { password.fill('\u0000') }
         }
     }
@@ -68,8 +84,10 @@ internal class BackupRepository(
             val archive = File(work, "archive.l4sbackup")
             val snapshotRoot = File(work, "contents").apply { check(mkdirs()) }
             try {
-                if (BackupCategory.RECORDINGS in options.categories) recordings.rotateForBackup()
-                val snapshot = DataMaintenance.write {
+                if (BackupCategory.RECORDINGS in options.categories) backupStep("recording-rotation") {
+                    recordings.rotateForBackup()
+                }
+                val snapshot = backupStep("snapshot-lock") { DataMaintenance.write {
                     val value = store.snapshot(options.categories)
                     store.writeSnapshot(File(snapshotRoot, "snapshot.json"), value)
                     if (BackupCategory.RECORDINGS in options.categories) {
@@ -77,24 +95,26 @@ internal class BackupRepository(
                             directory.listFiles().orEmpty().filter {
                                 it.isFile && (it.name.endsWith(".wav") || it.name.endsWith(".wav.json"))
                             }.forEach { file ->
-                                copyFile(file, File(snapshotRoot, "recordings/$name/${file.name}"), task::ensureActive)
+                                backupStep("recording-copy") {
+                                    copyFile(file, File(snapshotRoot, "recordings/$name/${file.name}"), task::ensureActive)
+                                }
                             }
                         }
                     }
                     value
-                }
+                } }
                 if (BackupCategory.ASTRONOMY in options.categories) {
                     snapshot.astronomyGeneration?.let { generation ->
                         val directory = File(store.astronomyRoot, generation)
-                        val metadata = AstroDataPackage.metadata(directory)
-                        if (!metadata.builtIn) {
-                            directory.listFiles().orEmpty().filter(File::isFile).forEach {
+                        val metadata = backupStep("astronomy-metadata") { AstroDataPackage.metadata(directory) }
+                        astronomyBackupFiles(directory, metadata).forEach {
+                            backupStep("astronomy-copy") {
                                 copyFile(it, File(snapshotRoot, "astronomy/${it.name}"), task::ensureActive)
                             }
                         }
                     }
                 }
-                val entries = entries(snapshotRoot, options.categories, task::ensureActive)
+                val entries = backupStep("checksums") { entries(snapshotRoot, options.categories, task::ensureActive) }
                 val counts = store.counts(snapshot, options.categories).toMutableMap()
                 if (BackupCategory.RECORDINGS in options.categories)
                     counts[BackupCategory.RECORDINGS] = entries.count { it.category == BackupCategory.RECORDINGS && it.path.endsWith(".wav") }.toLong()
@@ -104,18 +124,20 @@ internal class BackupRepository(
                     createdAtMillis = System.currentTimeMillis(), appVersion = version,
                     categories = options.categories, counts = counts, entries = entries
                 )
-                BackupArchive.pack(snapshotRoot, description, archive, password, task::ensureActive)
+                backupStep("archive") { BackupArchive.pack(snapshotRoot, description, archive, password, task::ensureActive) }
                 password.fill('\u0000')
                 check(snapshotRoot.deleteRecursively()) { "Could not remove backup staging data" }
                 mutable.update { it.copy(phase = BackupPhase.EXPORTING, totalBytes = archive.length()) }
                 val uri = Uri.parse(destinationUri)
                 try {
-                    checkNotNull(context.contentResolver.openOutputStream(uri, "wt")) { "Cannot open backup destination" }.use { output ->
-                        archive.inputStream().use { input ->
-                            BackupArchive.copy(input, output, check = {
-                                task.ensureActive()
-                                mutable.update { it.copy(completedBytes = archive.length().coerceAtMost(it.completedBytes + 65536)) }
-                            })
+                    backupStep("export") {
+                        checkNotNull(context.contentResolver.openOutputStream(uri, "wt")) { "Cannot open backup destination" }.use { output ->
+                            archive.inputStream().use { input ->
+                                BackupArchive.copy(input, output, check = {
+                                    task.ensureActive()
+                                    mutable.update { it.copy(completedBytes = archive.length().coerceAtMost(it.completedBytes + 65536)) }
+                                })
+                            }
                         }
                     }
                 } catch (error: Exception) {
@@ -151,7 +173,7 @@ internal class BackupRepository(
                 if (BackupCategory.ASTRONOMY in options.categories) {
                     val files = snapshot.astronomyGeneration?.let { File(store.astronomyRoot, it) }
                         ?.takeIf { it.isDirectory }?.let { directory ->
-                            if (AstroDataPackage.metadata(directory).builtIn) emptyList() else directory.listFiles().orEmpty().toList()
+                            astronomyBackupFiles(directory, AstroDataPackage.metadata(directory))
                         }.orEmpty()
                     counts[BackupCategory.ASTRONOMY] = if (files.isEmpty()) 0 else 1
                     bytes += files.sumOf { it.length() }
@@ -159,7 +181,10 @@ internal class BackupRepository(
                 currentCoroutineContext().ensureActive()
                 mutable.update { it.copy(estimatedBytes = bytes, availableCounts = counts) }
             } catch (cancelled: CancellationException) { throw cancelled }
-            catch (_: Exception) { mutable.update { it.copy(estimatedBytes = null, availableCounts = emptyMap()) } }
+            catch (error: Exception) {
+                diagnostics.recordBackupFailure("estimate", error)
+                mutable.update { it.copy(estimatedBytes = null, availableCounts = emptyMap()) }
+            }
         }
     }
 
@@ -448,7 +473,9 @@ internal class BackupRepository(
         }
         if (File(root, "astronomy/manifest.json").isFile) {
             AstroDataPackage.verify(File(root, "astronomy"), check)
-            OrekitRuntime(File(root, "astronomy"), AstroDataPackage.metadata(File(root, "astronomy"))).validateCoverage(check)
+            // Verification must not rewrite a cache included in an older backup.
+            OrekitRuntime(File(root, "astronomy"), AstroDataPackage.metadata(File(root, "astronomy")),
+                writeCache = false).validateCoverage(check)
         }
     }
 
@@ -486,6 +513,10 @@ internal class BackupRepository(
     }
 
     companion object {
+        internal fun astronomyBackupFiles(directory: File, metadata: AstroPackageMetadata): List<File> =
+            if (metadata.builtIn) emptyList()
+            else (listOf("manifest.json") + metadata.files.map { it.name }).map { File(directory, it) }
+
         private fun recordKey(record: com.rtbishop.look4sat.core.domain.logbook.QsoRecord) =
             com.rtbishop.look4sat.core.data.repository.stableQsoKey(record)
         private fun freeSpace(directory: File) = (directory.usableSpace - 20L * 1024 * 1024).coerceAtLeast(0)

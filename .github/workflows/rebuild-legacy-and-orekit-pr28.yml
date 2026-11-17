@@ -1,0 +1,222 @@
+name: Rebuild 14.11 and 15.01 after PR 28
+on:
+  push:
+    branches: [main]
+    paths: [.github/workflows/rebuild-legacy-and-orekit-pr28.yml]
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: rebuild-14-11-15-01
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {flavor: legacy, tag: "4.4.8-ba7opf.14.11", pkg: "cn.ba7opf.look4sat", code: "634", apk: "Look4Sat-FT4-4.4.8-ba7opf.14.11-43588f3a-release.apk", aab: "Look4Sat-FT4-4.4.8-ba7opf.14.11-43588f3a-release.aab"}
+          - {flavor: orekit, tag: "4.4.8-ba7opf-orekit.15.01", pkg: "cn.ba7opf.look4sat.orekit", code: "635", apk: "Look4Sat-BA7OPF-Orekit-v4.4.8-ba7opf-orekit.15.01-universal-release.apk", aab: "Look4Sat-BA7OPF-Orekit-v4.4.8-ba7opf-orekit.15.01-release.aab"}
+    env:
+      TAG: ${{ matrix.tag }}
+      PKG: ${{ matrix.pkg }}
+      CODE: ${{ matrix.code }}
+      APK: ${{ matrix.apk }}
+      AAB: ${{ matrix.aab }}
+      GH_TOKEN: ${{ github.token }}
+      LOOK4SAT_RELEASE_STORE_PASSWORD: ${{ secrets.KEY_STORE_PASSWORD }}
+      LOOK4SAT_RELEASE_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+      LOOK4SAT_RELEASE_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ matrix.flavor == 'legacy' && '4.4.8-ba7opf.14.11' || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Backport merged PR 28 to original legacy tag
+        if: matrix.flavor == 'legacy'
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = 43588f3a542da51d8da4ae47f3ca2eb3ed69ec8d
+          git diff --binary cd2670f9508002ff94d51457b17da7cf101f283d f55ac70b5ca557b5342eea3b14e09abd755ca072 -- core/data gradle/libs.versions.toml > "$RUNNER_TEMP/pr28.patch"
+          test -s "$RUNNER_TEMP/pr28.patch"
+          git apply --3way --index "$RUNNER_TEMP/pr28.patch"
+          # Include the identical startup/download race repair in the old-package build.
+          git diff --binary f5a287070fc67230d69a30b9ad46e238db3b53fb 6fd3b297cf5a3acc714422b8b3cb6132eaf6c111 -- core/data/src/main/java/com/rtbishop/look4sat/core/data/astro/AstroDataRepository.kt > "$RUNNER_TEMP/astro-race.patch"
+          test -s "$RUNNER_TEMP/astro-race.patch"
+          git apply --3way --index "$RUNNER_TEMP/astro-race.patch"
+          # The legacy test must exercise the same deterministic in-flight request behavior.
+          git diff --binary 6fd3b297cf5a3acc714422b8b3cb6132eaf6c111 226bd60fcfb32e82ac06fa53cee587a77d05976b -- core/data/src/test/java/com/rtbishop/look4sat/core/data/astro/AstroDataRepositoryTest.kt > "$RUNNER_TEMP/astro-test.patch"
+          test -s "$RUNNER_TEMP/astro-test.patch"
+          git apply --3way --index "$RUNNER_TEMP/astro-test.patch"
+          git diff --cached --stat
+      - name: Verify version and included repairs
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ matrix.flavor }}" = orekit ]; then test "$(git rev-parse HEAD)" = "$GITHUB_SHA"; fi
+          grep -Fq 'implementation(libs.bouncycastle.core)' core/data/build.gradle.kts
+          grep -Fq 'internal fun cipher(encrypt: Boolean' core/data/src/main/java/com/rtbishop/look4sat/core/data/maintenance/BackupArchive.kt
+          grep -Fq 'Startup is not a user download' core/data/src/main/java/com/rtbishop/look4sat/core/data/astro/AstroDataRepository.kt
+          grep -Fq "appVersionCode = \"$CODE\"" gradle/libs.versions.toml
+          grep -Fq "appVersionName = \"$TAG\"" gradle/libs.versions.toml
+          grep -Fq "\"$PKG\"" app/build.gradle.kts
+      - uses: actions/setup-java@v4
+        with: {distribution: temurin, java-version: '21'}
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Install pinned Android tools
+        run: |
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'ndk;26.1.10909125' 'cmake;3.22.1'
+      - uses: dtolnay/rust-toolchain@1.98.1
+        with: {targets: 'aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android'}
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ft4-rust-1.98.1-${{ runner.os }}-${{ hashFiles('core/ft4-native/rust/Cargo.lock') }}
+      - name: Prepare release signing keystore
+        shell: bash
+        env:
+          KEY_STORE_BASE64: ${{ secrets.KEY_STORE }}
+        run: |
+          set -euo pipefail
+          for name in KEY_STORE_BASE64 LOOK4SAT_RELEASE_STORE_PASSWORD LOOK4SAT_RELEASE_KEY_ALIAS LOOK4SAT_RELEASE_KEY_PASSWORD; do
+            test -n "$(printenv "$name")" || { echo "::error::Missing signing secret $name"; exit 1; }
+          done
+          printf '%s' "$KEY_STORE_BASE64" | base64 --decode > "$RUNNER_TEMP/release.jks"
+          echo "LOOK4SAT_RELEASE_STORE_FILE=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
+      - name: Run tests, lint and build signed APK/AAB
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/check-cw-template-icu.py
+          ./gradlew --no-daemon :core:domain:test :core:data:testDebugUnitTest :feature:radar:testDebugUnitTest :feature:map:testDebugUnitTest :app:compileDebugKotlin :app:lintRelease :app:assembleRelease :app:bundleRelease
+      - name: Validate package, version, ABI and original signing certificate
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(find app/build/outputs/apk/release -name '*.apk' -type f | wc -l)" = 1
+          test "$(find app/build/outputs/bundle/release -name '*.aab' -type f | wc -l)" = 1
+          mkdir -p dist original
+          cp "$(find app/build/outputs/apk/release -name '*.apk' -type f)" "dist/$APK"
+          cp "$(find app/build/outputs/bundle/release -name '*.aab' -type f)" "dist/$AAB"
+          bt=$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)
+          "$bt/apksigner" verify --verbose --print-certs "dist/$APK" > "$RUNNER_TEMP/newcert"
+          "$bt/zipalign" -c -v 4 "dist/$APK"
+          badging=$("$bt/aapt" dump badging "dist/$APK" | head -1)
+          echo "$badging"
+          [[ "$badging" == *"name='$PKG'"* ]]
+          [[ "$badging" == *"versionCode='$CODE'"* ]]
+          [[ "$badging" == *"versionName='$TAG'"* ]]
+          unzip -Z1 "dist/$APK" | grep -Fx lib/arm64-v8a/liblook4sat_ft4.so
+          unzip -Z1 "dist/$APK" | grep -Fx lib/armeabi-v7a/liblook4sat_ft4.so
+          jarsigner -verify "dist/$AAB"
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern "$APK" --dir original
+          "$bt/apksigner" verify --verbose --print-certs "original/$APK" > "$RUNNER_TEMP/oldcert"
+          sed -nE 's/.*certificate SHA-256 digest: ([[:xdigit:]]+).*/\1/p' "$RUNNER_TEMP/newcert" | head -1 > "$RUNNER_TEMP/newhash"
+          sed -nE 's/.*certificate SHA-256 digest: ([[:xdigit:]]+).*/\1/p' "$RUNNER_TEMP/oldcert" | head -1 > "$RUNNER_TEMP/oldhash"
+          test -s "$RUNNER_TEMP/newhash"
+          cmp "$RUNNER_TEMP/oldhash" "$RUNNER_TEMP/newhash"
+          (cd dist && sha256sum "$APK" "$AAB" > binary-sha256.txt)
+          python3 - <<'PY'
+          import os,json,hashlib,pathlib
+          out=pathlib.Path('dist')
+          assets={}
+          for name in (os.environ['APK'],os.environ['AAB']):
+              p=out/name
+              assets[name]={'sha256':hashlib.sha256(p.read_bytes()).hexdigest(),'size':p.stat().st_size}
+          result={'tag':os.environ['TAG'],'applicationId':os.environ['PKG'],'versionCode':int(os.environ['CODE']),'pr28_included':True,'same_signing_certificate':True,'tests_lint_and_build_passed':True,'assets':assets}
+          (out/'verification.json').write_text(json.dumps(result,indent=2,ensure_ascii=False)+'\n',encoding='utf8')
+          PY
+      - name: Print and preserve JUnit failure details
+        if: failure()
+        shell: bash
+        run: |
+          find core/data/build/test-results/testDebugUnitTest -name 'TEST-*AstroDataRepositoryTest.xml' -type f -exec sh -c 'echo "TEST RESULT: $1"; head -c 15000 "$1"; echo' _ {} \; || true
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: failed-junit-${{ matrix.flavor }}
+          path: core/data/build/test-results/testDebugUnitTest/
+          if-no-files-found: ignore
+      - name: Optional aislop review
+        continue-on-error: true
+        run: |
+          if [ "${{ matrix.flavor }}" = legacy ]; then base=HEAD; else base=cd2670f9508002ff94d51457b17da7cf101f283d; fi
+          npx --yes aislop@latest scan --changes --base "$base" --json > "$RUNNER_TEMP/aislop.json"
+          test -s "$RUNNER_TEMP/aislop.json"
+      - uses: actions/upload-artifact@v4
+        with: {name: 'look4sat-${{ matrix.flavor }}-pr28', path: 'dist/', if-no-files-found: error}
+      - name: Erase keystore
+        if: always()
+        run: rm -f "$RUNNER_TEMP/release.jks"
+  publish:
+    needs: [build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {flavor: legacy, tag: "4.4.8-ba7opf.14.11", apk: "Look4Sat-FT4-4.4.8-ba7opf.14.11-43588f3a-release.apk", aab: "Look4Sat-FT4-4.4.8-ba7opf.14.11-43588f3a-release.aab"}
+          - {flavor: orekit, tag: "4.4.8-ba7opf-orekit.15.01", apk: "Look4Sat-BA7OPF-Orekit-v4.4.8-ba7opf-orekit.15.01-universal-release.apk", aab: "Look4Sat-BA7OPF-Orekit-v4.4.8-ba7opf-orekit.15.01-release.aab"}
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: ${{ matrix.tag }}
+      APK: ${{ matrix.apk }}
+      AAB: ${{ matrix.aab }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with: {name: 'look4sat-${{ matrix.flavor }}-pr28', path: dist}
+      - name: Replace only the two existing release binaries and verification
+        shell: bash
+        run: |
+          set -euo pipefail
+          (cd dist && sha256sum --check binary-sha256.txt)
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json tagName --jq .tagName | grep -Fx "$TAG"
+          gh release upload "$TAG" "dist/$APK" "dist/$AAB" dist/verification.json --repo "$GITHUB_REPOSITORY" --clobber
+      - name: Refresh notes, update manifest and checksums; verify uploaded digests
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json body --jq .body > "$RUNNER_TEMP/notes.md"
+          cat >> "$RUNNER_TEMP/notes.md" <<'NOTES'
+
+          ## 2026-11-17 正式重构建 / signed rebuild with PR #28
+          纳入 PR #28 修复：流式 AES-GCM 备份恢复、天文缓存保护、备份分阶段诊断和设置初始化修复。保留当前版本的原包名、版本码、发布签名；单元测试、Lint 和签名构建通过。未进行实机 CAT/PTT/RF 验证或 Google Play 正式发布。
+          Includes merged PR #28 backup and settings fixes. Original package name, version code and signing certificate are unchanged. Tests, lint and signed APK/AAB build pass; no device, CAT/PTT/RF or Google Play production verification is claimed.
+          NOTES
+          gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --notes-file "$RUNNER_TEMP/notes.md"
+          gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" > "$RUNNER_TEMP/release.json"
+          python3 - <<'PY'
+          import os,json,pathlib
+          r=json.loads((pathlib.Path(os.environ['RUNNER_TEMP'])/'release.json').read_text())
+          assert r['tag_name']==os.environ['TAG'] and not r['draft'] and not r['prerelease']
+          eligible=[a for a in r['assets'] if a['name']==os.environ['APK']]
+          assert len(eligible)==1
+          a=eligible[0]
+          assert a['state']=='uploaded' and 100000<a['size']<250000000
+          data={'tag_name':r['tag_name'],'html_url':r['html_url'],'name':r['name'],'body':r['body'],'draft':False,'prerelease':False,'assets':[{k:a[k] for k in ('name','browser_download_url','content_type','state','size')}]}
+          pathlib.Path('dist/update.json').write_text(json.dumps(data,ensure_ascii=False,indent=2)+'\n',encoding='utf8')
+          PY
+          gh release upload "$TAG" dist/update.json --repo "$GITHUB_REPOSITORY" --clobber
+          (cd dist && sha256sum "$APK" "$AAB" verification.json update.json > SHA256SUMS.txt)
+          gh release upload "$TAG" dist/SHA256SUMS.txt --repo "$GITHUB_REPOSITORY" --clobber
+          if [ "${{ matrix.flavor }}" = orekit ]; then
+            (cd dist && sha256sum "$APK" "$AAB" > "SHA256SUMS-$TAG.txt")
+            gh release upload "$TAG" "dist/SHA256SUMS-$TAG.txt" --repo "$GITHUB_REPOSITORY" --clobber
+          fi
+          gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" > "$RUNNER_TEMP/after.json"
+          python3 - <<'PY'
+          import os,json,hashlib,pathlib
+          r=json.loads((pathlib.Path(os.environ['RUNNER_TEMP'])/'after.json').read_text())
+          items={a['name']:a for a in r['assets']}
+          for name in (os.environ['APK'],os.environ['AAB'],'verification.json','update.json','SHA256SUMS.txt'):
+              p=pathlib.Path('dist')/name
+              assert items[name]['digest']=='sha256:'+hashlib.sha256(p.read_bytes()).hexdigest(),name
+          print('Release replacement verified:',os.environ['TAG'])
+          PY

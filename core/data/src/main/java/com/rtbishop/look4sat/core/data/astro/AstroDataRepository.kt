@@ -74,7 +74,9 @@ class AstroDataRepository(
     private val generations = mutableListOf<java.lang.ref.WeakReference<OrekitRuntime>>()
 
     init {
-        downloadJob = scope.launch(Dispatchers.IO) {
+        // Startup is not a user download: MISSING may be published before this job completes.
+        // Keeping it in downloadJob would suppress the first download request after MISSING.
+        scope.launch(Dispatchers.IO) {
             val started = System.nanoTime()
             val saved = preferences.getString("activeDirectory", null)
             if (saved != null) {

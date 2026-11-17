@@ -24,6 +24,8 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import java.nio.file.Files
 import java.util.UUID
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
@@ -127,8 +129,12 @@ class AstroDataRepositoryTest {
         val root = Files.createTempDirectory("astro-download-").toFile()
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         val seen = mutableListOf<String>()
+        val requestStarted = CountDownLatch(1)
+        val releaseRequest = CountDownLatch(1)
         val client = OkHttpClient.Builder().addInterceptor { chain ->
             synchronized(seen) { seen.add(chain.request().url.toString()) }
+            requestStarted.countDown()
+            check(releaseRequest.await(10, TimeUnit.SECONDS)) { "Test request was not released" }
             Response.Builder().request(chain.request()).protocol(Protocol.HTTP_1_1).code(404)
                 .message("Not found").body("".toResponseBody()).build()
         }.build()
@@ -139,12 +145,15 @@ class AstroDataRepositoryTest {
             repository.setDownloadUrl("https://example.org/data.zip")
             assertTrue(seen.isEmpty())
             repository.download()
+            assertTrue("First HTTP request did not start", requestStarted.await(10, TimeUnit.SECONDS))
+            // Confirm that a second call while the first request is in flight is coalesced.
             repository.download()
+            releaseRequest.countDown()
             withTimeout(10000) { repository.state.first { it.phase == AstroDataPhase.FAILED } }
             assertEquals(listOf("https://example.org/data.zip"), seen)
             assertFalse(repository.state.value.ready)
             assertThrows(AstroDataUnavailableException::class.java) { repository.snapshot() }
-        } finally { scope.cancel(); root.deleteRecursively() }
+        } finally { releaseRequest.countDown(); scope.cancel(); root.deleteRecursively() }
     }
 
     @Test fun failedUpdateAndUrlEditPreserveThePinnedPreviousGeneration() = runBlocking<Unit> {

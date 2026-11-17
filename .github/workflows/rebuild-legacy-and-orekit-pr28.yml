@@ -48,6 +48,10 @@ jobs:
           git diff --binary f5a287070fc67230d69a30b9ad46e238db3b53fb 6fd3b297cf5a3acc714422b8b3cb6132eaf6c111 -- core/data/src/main/java/com/rtbishop/look4sat/core/data/astro/AstroDataRepository.kt > "$RUNNER_TEMP/astro-race.patch"
           test -s "$RUNNER_TEMP/astro-race.patch"
           git apply --3way --index "$RUNNER_TEMP/astro-race.patch"
+          # The legacy test must exercise the same deterministic in-flight request behavior.
+          git diff --binary 6fd3b297cf5a3acc714422b8b3cb6132eaf6c111 226bd60fcfb32e82ac06fa53cee587a77d05976b -- core/data/src/test/java/com/rtbishop/look4sat/core/data/astro/AstroDataRepositoryTest.kt > "$RUNNER_TEMP/astro-test.patch"
+          test -s "$RUNNER_TEMP/astro-test.patch"
+          git apply --3way --index "$RUNNER_TEMP/astro-test.patch"
           git diff --cached --stat
       - name: Verify version and included repairs
         shell: bash

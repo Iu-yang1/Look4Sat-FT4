@@ -17,6 +17,8 @@
  */
 package com.rtbishop.look4sat.core.data.repository
 
+import com.rtbishop.look4sat.core.data.astro.OemEphemerisRepository
+import com.rtbishop.look4sat.core.data.astro.looksLikeOem
 import com.rtbishop.look4sat.core.domain.model.DatabaseState
 import com.rtbishop.look4sat.core.domain.predict.OrbitalData
 import com.rtbishop.look4sat.core.domain.repository.IDatabaseRepo
@@ -38,7 +40,8 @@ class DatabaseRepo(
     private val dataParser: DataParser,
     private val localSource: ILocalSource,
     private val remoteSource: IRemoteSource,
-    private val settingsRepo: ISettingsRepo
+    private val settingsRepo: ISettingsRepo,
+    private val ephemerides: OemEphemerisRepository? = null
 ) : IDatabaseRepo {
 
     private val customSourceType = "Other"
@@ -46,7 +49,16 @@ class DatabaseRepo(
     override suspend fun updateTLEFromFile(uri: String): Int = withContext(dispatcher) {
         var importedCount = 0
         remoteSource.getFileStream(uri)?.let { stream ->
-            val entries = mergeEntries(listOf(parseSatelliteStream(uri, unwrapIfZipped(uri, stream))))
+            val input = unwrapIfZipped(uri, stream).buffered()
+            if (looksLikeOem(input)) {
+                if (ephemerides?.import(OemEphemerisRepository.LOCAL_SOURCE, input) == true) {
+                    settingsRepo.setSatelliteTypeIds(customSourceType, listOf(Sources.issCatalogNumber))
+                    publishDatabaseContentChanged()
+                    importedCount = 1
+                } else input.close()
+                return@let
+            }
+            val entries = mergeEntries(listOf(parseSatelliteStream(uri, input)))
             if (entries.isNotEmpty()) {
                 insertFresherEntries(entries)
                 settingsRepo.setSatelliteTypeIds(customSourceType, entries.map { it.catnum })
@@ -94,15 +106,28 @@ class DatabaseRepo(
         val tleResults = tleJobs.awaitAll()
         val radioResults = radioJobs.awaitAll()
         // report the HTTP status code of every source (200, 404, ...)
-        settingsRepo.updateDataSourcesStatus(
-            (tleResults + radioResults).associate { (url, result) -> url to result.code }
-        )
+        val sourceStatus = (tleResults + radioResults).associate { (url, result) -> url to result.code }.toMutableMap()
+        var importedOem = false
         // parse each source on its own: the type filters need every source's catnums, while the
         // stored elements are merged across sources below by freshness.
         val parsedPerSource = tleResults.map { (rawUrl, result) ->
             val normUrl = normalizeUrl(rawUrl)
             val entries = if (result.code in 200..299) {
-                result.stream?.let { parseSatelliteStream(normUrl, unwrapIfZipped(normUrl, it)) }.orEmpty()
+                result.stream?.let { stream ->
+                    val input = unwrapIfZipped(normUrl, stream).buffered()
+                    if (looksLikeOem(input) || normUrl == Sources.issOemUrl) {
+                        if (ephemerides?.import(normUrl, input) == true) {
+                            importedOem = true
+                            importedTypeIds.getOrPut(builtinTypesByUrl[normUrl] ?: customSourceType) {
+                                mutableListOf()
+                            }.add(Sources.issCatalogNumber)
+                        } else {
+                            input.close()
+                            sourceStatus[rawUrl] = NetworkResult.PARSE_ERROR
+                        }
+                        emptyList()
+                    } else parseSatelliteStream(normUrl, input)
+                }.orEmpty()
             } else {
                 result.stream?.close()
                 emptyList()
@@ -113,6 +138,7 @@ class DatabaseRepo(
             }
             entries
         }
+        settingsRepo.updateDataSourcesStatus(sourceStatus)
         importedTypeIds.forEach { (type, ids) -> settingsRepo.setSatelliteTypeIds(type, ids.distinct()) }
         // A partial or invalid transceiver download is NOT a complete snapshot.
         // Upsert healthy feeds without deleting radios from the failed sources.
@@ -142,12 +168,13 @@ class DatabaseRepo(
         // launch retries even if a transceiver source happened to succeed.
         val hasEphemerisData = parsedPerSource.any { entries -> entries.isNotEmpty() }
         if (hasEphemerisData) pruneStaleEntries()
-        if (hasEphemerisData || importedRadios.isNotEmpty()) {
+        if (hasEphemerisData || importedOem || importedRadios.isNotEmpty()) {
             publishDatabaseContentChanged(System.currentTimeMillis().takeIf { hasEphemerisData })
         }
     }
 
     override suspend fun clearAllData() = withContext(dispatcher) {
+        ephemerides?.clear()
         localSource.deleteEntries()
         localSource.deleteRadios()
         publishDatabaseContentChanged(0L)

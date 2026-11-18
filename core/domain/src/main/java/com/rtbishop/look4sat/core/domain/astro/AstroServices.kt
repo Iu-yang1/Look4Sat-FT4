@@ -58,9 +58,16 @@ interface IAstroDataRepository {
     fun cancel()
 }
 
+/** Immutable source generation pinned for a calculation; no Orekit types cross the domain boundary. */
+interface OrbitEphemerisSnapshot {
+    val revision: String
+}
+
 interface IOrbitEngine {
     fun openSession(target: OrbitalObject): IOrbitSession
     fun bind(elements: OrbitalData): OrbitalObject
+    fun bind(elements: OrbitalData, snapshot: AstroDataSnapshot): OrbitalObject =
+        OrbitalObject(elements, snapshot)
     /** Ordered station windows; implementations may share exact-time propagation. */
     suspend fun passes(
         target: OrbitalObject, observers: List<GeoPos>, startMillis: Long, endMillis: Long

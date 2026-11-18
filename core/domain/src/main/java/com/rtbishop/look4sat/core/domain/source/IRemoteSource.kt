@@ -24,6 +24,7 @@ data class NetworkResult(val code: Int, val stream: InputStream?) {
     companion object {
         /** Code used when a request fails before any HTTP response is received. */
         const val CONNECTION_ERROR = -1
+        const val PARSE_ERROR = -2
     }
 }
 

@@ -127,11 +127,13 @@ class SatelliteRepo(
             settingsRepo.stationPosition.map {
                 GeoPos(it.latitude, it.longitude, it.altitude)
             }.distinctUntilChanged(),
-            settingsRepo.databaseState,
+            combine(settingsRepo.databaseState, settingsRepo.dataSourcesSettings) { database, sources ->
+                database.contentVersion to sources
+            },
             settingsRepo.otherSettings.map { it.stateOfUtc to it.trajectoryPrecision }.distinctUntilChanged(),
             astroData.state.map { it.generation }.distinctUntilChanged()
         ) { ids, position, database, utc, generation ->
-            listOf(ids, position, database.contentVersion, utc, generation)
+            listOf(ids, position, database, utc, generation)
         }.distinctUntilChanged()
             .collectLatest {
                 if (!astroData.state.value.ready) {
@@ -141,7 +143,7 @@ class SatelliteRepo(
                 }
                 val snapshot = astroData.snapshot()
                 targets.value = localStorage.getEntriesWithIds(settingsRepo.selectedIds.value)
-                    .map { target -> OrbitalObject(target.data, snapshot) }
+                    .map { target -> orbit.bind(target.data, snapshot) }
                 val settings = settingsRepo.passesSettings.value
                 calculatePasses(System.currentTimeMillis() - settings.hoursBefore * 3600000L,
                     settings.hoursBefore + settings.hoursAhead, settings.minElevation,

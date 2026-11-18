@@ -186,6 +186,7 @@ class SettingsRepo(
     private val keyTransceiversEnabled = "transceiversEnabled"
     private val keySatnogsTleSourceMigration = "satnogsTleSourceMigration"
     private val keyAutoTleSourceMigration = "autoTleSourceMigration"
+    private val keyIssOemSourceMigration = "issOemSourceMigration"
     private val separatorComma = ","
     private val separatorUrl = "\n"
     private val legacyCelestrakSatnogsUrl =
@@ -1288,6 +1289,7 @@ class SettingsRepo(
             putString(keyTransceiversEnabled, normalized.transceiversEnabled.joinToString(separatorComma))
             putBoolean(keySatnogsTleSourceMigration, true)
             putBoolean(keyAutoTleSourceMigration, true)
+            putBoolean(keyIssOemSourceMigration, true)
         }
         _dataSourcesSettings.value = normalized
     }
@@ -1298,7 +1300,7 @@ class SettingsRepo(
             defaultUrls = Sources.satelliteDataUrls.values.filter { it.isNotBlank() },
             legacyEnabledKey = keyUseCustomTle,
             legacyUrlKey = keyTleUrl
-        ).migrateSatnogsTleSource().migrateAutoTleSources(),
+        ).migrateSatnogsTleSource().migrateAutoTleSources().migrateIssOemSource(),
         transceiversUrls = getDataSourceUrls(
             key = keyTransceiversUrls,
             defaultUrls = Sources.transceiversDataUrls.values.filter { it.isNotBlank() },
@@ -1377,6 +1379,19 @@ class SettingsRepo(
             putString(keySatelliteUrls, migrated.joinToString(separatorUrl))
             putString(keySatelliteEnabled, enabled.joinToString(separatorComma))
             putBoolean(keyAutoTleSourceMigration, true)
+        }
+        return migrated
+    }
+
+    /** Append once for upgrades; preserve the positional enabled flags and user ordering. */
+    private fun List<String>.migrateIssOemSource(): List<String> {
+        if (preferences.getBoolean(keyIssOemSourceMigration, false)) return this
+        val migrated = if (containsSourceUrl(Sources.issOemUrl)) this else this + Sources.issOemUrl
+        val enabled = alignFlags(migrated, readEnabledFlags(keySatelliteEnabled))
+        preferences.edit {
+            putString(keySatelliteUrls, migrated.joinToString(separatorUrl))
+            putString(keySatelliteEnabled, enabled.joinToString(separatorComma))
+            putBoolean(keyIssOemSourceMigration, true)
         }
         return migrated
     }

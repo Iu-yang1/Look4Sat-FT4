@@ -32,6 +32,11 @@ tasks.withType<org.gradle.api.tasks.testing.Test>().configureEach {
         ).firstOrNull { it.isFile }
     inputs.property("l4sSimulatorPort", simulatorPort.orElse(""))
     inputs.property("sunlightBenchmark", sunlightBenchmark.orElse(""))
+    listOf("ISS_OEM_TXT", "ISS_OEM_XML", "ISS_OEM_MANEUVER").forEach { key ->
+        val fixture = providers.environmentVariable(key).orNull?.let { file(it) }
+        inputs.property(key, fixture != null)
+        if (fixture != null && fixture.isFile) inputs.file(fixture).withPathSensitivity(PathSensitivity.NONE)
+    }
     if (astroArchive != null && astroArchive.isFile) {
         inputs.file(astroArchive).withPathSensitivity(PathSensitivity.NONE)
     }

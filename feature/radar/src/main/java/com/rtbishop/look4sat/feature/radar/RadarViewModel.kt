@@ -194,7 +194,7 @@ class RadarViewModel(
         }) {
             // Selection/pass loading may lag navigation after a TLE refresh. Wait
             // for the *requested* pass rather than permanently opening a blank radar.
-            val pass = combine(
+            var pass = combine(
                 satelliteRepo.selectedPass,
                 satelliteRepo.passes,
                 satelliteRepo.satellites,
@@ -202,6 +202,24 @@ class RadarViewModel(
             ) { _, _, _, _ -> findCurrentPass() }.filterNotNull().first()
             val allRadios = loadPassData(pass)
             while (isActive) {
+                if (pass.catNum == 25544) {
+                    val updated = satelliteRepo.satellites.value.firstOrNull { it.data.catnum == pass.catNum }
+                    val replacement = updated?.let { target -> satelliteRepo.passes.value
+                        .firstOrNull { it.catNum == pass.catNum && it.orbitalObject == target &&
+                            it.aosTime < pass.losTime && it.losTime > pass.aosTime } }
+                    if (updated != null && (updated != pass.orbitalObject ||
+                            replacement != null && (replacement.aosTime != pass.aosTime ||
+                                replacement.losTime != pass.losTime))) {
+                        // Keep transponder and active control sessions; refresh only the
+                        // matching visibility window and its pinned orbit generation.
+                        pass = if (mutualSession.endTime > mutualSession.startTime)
+                            pass.copy(orbitalObject = updated)
+                        else replacement ?: pass.copy(orbitalObject = updated)
+                        val track = if (pass.continuousVisibility) emptyList() else
+                            satelliteRepo.getRadarTrack(updated, stationPos, pass.aosTime, pass.losTime)
+                        _uiState.update { it.copy(currentPass = pass, satTrack = track) }
+                    }
+                }
                 tickPass(pass, allRadios)
                 delay(1000.milliseconds)
             }

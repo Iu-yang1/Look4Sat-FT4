@@ -42,7 +42,8 @@ internal class OrbitPassCache(private val directory: File) {
 
     fun key(target: OrbitalObject, observer: GeoPos, generation: String): String =
         hex(digest(("orekit-passes-4|${target.data}|" +
-            "${observer.latitude},${observer.longitude},${observer.altitude}|$generation")
+            "${observer.latitude},${observer.longitude},${observer.altitude}|$generation" +
+            (target.ephemeris?.let { "|oem:${it.revision}" } ?: ""))
             .toByteArray(Charsets.UTF_8)))
 
     fun get(key: String, start: Long, end: Long): Entry? {

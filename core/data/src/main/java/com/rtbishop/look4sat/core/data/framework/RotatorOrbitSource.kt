@@ -37,7 +37,9 @@ class RepositoryRotatorOrbitSource(
 
     override suspend fun passRequiresFlip(pass: OrbitalPass, azimuthOffsetDegrees: Double): Boolean {
         val track = satelliteRepo.getTrack(
-            pass.orbitalObject,
+            if (pass.catNum == 25544) satelliteRepo.satellites.value
+                .firstOrNull { it.data.catnum == pass.catNum } ?: pass.orbitalObject
+            else pass.orbitalObject,
             stationPosition(),
             pass.aosTime,
             pass.losTime

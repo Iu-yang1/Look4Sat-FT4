@@ -27,6 +27,22 @@ class SatelliteTypeSettingsMigrationTest {
     )
 
     @Test
+    fun issOemSourceIsAppendedOnceWithoutChangingExistingFlagsOrOrdering() {
+        val urls = listOf("https://example.org/one.txt", "https://example.org/two.csv")
+        val nasa = com.rtbishop.look4sat.core.domain.source.Sources.issOemUrl
+        prefs.edit().putString("satelliteUrls", urls.joinToString("\n"))
+            .putString("satelliteEnabled", "false,true")
+            .putBoolean("autoTleSourceMigration", true)
+            .putBoolean("satnogsTleSourceMigration", true).commit()
+        val first = repo()
+        assertEquals(urls + nasa, first.dataSourcesSettings.value.satelliteUrls)
+        assertEquals(listOf(false, true, true), first.dataSourcesSettings.value.satelliteEnabled)
+        val saved = first.dataSourcesSettings.value.copy(satelliteUrls = urls, satelliteEnabled = listOf(false, true))
+        first.updateDataSourcesSettings(saved)
+        assertEquals(first.dataSourcesSettings.value, repo().dataSourcesSettings.value)
+    }
+
+    @Test
     fun newInstallDefaultsToAllWithoutSelectingEverySatellite() {
         val settings = repo()
         assertEquals(listOf("All"), settings.selectedTypes.value)

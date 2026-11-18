@@ -77,12 +77,12 @@ class MapViewModel(
         )
     )
     private var allPasses = satelliteRepo.passes.value
-    private var allSatellites = satelliteRepo.satellites.value
+    @Volatile private var allSatellites = satelliteRepo.satellites.value
     private var dataUpdateJob: Job? = null
     /** At most one dedicated-pass prediction/ticker may own this MapViewModel. */
     private var passLoadJob: Job? = null
     private var dataUpdateRate = 1000L
-    private var selectedOrbitalObject: OrbitalObject? = null
+    @Volatile private var selectedOrbitalObject: OrbitalObject? = null
     private var radarPass: OrbitalPass? = null
     @Volatile private var passTimePinned = false
     private val passTimeRequest = MutableStateFlow<Long?>(null)
@@ -218,6 +218,29 @@ class MapViewModel(
                 // moves the satellite, its footprint and the clock, and leaves the line as it was.
                 // Re-deriving it per refresh only bought a redraw that disagreed with the marker.
             }
+        }
+        // The catalogue carries the pinned OEM generation. Keep the selected ISS
+        // and its ground track keyed to the same generation after an update or disable.
+        viewModelScope.launch {
+            satelliteRepo.satellites.collectLatest { latest ->
+                allSatellites = latest
+                val previous = selectedOrbitalObject ?: return@collectLatest
+                if (previous.data.catnum != 25544) return@collectLatest
+                val replacement = latest.firstOrNull { it.data.catnum == previous.data.catnum }
+                    ?: return@collectLatest
+                if (replacement == previous) return@collectLatest
+                snapshotOld = null
+                snapshotNew = null
+                val window = passWindow
+                if (window == null) {
+                    selectSatellite(replacement)
+                } else {
+                    openRadarPassMap(window, replacement, _uiState.value.mapTimeMs, passTimePinned)
+                }
+            }
+        }
+        viewModelScope.launch {
+            satelliteRepo.passes.collectLatest { allPasses = it }
         }
         val (selectedCatNum, _) = satelliteRepo.selectedPass.value
         getStationPosition()
@@ -413,7 +436,12 @@ class MapViewModel(
     }
 
     /** Build one selected pass, canceling any old prediction loop. */
-    private fun openRadarPassMap(pass: RadarPassMapDestination) {
+    private fun openRadarPassMap(
+        pass: RadarPassMapDestination,
+        preferred: OrbitalObject? = null,
+        restoreTime: Long? = null,
+        restorePinned: Boolean = false
+    ) {
         passLoadJob?.cancel()
         passLoadJob = viewModelScope.launch(Dispatchers.Default + orbitErrors) {
             if (pass.losTime <= pass.aosTime) return@launch
@@ -422,7 +450,7 @@ class MapViewModel(
             // permanently, leaving the map without either the track or the satellite marker.
             // A pass already carries its satellite object. Prefer it when the selected
             // satellite list is briefly being rebuilt after switching/filtering.
-            val satellite = satelliteRepo.passes.value.firstOrNull {
+            val satellite = preferred ?: satelliteRepo.passes.value.firstOrNull {
                 it.catNum == pass.catNum && it.aosTime == pass.aosTime
             }?.orbitalObject ?: satelliteRepo.satellites.first { satellites ->
                 satellites.any { it.data.catnum == pass.catNum }
@@ -430,14 +458,14 @@ class MapViewModel(
             val foundPass = satelliteRepo.passes.value.find {
                 it.catNum == pass.catNum && it.aosTime == pass.aosTime
             }
-            radarPass = foundPass ?: OrbitalPass(
+            radarPass = foundPass?.copy(orbitalObject = satellite) ?: OrbitalPass(
                 aosTime = pass.aosTime, losTime = pass.losTime, orbitalObject = satellite
             )
             selectedOrbitalObject = satellite
             // Show the newly selected satellite immediately; ground-track prediction can
             // take much longer for deep-space passes. The marker/time need not wait.
-            val initialTime = System.currentTimeMillis().coerceIn(pass.aosTime, pass.losTime)
-            passTimePinned = false
+            val initialTime = (restoreTime ?: System.currentTimeMillis()).coerceIn(pass.aosTime, pass.losTime)
+            passTimePinned = restorePinned
             isScrubbing = false
             updateScrubbedState(satellite, stationPos, Date(initialTime))
             passTimeRequest.value = initialTime

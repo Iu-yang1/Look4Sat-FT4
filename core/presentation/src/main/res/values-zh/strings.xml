@@ -319,11 +319,11 @@
     <string name="prefs_data_clear_success">数据清空成功</string>
     <string name="prefs_data_update_success">更新成功</string>
 
-    <string name="prefs_data_import_satellites_error">未导入卫星。请选择有效的 TLE/3LE (.txt) 或 OMM (.csv) 文件。</string>
+    <string name="prefs_data_import_satellites_error">未导入卫星。请选择有效的 TLE、OMM CSV 或 ISS OEM TXT/XML 文件。</string>
     <string name="prefs_data_import_transceivers_error">未导入收发器。请选择有效的 SatNOGS (.json) 文件。</string>
 
     <string name="prefs_data_sources_title">自定义数据源</string>
-    <string name="prefs_data_sources_sat_hint">轨道数据优先取列表最新星历，此顺序仅影响卫星名称</string>
+    <string name="prefs_data_sources_sat_hint">ISS 优先使用有效 OEM；其余轨道根数取最新历元，列表顺序仅影响卫星名称。</string>
     <string name="prefs_data_sources_transceivers_hint">靠前优先：收发器数据</string>
     <string name="prefs_data_sources_restore">恢复默认数据源</string>
     <string name="prefs_data_sources_tle_switch">自定义TLE URL</string>

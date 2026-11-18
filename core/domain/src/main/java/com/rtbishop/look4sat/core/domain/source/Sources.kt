@@ -25,8 +25,12 @@ object Sources {
     // the request count (and CelesTrak's 2-hourly "already downloaded" 403s) down.
     // The three BA7OPF additions keep their own spots: Kaggle LAPAN-A2 first and the two
     // AutoTLE mirrors next to R4UAB (Chinese amateur catalogues, freshest for CN sats).
+    const val issOemType = "NASA ISS OEM"
+    const val issOemUrl = "https://nasa-public-data.s3.amazonaws.com/iss-coords/current/ISS_OEM/ISS.OEM_J2K_EPH.txt"
+    const val issCatalogNumber = 25544
     val satelliteDataUrls = mapOf(
         "LAPAN-A2" to "https://www.kaggle.com/api/v1/datasets/download/muazamnugroho/lapan-a2-satellite-two-line-element-tle-dataset/LAPAN-A2_TLE_latest.txt",
+        issOemType to issOemUrl,
         "ARISS" to "https://live.ariss.org/iss.txt",
         "R4UAB" to "https://r4uab.ru/satonline.txt",
         "BI4PYM AutoTLE (GitHub)" to "https://raw.githubusercontent.com/BI4PYM/AutoTLE/refs/heads/master/AutoTLE.txt",

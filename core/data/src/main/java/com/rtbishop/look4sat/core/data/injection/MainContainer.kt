@@ -154,9 +154,12 @@ class MainContainer(
         appScope, controlDiagnostics, { com.rtbishop.look4sat.core.domain.model.UpdateSource.AUTO },
         bundledArchive = { context.assets.open("astronomy/orekit-data.zip") }
     )
+    private val issEphemeris = com.rtbishop.look4sat.core.data.astro.OemEphemerisRepository(
+        java.io.File(context.filesDir, "ephemerides/25544"), astroData, settingsRepo
+    )
     private val orbitEngine = com.rtbishop.look4sat.core.data.astro.OrekitOrbitEngine(
         astroData, java.io.File(context.cacheDir, "orbit-passes"), appScope,
-        precision = { settingsRepo.otherSettings.value.trajectoryPrecision }) { message ->
+        precision = { settingsRepo.otherSettings.value.trajectoryPrecision }, ephemerides = issEphemeris) { message ->
             controlDiagnostics.record(
                 com.rtbishop.look4sat.core.domain.control.ControlDiagnosticSource.RADIO,
                 "orbit/work", message)
@@ -383,7 +386,7 @@ class MainContainer(
         val dbDispatcher = Dispatchers.Default
         val dataParser = DataParser(dbDispatcher)
         val remoteSource = provideRemoteSource()
-        return DatabaseRepo(dbDispatcher, dataParser, localSource, remoteSource, settingsRepo)
+        return DatabaseRepo(dbDispatcher, dataParser, localSource, remoteSource, settingsRepo, issEphemeris)
     }
 
     private fun provideLocalSource(): ILocalSource = LocalSource(satelliteDatabase.look4SatDao())

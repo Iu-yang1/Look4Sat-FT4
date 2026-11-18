@@ -34,7 +34,8 @@ jobs:
   release:
     # Publish on an explicitly named release merge commit, an existing v* tag,
     # or an operator-triggered same-version rebuild.
-    if: ${{ github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v') || (github.ref == 'refs/heads/main' && startsWith(github.event.head_commit.message, 'release: 4.4.8-ba7opf-orekit.')) }}
+    if: >-
+      ${{ github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v') || (github.ref == 'refs/heads/main' && startsWith(github.event.head_commit.message, 'release: 4.4.8-ba7opf-orekit.')) }}
     runs-on: windows-2025
     timeout-minutes: 180
     permissions:

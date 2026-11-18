@@ -669,7 +669,7 @@ fun DataSourcesDialog(
             sourceSection(
                 sectionKey = "sat",
                 labelResId = R.string.prefs_data_sources_satellites_label,
-                hintResId = R.string.prefs_data_sources_sat_hint,
+                hintResId = null,
                 urls = satUrls,
                 listState = listState,
                 draggedId = satDraggedId,
@@ -703,7 +703,7 @@ fun DataSourcesDialog(
 private fun LazyListScope.sourceSection(
     sectionKey: String,
     labelResId: Int,
-    hintResId: Int,
+    hintResId: Int?,
     urls: List<Pair<Long, String>>,
     listState: LazyListState,
     draggedId: MutableState<Long>,
@@ -726,15 +726,15 @@ private fun LazyListScope.sourceSection(
             )
             IconCard(action = onAdd, resId = R.drawable.ic_add)
         }
-        // States what the order below actually decides: for satellites the elements come from
-        // whichever enabled source has the freshest epoch, so the order only picks the name.
-        Text(
-            text = stringResource(hintResId),
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = 2.dp, bottom = 8.dp)
-        )
+        hintResId?.let {
+            Text(
+                text = stringResource(it),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 2.dp, bottom = 8.dp)
+            )
+        }
     }
     itemsIndexed(urls, key = { _, entry -> "$sectionKey-${entry.first}" }) { index, (id, url) ->
         val enabledTint = MaterialTheme.colorScheme.onSurfaceVariant

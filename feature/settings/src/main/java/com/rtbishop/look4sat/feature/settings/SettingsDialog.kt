@@ -114,6 +114,7 @@ import com.rtbishop.look4sat.core.domain.model.radioModelDescriptor
 import com.rtbishop.look4sat.core.domain.model.parseRadioTcpEndpoint
 import com.rtbishop.look4sat.core.domain.model.supportedRadioBaudRates
 import com.rtbishop.look4sat.core.domain.repository.LoTWSyncMode
+import com.rtbishop.look4sat.core.domain.repository.hasWavelogConnection
 import com.rtbishop.look4sat.core.domain.source.NetworkResult
 import com.rtbishop.look4sat.core.domain.source.Sources
 import com.rtbishop.look4sat.core.presentation.CardButton
@@ -197,16 +198,23 @@ fun WavelogUploadDialog(
     isSyncing: Boolean,
     lastSyncEpochMs: Long,
     message: String?,
+    messageIsError: Boolean,
     dismiss: () -> Unit,
     onSave: (com.rtbishop.look4sat.core.domain.model.WavelogUploadSettings) -> Unit,
     onFetchStations: (url: String, apiKey: String) -> Unit,
     onSelectStation: (com.rtbishop.look4sat.core.domain.repository.WavelogStationInfo) -> Unit,
-    onSyncIncremental: () -> Unit,
-    onSyncFull: () -> Unit,
+    onSyncIncremental: (String, String) -> Unit,
+    onSyncFull: (String, String) -> Unit,
     onClear: () -> Unit
 ) {
     val url = rememberSaveable { mutableStateOf(initialSettings.url) }
     val apiKey = rememberSaveable { mutableStateOf(initialSettings.apiKey) }
+    // A successful probe, or Clear, changes the stored connection while the dialog stays open.
+    LaunchedEffect(initialSettings.url, initialSettings.apiKey) {
+        url.value = initialSettings.url
+        apiKey.value = initialSettings.apiKey
+    }
+    val stationListMatchesInput = initialSettings.hasWavelogConnection(url.value, apiKey.value)
     var showClearConfirm by remember { mutableStateOf(false) }
     SharedDialog(
         title = stringResource(R.string.prefs_wavelog_upload_title),
@@ -254,7 +262,14 @@ fun WavelogUploadDialog(
                 modifier = Modifier.padding(horizontal = LocalSpacing.current.large)
             )
         }
-        if (stations.isEmpty() && initialSettings.stationId.isBlank()) {
+        if (!stationListMatchesInput) {
+            Text(
+                text = "Fetch stations to verify the edited URL/API key before choosing a station",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = LocalSpacing.current.large)
+            )
+        } else if (stations.isEmpty() && initialSettings.stationId.isBlank()) {
             Text(
                 text = stringResource(R.string.prefs_wavelog_upload_station_none),
                 style = MaterialTheme.typography.bodySmall,
@@ -316,12 +331,12 @@ fun WavelogUploadDialog(
             modifier = Modifier.fillMaxWidth().padding(horizontal = LocalSpacing.current.large)
         ) {
             CardButton(
-                onClick = onSyncFull,
+                onClick = { onSyncFull(url.value, apiKey.value) },
                 text = stringResource(R.string.prefs_wavelog_sync_full),
                 enabled = !isSyncing && !probeBusy
             )
             CardButton(
-                onClick = onSyncIncremental,
+                onClick = { onSyncIncremental(url.value, apiKey.value) },
                 text = stringResource(R.string.prefs_wavelog_sync_incremental),
                 enabled = !isSyncing && !probeBusy
             )
@@ -337,7 +352,7 @@ fun WavelogUploadDialog(
         if (message != null) {
             Text(
                 text = message,
-                color = MaterialTheme.colorScheme.error,
+                color = if (messageIsError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
                 style = MaterialTheme.typography.bodySmall,
                 modifier = Modifier.padding(horizontal = LocalSpacing.current.large)
             )

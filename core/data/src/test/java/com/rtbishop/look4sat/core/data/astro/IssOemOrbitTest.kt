@@ -82,7 +82,7 @@ class IssOemOrbitTest {
         for (seconds in listOf(0.0, 120.0, 240.0, 840.0, 2280.0, 2400.0)) {
             val time = epoch + (seconds * 1000).toLong()
             val state = session.state(time)
-            val pv = state.getPVCoordinates(runtime.context.frames.eme2000)
+            val pv = state.getPVCoordinates(runtime.context.frames.getEME2000())
             assertTrue("PV interpolation residual at $seconds s", pv.position.distance(position(seconds)) < 5.0)
             assertTrue(pv.velocity.distance(velocity(seconds)) < .1)
             val teme = session.temeState(time)

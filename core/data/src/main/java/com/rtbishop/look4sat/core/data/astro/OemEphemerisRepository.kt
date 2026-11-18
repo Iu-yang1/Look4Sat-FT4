@@ -61,7 +61,7 @@ internal fun parseIssOem(bytes: ByteArray, source: String, runtime: OrekitRuntim
     val segments = spacecraft.segments.sortedBy { it.start }
     require(segments.isNotEmpty())
     segments.forEach { segment ->
-        require(segment.frame == runtime.context.frames.eme2000) { "Expected geocentric EME2000 OEM" }
+        require(segment.frame == runtime.context.frames.getEME2000()) { "Expected geocentric EME2000 OEM" }
         val coordinates = segment.coordinates
         require(segment.start < segment.stop && coordinates.size >= 2)
         require(coordinates.first().date <= segment.start && coordinates.last().date >= segment.stop)

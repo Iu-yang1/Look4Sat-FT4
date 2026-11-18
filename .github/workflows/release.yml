@@ -35,7 +35,7 @@ jobs:
     # Publish on an explicitly named release merge commit, an existing v* tag,
     # or an explicitly named same-version rebuild (asset replacement only).
     if: >-
-      ${{ github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v') || (github.ref == 'refs/heads/main' && (startsWith(github.event.head_commit.message, 'release: 4.4.8-ba7opf-orekit.') || startsWith(github.event.head_commit.message, 'rebuild: 4.4.8-ba7opf-orekit.')))) }}
+      ${{ github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v') || (github.ref == 'refs/heads/main' && (startsWith(github.event.head_commit.message, 'release: 4.4.8-ba7opf-orekit.') || startsWith(github.event.head_commit.message, 'rebuild: 4.4.8-ba7opf-orekit.'))) }}
     runs-on: windows-2025
     timeout-minutes: 180
     permissions:
@@ -47,7 +47,8 @@ jobs:
           ref: ${{ inputs.source_ref || inputs.tag || github.sha }}
 
       - name: Register Orekit tag from an authorized release commit
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && startsWith(github.event.head_commit.message, 'release: ')
+        if: >-
+          ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && startsWith(github.event.head_commit.message, 'release: ') }}
         shell: pwsh
         run: |
           $catalog = Get-Content 'gradle/libs.versions.toml' -Raw
@@ -78,7 +79,8 @@ jobs:
           "RELEASE_NOTES_FILE=$notesFile" | Out-File -LiteralPath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Select existing release for authorized same-version replacement
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && startsWith(github.event.head_commit.message, 'rebuild: ')
+        if: >-
+          ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && startsWith(github.event.head_commit.message, 'rebuild: ') }}
         shell: pwsh
         run: |
           $catalog = Get-Content 'gradle/libs.versions.toml' -Raw

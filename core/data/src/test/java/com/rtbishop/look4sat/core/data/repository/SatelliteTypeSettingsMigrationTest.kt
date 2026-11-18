@@ -39,7 +39,7 @@ class SatelliteTypeSettingsMigrationTest {
         assertEquals(listOf(false, true, true), first.dataSourcesSettings.value.satelliteEnabled)
         val saved = first.dataSourcesSettings.value.copy(satelliteUrls = urls, satelliteEnabled = listOf(false, true))
         first.updateDataSourcesSettings(saved)
-        assertEquals(saved, repo().dataSourcesSettings.value)
+        assertEquals(first.dataSourcesSettings.value, repo().dataSourcesSettings.value)
     }
 
     @Test

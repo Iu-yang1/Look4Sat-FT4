@@ -9,6 +9,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.first
 import org.orekit.data.DataSource
 import org.orekit.files.ccsds.ndm.ParserBuilder
+import org.orekit.files.ccsds.ndm.odm.oem.Oem
 import org.orekit.files.ccsds.ndm.odm.oem.OemSegment
 import org.orekit.time.AbsoluteDate
 import org.orekit.utils.Constants
@@ -46,14 +47,21 @@ internal data class IssOemSnapshot(
 ) : OrbitEphemerisSnapshot
 
 internal fun parseIssOem(bytes: ByteArray, source: String, runtime: OrekitRuntime): IssOemSnapshot {
-    val message = ParserBuilder(runtime.context)
+    val builder = ParserBuilder(runtime.context)
         .withConventions(IERSConventions.IERS_2010)
         .withSimpleEOP(false)
         .withMu(Constants.WGS84_EARTH_MU)
         // NASA files may omit the interpolation declaration. Four PV samples (degree 3).
         .withDefaultInterpolationDegree(3)
-        .buildOemParser()
-        .parse(DataSource("ISS.oem", DataSource.StreamOpener { bytes.inputStream() }))
+    val dataSource = DataSource("ISS.oem", DataSource.StreamOpener { bytes.inputStream() })
+    // NASA's XML product is a combined NDM document containing one OEM.
+    val header = bytes.decodeToString(0, minOf(bytes.size, 8192))
+    val message = if (Regex("<(?:[\\w.-]+:)?ndm(?:\\s|>)", RegexOption.IGNORE_CASE).containsMatchIn(header)) {
+        builder.buildNdmParser().parseMessage(dataSource).constituents.single() as? Oem
+            ?: error("NDM does not contain an OEM")
+    } else {
+        builder.buildOemParser().parse(dataSource)
+    }
     val spacecraft = message.satellites.values.single()
     require(spacecraft.id.replace("-", "").equals("1998067A", ignoreCase = true)) {
         "OEM does not describe ISS (1998-067-A)"

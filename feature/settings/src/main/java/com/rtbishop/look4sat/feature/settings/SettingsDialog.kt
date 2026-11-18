@@ -802,7 +802,14 @@ private fun LazyListScope.sourceSection(
             OutlinedTextField(
                 value = url,
                 onValueChange = { onUrlChange(index, it) },
-                label = { Text(stringResource(R.string.prefs_data_sources_url_title)) },
+                label = {
+                    Text(if (url == Sources.issOemUrl) Sources.issOemType
+                        else stringResource(R.string.prefs_data_sources_url_title))
+                },
+                isError = statusCodes[url] == NetworkResult.PARSE_ERROR,
+                supportingText = if (statusCodes[url] == NetworkResult.PARSE_ERROR) {
+                    { Text(stringResource(R.string.prefs_data_import_satellites_error)) }
+                } else null,
                 colors = sourceTextFieldColors,
                 trailingIcon = {
                     IconButton(onClick = { onRemove(index) }) {

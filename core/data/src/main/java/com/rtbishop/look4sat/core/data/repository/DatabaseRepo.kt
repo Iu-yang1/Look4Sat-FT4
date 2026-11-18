@@ -52,7 +52,21 @@ class DatabaseRepo(
             val input = unwrapIfZipped(uri, stream).buffered()
             if (looksLikeOem(input)) {
                 if (ephemerides?.importOem(OemEphemerisRepository.LOCAL_SOURCE, input) == true) {
-                    settingsRepo.setSatelliteTypeIds(customSourceType, listOf(Sources.issCatalogNumber))
+                    val settings = settingsRepo.dataSourcesSettings.value
+                    val index = settings.satelliteUrls.indexOfFirst { normalizeUrl(it) == Sources.issOemUrl }
+                    if (index < 0) {
+                        settingsRepo.updateDataSourcesSettings(settings.copy(
+                            satelliteUrls = settings.satelliteUrls + Sources.issOemUrl,
+                            satelliteEnabled = settings.satelliteUrls.indices.map(settings::isSatelliteEnabled) + true
+                        ))
+                    } else if (!settings.isSatelliteEnabled(index)) {
+                        settingsRepo.updateDataSourcesSettings(settings.copy(
+                            satelliteEnabled = settings.satelliteUrls.indices.map { i ->
+                                i == index || settings.isSatelliteEnabled(i)
+                            }
+                        ))
+                    }
+                    settingsRepo.setSatelliteTypeIds(Sources.issOemType, listOf(Sources.issCatalogNumber))
                     publishDatabaseContentChanged()
                     importedCount = 1
                 } else input.close()
@@ -262,7 +276,7 @@ class DatabaseRepo(
         val currentDaynum = OrbitalData.timeToDaynum(System.currentTimeMillis())
         val staleIds = localSource.getEntriesEpochs()
             .filterValues { epoch -> currentDaynum - OrbitalData.epochToDaynum(epoch) > 30.0 }
-            .keys.toList()
+            .keys.filterNot { it == Sources.issCatalogNumber && ephemerides?.coversNow() == true }
         if (staleIds.isNotEmpty()) localSource.deleteEntriesWithIds(staleIds)
     }
 

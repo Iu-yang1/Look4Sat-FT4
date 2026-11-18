@@ -102,15 +102,16 @@ class OemEphemerisRepository(
             }
             if (!state.ready) return false
             val runtime = astronomy.snapshot() as OrekitRuntime
-            val candidate = parseIssOem(bytes, source, runtime)
+            val key = if (source == LOCAL_SOURCE) Sources.issOemUrl else source
+            val candidate = parseIssOem(bytes, key, runtime)
             synchronized(this) {
-                val previous = read(source, runtime)
+                val previous = read(key, runtime)
                 if (source != LOCAL_SOURCE && previous != null && previous.creation > candidate.creation) {
                     return@synchronized true
                 }
                 if (previous?.revision == candidate.revision) return@synchronized true
                 check(directory.isDirectory || directory.mkdirs())
-                val target = file(source)
+                val target = file(key)
                 val temporary = File.createTempFile("incoming-", ".tmp", directory)
                 try {
                     FileOutputStream(temporary).use { output ->
@@ -118,7 +119,7 @@ class OemEphemerisRepository(
                         output.fd.sync()
                     }
                     check(temporary.renameTo(target)) { "Unable to replace OEM cache" }
-                    parsed[source] = Parsed(runtime, candidate)
+                    parsed[key] = Parsed(runtime, candidate)
                 } finally {
                     temporary.delete()
                 }
@@ -139,8 +140,8 @@ class OemEphemerisRepository(
         val enabled = configured.satelliteUrls.filterIndexed { index, url ->
             url.isNotBlank() && configured.isSatelliteEnabled(index)
         }.map { if (it.startsWith("http", ignoreCase = true)) it else "https://$it" }
-        // A manually imported OEM stays available independently of the online feed.
-        return (enabled + LOCAL_SOURCE).distinct().mapNotNull { read(it, runtime) }
+        // Manual files use the same source slot and enable/disable semantics as NASA.
+        return enabled.distinct().mapNotNull { read(it, runtime) }
             .maxByOrNull { it.creation }
     }
 
@@ -154,6 +155,13 @@ class OemEphemerisRepository(
             println("ISS OEM cache unavailable: ${error.message}")
             null
         }
+    }
+
+    internal fun coversNow(): Boolean {
+        if (!astronomy.state.value.ready) return false
+        val runtime = astronomy.snapshot() as OrekitRuntime
+        val time = AbsoluteDate(java.util.Date(), runtime.utc)
+        return select(Sources.issCatalogNumber, runtime)?.segments?.any { time >= it.start && time <= it.stop } == true
     }
 
     @Synchronized

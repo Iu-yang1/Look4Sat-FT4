@@ -18,6 +18,7 @@ import com.rtbishop.look4sat.core.domain.predict.OrbitalPos
 import com.rtbishop.look4sat.core.domain.repository.ISatelliteRepo
 import com.rtbishop.look4sat.core.domain.repository.ISettingsRepo
 import com.rtbishop.look4sat.core.domain.source.ILocalSource
+import com.rtbishop.look4sat.core.domain.source.Sources
 import com.rtbishop.look4sat.core.domain.utility.catNumForName
 import com.rtbishop.look4sat.core.domain.utility.downlinkHz
 import com.rtbishop.look4sat.core.domain.utility.nominalTransceiver
@@ -152,11 +153,19 @@ class SatelliteRepo(
             }
     }
 
+    // Active control services retain the selected pass object. Refresh ISS source selection
+    // for the live position path without changing unrelated historical prediction sessions.
+    private fun liveTarget(sat: OrbitalObject): OrbitalObject =
+        if (sat.data.catnum == Sources.issCatalogNumber) {
+            val elements = targets.value.firstOrNull { it.data.catnum == sat.data.catnum }?.data ?: sat.data
+            orbit.bind(elements, astroData.snapshot())
+        } else sat
+
     override suspend fun getPosition(sat: OrbitalObject, pos: GeoPos, time: Long): OrbitalPos {
         val owner = coroutineContext[Job]
         return withContext(dispatcher) {
             calculate(sat) {
-                val session = session(owner, sat)
+                val session = session(owner, liveTarget(sat))
                 synchronized(session) { session.position(pos, time) }
             }
         }
@@ -165,7 +174,7 @@ class SatelliteRepo(
         val owner = coroutineContext[Job]
         return withContext(dispatcher) {
             calculate(sat) {
-                val session = session(owner, sat)
+                val session = session(owner, liveTarget(sat))
                 synchronized(session) { session.coverage(time) }
             }
         }
@@ -192,7 +201,7 @@ class SatelliteRepo(
         sat: OrbitalObject, pos: GeoPos, start: Long, end: Long
     ): List<OrbitalPos> = withContext(dispatcher) {
         if (end <= start) return@withContext emptyList()
-        val pinned = if (sat.snapshot == null) sat.copy(snapshot = astroData.snapshot()) else sat
+        val pinned = if (sat.snapshot == null) orbit.bind(sat.data, astroData.snapshot()) else sat
         val started = System.nanoTime()
         val context = coroutineContext
         val (track, hit) = radarTracks.get(pinned, pos, start, end) {

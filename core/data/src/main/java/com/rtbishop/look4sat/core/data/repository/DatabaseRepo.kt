@@ -51,7 +51,7 @@ class DatabaseRepo(
         remoteSource.getFileStream(uri)?.let { stream ->
             val input = unwrapIfZipped(uri, stream).buffered()
             if (looksLikeOem(input)) {
-                if (ephemerides?.import(OemEphemerisRepository.LOCAL_SOURCE, input) == true) {
+                if (ephemerides?.importOem(OemEphemerisRepository.LOCAL_SOURCE, input) == true) {
                     settingsRepo.setSatelliteTypeIds(customSourceType, listOf(Sources.issCatalogNumber))
                     publishDatabaseContentChanged()
                     importedCount = 1
@@ -116,7 +116,7 @@ class DatabaseRepo(
                 result.stream?.let { stream ->
                     val input = unwrapIfZipped(normUrl, stream).buffered()
                     if (looksLikeOem(input) || normUrl == Sources.issOemUrl) {
-                        if (ephemerides?.import(normUrl, input) == true) {
+                        if (ephemerides?.importOem(normUrl, input) == true) {
                             importedOem = true
                             importedTypeIds.getOrPut(builtinTypesByUrl[normUrl] ?: customSourceType) {
                                 mutableListOf()

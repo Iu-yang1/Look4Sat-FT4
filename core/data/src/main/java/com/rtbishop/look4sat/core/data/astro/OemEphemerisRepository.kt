@@ -53,7 +53,7 @@ internal fun parseIssOem(bytes: ByteArray, source: String, runtime: OrekitRuntim
         // NASA files may omit the interpolation declaration. Four PV samples (degree 3).
         .withDefaultInterpolationDegree(3)
         .buildOemParser()
-        .parse(DataSource("ISS.oem") { bytes.inputStream() })
+        .parse(DataSource("ISS.oem", DataSource.StreamOpener { bytes.inputStream() }))
     val spacecraft = message.satellites.values.single()
     require(spacecraft.id.replace("-", "").equals("1998067A", ignoreCase = true)) {
         "OEM does not describe ISS (1998-067-A)"
@@ -69,12 +69,12 @@ internal fun parseIssOem(bytes: ByteArray, source: String, runtime: OrekitRuntim
         require(coordinates.all { it.position.norm.isFinite() && it.position.norm > Constants.WGS84_EARTH_EQUATORIAL_RADIUS &&
             it.velocity.norm.isFinite() })
         // The Orekit propagator requires as many records as the interpolation stencil.
+        if (segment.metadata.interpolationMethod == null && coordinates.size < segment.interpolationSamples) {
+            segment.metadata.setInterpolationDegree(coordinates.size - 1)
+        }
         require(coordinates.size >= segment.interpolationSamples)
         segment.propagator.propagate(segment.start)
         segment.propagator.propagate(segment.stop)
-    }
-    require(segments.zipWithNext().all { (a, b) -> a.stop <= b.start }) {
-        "Overlapping usable OEM segments"
     }
     return IssOemSnapshot(digest(bytes), source, message.header.creationDate, segments)
 }
@@ -94,7 +94,7 @@ class OemEphemerisRepository(
     private val parsed = mutableMapOf<String, Parsed>()
     private fun file(source: String) = File(directory, digest(source.toByteArray(Charsets.UTF_8)) + ".oem")
 
-    internal suspend fun import(source: String, stream: InputStream): Boolean {
+    internal suspend fun importOem(source: String, stream: InputStream): Boolean {
         return try {
             val bytes = stream.use { it.readBytes() }
             val state = astronomy.state.first {

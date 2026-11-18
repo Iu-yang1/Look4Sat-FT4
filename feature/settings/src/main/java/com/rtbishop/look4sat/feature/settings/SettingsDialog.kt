@@ -649,7 +649,7 @@ fun DataSourcesDialog(
                 ) {
                     CardButton(
                         onClick = { onImportTle(); onDismiss() },
-                        text = "TLE/3LE (.txt)\nOMM (.csv)",
+                        text = "TLE / OMM / OEM\n.txt / .csv / .xml",
                         modifier = Modifier.weight(1f)
                     )
                     CardButton(

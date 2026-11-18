@@ -279,7 +279,7 @@ class SatelliteRepoTest {
     }
 }
 
-private class TestLocalSource(
+internal class TestLocalSource(
     private val entries: List<OrbitalObject> = emptyList(),
     private val modes: suspend (List<String>) -> List<Int>
 ) : ILocalSource {

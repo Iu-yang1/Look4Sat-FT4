@@ -1,8 +1,8 @@
 [versions]
 #noinspection UnusedVersionCatalogEntry
-appVersionCode = "636"
+appVersionCode = "637"
 #noinspection UnusedVersionCatalogEntry
-appVersionName = "4.4.8-ba7opf-orekit.15.02"
+appVersionName = "4.4.8-ba7opf-orekit.15.03"
 #noinspection UnusedVersionCatalogEntry
 compileSdk = "37"
 #noinspection UnusedVersionCatalogEntry

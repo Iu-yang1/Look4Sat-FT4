@@ -274,7 +274,7 @@ private class FakeRotatorOrbitSource(
     override suspend fun passRequiresFlip(pass: OrbitalPass, azimuthOffsetDegrees: Double): Boolean = flip
 }
 
-private class FakeRotatorTransport(
+internal class FakeRotatorTransport(
     private val connectResults: ArrayDeque<Boolean> = ArrayDeque(listOf(true)),
     private val writeResults: ArrayDeque<Boolean> = ArrayDeque(),
     private val reads: ArrayDeque<ByteArray> = ArrayDeque()

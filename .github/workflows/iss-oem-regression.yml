@@ -40,12 +40,39 @@ jobs:
           echo "ASTRO_TEST_DATA_ZIP=$RUNNER_TEMP/iss-oem/orekit-data.zip" >> "$GITHUB_ENV"
           echo "ISS_OEM_TXT=$RUNNER_TEMP/iss-oem/iss.txt" >> "$GITHUB_ENV"
           echo "ISS_OEM_XML=$RUNNER_TEMP/iss-oem/iss.xml" >> "$GITHUB_ENV"
+      - name: Obtain archived NASA maneuver trajectory
+        shell: bash
+        run: |
+          set -euo pipefail
+          for date in 2022-01-10 2022-01-29 2022-02-13 2021-10-04 2021-10-07 2021-10-12; do
+            url="https://nasa-public-data.s3.amazonaws.com/iss-coords/$date/ISS_OEM/ISS.OEM_J2K_EPH.txt"
+            curl -fsL --retry 2 --connect-timeout 20 "$url" -o "$RUNNER_TEMP/iss-oem/$date.txt" || rm -f "$RUNNER_TEMP/iss-oem/$date.txt"
+          done
+          python3 - <<'PY'
+          import datetime as dt
+          import os, pathlib, re, hashlib
+          root = pathlib.Path(os.environ['RUNNER_TEMP']) / 'iss-oem'
+          candidates = []
+          for p in sorted(root.glob('20??-??-??.txt')):
+              lines = p.read_text(encoding='utf-8-sig').splitlines()
+              times = [dt.datetime.fromisoformat(line.split()[0].rstrip('Z')) for line in lines if re.match(r'^\d{4}-\d{2}-\d{2}T',line)]
+              intervals = [(b-a).total_seconds() for a,b in zip(times,times[1:])]
+              dense = sum(1 for step in intervals if 1.9 <= step <= 2.1)
+              print(p.name, '2-second increments=',dense,'sha256=',hashlib.sha256(p.read_bytes()).hexdigest())
+              if dense >= 20 and any(step >= 200 for step in intervals):
+                  candidates.append((dense,p))
+          assert candidates, 'No historical NASA maneuver ephemeris with dense sampling was downloaded'
+          _, selected = max(candidates)
+          with open(os.environ['GITHUB_ENV'],'a') as f:
+              f.write('ISS_OEM_MANEUVER='+str(selected)+'\n')
+          print('Selected archived OEM:',selected.name)
+          PY
       - name: Install Android native components
         run: |
           yes | "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" 'ndk;26.1.10909125' 'cmake;3.22.1'
       - name: Assert real ephemeris parsing, hybrid propagation and pass regressions
         run: |
-          ./gradlew --no-daemon :core:data:testDebugUnitTest --tests '*IssOemOrbitTest' --tests '*OrekitOrbitEngineTest' --tests '*SatelliteTypeSettingsMigrationTest' --tests '*DatabaseRepoTest'
+          ./gradlew --no-daemon :core:data:testDebugUnitTest --tests '*IssOemOrbitTest' --tests '*OrekitOrbitEngineTest' --tests '*SatelliteTypeSettingsMigrationTest' --tests '*DatabaseRepoTest' --tests '*IssOemEndToEndTest'
           python3 - <<'PY'
           from pathlib import Path
           import xml.etree.ElementTree as ET
@@ -56,7 +83,15 @@ jobs:
           assert int(suite.attrib["tests"]) >= 5 and int(suite.attrib["failures"]) == 0 and int(suite.attrib["errors"]) == 0
           assert int(suite.attrib["skipped"]) == 0, "Real NASA validation must not be skipped"
           print(suite.findtext("system-out", ""))
+          end_to_end = list(Path("core/data/build/test-results/testDebugUnitTest").glob("TEST-*IssOemEndToEndTest.xml"))
+          assert len(end_to_end) == 1
+          suite = ET.parse(end_to_end[0]).getroot()
+          print("OEM end-to-end:", suite.attrib)
+          assert int(suite.attrib["tests"]) >= 3 and all(int(suite.attrib[k]) == 0 for k in ("skipped", "failures", "errors"))
+          print(suite.findtext("system-out", ""))
           PY
+      - name: Regress map, mutual visibility and sunlight consumers
+        run: ./gradlew --no-daemon :feature:map:testDebugUnitTest :feature:mutual:testDebugUnitTest :feature:sunlight:testDebugUnitTest :feature:radar:testDebugUnitTest
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -65,3 +100,4 @@ jobs:
             core/data/build/test-results/testDebugUnitTest/
             ${{ runner.temp }}/iss-oem/iss.txt
             ${{ runner.temp }}/iss-oem/iss.xml
+            ${{ env.ISS_OEM_MANEUVER }}

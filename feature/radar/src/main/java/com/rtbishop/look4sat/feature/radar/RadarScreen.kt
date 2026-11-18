@@ -1020,19 +1020,6 @@ private fun PositionOverlay(position: OrbitalPos, overlayStrip: Boolean = false)
                 alignment = Alignment.Start,
                 labelFirst = false
             )
-            position.issOrbitSource?.let { source ->
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(text = source, fontSize = 12.sp)
-                    position.orbitValidUntilMillis?.let { end ->
-                        val utc = remember(end) {
-                            java.text.SimpleDateFormat("MM-dd HH:mm'Z'", java.util.Locale.ROOT).apply {
-                                timeZone = java.util.TimeZone.getTimeZone("UTC")
-                            }.format(java.util.Date(end))
-                        }
-                        Text(text = utc, fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                }
-            }
             RadarLabel(
                 value = stringResource(R.string.radar_az_value, position.elevation.toDegrees()),
                 label = stringResource(R.string.radar_el_text),

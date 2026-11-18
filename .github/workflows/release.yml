@@ -33,9 +33,9 @@ env:
 jobs:
   release:
     # Publish on an explicitly named release merge commit, an existing v* tag,
-    # or an operator-triggered same-version rebuild.
+    # or an explicitly named same-version rebuild (asset replacement only).
     if: >-
-      ${{ github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v') || (github.ref == 'refs/heads/main' && startsWith(github.event.head_commit.message, 'release: 4.4.8-ba7opf-orekit.')) }}
+      ${{ github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v') || (github.ref == 'refs/heads/main' && (startsWith(github.event.head_commit.message, 'release: 4.4.8-ba7opf-orekit.') || startsWith(github.event.head_commit.message, 'rebuild: 4.4.8-ba7opf-orekit.')))) }}
     runs-on: windows-2025
     timeout-minutes: 180
     permissions:
@@ -44,10 +44,10 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
         with:
-          ref: ${{ inputs.source_ref || inputs.tag || github.ref }}
+          ref: ${{ inputs.source_ref || inputs.tag || github.sha }}
 
       - name: Register Orekit tag from an authorized release commit
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && startsWith(github.event.head_commit.message, 'release: ')
         shell: pwsh
         run: |
           $catalog = Get-Content 'gradle/libs.versions.toml' -Raw
@@ -76,6 +76,34 @@ jobs:
           $notesFile = Join-Path $env:RUNNER_TEMP 'orekit-bilingual-release-notes.md'
           [IO.File]::WriteAllText($notesFile, $sections[1], [Text.UTF8Encoding]::new($false))
           "RELEASE_NOTES_FILE=$notesFile" | Out-File -LiteralPath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Select existing release for authorized same-version replacement
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && startsWith(github.event.head_commit.message, 'rebuild: ')
+        shell: pwsh
+        run: |
+          $catalog = Get-Content 'gradle/libs.versions.toml' -Raw
+          if ($catalog -notmatch '(?m)^appVersionName\s*=\s*"([^"]+)"') {
+            throw 'Missing appVersionName'
+          }
+          $tag = $Matches[1]
+          if (-not $tag.StartsWith('4.4.8-ba7opf-orekit.') -or (git log -1 --format=%s).Trim() -ne "rebuild: $tag") {
+            throw 'Same-version rebuild commit does not match the version catalog'
+          }
+          if ((git rev-parse HEAD).Trim() -ne $env:GITHUB_SHA) {
+            throw 'Rebuild is not checked out at the exact event commit'
+          }
+          $existing = gh api "repos/$env:GH_REPO/releases/tags/$tag"
+          if ($LASTEXITCODE -ne 0) { throw "Existing release not found: $tag" }
+          $release = ($existing -join "`n") | ConvertFrom-Json
+          if ($release.tag_name -ne $tag -or $release.draft -or $release.prerelease) {
+            throw 'Expected a published formal release'
+          }
+          $metadata = Join-Path $env:RUNNER_TEMP 'existing-release.json'
+          [IO.File]::WriteAllText($metadata, ($existing -join "`n"), [Text.UTF8Encoding]::new($false))
+          "TAG_NAME=$tag" | Out-File -LiteralPath $env:GITHUB_ENV -Encoding utf8 -Append
+          "REPLACE_RELEASE_ASSETS=true" | Out-File -LiteralPath $env:GITHUB_ENV -Encoding utf8 -Append
+          "EXISTING_RELEASE_METADATA=$metadata" | Out-File -LiteralPath $env:GITHUB_ENV -Encoding utf8 -Append
+          Write-Output "Replacing only assets for $tag from commit $env:GITHUB_SHA; release notes and tag are preserved."
 
       - name: Setup Java
         uses: actions/setup-java@v5
@@ -257,6 +285,16 @@ jobs:
       - name: Create GitHub release
         shell: pwsh
         run: |
+          if ($env:REPLACE_RELEASE_ASSETS -eq 'true') {
+            $before = Get-Content -Raw -LiteralPath $env:EXISTING_RELEASE_METADATA | ConvertFrom-Json
+            $current = gh api "repos/$env:GH_REPO/releases/tags/$env:TAG_NAME" | ConvertFrom-Json
+            if ($LASTEXITCODE -ne 0 -or $current.id -ne $before.id -or $current.body -cne $before.body -or $current.name -cne $before.name) {
+              throw 'Existing release identity or notes changed while building'
+            }
+            gh release upload $env:TAG_NAME $env:RELEASE_APK $env:RELEASE_AAB $env:RELEASE_CHECKSUMS --clobber
+            if ($LASTEXITCODE -ne 0) { throw 'Unable to replace release assets' }
+            return
+          }
           gh release view $env:TAG_NAME *> $null
           if ($LASTEXITCODE -eq 0) {
             $release = gh release view $env:TAG_NAME --json assets | ConvertFrom-Json
@@ -303,6 +341,26 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Unable to build update manifest' }
           gh release upload $env:TAG_NAME $manifestPath --clobber
           if ($LASTEXITCODE -ne 0) { throw 'Unable to publish update manifest' }
+
+      - name: Verify replaced assets and preserve release metadata
+        if: env.REPLACE_RELEASE_ASSETS == 'true'
+        shell: pwsh
+        run: |
+          $before = Get-Content -Raw -LiteralPath $env:EXISTING_RELEASE_METADATA | ConvertFrom-Json
+          $after = gh api "repos/$env:GH_REPO/releases/tags/$env:TAG_NAME" | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0 -or $after.id -ne $before.id -or $after.tag_name -ne $before.tag_name -or
+              $after.body -cne $before.body -or $after.name -cne $before.name -or $after.draft -ne $before.draft -or
+              $after.prerelease -ne $before.prerelease) { throw 'Release metadata was not preserved' }
+          $manifestPath = Join-Path $PWD 'dist/update.json'
+          foreach ($file in @($env:RELEASE_APK, $env:RELEASE_AAB, $env:RELEASE_CHECKSUMS, $manifestPath)) {
+            $name = Split-Path -Leaf $file
+            $asset = @($after.assets | Where-Object name -eq $name)
+            $hash = (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($asset.Count -ne 1 -or $asset[0].state -ne 'uploaded' -or $asset[0].digest -ne "sha256:$hash") {
+              throw "Published asset verification failed: $name"
+            }
+            Write-Output "Verified replaced asset: $name SHA256=$hash"
+          }
 
       - name: Remove temporary credentials
         if: always()

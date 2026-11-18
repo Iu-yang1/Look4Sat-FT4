@@ -38,7 +38,7 @@ class IssOemOrbitTest {
 
     private fun timestamp(time: Long) = Instant.ofEpochMilli(time).toString().removeSuffix("Z")
 
-    private fun fixture(creation: Long = epoch, offset: Double = 0.0, gap: Boolean = false): ByteArray =
+    internal fun fixture(creation: Long = epoch, offset: Double = 0.0, gap: Boolean = false): ByteArray =
         buildString {
             appendLine("CCSDS_OEM_VERS = 2.0")
             appendLine("CREATION_DATE = ${timestamp(creation)}")
@@ -138,7 +138,11 @@ class IssOemOrbitTest {
         assertEquals("ISS OEM", session.position(observer, epoch + 1440000).issOrbitSource)
         val start = epoch - 120000L
         val end = epoch + 2520000L
-        val windows = session.passes(observer, start, end)
+        val atPass = session.state(epoch + 480000L)
+        val ground = AstroTestData.runtime.earth.transform(atPass.position, atPass.frame, atPass.date)
+        val subpoint = GeoPos(Math.toDegrees(ground.latitude), Math.toDegrees(ground.longitude))
+        val windows = session.passes(subpoint, start, end)
+        assertTrue("Expected a visible OEM pass", windows.isNotEmpty())
         assertTrue(windows.zipWithNext().all { (a, b) -> a.losTime <= b.aosTime })
         assertTrue(windows.all { it.aosTime >= start && it.losTime <= end &&
             it.tcaTime in it.aosTime..it.losTime })

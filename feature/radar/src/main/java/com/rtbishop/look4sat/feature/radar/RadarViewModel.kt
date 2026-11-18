@@ -204,10 +204,17 @@ class RadarViewModel(
             while (isActive) {
                 if (pass.catNum == 25544) {
                     val updated = satelliteRepo.satellites.value.firstOrNull { it.data.catnum == pass.catNum }
-                    if (updated != null && updated != pass.orbitalObject) {
-                        // Do not reset the selected transponder or active control services.
-                        // Recalculate the track against the new pinned source generation.
-                        pass = pass.copy(orbitalObject = updated)
+                    val replacement = updated?.let { target -> satelliteRepo.passes.value
+                        .firstOrNull { it.catNum == pass.catNum && it.orbitalObject == target &&
+                            it.aosTime < pass.losTime && it.losTime > pass.aosTime } }
+                    if (updated != null && (updated != pass.orbitalObject ||
+                            replacement != null && (replacement.aosTime != pass.aosTime ||
+                                replacement.losTime != pass.losTime))) {
+                        // Keep transponder and active control sessions; refresh only the
+                        // matching visibility window and its pinned orbit generation.
+                        pass = if (mutualSession.endTime > mutualSession.startTime)
+                            pass.copy(orbitalObject = updated)
+                        else replacement ?: pass.copy(orbitalObject = updated)
                         val track = if (pass.continuousVisibility) emptyList() else
                             satelliteRepo.getRadarTrack(updated, stationPos, pass.aosTime, pass.losTime)
                         _uiState.update { it.copy(currentPass = pass, satTrack = track) }

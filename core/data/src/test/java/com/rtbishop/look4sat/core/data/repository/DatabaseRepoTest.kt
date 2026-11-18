@@ -17,6 +17,9 @@
  */
 package com.rtbishop.look4sat.core.data.repository
 
+import com.rtbishop.look4sat.core.data.astro.AstroTestData
+import com.rtbishop.look4sat.core.data.astro.IssOemOrbitTest
+import com.rtbishop.look4sat.core.data.astro.OemEphemerisRepository
 import com.rtbishop.look4sat.core.domain.model.DataSourcesSettings
 import com.rtbishop.look4sat.core.domain.model.DatabaseState
 import com.rtbishop.look4sat.core.domain.model.Ft4Settings
@@ -57,6 +60,45 @@ class DatabaseRepoTest {
     // fixtures carry a current epoch: stale entries are pruned on every remote update
     private val todayEpoch = LocalDate.now().let { "%02d%03d".format(it.year % 100, it.dayOfYear) }
     private val fresherEpoch = "$todayEpoch.71955234".toDouble()
+
+    @Test
+    fun `OEM and TLE coexist and a failed OEM download does not replace the cache`() = runTest(dispatcher) {
+        val nasa = Sources.issOemUrl
+        val tle = Sources.satelliteDataUrls.getValue("ARISS")
+        val local = FakeLocalSource()
+        val remote = FakeRemoteSource().apply {
+            networkStreams[nasa] = { IssOemOrbitTest().fixture().inputStream() }
+            networkStreams[tle] = { validTleStream() }
+        }
+        val settings = FakeSettingsRepo(DataSourcesSettings(satelliteUrls = listOf(nasa, tle),
+            transceiversUrls = emptyList()))
+        val folder = java.nio.file.Files.createTempDirectory("iss-oem-import").toFile()
+        try {
+            val cache = OemEphemerisRepository(folder, AstroTestData.repository, settings)
+            val repository = DatabaseRepo(dispatcher, dataParser, local, remote, settings, cache)
+            repository.updateFromRemote()
+            assertEquals(1, local.insertedEntries.size)
+            assertEquals(25544, local.insertedEntries.single().catnum)
+            assertEquals(listOf(25544), settings.satelliteTypeIdsByType[Sources.issOemType])
+            val first = requireNotNull(cache.select(25544, AstroTestData.runtime))
+            assertEquals(200, settings.dataSourcesStatus.value[nasa])
+            remote.networkStreams[nasa] = { "CCSDS_OEM_VERS = 2.0".byteInputStream() }
+            repository.updateFromRemote()
+            assertEquals(NetworkResult.PARSE_ERROR, settings.dataSourcesStatus.value[nasa])
+            assertEquals(first.revision, cache.select(25544, AstroTestData.runtime)?.revision)
+            val uri = "content://look4sat/iss-oem"
+            remote.fileStreams[uri] = { IssOemOrbitTest().fixture(offset = 100.0).inputStream() }
+            settings.updateDataSourcesSettings(settings.dataSourcesSettings.value.copy(
+                satelliteEnabled = listOf(false, true)))
+            assertEquals(1, repository.updateTLEFromFile(uri))
+            assertTrue(settings.dataSourcesSettings.value.isSatelliteEnabled(0))
+            assertEquals(1, local.insertedEntries.size)
+            repository.clearAllData()
+            assertEquals(null, cache.select(25544, AstroTestData.runtime))
+        } finally {
+            folder.deleteRecursively()
+        }
+    }
 
     @Test
     fun `manual satellite import parses csv stream from content uri`() = runTest(dispatcher) {

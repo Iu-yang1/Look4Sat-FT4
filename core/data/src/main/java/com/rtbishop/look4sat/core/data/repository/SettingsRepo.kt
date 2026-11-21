@@ -42,6 +42,7 @@ import com.rtbishop.look4sat.core.domain.rotator.RotatorAzimuthRange
 import com.rtbishop.look4sat.core.domain.rotator.RotatorProtocol
 import com.rtbishop.look4sat.core.domain.rotator.RotatorSettings
 import com.rtbishop.look4sat.core.domain.rotator.RotatorTransport
+import com.rtbishop.look4sat.core.domain.repository.hasWavelogConnection
 import com.rtbishop.look4sat.core.domain.utility.positionToQth
 import com.rtbishop.look4sat.core.domain.utility.qthToPosition
 import com.rtbishop.look4sat.core.domain.utility.round
@@ -633,6 +634,8 @@ class SettingsRepo(
     //region # Wavelog upload settings
     private val keyWavelogUploadUrl = "wavelogUploadUrl"
     private val keyWavelogUploadApiKey = "wavelogUploadApiKey"
+    private val keyWavelogConfirmationToken = "wavelogConfirmationToken"
+    private val keyLastWavelogConfirmationSyncEpochMs = "wavelogLastConfirmationSyncEpochMs"
     private val keyWavelogUploadStationId = "wavelogUploadStationId"
     private val keyWavelogUploadStationName = "wavelogUploadStationName"
     private val keyWavelogUploadStationCallsign = "wavelogUploadStationCallsign"
@@ -642,8 +645,23 @@ class SettingsRepo(
     override val wavelogUploadSettings: StateFlow<WavelogUploadSettings> = _wavelogUploadSettings
 
     override fun updateWavelogUploadSettings(settings: WavelogUploadSettings) {
-        val trimmed = settings.copy(url = settings.url.trim(), apiKey = settings.apiKey.trim())
+        val trimmed = settings.copy(
+            url = settings.url.trim(),
+            apiKey = settings.apiKey.trim(),
+            confirmationToken = settings.confirmationToken.trim()
+        )
+        val previous = _wavelogUploadSettings.value
+        val connectionChanged = !previous.hasWavelogConnection(trimmed.url, trimmed.apiKey)
         preferences.edit {
+            if (connectionChanged) {
+                remove(keyWavelogSyncUrl)
+                remove(keyWavelogSyncCursors)
+                remove(keyLastWavelogFullSyncEpochMs)
+            }
+            if (connectionChanged || previous.confirmationToken != trimmed.confirmationToken) {
+                remove(keyLastWavelogConfirmationSyncEpochMs)
+            }
+            putString(keyWavelogConfirmationToken, trimmed.confirmationToken)
             putString(keyWavelogUploadUrl, trimmed.url)
             putString(keyWavelogUploadApiKey, trimmed.apiKey)
             putString(keyWavelogUploadStationId, trimmed.stationId)
@@ -660,11 +678,19 @@ class SettingsRepo(
         stationId = preferences.getString(keyWavelogUploadStationId, null).orEmpty(),
         stationName = preferences.getString(keyWavelogUploadStationName, null).orEmpty(),
         stationCallsign = preferences.getString(keyWavelogUploadStationCallsign, null).orEmpty(),
-        stationGrid = preferences.getString(keyWavelogUploadStationGrid, null).orEmpty()
+        stationGrid = preferences.getString(keyWavelogUploadStationGrid, null).orEmpty(),
+        confirmationToken = preferences.getString(keyWavelogConfirmationToken, null).orEmpty()
     )
     //endregion
 
     //region # Wavelog sync bookkeeping
+    override fun getLastWavelogConfirmationSyncEpochMs(): Long =
+        preferences.getLong(keyLastWavelogConfirmationSyncEpochMs, 0L)
+
+    override fun setLastWavelogConfirmationSyncEpochMs(value: Long) {
+        preferences.edit { putLong(keyLastWavelogConfirmationSyncEpochMs, value) }
+    }
+
     private val keyWavelogStations = "wavelogStations"
     private val keyWavelogSyncCursors = "wavelogSyncCursors"
     private val keyWavelogSyncUrl = "wavelogSyncUrl"

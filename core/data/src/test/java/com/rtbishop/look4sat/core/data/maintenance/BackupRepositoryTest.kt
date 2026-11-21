@@ -227,6 +227,19 @@ class BackupRepositoryTest {
         assertEquals("KEEP", preferences.getString("callsign", ""))
     }
 
+    @Test fun confirmationTokenRequiresTheEncryptedCredentialsCategory() = runBlocking {
+        preferences.edit().putString("wavelogConfirmationToken", "private-confirmation-token").commit()
+        assertFalse(store.snapshot(setOf(BackupCategory.SETTINGS)).preferences.containsKey("wavelogConfirmationToken"))
+        assertEquals(BackupCategory.CREDENTIALS, preferenceCategory("wavelogConfirmationToken"))
+        val file = backup(setOf(BackupCategory.CREDENTIALS), "portable")
+        preferences.edit().remove("wavelogConfirmationToken").commit()
+        repository.inspect(file.toURI().toString(), "portable".toCharArray())
+        assertEquals(BackupPhase.PREVIEW, await(BackupPhase.PREVIEW, BackupPhase.FAILED).phase)
+        repository.restore(setOf(BackupCategory.CREDENTIALS), RestoreMode.MERGE)
+        assertEquals(BackupPhase.COMPLETE, await(BackupPhase.COMPLETE, BackupPhase.FAILED).phase)
+        assertEquals("private-confirmation-token", preferences.getString("wavelogConfirmationToken", null))
+    }
+
     @Test fun failedExportRetainsOnlyPortableArchiveAndCanRetry() = runBlocking {
         preferences.edit().putString("lotwPassword", "private").commit()
         repository.create(File(temp.root, "absent/file.l4sbackup").toURI().toString(),

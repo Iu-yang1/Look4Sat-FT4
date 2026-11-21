@@ -43,6 +43,8 @@ import com.rtbishop.look4sat.core.domain.repository.IWavelogUploadRepository
 import com.rtbishop.look4sat.core.domain.repository.applyWavelogSyncResult
 import com.rtbishop.look4sat.core.domain.repository.resolveWavelogSyncMode
 import com.rtbishop.look4sat.core.domain.repository.shouldPromoteWavelogFullSync
+import com.rtbishop.look4sat.core.domain.repository.withUnverifiedWavelogConnection
+import com.rtbishop.look4sat.core.domain.repository.withVerifiedWavelogConnection
 import com.rtbishop.look4sat.core.domain.repository.LoTWUploadAudit
 import com.rtbishop.look4sat.core.domain.repository.LoTWUploadPreview
 import com.rtbishop.look4sat.core.domain.repository.LoTWUploadResult
@@ -532,9 +534,11 @@ class LogbookViewModel(
                 it.copy(providerSwitchConflict = null)
             }
             is LogbookAction.SaveWavelogSettings -> {
-                settingsRepo.updateWavelogUploadSettings(action.settings.copy(
-                    url = action.settings.url.trim(), apiKey = action.settings.apiKey.trim()
-                ))
+                settingsRepo.updateWavelogUploadSettings(
+                    settingsRepo.wavelogUploadSettings.value.withUnverifiedWavelogConnection(
+                        action.settings.url, action.settings.apiKey
+                    ).copy(confirmationToken = action.settings.confirmationToken.trim())
+                )
                 mutableState.update { it.copy(wavelogMessage = null) }
             }
             is LogbookAction.FetchWavelogStations -> fetchWavelogStations(action.url, action.apiKey)
@@ -648,18 +652,7 @@ class LogbookViewModel(
                 }
                 settingsRepo.setWavelogStations(probe.stations)
                 val current = settingsRepo.wavelogUploadSettings.value
-                val savedStillPresent = current.stationId.isNotBlank() && probe.stations.any { it.id == current.stationId }
-                val updatedSettings = when {
-                    savedStillPresent -> current.copy(url = cleanUrl, apiKey = cleanKey)
-                    probe.stations.size == 1 -> current.copy(
-                        url = cleanUrl, apiKey = cleanKey,
-                        stationId = probe.stations.single().id,
-                        stationName = probe.stations.single().name,
-                        stationCallsign = probe.stations.single().callsign,
-                        stationGrid = probe.stations.single().grid
-                    )
-                    else -> current.copy(url = cleanUrl, apiKey = cleanKey)
-                }
+                val updatedSettings = current.withVerifiedWavelogConnection(cleanUrl, cleanKey, probe.stations)
                 settingsRepo.updateWavelogUploadSettings(updatedSettings)
                 mutableState.update {
                     it.copy(
@@ -692,11 +685,16 @@ class LogbookViewModel(
             return
         }
         val mode = resolveWavelogSyncMode(settingsRepo.getWavelogSyncUrl(), settings.url, requested)
-        val promoted = mode == WavelogSyncMode.Incremental && shouldPromoteWavelogFullSync(settingsRepo.getLastWavelogFullSyncEpochMs())
+        val hasConfirmationToken = settings.confirmationToken.isNotBlank()
+        val lastConfirmationSync = settingsRepo.getLastWavelogConfirmationSyncEpochMs()
+        val needsFullSync = if (hasConfirmationToken) lastConfirmationSync == 0L
+            else shouldPromoteWavelogFullSync(settingsRepo.getLastWavelogFullSyncEpochMs())
+        val promoted = mode == WavelogSyncMode.Incremental && needsFullSync
         val actualMode = if (promoted) WavelogSyncMode.Full else mode
         mutableState.update { it.copy(wavelogSyncing = true, wavelogMessage = null, lotwDownloadError = null) }
         viewModelScope.launch {
             try {
+                val startedAt = System.currentTimeMillis()
                 val fetch = wavelogSyncRepository.fetchNewRecords(
                     settings.url, settings.apiKey, stations, settingsRepo.getWavelogSyncCursors(),
                     full = actualMode == WavelogSyncMode.Full
@@ -705,25 +703,37 @@ class LogbookViewModel(
                     mutableState.update { it.copy(wavelogSyncing = false, wavelogMessage = "Wavelog sync failed — check URL, API key and network") }
                     return@launch
                 }
-                val merge = repository.mergeWavelog(fetch.records,settings.url,
+                val pullConfirmations = hasConfirmationToken && actualMode == WavelogSyncMode.Incremental
+                val confirmations = if (pullConfirmations) wavelogSyncRepository.fetchLoTWConfirmations(
+                    settings.url, settings.apiKey, settings.confirmationToken, stations,
+                    since = com.rtbishop.look4sat.core.domain.repository.lotwSyncCursor(lastConfirmationSync - 86_400_000L).take(10)
+                ) else null
+                val confirmationFailed = pullConfirmations && confirmations == null
+                val records = confirmations.orEmpty() + fetch.records
+                val merge = repository.mergeWavelog(records,settings.url,
                     actualMode==WavelogSyncMode.Full && fetch.failedStations.isEmpty())
                 val cursors = settingsRepo.getWavelogSyncCursors() + fetch.cursors
                 applyWavelogSyncResult(
                     settingsRepo = settingsRepo,
-                    records = fetch.records,
+                    records = records,
                     cursors = cursors,
                     url = settings.url,
                     mode = actualMode,
                     failedStations = fetch.failedStations.toSet()
                 )
                 lockLogbookSource(LogbookSyncProvider.WAVELOG)
+                if (hasConfirmationToken && (confirmations != null ||
+                    actualMode == WavelogSyncMode.Full && fetch.failedStations.isEmpty())) {
+                    settingsRepo.setLastWavelogConfirmationSyncEpochMs(startedAt)
+                }
                 val head = when {
                     promoted -> "Full Wavelog sync (automatic re-scan)"
                     actualMode == WavelogSyncMode.Full -> "Full Wavelog sync"
                     else -> "Incremental Wavelog sync"
                 }
-                val base = "$head — ${merge.imported} new, ${merge.skipped} already present"
-                val message = if (fetch.failedStations.isEmpty()) base else "$base · ${fetch.failedStations.size}/${stations.size} station(s) failed"
+                val base = "$head — ${merge.imported} new, ${merge.updated} updated, ${merge.skipped} already present"
+                val stationMessage = if (fetch.failedStations.isEmpty()) base else "$base · ${fetch.failedStations.size}/${stations.size} station(s) failed"
+                val message = if (confirmationFailed) "$stationMessage · LoTW confirmation sync failed" else stationMessage
                 mutableState.update {
                     it.copy(
                         wavelogSyncing = false,
@@ -973,6 +983,7 @@ class LogbookViewModel(
             settingsRepo.setWavelogSyncUrl("")
             settingsRepo.setLastWavelogSyncEpochMs(0L)
             settingsRepo.setLastWavelogFullSyncEpochMs(0L)
+            settingsRepo.setLastWavelogConfirmationSyncEpochMs(0L)
             settingsRepo.updateLogbookSourceLock(null)
 
             mutableState.update {

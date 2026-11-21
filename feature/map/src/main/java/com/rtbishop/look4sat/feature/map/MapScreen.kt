@@ -518,6 +518,12 @@ private fun MapScreen(
     var showRecentActivityTime by remember(activityPreferences) {
         mutableStateOf(activityPreferences.getBoolean("recent_activity_time", false))
     }
+    var recentActivityMaxBand by remember(activityPreferences) {
+        mutableStateOf(
+            activityPreferences.getInt("recent_activity_max_band", RECENT_ACTIVITY_LAST_BAND)
+                .coerceIn(0, RECENT_ACTIVITY_LAST_BAND)
+        )
+    }
     var latestOperatorsByGrid by remember(activityPreferences) {
         mutableStateOf<Map<String, List<GridActivityRecentOperator>>>(emptyMap())
     }
@@ -616,6 +622,10 @@ private fun MapScreen(
         showRecentActivityTime = enabled
         activityPreferences.edit().putBoolean("recent_activity_time", enabled).apply()
     }
+    val setRecentActivityMaxBand: (Int) -> Unit = { selectedBand ->
+        recentActivityMaxBand = nextRecentActivityMaxBand(recentActivityMaxBand, selectedBand)
+        activityPreferences.edit().putInt("recent_activity_max_band", recentActivityMaxBand).apply()
+    }
     val setActivityAward: (GridActivityAward) -> Unit = { award ->
         activityAward = award
         latestOperatorsByGrid = emptyMap()
@@ -706,10 +716,10 @@ private fun MapScreen(
             .flatMap { it.worked.asSequence() }
             .toSet()
     }
-    // A station-specific red reminder is visible only in that exact station
-    // selection. All shows the aggregate worked cells without red/green blending.
-    val visibleMarkedGrids = remember(uiState.markedGrids, selectedStationIds) {
-        uiState.markedGrids.visibleInStationScope(selectedStationIds)
+    // All combines marks from every station but shows green worked cells instead
+    // of red reminders. Specific station selections retain their own marks.
+    val visibleMarkedGrids = remember(uiState.markedGrids, selectedStationIds, workedGrids) {
+        uiState.markedGrids.visibleInStationScope(selectedStationIds, workedGrids)
     }
     // The same cached WAIPA boundary polygons drive map fill and award
     // geolocation. Resolves saved QSOs locally, without a new LoTW/Wavelog sync.
@@ -1023,6 +1033,7 @@ private fun MapScreen(
                             recentActivityBands = recentActivityBands,
                             showActivityOverlay = showGridActivity && activeAward == AwardType.VUCC,
                             showRecentActivityTime = showRecentActivityTime,
+                            recentActivityMaxBand = recentActivityMaxBand,
                             activityFilterMin = activityMin,
                             activityFilterMax = activityMax,
                             showWorkedWithActivity = showWorkedWithActivity,
@@ -1128,7 +1139,17 @@ private fun MapScreen(
                             modifier = Modifier.clickable { openElevationSettings() }
                                 .padding(start = 12.dp, end = 6.dp, top = 2.dp, bottom = 2.dp)
                         ) {
-                            Text(stringResource(R.string.map_elevation_circles), color = ComposeColor.White, fontSize = 12.sp, modifier = Modifier.padding(end = 2.dp))
+                            Text(
+                                stringResource(R.string.map_elevation_circles),
+                                color = ComposeColor.White,
+                                fontSize = 12.sp,
+                                modifier = Modifier.padding(end = 4.dp)
+                            )
+                            Text(
+                                "⚙️",
+                                fontSize = 10.sp,
+                                modifier = Modifier.padding(end = 2.dp)
+                            )
                             Switch(
                                 checked = showElevationContours,
                                 // The switch itself only toggles visibility. Tapping the
@@ -1202,6 +1223,7 @@ private fun MapScreen(
             showMarked = showMarkedWithActivity,
             showRecentActiveCalls = showRecentActiveCalls,
             showRecentActivityTime = showRecentActivityTime,
+            recentActivityMaxBand = recentActivityMaxBand,
             downloadedAt = activitySnapshot?.downloadedAt,
             loading = activityLoading,
             unavailable = (showGridActivity || showActivitySettings) &&
@@ -1213,6 +1235,7 @@ private fun MapScreen(
             onShowMarkedChange = setShowMarkedWithActivity,
             onShowRecentActiveCallsChange = setShowRecentActiveCalls,
             onShowRecentActivityTimeChange = setShowRecentActivityTime,
+            onRecentActivityMaxBandChange = setRecentActivityMaxBand,
             onRefresh = {
                 activityRefreshSerial += 1
                 setActivityEnabled(true)
@@ -1937,13 +1960,22 @@ private fun WaipaPendingQsoRow(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         } else {
-            pending.candidateProvinceCodes.sorted().forEach { code ->
+            pending.candidateProvinceCodes.sortedWith(
+                compareBy<String> { it != pending.recommendedProvinceCode }.thenBy { it }
+            ).forEach { code ->
                 val candidate = regions.firstOrNull { it.code == code }
+                val label = candidate?.let { "${regionDisplayName(it)} ($code)" } ?: code
                 TextButton(
                     onClick = { onSelectProvince(code) },
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text(candidate?.let { "${regionDisplayName(it)} ($code)" } ?: code)
+                    Text(
+                        when {
+                            code != pending.recommendedProvinceCode -> label
+                            useEnglish -> "$label · Recommended"
+                            else -> "$label · 推荐"
+                        }
+                    )
                 }
             }
         }
@@ -2781,6 +2813,11 @@ private fun GridActivityToggle(
                 text = stringResource(R.string.map_grid_activity_toggle),
                 color = ComposeColor.White,
                 fontSize = 12.sp,
+                modifier = Modifier.padding(end = 4.dp)
+            )
+            Text(
+                "⚙️",
+                fontSize = 10.sp,
                 modifier = Modifier.padding(end = 2.dp)
             )
             Switch(
@@ -2801,6 +2838,7 @@ private fun GridActivitySettingsDialog(
     showMarked: Boolean,
     showRecentActiveCalls: Boolean,
     showRecentActivityTime: Boolean,
+    recentActivityMaxBand: Int,
     downloadedAt: Long?,
     loading: Boolean,
     unavailable: Boolean,
@@ -2811,6 +2849,7 @@ private fun GridActivitySettingsDialog(
     onShowMarkedChange: (Boolean) -> Unit,
     onShowRecentActiveCallsChange: (Boolean) -> Unit,
     onShowRecentActivityTimeChange: (Boolean) -> Unit,
+    onRecentActivityMaxBandChange: (Int) -> Unit,
     onRefresh: () -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -2903,7 +2942,10 @@ private fun GridActivitySettingsDialog(
                         )
                     }
                     if (showRecentActivityTime) {
-                        GridRecentActivityLegend()
+                        GridRecentActivityLegend(
+                            maxVisibleBand = recentActivityMaxBand,
+                            onBandClick = onRecentActivityMaxBandChange
+                        )
                     } else {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -3037,16 +3079,19 @@ private fun GridActivitySettingsDialog(
 }
 
 @Composable
-private fun GridRecentActivityLegend() {
+private fun GridRecentActivityLegend(
+    maxVisibleBand: Int,
+    onBandClick: (Int) -> Unit
+) {
     val entries = listOf(
-        R.string.map_grid_recent_time_0_7 to 0xFFF44336.toInt(),
-        R.string.map_grid_recent_time_8_30 to 0xFFFF7043.toInt(),
-        R.string.map_grid_recent_time_31_90 to 0xFFFFB74D.toInt(),
-        R.string.map_grid_recent_time_91_180 to 0xFFC6DBEF.toInt(),
-        R.string.map_grid_recent_time_181_365 to 0xFF9ECAE1.toInt(),
-        R.string.map_grid_recent_time_1_3_years to 0xFF6BAED6.toInt(),
-        R.string.map_grid_recent_time_3_10_years to 0xFF3182BD.toInt(),
-        R.string.map_grid_recent_time_over_10_years to 0xFF08519C.toInt()
+        Triple(R.string.map_grid_recent_time_0_7, 0xFFF44336.toInt(), 0),
+        Triple(R.string.map_grid_recent_time_8_30, 0xFFFF7043.toInt(), 1),
+        Triple(R.string.map_grid_recent_time_31_90, 0xFFFFB74D.toInt(), 2),
+        Triple(R.string.map_grid_recent_time_91_180, 0xFFC6DBEF.toInt(), 3),
+        Triple(R.string.map_grid_recent_time_181_365, 0xFF9ECAE1.toInt(), 4),
+        Triple(R.string.map_grid_recent_time_1_3_years, 0xFF6BAED6.toInt(), 5),
+        Triple(R.string.map_grid_recent_time_3_10_years, 0xFF3182BD.toInt(), 6),
+        Triple(R.string.map_grid_recent_time_over_10_years, 0xFF08519C.toInt(), 7)
     )
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         entries.chunked(2).forEach { rowEntries ->
@@ -3054,22 +3099,25 @@ private fun GridRecentActivityLegend() {
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                rowEntries.forEach { (label, color) ->
+                rowEntries.forEach { (label, color, band) ->
+                    val isVisible = isRecentActivityBandVisible(band, maxVisibleBand)
                     Row(
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier.weight(1f).clickable { onBandClick(band) },
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         Box(
                             modifier = Modifier.size(12.dp).background(
-                                ComposeColor(color).copy(alpha = GRID_ACTIVITY_FILL_ALPHA / 255f),
+                                (if (isVisible) ComposeColor(color) else ComposeColor(128, 128, 128))
+                                    .copy(alpha = GRID_ACTIVITY_FILL_ALPHA / 255f),
                                 RoundedCornerShape(3.dp)
                             )
                         )
                         Text(
                             text = stringResource(label),
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = if (isVisible) MaterialTheme.colorScheme.onSurfaceVariant
+                            else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f)
                         )
                     }
                 }
@@ -3242,6 +3290,7 @@ private fun setGridMode(
     recentActivityBands: Map<String, Int> = emptyMap(),
     showActivityOverlay: Boolean = false,
     showRecentActivityTime: Boolean = false,
+    recentActivityMaxBand: Int = RECENT_ACTIVITY_LAST_BAND,
     activityFilterMin: Int = 0,
     activityFilterMax: Int = 100,
     showWorkedWithActivity: Boolean = true,
@@ -3263,6 +3312,7 @@ private fun setGridMode(
             gridOverlay.recentActivityBands = recentActivityBands
             gridOverlay.showActivityOverlay = gridMode && showActivityOverlay
             gridOverlay.showRecentActivityTime = showRecentActivityTime
+            gridOverlay.recentActivityMaxBand = recentActivityMaxBand
             gridOverlay.activityFilterMin = activityFilterMin
             gridOverlay.activityFilterMax = activityFilterMax
             gridOverlay.showWorkedWithActivity = showWorkedWithActivity
@@ -3285,6 +3335,7 @@ private fun setGridMode(
                 this.recentActivityBands = recentActivityBands
                 this.showActivityOverlay = gridMode && showActivityOverlay
                 this.showRecentActivityTime = showRecentActivityTime
+                this.recentActivityMaxBand = recentActivityMaxBand
                 this.activityFilterMin = activityFilterMin
                 this.activityFilterMax = activityFilterMax
                 this.showWorkedWithActivity = showWorkedWithActivity

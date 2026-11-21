@@ -64,7 +64,7 @@ internal data class BackupSnapshot(
 
 internal fun preferenceCategory(key: String): BackupCategory = when {
     key.contains("password", true) || key.contains("apikey", true) || key.startsWith("wavelogUpload") ||
-        key in setOf("tiandituKey", "lotwCallsign", "wavelogUploadUrl") -> BackupCategory.CREDENTIALS
+        key in setOf("tiandituKey", "lotwCallsign", "wavelogUploadUrl", "wavelogConfirmationToken") -> BackupCategory.CREDENTIALS
     key.startsWith("type") || key in setOf("selectedIds", "selectedTypes", "numberOfRadios",
         "numberOfSatellites", "updateTimestamp", "databaseContentVersion", "favoriteTransponders") -> BackupCategory.SATELLITES
     key.startsWith("lotwLast") || key.startsWith("wavelogLast") || key.startsWith("wavelogSync") ||

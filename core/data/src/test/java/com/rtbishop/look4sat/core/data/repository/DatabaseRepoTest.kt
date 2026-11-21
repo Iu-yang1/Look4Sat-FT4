@@ -658,6 +658,8 @@ internal class FakeSettingsRepo(dataSources: DataSourcesSettings = defaultDataSo
     override fun setLastWavelogSyncEpochMs(value: Long) = Unit
     override fun getLastWavelogFullSyncEpochMs(): Long = 0L
     override fun setLastWavelogFullSyncEpochMs(value: Long) = Unit
+    override fun getLastWavelogConfirmationSyncEpochMs(): Long = 0L
+    override fun setLastWavelogConfirmationSyncEpochMs(value: Long) = Unit
 
     override fun setWorkedGridQsos(qsos: Map<String, List<GridQso>>) = Unit
 

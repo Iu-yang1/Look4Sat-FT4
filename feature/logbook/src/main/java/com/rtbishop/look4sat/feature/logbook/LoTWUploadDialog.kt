@@ -129,6 +129,7 @@ internal fun LoTWUploadDialog(state: LogbookState, onAction: (LogbookAction) -> 
     var accountPassword by rememberSaveable { mutableStateOf(state.lotwSettings.password) }
     var wavelogUrl by rememberSaveable { mutableStateOf(state.wavelogSettings.url) }
     var wavelogApiKey by rememberSaveable { mutableStateOf(state.wavelogSettings.apiKey) }
+    var wavelogConfirmationToken by rememberSaveable { mutableStateOf(state.wavelogSettings.confirmationToken) }
     var showWavelogClearConfirm by remember { mutableStateOf(false) }
     var grid by remember { mutableStateOf(state.lotwDefaultGrid) }
     var cq by remember { mutableStateOf("") }
@@ -152,10 +153,11 @@ internal fun LoTWUploadDialog(state: LogbookState, onAction: (LogbookAction) -> 
             accountPassword = state.lotwSettings.password
         }
     }
-    LaunchedEffect(state.wavelogSettings.url, state.wavelogSettings.apiKey) {
+    LaunchedEffect(state.wavelogSettings.url, state.wavelogSettings.apiKey, state.wavelogSettings.confirmationToken) {
         if (!state.wavelogSyncing && !state.wavelogProbeBusy) {
             wavelogUrl = state.wavelogSettings.url
             wavelogApiKey = state.wavelogSettings.apiKey
+            wavelogConfirmationToken = state.wavelogSettings.confirmationToken
         }
     }
     DisposableEffect(Unit) { onDispose { certificateBytes?.fill(0) } }
@@ -406,16 +408,21 @@ internal fun LoTWUploadDialog(state: LogbookState, onAction: (LogbookAction) -> 
                         state = state,
                         url = wavelogUrl,
                         apiKey = wavelogApiKey,
-                        onUrlChange = { wavelogUrl = it },
+                        confirmationToken = wavelogConfirmationToken,
+                        onUrlChange = {
+                            if (wavelogUrl.trim().trimEnd('/') != it.trim().trimEnd('/')) wavelogConfirmationToken = ""
+                            wavelogUrl = it
+                        },
                         onApiKeyChange = { wavelogApiKey = it },
+                        onConfirmationTokenChange = { wavelogConfirmationToken = it },
                         onFetchStations = { onAction(LogbookAction.FetchWavelogStations(wavelogUrl, wavelogApiKey)) },
                         onSelectStation = { onAction(LogbookAction.SelectWavelogStation(it)) },
                         onFullSync = {
-                            onAction(LogbookAction.SaveWavelogSettings(state.wavelogSettings.copy(url = wavelogUrl.trim(), apiKey = wavelogApiKey.trim())))
+                            onAction(LogbookAction.SaveWavelogSettings(state.wavelogSettings.copy(url = wavelogUrl.trim(), apiKey = wavelogApiKey.trim(), confirmationToken = wavelogConfirmationToken.trim())))
                             requestBackgroundSync(LogbookSyncProvider.WAVELOG, WavelogSyncMode.Full.name)
                         },
                         onIncrementalSync = {
-                            onAction(LogbookAction.SaveWavelogSettings(state.wavelogSettings.copy(url = wavelogUrl.trim(), apiKey = wavelogApiKey.trim())))
+                            onAction(LogbookAction.SaveWavelogSettings(state.wavelogSettings.copy(url = wavelogUrl.trim(), apiKey = wavelogApiKey.trim(), confirmationToken = wavelogConfirmationToken.trim())))
                             requestBackgroundSync(LogbookSyncProvider.WAVELOG, WavelogSyncMode.Incremental.name)
                         },
                         onClear = { showWavelogClearConfirm = true },
@@ -501,8 +508,10 @@ private fun WavelogSyncSettingsContent(
     state: LogbookState,
     url: String,
     apiKey: String,
+    confirmationToken: String,
     onUrlChange: (String) -> Unit,
     onApiKeyChange: (String) -> Unit,
+    onConfirmationTokenChange: (String) -> Unit,
     onFetchStations: () -> Unit,
     onSelectStation: (WavelogStationInfo) -> Unit,
     onFullSync: () -> Unit,
@@ -525,6 +534,16 @@ private fun WavelogSyncSettingsContent(
         onValueChange = onApiKeyChange,
         label = { Text(stringResource(CoreR.string.prefs_wavelog_upload_apikey)) },
         placeholder = { Text("wl…") },
+        singleLine = true,
+        enabled = !busy,
+        visualTransformation = PasswordVisualTransformation(),
+        modifier = Modifier.fillMaxWidth()
+    )
+    OutlinedTextField(
+        value = confirmationToken,
+        onValueChange = onConfirmationTokenChange,
+        label = { Text(stringResource(CoreR.string.prefs_wavelog_confirmation_token)) },
+        supportingText = { Text(stringResource(CoreR.string.prefs_wavelog_confirmation_token_help)) },
         singleLine = true,
         enabled = !busy,
         visualTransformation = PasswordVisualTransformation(),

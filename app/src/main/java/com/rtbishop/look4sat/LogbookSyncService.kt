@@ -229,14 +229,18 @@ class LogbookSyncService : Service() {
         }
         val requested = parseWavelogMode(request.mode)
         val mode = resolveWavelogSyncMode(settingsRepo.getWavelogSyncUrl(), settings.url, requested)
-        val promoted = mode == WavelogSyncMode.Incremental &&
-            shouldPromoteWavelogFullSync(settingsRepo.getLastWavelogFullSyncEpochMs())
+        val hasConfirmationToken = settings.confirmationToken.isNotBlank()
+        val lastConfirmationSync = settingsRepo.getLastWavelogConfirmationSyncEpochMs()
+        val needsFullSync = if (hasConfirmationToken) lastConfirmationSync == 0L
+            else shouldPromoteWavelogFullSync(settingsRepo.getLastWavelogFullSyncEpochMs())
+        val promoted = mode == WavelogSyncMode.Incremental && needsFullSync
         val actualMode = if (promoted) WavelogSyncMode.Full else mode
         LogbookBackgroundSyncController.update {
             it.copy(wavelogMode = actualMode, progress = null, stageMessage = getString(LogbookR.string.logbook_sync_notification_wavelog))
         }
         showNotification(LogbookBackgroundSyncController.status.value, force = true)
 
+        val startedAt = System.currentTimeMillis()
         val fetch = container.wavelogSyncRepository.fetchNewRecords(
             settings.url,
             settings.apiKey,
@@ -245,9 +249,16 @@ class LogbookSyncService : Service() {
             full = actualMode == WavelogSyncMode.Full
         ) ?: return failedStatus(request, getString(LogbookR.string.logbook_sync_notification_failed))
 
+        val pullConfirmations = hasConfirmationToken && actualMode == WavelogSyncMode.Incremental
+        val confirmations = if (pullConfirmations) container.wavelogSyncRepository.fetchLoTWConfirmations(
+            settings.url, settings.apiKey, settings.confirmationToken, stations,
+            since = com.rtbishop.look4sat.core.domain.repository.lotwSyncCursor(lastConfirmationSync - 86_400_000L).take(10)
+        ) else null
+        val confirmationFailed = pullConfirmations && confirmations == null
+        val records = confirmations.orEmpty() + fetch.records
         LogbookBackgroundSyncController.update {
             it.copy(
-                notificationQsoCount = fetch.records.size.toLong(),
+                notificationQsoCount = records.size.toLong(),
                 progress = null,
                 stageMessage = getString(LogbookR.string.logbook_sync_notification_saving)
             )
@@ -255,34 +266,39 @@ class LogbookSyncService : Service() {
         showNotification(LogbookBackgroundSyncController.status.value, force = true)
 
         val merge = container.qsoRepository.mergeWavelog(
-            fetch.records, settings.url,
+            records, settings.url,
             actualMode == WavelogSyncMode.Full && fetch.failedStations.isEmpty()
         )
         val cursors = settingsRepo.getWavelogSyncCursors() + fetch.cursors
         applyWavelogSyncResult(
             settingsRepo = settingsRepo,
-            records = fetch.records,
+            records = records,
             cursors = cursors,
             url = settings.url,
             mode = actualMode,
             failedStations = fetch.failedStations.toSet()
         )
         settingsRepo.updateLogbookSourceLock(LogbookSyncProvider.WAVELOG)
+        if (hasConfirmationToken && (confirmations != null ||
+            actualMode == WavelogSyncMode.Full && fetch.failedStations.isEmpty())) {
+            settingsRepo.setLastWavelogConfirmationSyncEpochMs(startedAt)
+        }
         val head = when {
             promoted -> "Full Wavelog sync (automatic re-scan)"
             actualMode == WavelogSyncMode.Full -> "Full Wavelog sync"
             else -> "Incremental Wavelog sync"
         }
-        val base = "$head · ${merge.imported} new, ${merge.skipped} already present"
-        val message = if (fetch.failedStations.isEmpty()) base
+        val base = "$head · ${merge.imported} new, ${merge.updated} updated, ${merge.skipped} already present"
+        val stationMessage = if (fetch.failedStations.isEmpty()) base
             else "$base · ${fetch.failedStations.size}/${stations.size} station(s) failed"
+        val message = if (confirmationFailed) "$stationMessage · LoTW confirmation sync failed" else stationMessage
         return LogbookBackgroundSyncController.status.value.copy(
             isRunning = false,
             wavelogMode = actualMode,
             progress = null,
             stageMessage = null,
             message = message,
-            succeeded = fetch.failedStations.isEmpty(),
+            succeeded = fetch.failedStations.isEmpty() && !confirmationFailed,
             workedGridsCount = settingsRepo.getWorkedGrids().size
         )
     }
